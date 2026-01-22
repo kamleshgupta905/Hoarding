@@ -31,7 +31,9 @@ const Navbar = () => {
                             onKeyDown={handleSearch}
                         />
                     </div>
-                    <button className="contact-btn">Enquire Now</button>
+                    <Link to={localStorage.getItem('isAdminAuthenticated') === 'true' ? "/admin/dashboard" : "/admin/login"} className="contact-btn">
+                        {localStorage.getItem('isAdminAuthenticated') === 'true' ? "Admin Dash" : "Admin Login"}
+                    </Link>
                 </div>
             </div>
         </nav>
