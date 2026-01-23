@@ -1,14 +1,56 @@
 import Papa from 'papaparse';
 
-// Direct CSV export URL which is more reliable than opensheet public API for some permissions
-const GOOGLE_SHEET_CSV_URL = 'https://docs.google.com/spreadsheets/d/1DBGLmkjT_7v-xqdomp8x9SogVFEa5iHhrx5Qrhl-ih0/gviz/tq?tqx=out:csv&sheet=Hoardings_Master';
+// 📡 LIVE GOOGLE SHEET CONFIGURATION
+const SHEET_ID = '1DBGLmkjT_7v-xqdomp8x9SogVFEa5iHhrx5Qrhl-ih0';
+const SHEET_NAME = 'Hoardings_Master';
+const GOOGLE_SHEET_URL = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:csv&sheet=${SHEET_NAME}`;
 
+/**
+ * 🛠 ADVANCED IMAGE TRANSFORMER
+ * Expertly handles Google Drive links to ensure they load in browsers.
+ * Uses the THUMBNAIL format which is the most reliable for public/shared Drive files.
+ */
+const getDirectDriveLink = (url) => {
+  if (!url || typeof url !== 'string') return '';
+  const cleanUrl = url.trim();
+
+  // If it's already a thumbnail link correctly formatted, return it
+  if (cleanUrl.includes('drive.google.com/thumbnail')) return cleanUrl;
+
+  // Skip if it is not a Google Drive link
+  if (!cleanUrl.includes('drive.google.com') && !cleanUrl.includes('docs.google.com')) {
+    return cleanUrl;
+  }
+
+  try {
+    // Extract the unique File ID from any Google Drive URL format
+    const idMatch = cleanUrl.match(/\/file\/d\/([^\/?#]+)/) || cleanUrl.match(/[?&]id=([^&]+)/);
+
+    if (idMatch && idMatch[1]) {
+      const fileId = idMatch[1];
+      // ⚡ Using the THUMBNAIL endpoint which avoids 403 errors common with 'uc' and 'lh3'
+      return `https://drive.google.com/thumbnail?sz=w1200&id=${fileId}`;
+    }
+  } catch (err) {
+    console.error("Drive URL Transform Error:", err);
+  }
+
+  return cleanUrl;
+};
+
+/**
+ * 🚀 FETCH LIVE DATA
+ * Syncs with the spreadsheet and maps columns precisely.
+ */
 export const fetchHoardings = async () => {
   try {
-    const response = await fetch(GOOGLE_SHEET_CSV_URL);
-    if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
-    }
+    // Cache busting using timestamp to ensure Real-Time sync
+    const cacheBuster = `&t=${new Date().getTime()}`;
+    const finalUrl = GOOGLE_SHEET_URL + cacheBuster;
+
+    const response = await fetch(finalUrl);
+    if (!response.ok) throw new Error(`Fetch failed: ${response.status}`);
+
     const csvText = await response.text();
 
     return new Promise((resolve) => {
@@ -16,14 +58,16 @@ export const fetchHoardings = async () => {
         header: true,
         skipEmptyLines: true,
         complete: (results) => {
-          const mappedData = results.data.map(row => {
-            // Map keys from CSV to expected App keys
-            // Note: CSV keys come from the actual sheet headers
-            const mapped = {
+          const cleanData = results.data.map(row => {
+            // Extract RAW image link from possible column names
+            // Mapping precisely to the headers seen in the spreadsheet CSV
+            const rawImg = row["ImageURL"] || row["imageurl"] || row["Image URL"] || row["Photo"] || '';
+
+            return {
               "State": row["State"],
-              "City": row["City"],
-              "Locality": row["Locality"],
-              "Locality Site Location": row["locality site location"] || row["Locality Site Location"],
+              "City": row["City"]?.toString().trim(),
+              "Locality": row["Locality"]?.toString().trim(),
+              "Locality Site Location": (row["locality site location"] || row["Locality Site Location"])?.toString().trim(),
               "Pin Code": row["Pin Code"],
               "Traffic From": row["Traffic From"],
               "Traffic To": row["Traffic To"],
@@ -40,41 +84,41 @@ export const fetchHoardings = async () => {
               "Digital / Non Digital": row["Digital/ Non Digital"] || row["Digital / Non Digital"],
               "Solus (Y/N)": row["Solus (Y/N)"],
               "Site Category": row["Site Category"],
-              "Avg Monthly Cost (INR)": row["Avg. monthly Cost (in INR, without agency commission)"] || row["Avg Monthly Cost (INR)"],
-              // Default missing columns
-              "STATUS": row["STATUS"] || 'Available',
-              "ImageURL": row["ImageURL"] || ''
+              "Avg Monthly Cost (INR)": row["Avg. monthly Cost"] || row["Avg Monthly Cost (INR)"] || 0,
+              "STATUS": row["STATUS"] || row["Status"] || 'Available',
+              "ImageURL": getDirectDriveLink(rawImg)
             };
-            return mapped;
           });
 
-          // Filter out disabled
-          const filtered = mappedData.filter(item => item.STATUS !== 'Disabled');
-          resolve(filtered);
+          // Remove meta-rows and invalid entries
+          const filteredRecords = cleanData.filter(item =>
+            item.City &&
+            item.City.toLowerCase() !== 'total' &&
+            item.STATUS &&
+            item.STATUS.toLowerCase() !== 'disabled'
+          );
+
+          resolve(filteredRecords);
         },
         error: (error) => {
-          console.error('CSV Parsing Error:', error);
+          console.error("CSV Parse Failure:", error);
           resolve([]);
         }
       });
     });
-
   } catch (error) {
-    console.error('Error fetching hoardings:', error);
+    console.error("Google Sheet Sync Failed:", error);
     return [];
   }
 };
 
+/**
+ * 🖼️ IMAGE HANDLER
+ */
 export const getImageUrl = (hoarding) => {
   if (hoarding && hoarding.ImageURL && hoarding.ImageURL.trim() !== '') {
     return hoarding.ImageURL;
   }
-  // Fallback to generating URL if ImageURL is missing (backward compatibility with original logic)
-  if (hoarding && hoarding["Locality Site Location"]) {
-    const siteLocation = hoarding["Locality Site Location"];
-    const baseUrl = 'https://storage.googleapis.com/hoarding_listing_images/';
-    const fileName = siteLocation.split(' ').join('%20') + '.jpg';
-    return `${baseUrl}${fileName}`;
-  }
-  return 'https://placehold.co/600x400?text=No+Image';
+  // High-quality premium fallback
+  return 'https://images.unsplash.com/photo-1541535650810-10d26f592a7d?auto=format&fit=crop&q=80&w=800';
 };

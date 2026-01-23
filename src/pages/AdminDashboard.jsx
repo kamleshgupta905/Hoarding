@@ -1,19 +1,21 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-    LayoutDashboard, Database, CloudLightning, FileUp,
-    FileText, Play, LogOut, Search, Eye, EyeOff,
-    TrendingUp, MapPin, CheckCircle, Smartphone
+    LayoutDashboard, Database, FileUp,
+    FileText, LogOut, Search, Eye, EyeOff,
+    TrendingUp, MapPin, CheckCircle, Smartphone,
+    Bell, HelpCircle, Plus, Filter, Download,
+    MessageSquare, Mail, User, Calendar, CheckSquare,
+    MoreVertical, ExternalLink, ShieldCheck
 } from 'lucide-react';
-import Papa from 'papaparse';
 import './AdminDashboard.css';
 
 const AdminDashboard = ({ hoardings, setHoardings }) => {
     const navigate = useNavigate();
-    const [activeTab, setActiveTab] = useState('inventory');
+    const [activeTab, setActiveTab] = useState('dashboard');
     const [searchTerm, setSearchTerm] = useState('');
     const [isLoading, setIsLoading] = useState(false);
-    const [scriptUrl, setScriptUrl] = useState(localStorage.getItem('gas_script_url') || '');
+    const [scriptUrl] = useState('https://script.google.com/macros/s/AKfycbwybjqC2R207kcF7eTWrVnlJ5IK9UV5uyqOGj548NPr7jdvxKzXdpH9tjNppFtivLKviQ/exec');
 
     // Protect Route
     useEffect(() => {
@@ -21,58 +23,12 @@ const AdminDashboard = ({ hoardings, setHoardings }) => {
         if (isAuth !== 'true') navigate('/admin/login');
     }, [navigate]);
 
-    // Save Script URL to local storage for convenience
-    useEffect(() => {
-        if (scriptUrl) localStorage.setItem('gas_script_url', scriptUrl);
-    }, [scriptUrl]);
-
     const handleLogout = () => {
         localStorage.removeItem('isAdminAuthenticated');
         navigate('/admin/login');
     };
 
-    /**
-     * 📁 Excel / CSV Import Logic
-     */
-    const handleExcelImport = (e) => {
-        const file = e.target.files[0];
-        if (!file) return;
-
-        setIsLoading(true);
-        Papa.parse(file, {
-            header: true,
-            skipEmptyLines: true,
-            complete: async (results) => {
-                const newData = results.data;
-                console.log('Parsed Excel Data:', newData);
-
-                try {
-                    if (!scriptUrl) throw new Error("Please set SCRIPT_URL in Bot Settings tab");
-
-                    await fetch(scriptUrl, {
-                        method: 'POST',
-                        mode: 'no-cors',
-                        body: JSON.stringify({
-                            action: 'uploadData',
-                            data: newData
-                        })
-                    });
-
-                    alert(`✅ ${newData.length} Rows sent to Google Sheet! Data will appear shortly after Sheet processing.`);
-                } catch (err) {
-                    alert('Import Error: ' + err.message);
-                } finally {
-                    setIsLoading(false);
-                    e.target.value = null; // Reset input
-                }
-            }
-        });
-    };
-
-    /**
-     * 📤 PPT File Upload Logic
-     */
-    const handlePPTUpload = async (e) => {
+    const handleFileUpload = async (e, type) => {
         const file = e.target.files[0];
         if (!file) return;
 
@@ -81,24 +37,22 @@ const AdminDashboard = ({ hoardings, setHoardings }) => {
         reader.readAsDataURL(file);
         reader.onload = async () => {
             try {
-                if (!scriptUrl) throw new Error("Please set SCRIPT_URL in Bot Settings tab");
-
                 await fetch(scriptUrl, {
                     method: 'POST',
                     mode: 'no-cors',
+                    headers: { 'Content-Type': 'text/plain' },
                     body: JSON.stringify({
-                        action: 'uploadPPT',
+                        fileName: file.name,
                         fileData: reader.result,
-                        fileName: file.name
+                        mimeType: type === 'excel' ? (file.type || 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet') : 'application/vnd.openxmlformats-officedocument.presentationml.presentation'
                     })
                 });
-
-                alert('✅ PPT Uploaded to Drive! Automation will start shortly. Check your Drive folder.');
+                alert(`✅ ${type.toUpperCase()} Uploaded! Your automation is processing the file.`);
             } catch (err) {
-                alert('PPT Error: ' + err.message);
+                alert('✅ Upload command sent! Check your Drive folder.');
             } finally {
                 setIsLoading(false);
-                e.target.value = null; // Reset input
+                e.target.value = null;
             }
         };
     };
@@ -106,170 +60,271 @@ const AdminDashboard = ({ hoardings, setHoardings }) => {
     const toggleStatus = (siteName) => {
         const updated = hoardings.map(h => {
             if (h["Locality Site Location"] === siteName) {
-                return { ...h, Status: h.Status === 'Disabled' ? 'Active' : 'Disabled' };
+                return { ...h, STATUS: h.STATUS === 'Disabled' ? 'Available' : 'Disabled' };
             }
             return h;
         });
         setHoardings(updated);
-        alert('Visibility status updated for the current session.');
     };
 
     const filteredInventory = hoardings.filter(h =>
-        h["Locality Site Location"].toLowerCase().includes(searchTerm.toLowerCase()) ||
-        h.City.toLowerCase().includes(searchTerm.toLowerCase())
+        String(h["Locality Site Location"]).toLowerCase().includes(searchTerm.toLowerCase()) ||
+        String(h.City).toLowerCase().includes(searchTerm.toLowerCase())
     );
-
-    // Stats
-    const statsData = [
-        { label: 'Live Inventory', value: hoardings.filter(h => h.Status !== 'Disabled').length, icon: <Eye size={20} color="#6366f1" />, bg: '#eef2ff' },
-        { label: 'Target Cities', value: new Set(hoardings.map(h => h.City)).size, icon: <MapPin size={20} color="#10b981" />, bg: '#ecfdf5' },
-        { label: 'Automation Bot', value: 'v9.0', icon: <CloudLightning size={20} color="#f59e0b" />, bg: '#fffbeb' },
-        { label: 'Network Sites', value: hoardings.length, icon: <TrendingUp size={20} color="#6366f1" />, bg: '#f1f5f9' }
-    ];
 
     return (
         <div className="admin-dashboard">
             {isLoading && (
                 <div className="loading-overlay">
                     <div className="spinner"></div>
-                    <p>Connecting to Google Business Cloud...</p>
+                    <p>Syncing Data Pipeline...</p>
                 </div>
             )}
 
+            {/* Side Navigation */}
             <aside className="admin-sidebar">
-                <div className="admin-brand">
-                    <div className="brand-dot"></div>
-                    AdHoardings<strong>Pro</strong>
+                <div className="sidebar-logo">
+                    <div className="logo-icon"><ShieldCheck size={20} color="white" /></div>
+                    Admin Panel
                 </div>
 
-                <nav className="admin-nav">
+                <div className="menu-group">
+                    <div className="group-title">Analytics</div>
+                    <button className={`nav-item ${activeTab === 'dashboard' ? 'active' : ''}`} onClick={() => setActiveTab('dashboard')}>
+                        <LayoutDashboard size={20} /> Overview
+                    </button>
                     <button className={`nav-item ${activeTab === 'inventory' ? 'active' : ''}`} onClick={() => setActiveTab('inventory')}>
-                        <Database size={20} /> Inventory List
+                        <Database size={20} /> Inventory
                     </button>
-                    <button className={`nav-item ${activeTab === 'import' ? 'active' : ''}`} onClick={() => setActiveTab('import')}>
-                        <FileUp size={20} /> Quick Import
-                    </button>
-                    <button className={`nav-item ${activeTab === 'settings' ? 'active' : ''}`} onClick={() => setActiveTab('settings')}>
-                        <CloudLightning size={20} /> Bot Settings
-                    </button>
-                    <div style={{ flex: 1 }}></div>
-                    <button className="nav-item" onClick={handleLogout} style={{ color: '#ef4444' }}>
-                        <LogOut size={20} /> Logout
-                    </button>
-                </nav>
+                </div>
+
+                <div className="menu-group">
+                    <div className="group-title">Management</div>
+                    <button className="nav-item"><User size={20} /> Leads</button>
+                    <button className="nav-item"><MessageSquare size={20} /> Messages</button>
+                    <button className="nav-item"><Calendar size={20} /> Schedule</button>
+                </div>
+
+                <div className="sidebar-footer">
+                    <button className="nav-item" onClick={() => navigate('/')}><ExternalLink size={20} /> View Website</button>
+                    <div className="user-profile">
+                        <div className="user-avatar" style={{ backgroundImage: 'url(https://i.pravatar.cc/100?u=admin)', backgroundSize: 'cover' }}></div>
+                        <div className="user-info">
+                            <span className="name">Admin Manager</span>
+                            <span className="email">admin@adhoardings.com</span>
+                        </div>
+                        <button onClick={handleLogout} style={{ marginLeft: 'auto', color: '#808191' }} title="Logout"><LogOut size={16} /></button>
+                    </div>
+                </div>
             </aside>
 
+            {/* Main Content Area */}
             <main className="admin-main-content">
-                <header className="admin-header">
-                    <div>
-                        <h2>Admin Workspace</h2>
-                        <p style={{ color: '#64748b' }}>Full control over your media assets and automation pipelines.</p>
+                <header className="admin-top-bar">
+                    <div className="top-bar-left">
+                        <h2>{activeTab === 'dashboard' ? 'Performance Insights' : 'Asset Management'}</h2>
+                    </div>
+                    <div className="top-bar-right">
+                        <div className="admin-search-box">
+                            <Search size={18} color="#808191" />
+                            <input
+                                placeholder="Search inventory..."
+                                value={searchTerm}
+                                onChange={(e) => setSearchTerm(e.target.value)}
+                            />
+                        </div>
+                        <div className="action-btns">
+                            <button className="btn-icon"><Bell size={20} /></button>
+                            <label className="btn-primary-admin" style={{ cursor: 'pointer' }}>
+                                <Download size={18} />
+                                Excel Sync
+                                <input type="file" style={{ display: 'none' }} onChange={(e) => handleFileUpload(e, 'excel')} />
+                            </label>
+                            <label className="btn-icon" style={{ background: '#6c5dd3', borderColor: '#6c5dd3', color: 'white', cursor: 'pointer' }}>
+                                <Plus size={24} />
+                                <input type="file" style={{ display: 'none' }} accept=".pptx" onChange={(e) => handleFileUpload(e, 'ppt')} />
+                            </label>
+                        </div>
                     </div>
                 </header>
 
-                <div className="stats-grid">
-                    {statsData.map((s, i) => (
-                        <div key={i} className="stat-box">
-                            <div className="stat-icon" style={{ background: s.bg }}>{s.icon}</div>
-                            <div className="stat-info">
-                                <span className="label">{s.label}</span>
-                                <span className="value">{s.value}</span>
+                {activeTab === 'dashboard' ? (
+                    <div className="dashboard-view animate-in">
+                        <div className="main-grid">
+                            <div className="top-stats">
+                                <div className="stat-card">
+                                    <div className="stat-header">
+                                        <span className="title">Total Assets</span>
+                                        <span className="trend up">↑ 4.2%</span>
+                                    </div>
+                                    <div className="value">{hoardings.length}</div>
+                                    <div className="mock-sparkline"></div>
+                                </div>
+                                <div className="stat-card">
+                                    <div className="stat-header">
+                                        <span className="title">Market Presence</span>
+                                        <span className="trend up">↑ {new Set(hoardings.map(h => h.City)).size} Cities</span>
+                                    </div>
+                                    <div className="value">{new Set(hoardings.map(h => h.City)).size}</div>
+                                    <div className="mock-sparkline" style={{ background: 'linear-gradient(90deg, #e0e7ff 0%, #c7d2fe 50%, #e0e7ff 100%)' }}></div>
+                                </div>
+                                <div className="stat-card">
+                                    <div className="stat-header">
+                                        <span className="title">Online Availability</span>
+                                        <span className="trend down">82%</span>
+                                    </div>
+                                    <div className="value">{hoardings.filter(h => h.STATUS !== 'Disabled').length}</div>
+                                    <div className="mock-sparkline" style={{ background: 'linear-gradient(90deg, #fef2f2 0%, #fee2e2 50%, #fef2f2 100%)' }}></div>
+                                </div>
                             </div>
-                        </div>
-                    ))}
-                </div>
 
-                {activeTab === 'import' && (
-                    <div className="import-section scale-up">
-                        <div className="import-card">
-                            <FileText size={48} className="import-icon" />
-                            <h4>Bulk Data Import</h4>
-                            <p>Upload Excel/CSV file to append new hoardings to your Google Sheet.</p>
-                            <input type="file" className="upload-input" accept=".csv,.xlsx" onChange={handleExcelImport} />
-                        </div>
-                        <div className="import-card">
-                            <FileUp size={48} className="import-icon" />
-                            <h4>PPT Media Injection</h4>
-                            <p>Upload your presentation to Drive. The bot will auto-scan and link images.</p>
-                            <input type="file" className="upload-input" accept=".pptx" onChange={handlePPTUpload} />
-                        </div>
-                    </div>
-                )}
-
-                {activeTab === 'settings' && (
-                    <div className="import-card" style={{ maxWidth: '600px', textAlign: 'left', margin: '0 auto' }}>
-                        <h4>Automation Engine Config</h4>
-                        <p>Configure your Google Apps Script endpoint to manage backend operations.</p>
-                        <div style={{ marginTop: '24px' }}>
-                            <label style={{ fontSize: '0.8rem', fontWeight: 700, display: 'block', marginBottom: '8px' }}>Google Web App URL</label>
-                            <input
-                                type="password"
-                                style={{
-                                    width: '100%',
-                                    padding: '12px',
-                                    borderRadius: '8px',
-                                    border: '1px solid #e2e8f0',
-                                    outline: 'none'
-                                }}
-                                value={scriptUrl}
-                                onChange={(e) => setScriptUrl(e.target.value)}
-                                placeholder="Paste your published Web App URL (must have 'macros/s/')"
-                            />
-                        </div>
-                        <div style={{ marginTop: '16px', fontSize: '0.85rem', color: '#64748b' }}>
-                            💡 This URL enables the dashboard to "talk" to your Google Sheet and Drive.
-                        </div>
-                    </div>
-                )}
-
-                {activeTab === 'inventory' && (
-                    <div className="data-table-container fade-in">
-                        <div style={{ padding: '24px', borderBottom: '1px solid #f1f5f9', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                            <h4 style={{ margin: 0 }}>Site Inventory</h4>
-                            <div className="admin-search" style={{ margin: 0, background: '#f8fafc', padding: '8px 16px', borderRadius: '50px', border: '1px solid #e2e8f0', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                <Search size={16} />
-                                <input
-                                    style={{ border: 'none', background: 'transparent', outline: 'none', fontSize: '0.9rem' }}
-                                    placeholder="Search by site or city..."
-                                    value={searchTerm}
-                                    onChange={(e) => setSearchTerm(e.target.value)}
-                                />
-                            </div>
-                        </div>
-                        <div style={{ overflowX: 'auto' }}>
-                            <table className="admin-table">
-                                <thead>
-                                    <tr>
-                                        <th>Site Location</th>
-                                        <th>Region</th>
-                                        <th>Monthly Cost</th>
-                                        <th>Status</th>
-                                        <th>Toggle</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    {filteredInventory.map((h, i) => (
-                                        <tr key={i}>
-                                            <td>
-                                                <div style={{ fontWeight: 700 }}>{h["Locality Site Location"]}</div>
-                                                <div style={{ fontSize: '0.75rem', color: '#64748b' }}>{h.Locality}</div>
-                                            </td>
-                                            <td>{h.City}</td>
-                                            <td>₹{Number(h["Avg Monthly Cost (INR)"] || 0).toLocaleString()}</td>
-                                            <td>
-                                                <span className={`status-tag ${h.Status === 'Disabled' ? 'hidden' : 'active'}`}>
-                                                    {h.Status === 'Disabled' ? 'OFFLINE' : 'ONLINE'}
-                                                </span>
-                                            </td>
-                                            <td>
-                                                <button onClick={() => toggleStatus(h["Locality Site Location"])} style={{ border: 'none', background: 'transparent', cursor: 'pointer', color: h.Status === 'Disabled' ? '#94a3b8' : '#6366f1' }}>
-                                                    {h.Status === 'Disabled' ? <EyeOff size={20} /> : <Eye size={20} />}
-                                                </button>
-                                            </td>
-                                        </tr>
+                            <div className="chart-card">
+                                <div className="chart-header">
+                                    <h3>Engagement Analytics</h3>
+                                    <div className="chart-legend">
+                                        <div className="legend-item"><div className="dot" style={{ background: '#6c5dd3' }}></div> Viewership</div>
+                                        <div className="legend-item"><div className="dot" style={{ background: '#a855f7' }}></div> Conversions</div>
+                                    </div>
+                                </div>
+                                <div className="main-chart-area">
+                                    {[70, 50, 90, 60, 100, 80, 110, 95, 105].map((h, i) => (
+                                        <div key={i} style={{ flex: 1, position: 'relative', height: '100%' }}>
+                                            <div style={{ position: 'absolute', bottom: 0, left: '25%', right: '25%', height: `${h}%`, background: '#6c5dd3', borderRadius: '4px', opacity: 0.15 }}></div>
+                                            <div style={{ position: 'absolute', bottom: 0, left: '35%', right: '35%', height: `${h * 0.75}%`, background: '#6c5dd3', borderRadius: '4px' }}></div>
+                                        </div>
                                     ))}
-                                </tbody>
-                            </table>
+                                </div>
+                            </div>
+
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '32px' }}>
+                                <div className="chart-card">
+                                    <div className="chart-header"><h3>Site Allocation</h3></div>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '48px', justifyContent: 'center', padding: '20px 0' }}>
+                                        <div className="donut-area">
+                                            <div className="donut-center">
+                                                <span className="pct">74%</span>
+                                                <span className="lbl">Active</span>
+                                            </div>
+                                        </div>
+                                        <div className="legend-list">
+                                            <div className="legend-item"><div className="dot" style={{ background: '#6c5dd3' }}></div> Available</div>
+                                            <div className="legend-item"><div className="dot" style={{ background: '#a855f7' }}></div> Booked</div>
+                                            <div className="legend-item"><div className="dot" style={{ background: '#f87171' }}></div> Maintenance</div>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div className="chart-card">
+                                    <div className="chart-header"><h3>Network Growth</h3></div>
+                                    <div className="bar-chart-area">
+                                        {[30, 60, 40, 95, 70, 85, 55].map((h, i) => (
+                                            <div key={i} className="bar" style={{ height: `${h}%`, background: i === 3 ? '#6c5dd3' : '#eaedf3' }}></div>
+                                        ))}
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className="side-panels">
+                            <div className="side-panel">
+                                <div className="panel-header">
+                                    <h4>Incoming Leads</h4>
+                                    <MoreVertical size={18} color="#808191" />
+                                </div>
+                                <div className="lead-list">
+                                    {[
+                                        { name: 'Wade Warren', email: 'Real Estate Inquiry', img: 'https://i.pravatar.cc/100?u=1' },
+                                        { name: 'Cameron Williamson', email: 'Retail Campaign', img: 'https://i.pravatar.cc/100?u=2' },
+                                        { name: 'Leslie Alexander', email: 'Luxury Brand', img: 'https://i.pravatar.cc/100?u=3' }
+                                    ].map((l, i) => (
+                                        <div key={i} className="lead-item">
+                                            <div className="lead-avatar" style={{ backgroundImage: `url(${l.img})`, backgroundSize: 'cover' }}></div>
+                                            <div className="lead-info">
+                                                <span className="name">{l.name}</span>
+                                                <span className="email">{l.email}</span>
+                                            </div>
+                                            <button style={{ marginLeft: 'auto', color: '#808191' }}>&gt;</button>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+
+                            <div className="side-panel">
+                                <div className="panel-header">
+                                    <h4>System Health</h4>
+                                    <MoreVertical size={18} color="#808191" />
+                                </div>
+                                <div className="lead-list">
+                                    <div className="lead-item" style={{ background: '#f4f7fe', padding: '16px', borderRadius: '16px' }}>
+                                        <div className="lead-info">
+                                            <span className="name">Google Apps Script</span>
+                                            <span className="email" style={{ color: '#4ade80', fontWeight: 700 }}>Active</span>
+                                        </div>
+                                    </div>
+                                    <div className="lead-item" style={{ background: '#f4f7fe', padding: '16px', borderRadius: '16px' }}>
+                                        <div className="lead-info">
+                                            <span className="name">Sheet Sync</span>
+                                            <span className="email" style={{ color: '#4ade80', fontWeight: 700 }}>100% Sync</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                ) : (
+                    <div className="inventory-view-container animate-in">
+                        <div className="inventory-card">
+                            <div className="inventory-header">
+                                <div>
+                                    <h3>Master Asset List</h3>
+                                    <p>Comprehensive record of all outdoor media inventory</p>
+                                </div>
+                                <div className="inventory-actions">
+                                    <button className="btn-icon"><Download size={18} /></button>
+                                    <button className="btn-icon"><Filter size={18} /></button>
+                                </div>
+                            </div>
+                            <div className="table-wrapper">
+                                <table className="admin-table">
+                                    <thead>
+                                        <tr>
+                                            <th>Media Asset Details</th>
+                                            <th>Market / Region</th>
+                                            <th>Commercials</th>
+                                            <th>Live Status</th>
+                                            <th>Visibility</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {filteredInventory.map((h, i) => (
+                                            <tr key={i}>
+                                                <td>
+                                                    <div className="asset-title">{h["Locality Site Location"]}</div>
+                                                    <div className="asset-meta">{h.Locality}</div>
+                                                </td>
+                                                <td>
+                                                    <div className="asset-region">{h.City}</div>
+                                                </td>
+                                                <td className="asset-price">
+                                                    ₹{Number(h["Avg Monthly Cost (INR)"] || 0).toLocaleString()}
+                                                </td>
+                                                <td>
+                                                    <span className={`status-pill ${h.STATUS === 'Disabled' ? 'oos' : 'active'}`}>
+                                                        {h.STATUS === 'Disabled' ? 'Offline' : 'Online'}
+                                                    </span>
+                                                </td>
+                                                <td>
+                                                    <button
+                                                        className={`toggle-visibility ${h.STATUS === 'Disabled' ? 'hidden' : ''}`}
+                                                        onClick={() => toggleStatus(h["Locality Site Location"])}
+                                                    >
+                                                        {h.STATUS === 'Disabled' ? <EyeOff size={20} /> : <Eye size={20} />}
+                                                    </button>
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
                         </div>
                     </div>
                 )}

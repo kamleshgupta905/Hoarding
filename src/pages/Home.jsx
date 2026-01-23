@@ -19,7 +19,14 @@ const Home = ({ hoardings }) => {
     ];
 
     // Combine spreadsheet cities with our featured list for a complete view
-    const allCities = [...new Set([...featuredList, ...cities])];
+    const garbageKeywords = ['all', 'total', 'active', 'sites'];
+    const allCities = [...new Set([...featuredList, ...cities])].filter(city => {
+        const lowerCity = city.toLowerCase();
+        const isGarbage = (garbageKeywords.filter(kw => lowerCity.includes(kw)).length >= 2) ||
+            lowerCity === 'grand total' ||
+            city.length < 3;
+        return !isGarbage;
+    });
 
     const handleCitySelect = (city) => {
         navigate(`/${city}`);
@@ -41,83 +48,98 @@ const Home = ({ hoardings }) => {
     return (
         <div className="home-page">
             <Helmet>
-                <title>AdHoardingsDiscovery | Discover & Book Premium Outdoor Hoardings</title>
-                <meta name="description" content="Discover and book premium outdoor hoarding sites across India. City-wise listings with real-time availability and technical specifications." />
+                <title>AdHoardings Discovery | Premium Outdoor Advertising in India</title>
+                <meta name="description" content="India's leading platform for premium outdoor advertising discovery. Browse verified hoarding sites, billboards, and unipoles across Delhi, Mumbai, Bangalore and more." />
+                <meta name="keywords" content="billboard advertising, hoarding listings, outdoor media india, unipole ads, OOH advertising" />
             </Helmet>
 
-            <section className="hero">
-                <div className="container hero-content">
-                    <h1 className="animate-fade-in">Discover & Book Premium <br /><span>Outdoor Hoardings Across India</span></h1>
-                    <p className="animate-fade-in" style={{ animationDelay: '0.1s' }}>
-                        The most comprehensive platform for outdoor advertising site discovery, visual proof, and booking.
-                    </p>
+            <main role="main">
+                <section className="hero" aria-labelledby="hero-title">
+                    <div className="container hero-content">
+                        <h1 id="hero-title" className="animate-in">Discover & Book Premium <br /><span>Outdoor Hoardings</span></h1>
+                        <p className="animate-in" style={{ animationDelay: '0.1s' }}>
+                            The most comprehensive platform for outdoor advertising site discovery, visual proof, and booking.
+                        </p>
 
-                    <form className="search-box animate-fade-in" style={{ animationDelay: '0.2s' }} onSubmit={handleSearch}>
-                        <div className="input-group">
-                            <MapPin className="icon" />
-                            <select onChange={(e) => handleCitySelect(e.target.value)} defaultValue="">
-                                <option value="" disabled>Select City</option>
-                                {allCities.map(city => (
-                                    <option key={city} value={city}>{city}</option>
-                                ))}
-                            </select>
+                        <div className="search-container animate-in" style={{ animationDelay: '0.2s' }}>
+                            <form className="search-box" onSubmit={handleSearch} role="search">
+                                <div className="input-group">
+                                    <MapPin className="icon" size={20} aria-hidden="true" />
+                                    <select
+                                        onChange={(e) => handleCitySelect(e.target.value)}
+                                        defaultValue=""
+                                        aria-label="Select Target City"
+                                    >
+                                        <option value="" disabled>Select City</option>
+                                        {allCities.map(city => (
+                                            <option key={city} value={city}>{city}</option>
+                                        ))}
+                                    </select>
+                                </div>
+                                <div className="divider" aria-hidden="true"></div>
+                                <div className="input-group">
+                                    <Search className="icon" size={20} aria-hidden="true" />
+                                    <input
+                                        type="text"
+                                        placeholder="Search by Locality or Site Name"
+                                        value={searchTerm}
+                                        onChange={(e) => setSearchTerm(e.target.value)}
+                                        aria-label="Search Locality"
+                                    />
+                                </div>
+                                <button type="submit" className="search-btn">Search Assets</button>
+                            </form>
                         </div>
-                        <div className="divider"></div>
-                        <div className="input-group">
-                            <Search className="icon" />
-                            <input
-                                type="text"
-                                placeholder="Search by Locality or Site Name"
-                                value={searchTerm}
-                                onChange={(e) => setSearchTerm(e.target.value)}
-                            />
-                        </div>
-                        <button type="submit" className="search-btn">Search</button>
-                    </form>
 
-                    <div className="hero-metrics animate-fade-in" style={{ animationDelay: '0.3s' }}>
-                        <div className="metric">
-                            <CheckCircle className="metric-icon" size={20} />
-                            <span><strong>{totalSites}+</strong> Premium Sites</span>
-                        </div>
-                        <div className="metric">
-                            <Globe className="metric-icon" size={20} />
-                            <span><strong>{allCities.length}+</strong> Cities Covered</span>
-                        </div>
-                        <div className="metric">
-                            <TrendingUp className="metric-icon" size={20} />
-                            <span><strong>5M+</strong> Daily Impressions</span>
+                        <div className="hero-metrics animate-in" style={{ animationDelay: '0.3s' }}>
+                            <div className="metric">
+                                <CheckCircle size={18} aria-hidden="true" />
+                                <span><strong>{totalSites}+</strong> Premium Sites</span>
+                            </div>
+                            <div className="metric">
+                                <Globe size={18} aria-hidden="true" />
+                                <span><strong>{allCities.length}+</strong> Cities</span>
+                            </div>
+                            <div className="metric">
+                                <TrendingUp size={18} aria-hidden="true" />
+                                <span><strong>5M+</strong> Impressions</span>
+                            </div>
                         </div>
                     </div>
+                </section>
 
-                    <div className="hero-ctas animate-fade-in" style={{ animationDelay: '0.4s' }}>
-                        <button className="primary-cta" onClick={() => handleCitySelect(allCities[0])}>Browse Hoardings</button>
-                        <button className="secondary-cta">Request Media Plan</button>
+                <section className="featured-section container section-padding">
+                    <div className="featured-header animate-in">
+                        <h2>Prime Advertising Regions</h2>
+                        <button
+                            className="gold-link"
+                            onClick={() => navigate('/all')}
+                            aria-label="Browse all hoarding inventory"
+                        >
+                            Browse all sites
+                        </button>
                     </div>
-                </div>
-            </section>
-
-            <section className="cities-grid container section-padding">
-                <div className="section-header">
-                    <h2>Featured Cities</h2>
-                    <p>Explore premium sites in major business & traffic hubs</p>
-                </div>
-                <div className="city-cards">
-                    {allCities.map(city => (
-                        <div key={city} className="city-card" onClick={() => handleCitySelect(city)}>
-                            <div className="city-image-container">
+                    <div className="city-cards">
+                        {allCities.map(city => (
+                            <article
+                                key={city}
+                                className="city-card animate-in"
+                                onClick={() => handleCitySelect(city)}
+                                role="button"
+                                tabIndex="0"
+                                aria-label={`View hoardings in ${city}`}
+                                onKeyPress={(e) => e.key === 'Enter' && handleCitySelect(city)}
+                            >
                                 <CityImage city={city} />
-                                <div className="city-overlay"></div>
-                            </div>
-                            <div className="city-info">
-                                <h3 style={{ textTransform: 'capitalize' }}>{city}</h3>
-                                <p>{hoardings.filter(h => h.City?.trim().toLowerCase() === city.toLowerCase() && h.STATUS !== 'Disabled').length} Active Sites</p>
-                                <ArrowRight className="arrow" />
-                            </div>
-                        </div>
-                    ))}
-                </div>
-            </section>
+                                <div className="city-overlay">
+                                    <h3 style={{ textTransform: 'capitalize' }}>{city}</h3>
+                                    <p>{hoardings.filter(h => h.City?.trim().toLowerCase() === city.toLowerCase() && h.STATUS !== 'Disabled').length} Sites available</p>
+                                </div>
+                            </article>
+                        ))}
+                    </div>
+                </section>
+            </main>
         </div>
     );
 };
@@ -125,40 +147,46 @@ const Home = ({ hoardings }) => {
 
 // 🌟 Smart Image Selection for Cities
 const getCityImage = (city) => {
-    // 1. Specific Premium Images for known cities (STRICTLY UNIQUE)
     const cityImages = {
-        'delhi': 'https://images.unsplash.com/photo-1587474260584-1f35a7a8b577?auto=format&fit=crop&q=80&w=600',
-        'mumbai': 'https://images.unsplash.com/photo-1566552881560-0be862a7c445?auto=format&fit=crop&q=80&w=600',
-        'bangalore': 'https://images.unsplash.com/photo-1596176530529-78163a4f7af2?auto=format&fit=crop&q=80&w=600',
-        'noida': 'https://images.unsplash.com/photo-1628155930542-3c7a64e2c833?auto=format&fit=crop&q=80&w=600',
-        'gurgaon': 'https://images.unsplash.com/photo-1625244724123-1ee707a27567?auto=format&fit=crop&q=80&w=600',
-        'meerut': 'https://images.unsplash.com/photo-1626027357322-836e2f69e63e?auto=format&fit=crop&q=80&w=600',
-        'ghaziabad': 'https://images.unsplash.com/photo-1588665715875-10111100e008?auto=format&fit=crop&q=80&w=600',
-        'lucknow': 'https://images.unsplash.com/photo-1592247656333-6a388f8d9518?auto=format&fit=crop&q=80&w=600',
-        'kanpur': 'https://images.unsplash.com/photo-1502602898657-3e91760cbb34?auto=format&fit=crop&q=80&w=600',
-        'varanasi': 'https://images.unsplash.com/photo-1561361513-2d000a50f0dc?auto=format&fit=crop&q=80&w=600',
-        'agra': 'https://images.unsplash.com/photo-1548013146-243292419f85?auto=format&fit=crop&q=80&w=600',
-        'jaipur': 'https://images.unsplash.com/photo-1477587458883-47145ed94245?auto=format&fit=crop&q=80&w=600',
-        'pune': 'https://images.unsplash.com/photo-1565506737357-af89222625ad?auto=format&fit=crop&q=80&w=600',
-        'hyderabad': 'https://images.unsplash.com/photo-1572445271230-a78b5944a659?auto=format&fit=crop&q=80&w=600',
-        'chennai': 'https://images.unsplash.com/photo-1516012023023-df772ec0b6f9?auto=format&fit=crop&q=80&w=600',
-        'kolkata': 'https://images.unsplash.com/photo-1558431382-27e39cb14bc8?auto=format&fit=crop&q=80&w=600',
-        'indore': 'https://images.unsplash.com/photo-1595658658481-d53d3f999875?auto=format&fit=crop&q=80&w=600',
-        'ahmedabad': 'https://images.unsplash.com/photo-1603261236594-18280bc71c5d?auto=format&fit=crop&q=80&w=600',
-        'bhopal': 'https://images.unsplash.com/photo-1636184562419-74e792ac1936?auto=format&fit=crop&q=80&w=600',
-        'chandigarh': 'https://images.unsplash.com/photo-1596423376649-ade95be3620f?auto=format&fit=crop&q=80&w=600',
-        'patna': 'https://images.unsplash.com/photo-1627845348850-25916568c005?auto=format&fit=crop&q=80&w=600',
-        'ludhiana': 'https://images.unsplash.com/photo-1591115765373-520b7a427be4?auto=format&fit=crop&q=80&w=600',
-        'amritsar': 'https://images.unsplash.com/photo-1514222134-b57cbb8bc073?auto=format&fit=crop&q=80&w=600',
+        'delhi': 'https://images.unsplash.com/photo-1587474260584-1f35a7a8b577?auto=format&fit=crop&q=80&w=800', // India Gate
+        'mumbai': 'https://images.unsplash.com/photo-1529253355930-ddbe423a2ac7?auto=format&fit=crop&q=80&w=800', // Gateway of India
+        'bangalore': 'https://images.unsplash.com/photo-1596176530529-78163a4f7af2?auto=format&fit=crop&q=80&w=800', // Vidhana Soudha
+        'noida': 'https://images.unsplash.com/photo-1595111000632-4d2bc33dc9e5?auto=format&fit=crop&q=80&w=800', // Modern Skyline
+        'gurgaon': 'https://images.unsplash.com/photo-1625244724123-1ee707a27567?auto=format&fit=crop&q=80&w=800', // Cyber Hub
+        'meerut': 'https://images.unsplash.com/photo-1650352523276-88069502b66d?auto=format&fit=crop&q=80&w=800', // Clock Tower
+        'ghaziabad': 'https://images.unsplash.com/photo-1588665715875-10111100e008?auto=format&fit=crop&q=80&w=800', // Hindon
+        'lucknow': 'https://images.unsplash.com/photo-1592247656333-6a388f8d9518?auto=format&fit=crop&q=80&w=800', // Imambara
+        'kanpur': 'https://images.unsplash.com/photo-1593453833075-802cffa25492?auto=format&fit=crop&q=80&w=800', // JK Temple
+        'varanasi': 'https://images.unsplash.com/photo-1561361513-2d000a50f0dc?auto=format&fit=crop&q=80&w=800', // Ganga Ghat
+        'agra': 'https://images.unsplash.com/photo-1564507592333-c60657eea023?auto=format&fit=crop&q=80&w=800', // Taj Mahal
+        'jaipur': 'https://images.unsplash.com/photo-1548013146-72479768bbaa?auto=format&fit=crop&q=80&w=800', // Hawa Mahal
+        'pune': 'https://images.unsplash.com/photo-1565506737357-af89222625ad?auto=format&fit=crop&q=80&w=800', // Shaniwar Wada
+        'hyderabad': 'https://images.unsplash.com/photo-1572445271230-a78b5944a659?auto=format&fit=crop&q=80&w=800', // Charminar
+        'chennai': 'https://images.unsplash.com/photo-1582510003544-2d09566f03a3?auto=format&fit=crop&q=80&w=800', // Marina Beach
+        'kolkata': 'https://images.unsplash.com/photo-1558431382-27e39cb14bc8?auto=format&fit=crop&q=80&w=800', // Howrah Bridge
+        'indore': 'https://images.unsplash.com/photo-1595658658481-d53d3f999875?auto=format&fit=crop&q=80&w=800', // Rajwada
+        'ahmedabad': 'https://images.unsplash.com/photo-1603261236594-18280bc71c5d?auto=format&fit=crop&q=80&w=800', // Sabarmati
+        'bhopal': 'https://images.unsplash.com/photo-1636184562419-74e792ac1936?auto=format&fit=crop&q=80&w=800', // Upper Lake
+        'chandigarh': 'https://images.unsplash.com/photo-1596423376649-ade95be3620f?auto=format&fit=crop&q=80&w=800', // Open Hand
+        'patna': 'https://images.unsplash.com/photo-1627845348850-25916568c005?auto=format&fit=crop&q=80&w=800', // Golghar
+        'ludhiana': 'https://images.unsplash.com/photo-1591115765373-520b7a427be4?auto=format&fit=crop&q=80&w=800', // Gurudwara
+        'amritsar': 'https://images.unsplash.com/photo-1514222134-b57cbb8bc073?auto=format&fit=crop&q=80&w=800', // Golden Temple
+        'surat': 'https://images.unsplash.com/photo-1592658932799-408930e19d8e?auto=format&fit=crop&q=80&w=800',
+        'kochi': 'https://images.unsplash.com/photo-1589182373726-e4f658ab50f0?auto=format&fit=crop&q=80&w=800',
+        'goa': 'https://images.unsplash.com/photo-1512343879784-a960bf40e7f2?auto=format&fit=crop&q=80&w=800',
     };
 
-
-    // 2. Fallback: Premium "Generic" City Images
     const premiumFallbacks = [
-        'https://images.unsplash.com/photo-1477959858617-67f85cf4f1df?auto=format&fit=crop&q=80&w=600',
-        'https://images.unsplash.com/photo-1444723121867-2680d6380c1d?auto=format&fit=crop&q=80&w=600',
-        'https://images.unsplash.com/photo-1486334803289-1623f249dd1e?auto=format&fit=crop&q=80&w=600',
-        'https://images.unsplash.com/photo-1506526657667-dadafc60e3c0?auto=format&fit=crop&q=80&w=600',
+        'https://images.unsplash.com/photo-1477959858617-67f85cf4f1df?auto=format&fit=crop&q=80&w=800',
+        'https://images.unsplash.com/photo-1444723121867-2680d6380c1d?auto=format&fit=crop&q=80&w=800',
+        'https://images.unsplash.com/photo-1486334803289-1623f249dd1e?auto=format&fit=crop&q=80&w=800',
+        'https://images.unsplash.com/photo-1506526657667-dadafc60e3c0?auto=format&fit=crop&q=80&w=800',
+        'https://images.unsplash.com/photo-1449824913935-59a10b8d2000?auto=format&fit=crop&q=80&w=800',
+        'https://images.unsplash.com/photo-1464938050520-ef2270bb8ce8?auto=format&fit=crop&q=80&w=800',
+        'https://images.unsplash.com/photo-1477346611705-65d1883cee1e?auto=format&fit=crop&q=80&w=800',
+        'https://images.unsplash.com/photo-1493238792000-8113da705763?auto=format&fit=crop&q=80&w=800',
+        'https://images.unsplash.com/photo-1502602898657-3e91760cbb34?auto=format&fit=crop&q=80&w=800',
+        'https://images.unsplash.com/photo-1519010470956-6d877008eea4?auto=format&fit=crop&q=80&w=800',
     ];
 
     const normalizedCity = String(city || '').toLowerCase().trim();
@@ -182,6 +210,5 @@ const CityImage = ({ city }) => {
         />
     );
 };
-
 
 export default Home;

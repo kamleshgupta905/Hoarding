@@ -35,12 +35,19 @@ const CityList = ({ hoardings }) => {
     const [priceRange, setPriceRange] = useState('All');
     const [sortBy, setSortBy] = useState('price-low');
 
+    const isAllCities = cityName?.toLowerCase() === 'all';
+
     const cityHoardings = useMemo(() => {
+        if (isAllCities) {
+            return hoardings.filter(h => h.Status !== 'Disabled');
+        }
         return hoardings.filter(h =>
-            h.City.toLowerCase() === cityName.toLowerCase() &&
+            h.City?.toLowerCase() === cityName?.toLowerCase() &&
             h.Status !== 'Disabled'
         );
-    }, [hoardings, cityName]);
+    }, [hoardings, cityName, isAllCities]);
+
+    const displayCityName = isAllCities ? 'All Active Sites' : cityName;
 
     const localities = ['All', ...new Set(cityHoardings.map(h => h.Locality))];
     const sizes = ['All', ...new Set(cityHoardings.map(h => h["Size (Large/Medium/Small)"]))];
@@ -60,8 +67,8 @@ const CityList = ({ hoardings }) => {
             else if (priceRange === '50k+') matchPrice = hPrice > 50000;
 
             const matchSearch = searchQuery === '' ||
-                h.Locality.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                h["Locality Site Location"].toLowerCase().includes(searchQuery.toLowerCase());
+                h.Locality?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                h["Locality Site Location"]?.toLowerCase().includes(searchQuery.toLowerCase());
 
             return matchLocality && matchSize && matchDigital && matchMedia && matchPrice && matchSearch;
         });
@@ -72,7 +79,7 @@ const CityList = ({ hoardings }) => {
             filtered.sort((a, b) => Number(b["Avg Monthly Cost (INR)"]) - Number(a["Avg Monthly Cost (INR)"]));
         } else if (sortBy === 'size') {
             const sizeOrder = { 'Large': 3, 'Medium': 2, 'Small': 1 };
-            filtered.sort((a, b) => sizeOrder[b["Size (Large/Medium/Small)"]] - sizeOrder[a["Size (Large/Medium/Small)"]]);
+            filtered.sort((a, b) => sizeOrder[(b["Size (Large/Medium/Small)"] || 'Small')] - sizeOrder[(a["Size (Large/Medium/Small)"] || 'Small')]);
         }
 
         return filtered;
@@ -80,19 +87,24 @@ const CityList = ({ hoardings }) => {
 
     const mapCenter = cityHoardings.length > 0
         ? [Number(cityHoardings[0].Latitude), Number(cityHoardings[0].Longitude)]
-        : [28.9845, 77.7060];
+        : [28.6139, 77.2090]; // Delhi as default for 'all'
 
     return (
         <div className="city-list-page container">
             <Helmet>
-                <title>Premium Hoardings in {cityName} | AdHoardings</title>
-                <meta name="description" content={`Discover ${filteredHoardings.length} premium outdoor hoarding sites in ${cityName}. View rates, sizes, and maps.`} />
+                <title>{isAllCities ? 'All India Premium Billboards' : `Hoardings in ${cityName} | Premium Billboard Ads`}</title>
+                <meta name="description" content={`Exclusive outdoor advertising opportunities in ${isAllCities ? 'India' : cityName}. Browse ${filteredHoardings.length} verified hoarding sites, check rates and view map locations.`} />
+                <meta name="keywords" content={`hoardings ${cityName}, billboards ${cityName}, outdoor media ${cityName}, advertising sites ${cityName}`} />
             </Helmet>
 
-            <header className="list-header">
-                <div className="title-area">
-                    <h1>Hoardings in <span>{cityName}</span></h1>
-                    <p>{filteredHoardings.length} premium sites found</p>
+            <header className="list-header" role="banner">
+                <div className="title-area animate-in">
+                    {isAllCities ? (
+                        <h1>Modern <span>Outdoor Assets</span></h1>
+                    ) : (
+                        <h1>Hoardings in <span>{cityName}</span></h1>
+                    )}
+                    <p>Discovering {filteredHoardings.length} premium billboard locations</p>
                 </div>
 
                 <div className="header-actions">
