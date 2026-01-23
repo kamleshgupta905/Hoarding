@@ -6,7 +6,7 @@ import {
     TrendingUp, MapPin, CheckCircle, Smartphone,
     Bell, HelpCircle, Plus, Filter, Download,
     MessageSquare, Mail, User, Calendar, CheckSquare,
-    MoreVertical, ExternalLink, ShieldCheck
+    MoreVertical, ExternalLink, ShieldCheck, Menu, X
 } from 'lucide-react';
 import './AdminDashboard.css';
 
@@ -16,6 +16,7 @@ const AdminDashboard = ({ hoardings, setHoardings }) => {
     const [searchTerm, setSearchTerm] = useState('');
     const [isLoading, setIsLoading] = useState(false);
     const [scriptUrl] = useState('https://script.google.com/macros/s/AKfycbwybjqC2R207kcF7eTWrVnlJ5IK9UV5uyqOGj548NPr7jdvxKzXdpH9tjNppFtivLKviQ/exec');
+    const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
     // Protect Route
     useEffect(() => {
@@ -76,13 +77,27 @@ const AdminDashboard = ({ hoardings, setHoardings }) => {
         <div className="admin-dashboard">
             {isLoading && (
                 <div className="loading-overlay">
-                    <div className="spinner"></div>
-                    <p>Syncing Data Pipeline...</p>
+                    <div className="loading-card">
+                        <div className="spinner"></div>
+                        <div className="loading-text">
+                            <h3>Syncing Data Pipeline</h3>
+                            <p>Uploading and processing your file...</p>
+                        </div>
+                        <div className="loading-progress">
+                            <div className="loading-progress-bar"></div>
+                        </div>
+                    </div>
                 </div>
             )}
 
+
+            {/* Mobile Menu Toggle */}
+            <button className="mobile-admin-toggle" onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}>
+                {isMobileMenuOpen ? <X size={24} /> : <Menu size={24} />}
+            </button>
+
             {/* Side Navigation */}
-            <aside className="admin-sidebar">
+            <aside className={`admin-sidebar ${isMobileMenuOpen ? 'mobile-open' : ''}`}>
                 <div className="sidebar-logo">
                     <div className="logo-icon"><ShieldCheck size={20} color="white" /></div>
                     Admin Panel
@@ -158,7 +173,9 @@ const AdminDashboard = ({ hoardings, setHoardings }) => {
                                         <span className="trend up">↑ 4.2%</span>
                                     </div>
                                     <div className="value">{hoardings.length}</div>
-                                    <div className="mock-sparkline"></div>
+                                    <div className="progress-bar">
+                                        <div className="progress-fill" style={{ width: '100%', background: 'linear-gradient(90deg, #6c5dd3, #a855f7)' }}></div>
+                                    </div>
                                 </div>
                                 <div className="stat-card">
                                     <div className="stat-header">
@@ -166,17 +183,22 @@ const AdminDashboard = ({ hoardings, setHoardings }) => {
                                         <span className="trend up">↑ {new Set(hoardings.map(h => h.City)).size} Cities</span>
                                     </div>
                                     <div className="value">{new Set(hoardings.map(h => h.City)).size}</div>
-                                    <div className="mock-sparkline" style={{ background: 'linear-gradient(90deg, #e0e7ff 0%, #c7d2fe 50%, #e0e7ff 100%)' }}></div>
+                                    <div className="progress-bar">
+                                        <div className="progress-fill" style={{ width: '60%', background: 'linear-gradient(90deg, #4ade80, #22c55e)' }}></div>
+                                    </div>
                                 </div>
                                 <div className="stat-card">
                                     <div className="stat-header">
                                         <span className="title">Online Availability</span>
-                                        <span className="trend down">82%</span>
+                                        <span className="trend down">{Math.round((hoardings.filter(h => h.STATUS !== 'Disabled').length / hoardings.length) * 100) || 0}%</span>
                                     </div>
                                     <div className="value">{hoardings.filter(h => h.STATUS !== 'Disabled').length}</div>
-                                    <div className="mock-sparkline" style={{ background: 'linear-gradient(90deg, #fef2f2 0%, #fee2e2 50%, #fef2f2 100%)' }}></div>
+                                    <div className="progress-bar">
+                                        <div className="progress-fill" style={{ width: `${(hoardings.filter(h => h.STATUS !== 'Disabled').length / hoardings.length) * 100 || 0}%`, background: 'linear-gradient(90deg, #f97316, #ea580c)' }}></div>
+                                    </div>
                                 </div>
                             </div>
+
 
                             <div className="chart-card">
                                 <div className="chart-header">
@@ -187,7 +209,7 @@ const AdminDashboard = ({ hoardings, setHoardings }) => {
                                     </div>
                                 </div>
                                 <div className="main-chart-area">
-                                    {[70, 50, 90, 60, 100, 80, 110, 95, 105].map((h, i) => (
+                                    {[70, 50, 90, 60, 100, 80, 110].map((h, i) => (
                                         <div key={i} style={{ flex: 1, position: 'relative', height: '100%' }}>
                                             <div style={{ position: 'absolute', bottom: 0, left: '25%', right: '25%', height: `${h}%`, background: '#6c5dd3', borderRadius: '4px', opacity: 0.15 }}></div>
                                             <div style={{ position: 'absolute', bottom: 0, left: '35%', right: '35%', height: `${h * 0.75}%`, background: '#6c5dd3', borderRadius: '4px' }}></div>
@@ -196,10 +218,10 @@ const AdminDashboard = ({ hoardings, setHoardings }) => {
                                 </div>
                             </div>
 
-                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '32px' }}>
-                                <div className="chart-card">
+                            <div className="charts-flex-container">
+                                <div className="chart-card flex-grow">
                                     <div className="chart-header"><h3>Site Allocation</h3></div>
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: '48px', justifyContent: 'center', padding: '20px 0' }}>
+                                    <div className="donut-flex-wrap">
                                         <div className="donut-area">
                                             <div className="donut-center">
                                                 <span className="pct">74%</span>
@@ -213,7 +235,7 @@ const AdminDashboard = ({ hoardings, setHoardings }) => {
                                         </div>
                                     </div>
                                 </div>
-                                <div className="chart-card">
+                                <div className="chart-card flex-grow">
                                     <div className="chart-header"><h3>Network Growth</h3></div>
                                     <div className="bar-chart-area">
                                         {[30, 60, 40, 95, 70, 85, 55].map((h, i) => (
@@ -327,9 +349,10 @@ const AdminDashboard = ({ hoardings, setHoardings }) => {
                             </div>
                         </div>
                     </div>
-                )}
-            </main>
-        </div>
+                )
+                }
+            </main >
+        </div >
     );
 };
 
