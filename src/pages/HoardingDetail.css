@@ -6,8 +6,8 @@
 .detail-nav-header {
     display: flex;
     align-items: center;
-    gap: 24px;
-    margin-bottom: 32px;
+    gap: 16px;
+    margin-bottom: 24px;
 }
 
 .back-btn {
@@ -26,9 +26,10 @@
     flex: 1;
     display: flex;
     align-items: center;
-    gap: 12px;
+    gap: 8px;
     font-size: 0.9rem;
     font-weight: 700;
+    flex-wrap: wrap;
 }
 
 .city-tag {
@@ -63,7 +64,7 @@
 .detail-layout {
     display: grid;
     grid-template-columns: 1fr 400px;
-    gap: 64px;
+    gap: 32px;
 }
 
 .hero-visual-wrapper {
@@ -73,7 +74,7 @@
     overflow: hidden;
     position: relative;
     box-shadow: var(--shadow-lg);
-    margin-bottom: 48px;
+    margin-bottom: 32px;
     background: #f0f0f0;
 }
 
@@ -183,6 +184,7 @@
 .node-val {
     font-size: 1.1rem;
     font-weight: 800;
+    word-break: break-word;
 }
 
 .node-line {
@@ -319,7 +321,7 @@
 
 .location-btn-large {
     width: 100%;
-    padding: 18px;
+    padding: 16px;
     background: var(--text-dark);
     color: white;
     border-radius: var(--radius-md);
@@ -329,6 +331,7 @@
     justify-content: center;
     gap: 12px;
     transition: var(--transition);
+    border: none;
 }
 
 .location-btn-large:hover {
@@ -339,6 +342,7 @@
 @media (max-width: 992px) {
     .detail-layout {
         grid-template-columns: 1fr;
+        gap: 40px;
     }
 
     .detail-sidebar {
@@ -347,14 +351,43 @@
 }
 
 @media (max-width: 768px) {
+    .detail-nav-header {
+        flex-wrap: wrap;
+        gap: 12px;
+    }
+
+    .header-actions {
+        order: -1;
+        width: 100%;
+        justify-content: flex-end;
+    }
+
+    .site-identity {
+        font-size: 0.8rem;
+    }
+
     .content-intro h1 {
-        font-size: 2rem;
+        font-size: 1.8rem;
+    }
+
+    .detailed-desc {
+        font-size: 1rem;
+        margin-bottom: 32px;
+    }
+
+    .spec-grid-premium {
+        gap: 16px;
+    }
+
+    .spec-box {
+        padding: 16px;
     }
 
     .story-container {
         flex-direction: column;
         text-align: center;
         gap: 24px;
+        padding: 24px;
     }
 
     .node-line {
@@ -368,5 +401,39 @@
         top: auto;
         bottom: 0;
         transform: rotate(135deg);
+    }
+}
+
+@media (max-width: 480px) {
+    .detail-page {
+        padding-top: 20px;
+    }
+
+    .content-intro h1 {
+        font-size: 1.5rem;
+    }
+
+    .spec-grid-premium {
+        grid-template-columns: 1fr;
+    }
+
+    .price-val {
+        font-size: 2.2rem;
+    }
+
+    .pricing-card-premium {
+        padding: 20px;
+    }
+
+    .hero-visual-wrapper {
+        aspect-ratio: 4 / 3;
+        margin-bottom: 24px;
+    }
+
+    .visual-badge {
+        bottom: 12px;
+        left: 12px;
+        padding: 4px 10px;
+        font-size: 0.7rem;
     }
 }
