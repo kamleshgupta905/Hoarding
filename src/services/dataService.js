@@ -86,16 +86,18 @@ export const fetchHoardings = async () => {
               "Site Category": row["Site Category"],
               "Avg Monthly Cost (INR)": row["Avg. monthly Cost"] || row["Avg Monthly Cost (INR)"] || 0,
               "STATUS": row["STATUS"] || row["Status"] || 'Available',
-              "ImageURL": getDirectDriveLink(rawImg)
+              "ImageURL": getDirectDriveLink(rawImg),
+              "History": (row["ExecutionHistory"] || row["executionhistory"] || "").split(',').filter(Boolean).map(url => getDirectDriveLink(url))
             };
           });
 
-          // Remove meta-rows and invalid entries
+
+          // 🧹 CLEANUP & VALIDATION
+          // We only remove rows that are completely invalid (no City).
+          // 'Disabled' sites ARE returned so the Admin Panel can see/manage them.
           const filteredRecords = cleanData.filter(item =>
             item.City &&
-            item.City.toLowerCase() !== 'total' &&
-            item.STATUS &&
-            item.STATUS.toLowerCase() !== 'disabled'
+            item.City.toLowerCase() !== 'total'
           );
 
           resolve(filteredRecords);

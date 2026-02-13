@@ -437,3 +437,88 @@
         font-size: 0.7rem;
     }
 }
+/* ?? Premium Audit Cards Styling */
+.history-cards-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 24px;
+}
+
+.audit-card {
+    background: white;
+    border-radius: 16px;
+    overflow: hidden;
+    border: 1px solid #eee;
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
+    transition: all 0.3s ease;
+}
+
+.audit-card:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+}
+
+.audit-card-media {
+    position: relative;
+    width: 100%;
+    aspect-ratio: 4/3;
+    overflow: hidden;
+}
+
+.audit-card-media img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.audit-badge {
+    position: absolute;
+    top: 12px;
+    left: 12px;
+    padding: 6px 12px;
+    border-radius: 6px;
+    font-size: 0.65rem;
+    font-weight: 800;
+    letter-spacing: 0.05em;
+    color: white;
+}
+
+.audit-badge.latest {
+    background: #6c5dd3;
+    box-shadow: 0 4px 10px rgba(108, 93, 211, 0.3);
+}
+
+.audit-badge.past {
+    background: rgba(0, 0, 0, 0.6);
+}
+
+.audit-card-body {
+    padding: 16px;
+}
+
+.audit-meta {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 12px;
+    color: var(--text-dark);
+    font-weight: 700;
+    font-size: 0.85rem;
+}
+
+.audit-date {
+    font-size: 0.8rem;
+}
+
+.audit-status-strip {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    background: #ecfdf5;
+    color: #059669;
+    border-radius: 8px;
+    font-size: 0.75rem;
+    font-weight: 600;
+}
+

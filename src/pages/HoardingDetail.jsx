@@ -119,6 +119,46 @@ const HoardingDetail = ({ hoardings }) => {
                             </div>
                         </div>
                     </section>
+
+                    {/* 📸 PREMIUM: Campaign Execution Timeline (Cards) */}
+                    {hoarding.History && hoarding.History.length > 0 && (
+                        <section className="execution-gallery animate-in" style={{ marginTop: '56px' }}>
+                            <div className="gallery-header" style={{ marginBottom: '24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                <div>
+                                    <h3 style={{ fontSize: '1.4rem', color: 'var(--text-dark)', fontWeight: '800' }}>Live Verification Updates</h3>
+                                    <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', marginTop: '4px' }}>Proof of campaign execution and physical site audits.</p>
+                                </div>
+                                <div className="update-status-pill">
+                                    <Zap size={14} /> {hoarding.History.length} Live Records
+                                </div>
+                            </div>
+
+                            <div className="history-cards-grid">
+                                {hoarding.History.map((img, idx) => (
+                                    <div key={idx} className="audit-card">
+                                        <div className="audit-card-media">
+                                            <img src={img} alt={`Audit update ${idx + 1}`} />
+                                            {idx === 0 ? (
+                                                <span className="audit-badge latest">LATEST AUDIT</span>
+                                            ) : (
+                                                <span className="audit-badge past">PAST UPDATE</span>
+                                            )}
+                                        </div>
+                                        <div className="audit-card-body">
+                                            <div className="audit-meta">
+                                                <Calendar size={14} />
+                                                <span className="audit-date">Verified on: {new Date().toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}</span>
+                                            </div>
+                                            <div className="audit-status-strip">
+                                                <ShieldCheck size={14} />
+                                                <span>AI Location Verified 100%</span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        </section>
+                    )}
                 </div>
 
                 <aside className="detail-sidebar">

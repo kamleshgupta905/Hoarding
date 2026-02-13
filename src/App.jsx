@@ -14,16 +14,24 @@ function AppContent({ hoardings, setHoardings }) {
   const location = useLocation();
   const isAdminPath = location.pathname.startsWith('/admin');
 
+  // Filter out disabled/offline hoardings for public pages (only active ones visible)
+  const publicHoardings = hoardings.filter(h =>
+    h.STATUS && h.STATUS.toLowerCase() !== 'disabled'
+  );
+
   return (
     <div className="app-container">
       {!isAdminPath && <Navbar />}
       <main>
         <Routes>
-          <Route path="/" element={<Home hoardings={hoardings} />} />
+          {/* Admin Routes - Use Full List (including Disabled) */}
           <Route path="/admin/login" element={<AdminLogin />} />
           <Route path="/admin/dashboard" element={<AdminDashboard hoardings={hoardings} setHoardings={setHoardings} />} />
-          <Route path="/:cityName" element={<CityList hoardings={hoardings} />} />
-          <Route path="/:city/:siteName" element={<HoardingDetail hoardings={hoardings} />} />
+
+          {/* Public Routes - Use Filtered List */}
+          <Route path="/" element={<Home hoardings={publicHoardings} />} />
+          <Route path="/:cityName" element={<CityList hoardings={publicHoardings} />} />
+          <Route path="/:city/:siteName" element={<HoardingDetail hoardings={publicHoardings} />} />
         </Routes>
       </main>
       {!isAdminPath && <Footer />}
