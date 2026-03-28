@@ -28,10 +28,10 @@ function AppContent({ hoardings, setHoardings }) {
           <Route path="/admin/login" element={<AdminLogin />} />
           <Route path="/admin/dashboard" element={<AdminDashboard hoardings={hoardings} setHoardings={setHoardings} />} />
 
-          {/* Public Routes - Use Filtered List */}
+          {/* Public Routes - Use Filtered List for lists, but Original for detail to allow admin actions */}
           <Route path="/" element={<Home hoardings={publicHoardings} />} />
           <Route path="/:cityName" element={<CityList hoardings={publicHoardings} />} />
-          <Route path="/:city/:siteName" element={<HoardingDetail hoardings={publicHoardings} />} />
+          <Route path="/:city/:siteName" element={<HoardingDetail hoardings={hoardings} setHoardings={setHoardings} />} />
         </Routes>
       </main>
       {!isAdminPath && <Footer />}

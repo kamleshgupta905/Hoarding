@@ -15,16 +15,25 @@ const AdminDashboard = ({ hoardings, setHoardings }) => {
     const navigate = useNavigate();
     const [activeTab, setActiveTab] = useState('dashboard');
     const [searchTerm, setSearchTerm] = useState('');
+    const [inventoryCityFilter, setInventoryCityFilter] = useState('All');
+    const [inventoryStatusFilter, setInventoryStatusFilter] = useState('All');
+    const [isInventoryFilterOpen, setIsInventoryFilterOpen] = useState(false);
     const [isLoading, setIsLoading] = useState(false);
 
     // Script URL & API Configuration
     const [scriptUrl] = useState('https://script.google.com/macros/s/AKfycbwBpAJ0e7kYoDusrtkvaSj0A2PErD4vcMsNzL60EkzMELGTj6dpT16BaM9htFyDVI9a-Q/exec');
     // const API_KEY = '...'; // Removed hardcoded key in favor of VITE_OPENAI_API_KEY in .env
     const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+    const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+    const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+    const [selectedHoarding, setSelectedHoarding] = useState(null);
+    const [formData, setFormData] = useState({});
 
     const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
     const [dailyImages, setDailyImages] = useState([]); // [{file, preview, status, location, aiLoading}]
+    const [selectedAssetFile, setSelectedAssetFile] = useState(null);
     const [isDragging, setIsDragging] = useState(false);
+    const [deleteTarget, setDeleteTarget] = useState(null);
 
     // Protect Route
     useEffect(() => {
@@ -444,10 +453,135 @@ const AdminDashboard = ({ hoardings, setHoardings }) => {
         setHoardings(updated);
     };
 
-    const filteredInventory = hoardings.filter(h =>
-        String(h["Locality Site Location"]).toLowerCase().includes(searchTerm.toLowerCase()) ||
-        String(h.City).toLowerCase().includes(searchTerm.toLowerCase())
-    );
+    const handleAddAsset = async (e) => {
+        e.preventDefault();
+        setIsLoading(true);
+        try {
+            let fileData = null;
+            let mimeType = null;
+            let previewUrl = "https://images.unsplash.com/photo-1626785774573-4b799315345d?w=800";
+
+            if (selectedAssetFile) {
+                fileData = await new Promise((resolve) => {
+                    const reader = new FileReader();
+                    reader.onload = () => resolve(reader.result);
+                    reader.readAsDataURL(selectedAssetFile);
+                });
+                mimeType = selectedAssetFile.type;
+                previewUrl = URL.createObjectURL(selectedAssetFile);
+            }
+
+            await fetch(scriptUrl, {
+                method: 'POST',
+                mode: 'no-cors',
+                headers: { 'Content-Type': 'text/plain' },
+                body: JSON.stringify({
+                    action: 'addHoarding',
+                    fields: formData,
+                    siteName: formData["Locality Site Location"],
+                    fileData: fileData,
+                    mimeType: mimeType
+                })
+            });
+            alert("✅ Asset Added! Please refresh to see changes.");
+            setHoardings(prev => [...prev, { ...formData, ImageURL: previewUrl }]);
+            setIsAddModalOpen(false);
+            setFormData({});
+            setSelectedAssetFile(null);
+        } catch (err) {
+            alert("Error adding asset: " + err.message);
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
+    const handleEditAsset = async (e) => {
+        e.preventDefault();
+        setIsLoading(true);
+        try {
+            let fileData = null;
+            let mimeType = null;
+            let updatedImageURL = formData.ImageURL;
+
+            if (selectedAssetFile) {
+                fileData = await new Promise((resolve) => {
+                    const reader = new FileReader();
+                    reader.onload = () => resolve(reader.result);
+                    reader.readAsDataURL(selectedAssetFile);
+                });
+                mimeType = selectedAssetFile.type;
+                updatedImageURL = URL.createObjectURL(selectedAssetFile);
+            }
+
+            await fetch(scriptUrl, {
+                method: 'POST',
+                mode: 'no-cors',
+                headers: { 'Content-Type': 'text/plain' },
+                body: JSON.stringify({
+                    action: 'updateHoarding',
+                    siteName: selectedHoarding["Locality Site Location"],
+                    fields: formData,
+                    fileData: fileData,
+                    mimeType: mimeType
+                })
+            });
+            alert("✅ Asset Updated!");
+            setHoardings(prev => prev.map(h => 
+                h["Locality Site Location"] === selectedHoarding["Locality Site Location"] 
+                ? { ...h, ...formData, ImageURL: updatedImageURL } 
+                : h
+            ));
+            setIsEditModalOpen(false);
+            setSelectedHoarding(null);
+            setFormData({});
+            setSelectedAssetFile(null);
+        } catch (err) {
+            alert("Error updating asset: " + err.message);
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
+    const handleDeleteAsset = async (siteName) => {
+        setIsLoading(true);
+        try {
+            await fetch(scriptUrl, {
+                method: 'POST',
+                mode: 'no-cors',
+                headers: { 'Content-Type': 'text/plain' },
+                body: JSON.stringify({
+                    action: 'deleteHoarding',
+                    siteName: siteName
+                })
+            });
+            alert("✅ Asset Deleted!");
+            setHoardings(prev => prev.filter(h => h["Locality Site Location"] !== siteName));
+        } catch (err) {
+            alert("Error deleting asset: " + err.message);
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
+    const openEditModal = (h) => {
+        setSelectedHoarding(h);
+        setFormData({ ...h });
+        setSelectedAssetFile(null);
+        setIsEditModalOpen(true);
+    };
+
+    const filteredInventory = hoardings.filter(h => {
+        const matchSearch = String(h["Locality Site Location"]).toLowerCase().includes(searchTerm.toLowerCase()) ||
+            String(h.City).toLowerCase().includes(searchTerm.toLowerCase());
+        const matchCity = inventoryCityFilter === 'All' || h.City === inventoryCityFilter;
+        const matchStatus = inventoryStatusFilter === 'All' ||
+            (inventoryStatusFilter === 'Offline' ? h.STATUS === 'Disabled' : h.STATUS === inventoryStatusFilter);
+
+        return matchSearch && matchCity && matchStatus;
+    });
+
+    const inventoryCities = ['All', ...new Set(hoardings.map(h => h.City).filter(Boolean))];
+    const inventoryStatuses = ['All', 'Available', 'Occupied', 'Offline'];
 
     return (
         <div className="admin-dashboard">
@@ -476,6 +610,214 @@ const AdminDashboard = ({ hoardings, setHoardings }) => {
                         </div>
                         <div className="modal-footer">
                             <button className="btn-primary-admin" onClick={() => setIsSettingsOpen(false)}>Close</button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Add/Edit Asset Modal */}
+            {(isAddModalOpen || isEditModalOpen) && (
+                <div className="modal-overlay">
+                    <div className="modal-card crud-modal">
+                        <div className="modal-header">
+                            <h3>{isAddModalOpen ? '➕ Add New Media Asset' : '✏️ Edit Asset Details'}</h3>
+                            <button onClick={() => { setIsAddModalOpen(false); setIsEditModalOpen(false); setSelectedAssetFile(null); }}><X size={20} /></button>
+                        </div>
+                        <form onSubmit={isAddModalOpen ? handleAddAsset : handleEditAsset}>
+                            <div className="modal-body crud-form">
+                                <div className="form-row three-cols">
+                                    <div className="form-group span-two">
+                                        <label>Locality Site Location (Unique ID)*</label>
+                                        <input 
+                                            required 
+                                            value={formData["Locality Site Location"] || ''} 
+                                            onChange={e => setFormData({...formData, "Locality Site Location": e.target.value})}
+                                            disabled={isEditModalOpen}
+                                            placeholder="e.g. Maruti True Value Meerut"
+                                        />
+                                    </div>
+                                    <div className="form-group">
+                                        <label>City*</label>
+                                        <input 
+                                            required 
+                                            value={formData.City || ''} 
+                                            onChange={e => setFormData({...formData, City: e.target.value})}
+                                            placeholder="e.g. Meerut"
+                                        />
+                                    </div>
+                                </div>
+                                <div className="form-row three-cols">
+                                    <div className="form-group">
+                                        <label>Locality</label>
+                                        <input 
+                                            value={formData.Locality || ''} 
+                                            onChange={e => setFormData({...formData, Locality: e.target.value})}
+                                            placeholder="e.g. Partapur"
+                                        />
+                                    </div>
+                                    <div className="form-group">
+                                        <label>Media Format</label>
+                                        <select 
+                                            value={formData["Media Format (Front Lit / Back Lit / Non Lit)"] || ''} 
+                                            onChange={e => setFormData({...formData, "Media Format (Front Lit / Back Lit / Non Lit)": e.target.value})}
+                                        >
+                                            <option value="">Select Format</option>
+                                            <option value="Front Lit">Front Lit</option>
+                                            <option value="Back Lit">Back Lit</option>
+                                            <option value="Non Lit">Non Lit</option>
+                                        </select>
+                                    </div>
+                                    <div className="form-group">
+                                        <label>Size</label>
+                                        <input 
+                                            value={formData["Size (Large/Medium/Small)"] || ''} 
+                                            onChange={e => setFormData({...formData, "Size (Large/Medium/Small)": e.target.value})}
+                                            placeholder="e.g. 20x10"
+                                        />
+                                    </div>
+                                </div>
+                                <div className="form-row three-cols">
+                                    <div className="form-group">
+                                        <label>Monthly Cost (INR)</label>
+                                        <input 
+                                            type="number"
+                                            value={formData["Avg Monthly Cost (INR)"] || ''} 
+                                            onChange={e => setFormData({...formData, "Avg Monthly Cost (INR)": e.target.value})}
+                                            placeholder="e.g. 50000"
+                                        />
+                                    </div>
+                                    <div className="form-group">
+                                        <label>Latitude (Optional)</label>
+                                        <input 
+                                            value={formData.Latitude || ''} 
+                                            onChange={e => setFormData({...formData, Latitude: e.target.value})}
+                                            placeholder="e.g. 28.9845"
+                                        />
+                                    </div>
+                                    <div className="form-group">
+                                        <label>Longitude (Optional)</label>
+                                        <input 
+                                            value={formData.Longitude || ''} 
+                                            onChange={e => setFormData({...formData, Longitude: e.target.value})}
+                                            placeholder="e.g. 77.7064"
+                                        />
+                                    </div>
+                                </div>
+
+                                <div className="form-row">
+                                    <div className="form-group full-width">
+                                        <label>Site Photo / Image (Optional)</label>
+                                        <div 
+                                            className={`file-drop-zone ${selectedAssetFile ? 'has-file' : ''}`}
+                                            onClick={() => document.getElementById('asset-file-input').click()}
+                                        >
+                                            {selectedAssetFile ? (
+                                                <div className="selected-file-preview animate-in">
+                                                    <div className="preview-image-wrapper">
+                                                        <img src={URL.createObjectURL(selectedAssetFile)} alt="Preview" />
+                                                        <div className="upload-badge"><UploadCloud size={14} /> NEW</div>
+                                                    </div>
+                                                    <div className="file-info">
+                                                        <span className="file-name">{selectedAssetFile.name}</span>
+                                                        <span className="file-status">Selected & Ready to Sync</span>
+                                                    </div>
+                                                    <button 
+                                                        type="button" 
+                                                        className="remove-file-btn"
+                                                        onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            setSelectedAssetFile(null);
+                                                            const input = document.getElementById('asset-file-input');
+                                                            if (input) input.value = '';
+                                                        }}
+                                                    >
+                                                        <X size={14} />
+                                                    </button>
+                                                </div>
+                                            ) : (
+                                                <div className="drop-zone-content">
+                                                    <UploadCloud size={32} color="#6c5dd3" />
+                                                    <p>Click to Upload or Drag Image</p>
+                                                    <span className="helper-text">Select a photo for this media asset</span>
+                                                    <button type="button" className="btn-select-dummy" style={{
+                                                        marginTop: '10px',
+                                                        padding: '8px 16px',
+                                                        background: 'var(--primary-accent)',
+                                                        color: 'white',
+                                                        border: 'none',
+                                                        borderRadius: '8px',
+                                                        fontSize: '12px',
+                                                        fontWeight: '700',
+                                                        cursor: 'pointer'
+                                                    }}>Choose File / Image</button>
+                                                </div>
+                                            )}
+                                            <input 
+                                                id="asset-file-input"
+                                                type="file" 
+                                                accept="image/*"
+                                                onChange={e => setSelectedAssetFile(e.target.files[0])}
+                                                style={{ display: 'none' }}
+                                            />
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div className="modal-footer">
+                                <button type="button" className="btn-secondary" onClick={() => { setIsAddModalOpen(false); setIsEditModalOpen(false); setSelectedAssetFile(null); }}>Cancel</button>
+                                <button type="submit" className="btn-primary-admin">{isAddModalOpen ? 'Create Media Asset' : 'Save Changes'}</button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            )}
+
+            {/* Custom Delete Confirmation Modal */}
+            {deleteTarget && (
+                <div className="modal-overlay">
+                    <div className="modal-card confirmation-modal animate-in" style={{ maxWidth: '450px' }}>
+                        <div className="modal-header">
+                            <h3 style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                                <XCircle size={22} color="#f87171" /> Confirm Delete
+                            </h3>
+                            <button onClick={() => setDeleteTarget(null)}><X size={20} /></button>
+                        </div>
+                        <div className="modal-body" style={{ padding: '24px' }}>
+                            <p style={{ fontSize: '15px', lineHeight: '1.5', color: '#808191' }}>
+                                Are you sure you want to delete <strong style={{ color: '#fff' }}>"{deleteTarget}"</strong>? 
+                                This operation is permanent and cannot be reversed.
+                            </p>
+                            <div className="warning-box" style={{ 
+                                marginTop: '20px', 
+                                padding: '15px', 
+                                background: 'rgba(249, 115, 22, 0.08)', 
+                                border: '1px solid rgba(249, 115, 22, 0.2)',
+                                borderLeft: '4px solid #f97316',
+                                borderRadius: '8px',
+                                display: 'flex',
+                                alignItems: 'flex-start',
+                                gap: '12px',
+                                fontSize: '13px',
+                                color: '#f97316'
+                            }}>
+                                <Zap size={18} style={{ marginTop: '2px', flexShrink: 0 }} />
+                                <span>Wait! Deleting this will also remove it from the public website and all associated history.</span>
+                            </div>
+                        </div>
+                        <div className="modal-footer" style={{ background: 'rgba(255,255,255,0.02)', padding: '16px 24px', justifyContent: 'flex-end', gap: '12px' }}>
+                            <button type="button" className="btn-secondary" style={{ padding: '10px 20px' }} onClick={() => setDeleteTarget(null)}>No, Keep it</button>
+                            <button type="button" className="btn-primary-admin danger" style={{ 
+                                padding: '10px 20px', 
+                                background: '#f87171', 
+                                color: 'white',
+                                fontWeight: '600',
+                                border: 'none',
+                                borderRadius: '8px',
+                                cursor: 'pointer'
+                            }} onClick={() => {
+                                handleDeleteAsset(deleteTarget);
+                                setDeleteTarget(null);
+                            }}>Yes, Delete Forever</button>
                         </div>
                     </div>
                 </div>
@@ -513,7 +855,6 @@ const AdminDashboard = ({ hoardings, setHoardings }) => {
 
                 <div className="menu-group">
                     <div className="group-title">Management</div>
-                    <button className="nav-item"><User size={20} /> Leads</button>
                     <button className="nav-item" onClick={() => setIsSettingsOpen(true)}><Settings size={20} /> Settings</button>
                 </div>
 
@@ -764,10 +1105,60 @@ const AdminDashboard = ({ hoardings, setHoardings }) => {
                                     <p>Comprehensive record of all outdoor media inventory</p>
                                 </div>
                                 <div className="inventory-actions">
-                                    <button className="btn-icon"><Download size={18} /></button>
-                                    <button className="btn-icon"><Filter size={18} /></button>
+                                    <button className="btn-primary-admin" style={{ background: '#6c5dd3' }} onClick={() => { 
+                                        setFormData({}); 
+                                        setSelectedAssetFile(null); 
+                                        setIsAddModalOpen(true); 
+                                    }}>
+                                        <Plus size={18} /> Add New Asset
+                                    </button>
+                                    <button className="btn-icon" title="Export Inventory"><Download size={18} /></button>
+                                    <button
+                                        className={`btn-icon ${isInventoryFilterOpen ? 'active-accent' : ''}`}
+                                        onClick={() => setIsInventoryFilterOpen(!isInventoryFilterOpen)}
+                                        title="Toggle Filters"
+                                    >
+                                        <Filter size={18} />
+                                    </button>
                                 </div>
                             </div>
+
+                            {isInventoryFilterOpen && (
+                                <div className="inventory-filters animate-in">
+                                    <div className="inventory-filter-group">
+                                        <label>Region / City</label>
+                                        <select
+                                            value={inventoryCityFilter}
+                                            onChange={(e) => setInventoryCityFilter(e.target.value)}
+                                        >
+                                            {inventoryCities.map(city => (
+                                                <option key={city} value={city}>{city}</option>
+                                            ))}
+                                        </select>
+                                    </div>
+                                    <div className="inventory-filter-group">
+                                        <label>Live Status</label>
+                                        <select
+                                            value={inventoryStatusFilter}
+                                            onChange={(e) => setInventoryStatusFilter(e.target.value)}
+                                        >
+                                            {inventoryStatuses.map(status => (
+                                                <option key={status} value={status}>{status}</option>
+                                            ))}
+                                        </select>
+                                    </div>
+                                    <button
+                                        className="btn-reset-filters"
+                                        onClick={() => {
+                                            setInventoryCityFilter('All');
+                                            setInventoryStatusFilter('All');
+                                            setSearchTerm('');
+                                        }}
+                                    >
+                                        Reset All
+                                    </button>
+                                </div>
+                            )}
                             <div className="table-wrapper">
                                 <table className="admin-table">
                                     <thead>
@@ -776,7 +1167,7 @@ const AdminDashboard = ({ hoardings, setHoardings }) => {
                                             <th>Market / Region</th>
                                             <th>Commercials</th>
                                             <th>Live Status</th>
-                                            <th>Visibility</th>
+                                            <th>Actions</th>
                                         </tr>
                                     </thead>
                                     <tbody>
@@ -801,12 +1192,29 @@ const AdminDashboard = ({ hoardings, setHoardings }) => {
                                                     </span>
                                                 </td>
                                                 <td>
-                                                    <button
-                                                        className={`toggle-visibility ${h.STATUS === 'Disabled' ? 'hidden' : ''}`}
-                                                        onClick={() => toggleStatus(h["Locality Site Location"])}
-                                                    >
-                                                        {h.STATUS === 'Disabled' ? <EyeOff size={20} /> : <Eye size={20} />}
-                                                    </button>
+                                                    <div className="action-row">
+                                                        <button 
+                                                            className="btn-icon-small edit" 
+                                                            onClick={() => openEditModal(h)}
+                                                            title="Edit Details"
+                                                        >
+                                                            <Settings size={16} />
+                                                        </button>
+                                                        <button
+                                                            className={`btn-icon-small ${h.STATUS === 'Disabled' ? 'hidden' : 'visible'}`}
+                                                            onClick={() => toggleStatus(h["Locality Site Location"])}
+                                                            title={h.STATUS === 'Disabled' ? 'Enable Site' : 'Disable Site'}
+                                                        >
+                                                            {h.STATUS === 'Disabled' ? <EyeOff size={16} /> : <Eye size={16} />}
+                                                        </button>
+                                                        <button 
+                                                            className="btn-icon-small delete" 
+                                                            onClick={() => setDeleteTarget(h["Locality Site Location"])}
+                                                            title="Delete Site"
+                                                        >
+                                                            <X size={16} />
+                                                        </button>
+                                                    </div>
                                                 </td>
                                             </tr>
                                         ))}

@@ -21,10 +21,10 @@ function doPost(e) {
   try {
     var p = JSON.parse(e.postData.contents);
 
-    // 🌟 NEW: Handle AI Updates from Dashboard
-    if (p.action === 'updateHoarding') {
-      return updateHoardingDetails(p);
-    }
+    // 🌟 ADD / EDIT / DELETE OPERATIONS
+    if (p.action === 'updateHoarding') return updateHoardingDetails(p);
+    if (p.action === 'addHoarding') return addHoardingDetails(p);
+    if (p.action === 'deleteHoarding') return deleteHoardingDetails(p);
 
     // Legacy: File Upload to Input Folder
     if (p.fileData) {
@@ -71,51 +71,61 @@ function updateHoardingDetails(data) {
   var rows = sheet.getDataRange().getValues();
   var headers = rows[0];
 
-  // Find column indices
   var idxSite = headers.findIndex(h => cleanFull(h) === cleanFull(CONFIG.COL_SITE_NAME));
-  var idxStatus = headers.findIndex(h => cleanFull(h) === 'status');
-  var idxImg = headers.findIndex(h => cleanFull(h) === cleanFull(CONFIG.COL_IMAGE_URL));
-
   if (idxSite === -1) return res({ success: false, error: 'Site Name column not found' });
 
-  // Find the row
   var rowIndex = -1;
   var searchName = cleanFull(data.siteName);
 
   for (var i = 1; i < rows.length; i++) {
     if (cleanFull(rows[i][idxSite]) === searchName) {
-      rowIndex = i + 1; // 1-based index
+      rowIndex = i + 1;
       break;
     }
   }
 
   if (rowIndex === -1) return res({ success: false, error: 'Site not found: ' + data.siteName });
 
-  // Update Status
-  if (data.status && idxStatus !== -1) {
-    sheet.getRange(rowIndex, idxStatus + 1).setValue(data.status);
+  // 1. Update specified fields (General Edit)
+  if (data.fields) {
+    for (var fKey in data.fields) {
+      var fieldKey = cleanFull(fKey);
+      var idx = headers.findIndex(h => {
+        var sheetKey = cleanFull(h);
+        if (sheetKey === fieldKey) return true;
+        // Smart match price
+        if ((fieldKey.includes('cost') || fieldKey.includes('price')) && 
+            (sheetKey.includes('cost') || sheetKey.includes('price'))) return true;
+        // Smart match geo
+        if (fieldKey.startsWith('lat') && sheetKey.startsWith('lat')) return true;
+        if (fieldKey.startsWith('long') && sheetKey.startsWith('long')) return true;
+        return false;
+      });
+      
+      if (idx !== -1) {
+        sheet.getRange(rowIndex, idx + 1).setValue(data.fields[fKey]);
+      }
+    }
   }
 
-  // Update Image (if provided)
+  // 2. Handle Status (Legacy/AI path)
+  if (data.status) {
+    var idxStatus = headers.findIndex(h => cleanFull(h) === 'status');
+    if (idxStatus !== -1) sheet.getRange(rowIndex, idxStatus + 1).setValue(data.status);
+  }
+
+  // 3. Handle Image Upload
   if (data.fileData) {
     var folder = DriveApp.getFolderById(CONFIG.IMAGE_FOLDER_ID);
     var decoded = Utilities.base64Decode(data.fileData.split(",")[1]);
     var blob = Utilities.newBlob(decoded, data.mimeType || 'image/jpeg', data.siteName + "_" + new Date().getTime() + ".jpg");
     var file = folder.createFile(blob);
     file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
-
     var fileUrl = "https://drive.google.com/thumbnail?sz=w1280&id=" + file.getId();
 
-    // --- Image Logic (Controlled by Dashboard Mode) ---
-    // mode: 'replace' -> Update Main Photo (because it was missing)
-    // mode: 'archive' -> Keep Master Photo, only add to History
+    var idxImg = headers.findIndex(h => cleanFull(h) === cleanFull(CONFIG.COL_IMAGE_URL));
+    if (idxImg !== -1 && data.mode !== 'archive') sheet.getRange(rowIndex, idxImg + 1).setValue(fileUrl);
 
-    // 1. Update Main Image (Only if mode is 'replace')
-    if (idxImg !== -1 && data.mode !== 'archive') {
-      sheet.getRange(rowIndex, idxImg + 1).setValue(fileUrl);
-    }
-
-    // 2. Update Execution History (Only if mode is 'archive')
     var idxHistory = headers.findIndex(h => {
       var clean = h.toString().toLowerCase().replace(/[^a-z0-9]/g, '');
       return clean === 'executionhistory' || clean === 'history';
@@ -129,6 +139,68 @@ function updateHoardingDetails(data) {
   }
 
   return res({ success: true, message: 'Updated successfully' });
+}
+
+function addHoardingDetails(data) {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = ss.getSheetByName(CONFIG.SHEET_NAME);
+  var headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+
+  var newRow = headers.map(h => {
+    var sheetKey = cleanFull(h);
+    // Find matching key in data.fields
+    for (var fKey in data.fields) {
+      var fieldKey = cleanFull(fKey);
+      
+      // 🎯 MOD SMART MATCHING: Handle common variations
+      if (fieldKey === sheetKey) return data.fields[fKey];
+      
+      // Price/Cost mapping
+      if ((fieldKey.includes('cost') || fieldKey.includes('price')) && 
+          (sheetKey.includes('cost') || sheetKey.includes('price'))) return data.fields[fKey];
+          
+      // Geo mapping
+      if (fieldKey.startsWith('lat') && sheetKey.startsWith('lat')) return data.fields[fKey];
+      if (fieldKey.startsWith('long') && sheetKey.startsWith('long')) return data.fields[fKey];
+    }
+    return "";
+  });
+
+  // Handle Image Upload if provided during ADD
+  if (data.fileData) {
+    var folder = DriveApp.getFolderById(CONFIG.IMAGE_FOLDER_ID);
+    var decoded = Utilities.base64Decode(data.fileData.split(",")[1]);
+    var blob = Utilities.newBlob(decoded, data.mimeType || 'image/jpeg', (data.siteName || 'NewSite') + "_" + new Date().getTime() + ".jpg");
+    var file = folder.createFile(blob);
+    file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+    var fileUrl = "https://drive.google.com/thumbnail?sz=w1280&id=" + file.getId();
+
+    var idxImg = headers.findIndex(h => cleanFull(h) === cleanFull(CONFIG.COL_IMAGE_URL));
+    if (idxImg !== -1) {
+      // Find the index of ImageURL in the newRow and set it
+      var idxInRow = headers.findIndex(h => cleanFull(h) === cleanFull(CONFIG.COL_IMAGE_URL));
+      if (idxInRow !== -1) newRow[idxInRow] = fileUrl;
+    }
+  }
+
+  sheet.appendRow(newRow);
+  return res({ success: true, message: 'Added successfully' });
+}
+
+function deleteHoardingDetails(data) {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = ss.getSheetByName(CONFIG.SHEET_NAME);
+  var rows = sheet.getDataRange().getValues();
+  var idxSite = rows[0].findIndex(h => cleanFull(h) === cleanFull(CONFIG.COL_SITE_NAME));
+
+  var searchName = cleanFull(data.siteName);
+  for (var i = 1; i < rows.length; i++) {
+    if (cleanFull(rows[i][idxSite]) === searchName) {
+      sheet.deleteRow(i + 1);
+      return res({ success: true, message: 'Deleted successfully' });
+    }
+  }
+  return res({ success: false, error: 'Site not found' });
 }
 
 /* ================= EXCEL ================= */

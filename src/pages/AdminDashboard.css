@@ -984,7 +984,17 @@
     max-width: 90%;
     overflow: hidden;
     animation: scaleIn 0.3s ease;
+    max-height: 95vh;
+    display: flex;
+    flex-direction: column;
     box-shadow: 0 20px 60px rgba(0, 0, 0, 0.2);
+}
+
+.modal-card form {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    overflow: hidden;
 }
 
 .modal-header {
@@ -1010,6 +1020,8 @@
 
 .modal-body {
     padding: 24px;
+    overflow-y: auto;
+    flex: 1;
 }
 
 .modal-input {
@@ -1138,5 +1150,378 @@
 .dump-btn:hover {
     background: #ef4444 !important;
     transform: scale(1.05);
+}
+
+
+/* ?? Inventory Filters */
+.inventory-filters {
+    padding: 24px 40px;
+    display: flex;
+    gap: 24px;
+    flex-wrap: wrap;
+    background: #fcfcfd;
+    border-bottom: 1px solid var(--border-color);
+    align-items: flex-end;
+}
+
+.inventory-filter-group {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    min-width: 180px;
+}
+
+.inventory-filter-group label {
+    font-size: 0.7rem;
+    font-weight: 800;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+.inventory-filter-group select {
+    padding: 12px 16px;
+    border-radius: 12px;
+    border: 1px solid var(--border-color);
+    background: white;
+    outline: none;
+    font-size: 0.9rem;
+    font-weight: 700;
+    color: var(--text-dark);
+    cursor: pointer;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.02);
+}
+
+.inventory-filter-group select:focus {
+    border-color: var(--primary-accent);
+}
+
+.btn-icon.active-accent {
+    background: var(--primary-accent);
+    color: white;
+    border-color: var(--primary-accent);
+}
+
+.btn-reset-filters {
+    padding: 12px 24px;
+    background: transparent;
+    border: 1px dashed #d1d1d1;
+    border-radius: 12px;
+    color: var(--text-muted);
+    font-size: 0.85rem;
+    font-weight: 700;
+    cursor: pointer;
+    transition: all 0.2s;
+    height: 45px;
+}
+
+.btn-reset-filters:hover {
+    border-color: var(--warning-orange);
+    color: var(--warning-orange);
+    background: #fff5f5;
+}
+
+/* ??? CRUD Modal & Forms */
+.crud-modal {
+    max-width: 1000px;
+    width: 90%;
+}
+
+.crud-form {
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+    padding: 32px 40px;
+}
+
+.form-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 24px;
+}
+
+.form-row.three-cols {
+    grid-template-columns: repeat(3, 1fr);
+}
+
+.form-group.span-two {
+    grid-column: span 2;
+}
+
+.form-group.span-three {
+    grid-column: span 3;
+}
+
+.form-group {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.form-group label {
+    font-size: 0.8rem;
+    font-weight: 700;
+    color: var(--text-dark);
+}
+
+.form-group input, .form-group select {
+    padding: 12px 16px;
+    border-radius: 12px;
+    border: 1px solid var(--border-color);
+    background: #fcfcfd;
+    outline: none;
+    font-size: 0.95rem;
+    transition: all 0.2s;
+}
+
+.form-group input:focus, .form-group select:focus {
+    border-color: var(--primary-accent);
+    background: white;
+    box-shadow: 0 0 0 4px rgba(108, 93, 211, 0.1);
+}
+
+.modal-footer {
+    padding: 24px 40px;
+    display: flex;
+    justify-content: flex-end;
+    gap: 16px;
+    border-top: 1px solid var(--border-color);
+}
+
+.btn-secondary {
+    padding: 12px 24px;
+    border-radius: 12px;
+    border: 1px solid var(--border-color);
+    background: white;
+    font-weight: 700;
+    cursor: pointer;
+}
+
+/* ? Action Row in Table */
+.action-row {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+}
+
+.btn-icon-small {
+    width: 32px;
+    height: 32px;
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid var(--border-color);
+    background: white;
+    cursor: pointer;
+    transition: all 0.2s;
+    color: var(--text-muted);
+}
+
+.btn-icon-small:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+}
+
+.btn-icon-small.edit:hover {
+    color: var(--primary-accent);
+    border-color: var(--primary-accent);
+    background: #f5f3ff;
+}
+
+.btn-icon-small.delete:hover {
+    color: #ef4444;
+    border-color: #ef4444;
+    background: #fef2f2;
+}
+
+.btn-icon-small.visible {
+    color: var(--success-green);
+}
+
+.btn-icon-small.hidden {
+    color: var(--text-muted);
+    opacity: 0.5;
+}
+
+/* 🖼️ Enhanced File Upload Styles */
+.form-group.full-width {
+    grid-column: 1 / -1;
+}
+
+.file-drop-zone {
+    width: 100%;
+    min-height: 120px;
+    border: 2px dashed #ddd;
+    border-radius: 16px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    background: #fcfcfd;
+    overflow: hidden;
+    position: relative;
+    padding: 20px;
+}
+
+.file-drop-zone:hover {
+    border-color: var(--primary-accent);
+    background: rgba(108, 93, 211, 0.03);
+}
+
+.file-drop-zone.has-file {
+    border: 2px solid var(--primary-accent);
+    background: white;
+}
+
+.drop-zone-content {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    text-align: center;
+}
+
+.drop-zone-content p {
+    font-size: 0.9rem;
+    font-weight: 700;
+    color: var(--text-dark);
+}
+
+.helper-text {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+}
+
+.selected-file-preview {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    width: 100%;
+    animation: fadeIn 0.3s ease;
+}
+
+.selected-file-preview img {
+    width: 100px;
+    height: 70px;
+    object-fit: cover;
+    border-radius: 8px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+}
+
+.file-info {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    flex: 1;
+}
+
+.file-name {
+    font-size: 0.9rem;
+    font-weight: 700;
+    color: var(--text-dark);
+    word-break: break-all;
+}
+
+.file-status {
+    font-size: 0.75rem;
+    color: var(--success-green);
+    font-weight: 600;
+}
+
+.remove-file-btn {
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    background: #fef2f2;
+    border: 1px solid #fee2e2;
+    color: #ef4444;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.remove-file-btn:hover {
+    background: #ef4444;
+    color: white;
+    transform: scale(1.1);
+}
+
+/* ⚠️ Confirmation Modal Specifics */
+.confirmation-modal {
+    background: var(--sidebar-bg) !important;
+    border: 1px solid rgba(255,255,255,0.1) !important;
+}
+
+.confirmation-modal .modal-header {
+    border-bottom: 1px solid rgba(255,255,255,0.05) !important;
+    padding: 20px 24px !important;
+}
+
+.confirmation-modal .modal-header h3 {
+    color: white !important;
+    font-weight: 700 !important;
+    font-size: 1.1rem !important;
+}
+
+.confirmation-modal .modal-header button {
+    color: rgba(255,255,255,0.5) !important;
+}
+
+.confirmation-modal .modal-header button:hover {
+    color: white !important;
+}
+
+.confirmation-modal .btn-secondary {
+    background: rgba(255,255,255,0.05) !important;
+    border: 1px solid rgba(255,255,255,0.1) !important;
+    color: rgba(255,255,255,0.7) !important;
+}
+
+.confirmation-modal .btn-secondary:hover {
+    background: rgba(255,255,255,0.1) !important;
+    color: white !important;
+}
+
+.warning-box {
+    animation: slideUp 0.4s ease;
+}
+
+.preview-image-wrapper {
+    position: relative;
+    width: 120px;
+    height: 90px;
+    flex-shrink: 0;
+}
+
+.preview-image-wrapper img {
+    width: 100% !important;
+    height: 100% !important;
+    margin: 0 !important;
+}
+
+.upload-badge {
+    position: absolute;
+    bottom: -8px;
+    right: -8px;
+    background: var(--primary-accent);
+    color: white;
+    font-size: 10px;
+    font-weight: 800;
+    padding: 4px 8px;
+    border-radius: 6px;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    box-shadow: 0 4px 8px rgba(108, 93, 211, 0.3);
+    border: 2px solid white;
+}
+
+@keyframes slideUp {
+    from { transform: translateY(10px); opacity: 0; }
+    to { transform: translateY(0); opacity: 1; }
 }
 
