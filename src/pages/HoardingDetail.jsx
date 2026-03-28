@@ -40,6 +40,12 @@ const HoardingDetail = ({ hoardings, setHoardings }) => {
                 updatedImageURL = URL.createObjectURL(selectedAssetFile);
             }
 
+            // Clean formData to remove any temporary blob URLs
+            const cleanFields = { ...formData };
+            if (cleanFields.ImageURL && (cleanFields.ImageURL.startsWith('blob:') || cleanFields.ImageURL.includes('localhost'))) {
+                delete cleanFields.ImageURL;
+            }
+
             await fetch(scriptUrl, {
                 method: 'POST',
                 mode: 'no-cors',
@@ -47,7 +53,7 @@ const HoardingDetail = ({ hoardings, setHoardings }) => {
                 body: JSON.stringify({
                     action: 'updateHoarding',
                     siteName: hoarding["Locality Site Location"],
-                    fields: formData,
+                    fields: cleanFields,
                     fileData: fileData,
                     mimeType: mimeType
                 })

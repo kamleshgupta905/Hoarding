@@ -471,13 +471,19 @@ const AdminDashboard = ({ hoardings, setHoardings }) => {
                 previewUrl = URL.createObjectURL(selectedAssetFile);
             }
 
+            // Clean formData to remove any temporary blob URLs that might exist
+            const cleanFields = { ...formData };
+            if (cleanFields.ImageURL && (cleanFields.ImageURL.startsWith('blob:') || cleanFields.ImageURL.includes('localhost'))) {
+                delete cleanFields.ImageURL;
+            }
+
             await fetch(scriptUrl, {
                 method: 'POST',
                 mode: 'no-cors',
                 headers: { 'Content-Type': 'text/plain' },
                 body: JSON.stringify({
                     action: 'addHoarding',
-                    fields: formData,
+                    fields: cleanFields,
                     siteName: formData["Locality Site Location"],
                     fileData: fileData,
                     mimeType: mimeType
@@ -513,6 +519,12 @@ const AdminDashboard = ({ hoardings, setHoardings }) => {
                 updatedImageURL = URL.createObjectURL(selectedAssetFile);
             }
 
+            // Clean formData to remove any temporary blob URLs
+            const cleanFields = { ...formData };
+            if (cleanFields.ImageURL && (cleanFields.ImageURL.startsWith('blob:') || cleanFields.ImageURL.includes('localhost'))) {
+                delete cleanFields.ImageURL;
+            }
+
             await fetch(scriptUrl, {
                 method: 'POST',
                 mode: 'no-cors',
@@ -520,7 +532,7 @@ const AdminDashboard = ({ hoardings, setHoardings }) => {
                 body: JSON.stringify({
                     action: 'updateHoarding',
                     siteName: selectedHoarding["Locality Site Location"],
-                    fields: formData,
+                    fields: cleanFields,
                     fileData: fileData,
                     mimeType: mimeType
                 })

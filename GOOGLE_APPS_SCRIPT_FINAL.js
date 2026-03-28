@@ -142,49 +142,70 @@ function updateHoardingDetails(data) {
 }
 
 function addHoardingDetails(data) {
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
-  var sheet = ss.getSheetByName(CONFIG.SHEET_NAME);
-  var headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+  try {
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var sheet = ss.getSheetByName(CONFIG.SHEET_NAME);
+    if (!sheet) return res({ success: false, error: 'Sheet "' + CONFIG.SHEET_NAME + '" not found. Please ensure the sheet exists.' });
+    
+    var lastCol = sheet.getLastColumn();
+    if (lastCol === 0) return res({ success: false, error: 'Sheet is empty (no headers found). Please add header columns.' });
+    
+    var headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
 
-  var newRow = headers.map(h => {
-    var sheetKey = cleanFull(h);
-    // Find matching key in data.fields
-    for (var fKey in data.fields) {
-      var fieldKey = cleanFull(fKey);
+    var newRow = headers.map(h => {
+      var sheetKey = cleanFull(h);
       
-      // 🎯 MOD SMART MATCHING: Handle common variations
-      if (fieldKey === sheetKey) return data.fields[fKey];
+      // Auto-set status for new assets if column found
+      if (sheetKey === 'status') return (data.fields && data.fields.STATUS) || 'Available';
       
-      // Price/Cost mapping
-      if ((fieldKey.includes('cost') || fieldKey.includes('price')) && 
-          (sheetKey.includes('cost') || sheetKey.includes('price'))) return data.fields[fKey];
+      // Find matching key in data.fields
+      if (data.fields) {
+        for (var fKey in data.fields) {
+          var fieldKey = cleanFull(fKey);
           
-      // Geo mapping
-      if (fieldKey.startsWith('lat') && sheetKey.startsWith('lat')) return data.fields[fKey];
-      if (fieldKey.startsWith('long') && sheetKey.startsWith('long')) return data.fields[fKey];
-    }
-    return "";
-  });
+          // Match logic
+          if (fieldKey === sheetKey) return data.fields[fKey];
+          if ((fieldKey.includes('cost') || fieldKey.includes('price')) && 
+              (sheetKey.includes('cost') || sheetKey.includes('price'))) return data.fields[fKey];
+          if (fieldKey.startsWith('lat') && sheetKey.startsWith('lat')) return data.fields[fKey];
+          if (fieldKey.startsWith('long') && sheetKey.startsWith('long')) return data.fields[fKey];
+        }
+      }
+      return "";
+    });
 
-  // Handle Image Upload if provided during ADD
-  if (data.fileData) {
-    var folder = DriveApp.getFolderById(CONFIG.IMAGE_FOLDER_ID);
-    var decoded = Utilities.base64Decode(data.fileData.split(",")[1]);
-    var blob = Utilities.newBlob(decoded, data.mimeType || 'image/jpeg', (data.siteName || 'NewSite') + "_" + new Date().getTime() + ".jpg");
-    var file = folder.createFile(blob);
-    file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
-    var fileUrl = "https://drive.google.com/thumbnail?sz=w1280&id=" + file.getId();
+    // Handle Image Upload if provided during ADD
+    if (data.fileData) {
+      try {
+        var folder = DriveApp.getFolderById(CONFIG.IMAGE_FOLDER_ID);
+        var decoded = Utilities.base64Decode(data.fileData.split(",")[1]);
+        var blob = Utilities.newBlob(decoded, data.mimeType || 'image/jpeg', (data.siteName || 'NewSite') + "_" + new Date().getTime() + ".jpg");
+        var file = folder.createFile(blob);
+        file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+        var fileUrl = "https://drive.google.com/thumbnail?sz=w1280&id=" + file.getId();
 
-    var idxImg = headers.findIndex(h => cleanFull(h) === cleanFull(CONFIG.COL_IMAGE_URL));
-    if (idxImg !== -1) {
-      // Find the index of ImageURL in the newRow and set it
-      var idxInRow = headers.findIndex(h => cleanFull(h) === cleanFull(CONFIG.COL_IMAGE_URL));
-      if (idxInRow !== -1) newRow[idxInRow] = fileUrl;
+        var idxImg = headers.findIndex(h => {
+          var clean = cleanFull(h);
+          return clean === cleanFull(CONFIG.COL_IMAGE_URL) || 
+                 clean.includes('image') || 
+                 clean.includes('photo') || 
+                 clean.includes('pic') || 
+                 clean.includes('img');
+        });
+        if (idxImg !== -1) {
+          newRow[idxImg] = fileUrl;
+        }
+      } catch (imgError) {
+        console.error("Image Upload Error during ADD:", imgError.toString());
+        // We continue anyway so the row is still added
+      }
     }
+
+    sheet.appendRow(newRow);
+    return res({ success: true, message: 'Added successfully' });
+  } catch (err) {
+    return res({ success: false, error: "Critical failure in addHoardingDetails: " + err.toString() });
   }
-
-  sheet.appendRow(newRow);
-  return res({ success: true, message: 'Added successfully' });
 }
 
 function deleteHoardingDetails(data) {
