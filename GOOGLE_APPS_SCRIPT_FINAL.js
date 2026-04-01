@@ -274,6 +274,20 @@ function addHoardingDetails(data) {
         var sheetKey = cleanFull(headers[i]);
         if (!sheetKey) continue;
 
+        // 🤖 AUTO-FILL S.No.
+        if (sheetKey === 'sno' || sheetKey === 'srno' || sheetKey === 'serialno') {
+            newRow[i] = sheet.getLastRow(); // Row 2 gets 1, Row 3 gets 2, etc.
+            continue;
+        }
+
+        // 🤖 SMART AUTO-FILL State based on City
+        if (sheetKey === 'state' || sheetKey === 'statename') {
+            var cityName = (data.fields && (data.fields.City || data.fields.city)) || "";
+            var derivedState = getStateFromCity(cityName);
+            newRow[i] = derivedState;
+            continue;
+        }
+
         if (sheetKey === 'status') {
             newRow[i] = (data.fields && (data.fields.STATUS || data.fields.status)) || 'Available';
             continue;
@@ -670,6 +684,34 @@ function cleanFull(h) {
 
 function getWords(str, n) {
   return String(str).toLowerCase().replace(/[^a-z0-9\s]/g, "").split(/\s+/).filter(Boolean).slice(0, n).join(" ");
+}
+
+function getStateFromCity(city) {
+  if (!city) return "Uttar Pradesh";
+  var cleanCity = cleanFull(city);
+
+  // 🗺️ City to State Mapping
+  var stateMap = {
+    // Uttar Pradesh
+    'meerut': 'Uttar Pradesh', 'hapur': 'Uttar Pradesh', 'ghaziabad': 'Uttar Pradesh', 
+    'noida': 'Uttar Pradesh', 'lucknow': 'Uttar Pradesh', 'kanpur': 'Uttar Pradesh',
+    'agra': 'Uttar Pradesh', 'varanasi': 'Uttar Pradesh', 'modinagar': 'Uttar Pradesh',
+    'muzaffarnagar': 'Uttar Pradesh', 'bulandshahr': 'Uttar Pradesh', 'moradabad': 'Uttar Pradesh',
+    
+    // Delhi NCR
+    'delhi': 'Delhi', 'newdelhi': 'Delhi', 'gurgaon': 'Haryana', 'gurugram': 'Haryana', 'faridabad': 'Haryana',
+    
+    // Maharashtra
+    'mumbai': 'Maharashtra', 'pune': 'Maharashtra', 'nagpur': 'Maharashtra',
+    
+    // Karnataka
+    'bangalore': 'Karnataka', 'bengaluru': 'Karnataka',
+    
+    // West Bengal
+    'kolkata': 'West Bengal'
+  };
+
+  return stateMap[cleanCity] || "Uttar Pradesh"; // Default to UP for your primary region
 }
 
 function res(o) {
