@@ -227,8 +227,11 @@ function updateHoardingDetails(data) {
 
       if (idxHistory !== -1 && (data.mode === 'archive' || data.mode === 'both')) {
         var currentHistory = sheet.getRange(rowIndex, idxHistory + 1).getValue();
-        var updatedHistory = currentHistory ? currentHistory + "," + fileUrl : fileUrl;
+        // Append URL with a timestamp separator for the frontend to parse
+        var timestampedUrl = fileUrl + "|" + new Date().getTime(); 
+        var updatedHistory = currentHistory ? currentHistory + "," + timestampedUrl : timestampedUrl;
         sheet.getRange(rowIndex, idxHistory + 1).setValue(updatedHistory);
+        logDebug("UPDATE | Added to History: " + timestampedUrl);
       }
     } else {
       logDebug("UPDATE IMG FAILED - uploadImageToDrive returned null");

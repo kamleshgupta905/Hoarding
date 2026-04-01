@@ -327,6 +327,30 @@
     box-shadow: 0 15px 25px rgba(37, 211, 102, 0.3);
 }
 
+.audit-upload-btn-sidebar {
+    width: 100%;
+    padding: 16px;
+    background: #6c5dd3;
+    color: white;
+    border: none;
+    border-radius: 16px;
+    font-weight: 700;
+    font-size: 0.95rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    box-shadow: 0 10px 20px rgba(108, 93, 211, 0.15);
+}
+
+.audit-upload-btn-sidebar:hover {
+    background: #5a4cb8;
+    transform: translateY(-2px);
+    box-shadow: 0 15px 25px rgba(108, 93, 211, 0.25);
+}
+
 .location-btn-large {
     width: 100%;
     padding: 16px;
@@ -734,4 +758,106 @@
     font-weight: 800;
     font-size: 1.1rem;
     letter-spacing: 0.5px;
+}
+
+/* 🖼️ Execution Gallery & Audit Cards */
+.execution-gallery {
+    padding-top: 48px;
+    border-top: 1px solid #eee;
+}
+
+.history-cards-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 24px;
+}
+
+.audit-card {
+    background: white;
+    border-radius: 20px;
+    overflow: hidden;
+    position: relative;
+    border: 1px solid #f0f0f5;
+    transition: transform 0.3s ease, box-shadow 0.3s ease;
+}
+
+.audit-card:hover {
+    transform: translateY(-8px);
+    box-shadow: 0 15px 35px rgba(0, 0, 0, 0.08);
+}
+
+.audit-card-media {
+    width: 100%;
+    aspect-ratio: 4 / 3;
+    position: relative;
+    background: #f8f9fa;
+    overflow: hidden;
+}
+
+.audit-card-media img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    transition: transform 0.5s ease;
+}
+
+.audit-card:hover .audit-card-media img {
+    transform: scale(1.05);
+}
+
+.audit-badge {
+    position: absolute;
+    top: 12px;
+    right: 12px;
+    padding: 6px 12px;
+    border-radius: 8px;
+    font-size: 0.65rem;
+    font-weight: 800;
+    letter-spacing: 0.5px;
+    color: white;
+    z-index: 2;
+}
+
+.audit-badge.latest { background: #6c5dd3; box-shadow: 0 4px 12px rgba(108, 93, 211, 0.3); }
+.audit-badge.past { background: rgba(0, 0, 0, 0.5); backdrop-filter: blur(4px); }
+
+.audit-card-body {
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.audit-meta {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: var(--text-muted);
+}
+
+.audit-date {
+    font-size: 0.85rem;
+    font-weight: 700;
+    color: var(--text-dark);
+}
+
+.audit-status-strip {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.75rem;
+    font-weight: 700;
+    color: #059669; /* Green */
+    background: #ecfdf5;
+    padding: 6px 12px;
+    border-radius: 8px;
+    width: fit-content;
+}
+
+/* Responsive adjustments for Gallery */
+@media (max-width: 600px) {
+    .history-cards-grid {
+        grid-template-columns: 1fr;
+        gap: 16px;
+    }
 }

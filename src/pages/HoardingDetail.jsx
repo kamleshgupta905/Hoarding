@@ -154,6 +154,46 @@ const HoardingDetail = ({ hoardings, setHoardings }) => {
             setIsLoading(false);
         }
     };
+    
+    const handleAddAuditPhoto = async (file) => {
+        if (!file) return;
+        setIsLoading(true);
+        try {
+            const fileData = await new Promise((resolve) => {
+                const reader = new FileReader();
+                reader.onload = () => resolve(reader.result);
+                reader.readAsDataURL(file);
+            });
+            const mimeType = file.type;
+            const previewUrl = URL.createObjectURL(file);
+
+            await fetch(scriptUrl, {
+                method: 'POST',
+                mode: 'no-cors',
+                headers: { 'Content-Type': 'text/plain' },
+                body: JSON.stringify({
+                    action: 'updateHoarding',
+                    siteName: hoarding["Locality Site Location"],
+                    fileData: fileData,
+                    mimeType: mimeType,
+                    mode: 'archive' 
+                })
+            });
+
+            alert("✅ Audit Photo Added Successfully!");
+            const newAudit = { url: previewUrl, timestamp: new Date().getTime() };
+            setHoardings(prev => prev.map(h =>
+                h["Locality Site Location"] === hoarding["Locality Site Location"]
+                    ? { ...h, History: [newAudit, ...(h.History || [])] }
+                    : h
+            ));
+        } catch (err) {
+            alert("Error adding audit photo: " + err.message);
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
 
     React.useEffect(() => {
         if (isEditModalOpen) {
@@ -297,7 +337,6 @@ const HoardingDetail = ({ hoardings, setHoardings }) => {
                             </div>
                         </section>
 
-                        {/* 📸 PREMIUM: Campaign Execution Timeline (Cards) */}
                         {hoarding.History && hoarding.History.length > 0 && (
                             <section className="execution-gallery animate-in" style={{ marginTop: '56px' }}>
                                 <div className="gallery-header" style={{ marginBottom: '24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -311,28 +350,37 @@ const HoardingDetail = ({ hoardings, setHoardings }) => {
                                 </div>
 
                                 <div className="history-cards-grid">
-                                    {hoarding.History.map((img, idx) => (
-                                        <div key={idx} className="audit-card">
-                                            <div className="audit-card-media">
-                                                <img src={img} alt={`Audit update ${idx + 1}`} />
-                                                {idx === 0 ? (
-                                                    <span className="audit-badge latest">LATEST AUDIT</span>
-                                                ) : (
-                                                    <span className="audit-badge past">PAST UPDATE</span>
-                                                )}
-                                            </div>
-                                            <div className="audit-card-body">
-                                                <div className="audit-meta">
-                                                    <Calendar size={14} />
-                                                    <span className="audit-date">Verified on: {new Date().toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}</span>
+                                    {(hoarding.History || []).map((item, idx) => {
+                                        const finalUrl = typeof item === 'object' ? item.url : item;
+                                        const finalTime = typeof item === 'object' ? item.timestamp : null;
+                                        
+                                        return (
+                                            <div key={idx} className="audit-card">
+                                                <div className="audit-card-media">
+                                                    <img src={finalUrl} alt={`Audit update ${idx + 1}`} />
+                                                    {idx === 0 ? (
+                                                        <span className="audit-badge latest">LATEST AUDIT</span>
+                                                    ) : (
+                                                        <span className="audit-badge past">PAST UPDATE</span>
+                                                    )}
                                                 </div>
-                                                <div className="audit-status-strip">
-                                                    <ShieldCheck size={14} />
-                                                    <span>AI Location Verified 100%</span>
+                                                <div className="audit-card-body">
+                                                    <div className="audit-meta">
+                                                        <Calendar size={14} />
+                                                        <span className="audit-date">
+                                                            {finalTime 
+                                                                ? new Date(finalTime).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) 
+                                                                : 'Verified Date Unknown'}
+                                                        </span>
+                                                    </div>
+                                                    <div className="audit-status-strip">
+                                                        <ShieldCheck size={14} />
+                                                        <span>Verified Capture</span>
+                                                    </div>
                                                 </div>
                                             </div>
-                                        </div>
-                                    ))}
+                                        );
+                                    })}
                                 </div>
                             </section>
                         )}
@@ -358,6 +406,17 @@ const HoardingDetail = ({ hoardings, setHoardings }) => {
                                 >
                                     <Phone size={20} fill="currentColor" /> Book via WhatsApp
                                 </button>
+
+                                <label className="audit-upload-btn-sidebar">
+                                    <Camera size={18} /> Add Site Audit Photo
+                                    <input 
+                                        type="file" 
+                                        accept="image/*" 
+                                        capture="environment" 
+                                        style={{ display: 'none' }} 
+                                        onChange={(e) => handleAddAuditPhoto(e.target.files[0])} 
+                                    />
+                                </label>
 
                                 <button className="location-btn-large" onClick={() => window.open(`https://www.google.com/maps/search/?api=1&query=${hoarding.Latitude},${hoarding.Longitude}`, '_blank')}>
                                     <MapPin size={18} /> View Accurate Map Location

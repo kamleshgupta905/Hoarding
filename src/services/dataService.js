@@ -87,7 +87,13 @@ export const fetchHoardings = async () => {
               "Avg Monthly Cost (INR)": row["Avg. monthly Cost"] || row["Avg Monthly Cost (INR)"] || 0,
               "STATUS": row["STATUS"] || row["Status"] || 'Available',
               "ImageURL": getDirectDriveLink(rawImg),
-              "History": (row["ExecutionHistory"] || row["executionhistory"] || "").split(',').filter(Boolean).map(url => getDirectDriveLink(url))
+              "History": (row["ExecutionHistory"] || row["executionhistory"] || "").split(',').filter(Boolean).map(item => {
+                const parts = item.split('|');
+                return {
+                  url: getDirectDriveLink(parts[0]),
+                  timestamp: parts[1] ? parseInt(parts[1]) : null
+                };
+              })
             };
           });
 
