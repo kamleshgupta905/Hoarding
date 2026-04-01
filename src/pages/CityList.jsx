@@ -47,7 +47,7 @@ const CityList = ({ hoardings }) => {
         );
     }, [hoardings, cityName, isAllCities]);
 
-    const displayCityName = isAllCities ? 'All Active Sites' : cityName;
+
 
     const localities = ['All', ...new Set(cityHoardings.map(h => h.Locality))];
     const sizes = ['All', ...new Set(cityHoardings.map(h => h["Size (Large/Medium/Small)"]))];

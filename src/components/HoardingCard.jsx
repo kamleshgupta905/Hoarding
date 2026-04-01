@@ -46,7 +46,9 @@ const HoardingCard = ({ hoarding }) => {
                 </div>
                 <div className="shot-secondary">
                     <div className="shot-price">
-                        ₹{Math.round(Number(hoarding["Avg Monthly Cost (INR)"]) / 1000)}k/mo
+                        {Number(hoarding["Avg Monthly Cost (INR)"]) >= 1000 
+                          ? `₹${Math.round(Number(hoarding["Avg Monthly Cost (INR)"]) / 1000)}k/mo` 
+                          : `₹${hoarding["Avg Monthly Cost (INR)"]}/mo`}
                     </div>
                 </div>
             </div>

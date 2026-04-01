@@ -8,7 +8,7 @@ import {
     MessageSquare, Mail, User, Calendar, CheckSquare,
     MoreVertical, ExternalLink, ShieldCheck, Menu, X, UploadCloud, RefreshCw, Zap, XCircle
 } from 'lucide-react';
-import { analyzeHoardingImage, initializeAI } from '../services/aiService';
+import { analyzeHoardingImage } from '../services/aiService';
 import './AdminDashboard.css';
 
 const AdminDashboard = ({ hoardings, setHoardings }) => {
@@ -47,10 +47,7 @@ const AdminDashboard = ({ hoardings, setHoardings }) => {
         navigate('/admin/login');
     };
 
-    const saveApiKey = () => {
-        // Obfuscated / Auto-handled
-        setIsSettingsOpen(false);
-    };
+
 
     // ------------------------------------------------------------------
     // 📂 FILE UPLOAD HANDLERS
@@ -76,7 +73,7 @@ const AdminDashboard = ({ hoardings, setHoardings }) => {
                     })
                 });
                 alert(`✅ ${type.toUpperCase()} Uploaded! Your automation is processing the file.`);
-            } catch (err) {
+            } catch {
                 alert('✅ Upload command sent! Check your Drive folder.');
             } finally {
                 setIsLoading(false);
@@ -473,7 +470,15 @@ const AdminDashboard = ({ hoardings, setHoardings }) => {
 
             // Clean formData to remove any temporary blob URLs that might exist
             const cleanFields = { ...formData };
-            if (cleanFields.ImageURL && (cleanFields.ImageURL.startsWith('blob:') || cleanFields.ImageURL.includes('localhost'))) {
+            const imageKeys = ['ImageURL', 'imageurl', 'Image URL', 'Site Photo', 'Photo'];
+            // Always remove History (blob URLs, not valid for backend)
+            delete cleanFields.History;
+            
+            if (selectedAssetFile) {
+                // If a new file is being uploaded, remove any existing ImageURL from fields 
+                // so the script can set the new Drive URL correctly in the image column.
+                imageKeys.forEach(key => delete cleanFields[key]);
+            } else if (cleanFields.ImageURL && (cleanFields.ImageURL.startsWith('blob:') || cleanFields.ImageURL.includes('localhost'))) {
                 delete cleanFields.ImageURL;
             }
 
@@ -521,7 +526,14 @@ const AdminDashboard = ({ hoardings, setHoardings }) => {
 
             // Clean formData to remove any temporary blob URLs
             const cleanFields = { ...formData };
-            if (cleanFields.ImageURL && (cleanFields.ImageURL.startsWith('blob:') || cleanFields.ImageURL.includes('localhost'))) {
+            const imageKeys = ['ImageURL', 'imageurl', 'Image URL', 'Site Photo', 'Photo'];
+            // Always remove History (blob URLs, not valid for backend)
+            delete cleanFields.History;
+
+            if (selectedAssetFile) {
+                // Prioritize new upload: remove old URL from fields
+                imageKeys.forEach(key => delete cleanFields[key]);
+            } else if (cleanFields.ImageURL && (cleanFields.ImageURL.startsWith('blob:') || cleanFields.ImageURL.includes('localhost'))) {
                 delete cleanFields.ImageURL;
             }
 

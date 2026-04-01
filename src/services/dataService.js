@@ -24,7 +24,7 @@ const getDirectDriveLink = (url) => {
 
   try {
     // Extract the unique File ID from any Google Drive URL format
-    const idMatch = cleanUrl.match(/\/file\/d\/([^\/?#]+)/) || cleanUrl.match(/[?&]id=([^&]+)/);
+    const idMatch = cleanUrl.match(/\/file\/d\/([^/?#]+)/) || cleanUrl.match(/[?&]id=([^&]+)/);
 
     if (idMatch && idMatch[1]) {
       const fileId = idMatch[1];
