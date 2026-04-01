@@ -219,26 +219,24 @@ const HoardingDetail = ({ hoardings, setHoardings }) => {
 
                 <div className="detail-layout" role="main">
                     <div className="detail-main">
-                        <article className={`hero-visual-wrapper ${isAdmin ? 'admin-photo-editable' : ''}`}>
+                        <article className="hero-visual-wrapper photo-editable-wrapper">
                             <img
                                 src={imageUrl}
                                 alt={`Advertising site at ${hoarding["Locality Site Location"]}`}
                                 className="hero-media"
                                 onError={(e) => { e.target.src = 'https://placehold.co/1200x800?text=Premium+Media+Asset'; }}
                             />
-                            {isAdmin && (
-                                <label className="photo-edit-overlay">
-                                    <Camera size={32} />
-                                    <span>Update Site Photo</span>
-                                    <input
-                                        type="file"
-                                        accept="image/*"
-                                        capture="environment"
-                                        style={{ display: 'none' }}
-                                        onChange={(e) => handleQuickPhotoUpdate(e.target.files[0])}
-                                    />
-                                </label>
-                            )}
+                            <label className="photo-edit-overlay">
+                                <Camera size={32} />
+                                <span>Update Site Photo</span>
+                                <input
+                                    type="file"
+                                    accept="image/*"
+                                    capture="environment"
+                                    style={{ display: 'none' }}
+                                    onChange={(e) => handleQuickPhotoUpdate(e.target.files[0])}
+                                />
+                            </label>
                             <div className="visual-badge">
                                 <ShieldCheck size={16} /> Verified Asset
                             </div>

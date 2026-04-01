@@ -703,8 +703,8 @@
     from { transform: scale(0.95); opacity: 0; }
     to { transform: scale(1); opacity: 1; }
 }
-/* Admin Click to Update Photo Styles */
-.hero-visual-wrapper.admin-photo-editable {
+/* Click to Update Photo Styles (Now Public) */
+.hero-visual-wrapper.photo-editable-wrapper {
     position: relative;
     cursor: pointer;
 }
@@ -713,6 +713,7 @@
     position: absolute;
     inset: 0;
     background: rgba(0, 0, 0, 0.4);
+    border-radius: var(--radius-lg);
     backdrop-filter: blur(4px);
     display: flex;
     flex-direction: column;
@@ -724,7 +725,7 @@
     z-index: 10;
 }
 
-.hero-visual-wrapper.admin-photo-editable:hover .photo-edit-overlay {
+.hero-visual-wrapper.photo-editable-wrapper:hover .photo-edit-overlay {
     opacity: 1;
 }
 
