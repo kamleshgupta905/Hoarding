@@ -20,7 +20,12 @@ const HoardingDetail = ({ hoardings, setHoardings }) => {
     const [isLoading, setIsLoading] = React.useState(false);
     const [formData, setFormData] = React.useState({});
     const [selectedAssetFile, setSelectedAssetFile] = React.useState(null);
+    const [isPhotoActionModalOpen, setIsPhotoActionModalOpen] = React.useState(false);
+    const [pendingFile, setPendingFile] = React.useState(null);
+    
     const scriptUrl = 'https://script.google.com/macros/s/AKfycbwBpAJ0e7kYoDusrtkvaSj0A2PErD4vcMsNzL60EkzMELGTj6dpT16BaM9htFyDVI9a-Q/exec';
+
+
 
     const handleEditAsset = async (e) => {
         e.preventDefault();
@@ -111,7 +116,25 @@ const HoardingDetail = ({ hoardings, setHoardings }) => {
         setIsEditModalOpen(true);
     };
 
-    const handleQuickPhotoUpdate = async (file) => {
+    const handlePhotoChoice = async (choice) => {
+        if (!pendingFile) return;
+        setIsLoading(true);
+        try {
+            if (choice === 'history') {
+                // MOVE current master photo to history and set new one as master.
+                await handleQuickPhotoUpdate(pendingFile, 'archive_existing');
+            } else {
+                // Just replace master.
+                await handleQuickPhotoUpdate(pendingFile);
+            }
+        } finally {
+            setIsLoading(false);
+            setIsPhotoActionModalOpen(false);
+            setPendingFile(null);
+        }
+    };
+
+    const handleQuickPhotoUpdate = async (file, mode) => {
         if (!file) return;
         setIsLoading(true);
         try {
@@ -138,16 +161,25 @@ const HoardingDetail = ({ hoardings, setHoardings }) => {
                     siteName: hoarding["Locality Site Location"],
                     fields: cleanHoardingFields,
                     fileData: fileData,
-                    mimeType: mimeType
+                    mimeType: mimeType,
+                    mode: mode
                 })
             });
 
-            alert("✅ Photo Updated Successfully!");
-            setHoardings(prev => prev.map(h =>
-                h["Locality Site Location"] === hoarding["Locality Site Location"]
-                    ? { ...h, ImageURL: previewUrl }
-                    : h
-            ));
+            alert(mode === 'archive_existing' ? "✅ Existing Photo Archived & New Photo Updated!" : "✅ Photo Updated Successfully!");
+            
+            // Local state update
+            setHoardings(prev => prev.map(h => {
+                if (h["Locality Site Location"] === hoarding["Locality Site Location"]) {
+                    let updatedH = { ...h, ImageURL: previewUrl };
+                    if (mode === 'archive_existing' && h.ImageURL) {
+                        const archiveItem = { url: h.ImageURL, timestamp: new Date().getTime() };
+                        updatedH.History = [archiveItem, ...(h.History || [])];
+                    }
+                    return updatedH;
+                }
+                return h;
+            }));
         } catch (err) {
             alert("Error updating photo: " + err.message);
         } finally {
@@ -155,40 +187,88 @@ const HoardingDetail = ({ hoardings, setHoardings }) => {
         }
     };
     
-    const handleAddAuditPhoto = async (file) => {
-        if (!file) return;
+    const handleAddAuditPhoto = async (filesList) => {
+        if (!filesList || filesList.length === 0) return;
+        
+        setIsLoading(true);
+        const filesArray = Array.from(filesList);
+        let successCount = 0;
+
+        try {
+            for (const file of filesArray) {
+                const fileData = await new Promise((resolve) => {
+                    const reader = new FileReader();
+                    reader.onload = () => resolve(reader.result);
+                    reader.readAsDataURL(file);
+                });
+                const mimeType = file.type;
+                const previewUrl = URL.createObjectURL(file);
+
+                await fetch(scriptUrl, {
+                    method: 'POST',
+                    mode: 'no-cors',
+                    headers: { 'Content-Type': 'text/plain' },
+                    body: JSON.stringify({
+                        action: 'updateHoarding',
+                        siteName: hoarding["Locality Site Location"],
+                        fileData: fileData,
+                        mimeType: mimeType,
+                        mode: 'archive' 
+                    })
+                });
+
+                const newAudit = { url: previewUrl, timestamp: new Date().getTime() };
+                setHoardings(prev => prev.map(h =>
+                    h["Locality Site Location"] === hoarding["Locality Site Location"]
+                        ? { ...h, History: [newAudit, ...(h.History || [])] }
+                        : h
+                ));
+                successCount++;
+            }
+            
+            if (successCount > 0) {
+                alert(`✅ ${successCount} Audit Photo(s) Added Successfully!`);
+            }
+        } catch (err) {
+            console.error("Audit batch upload error:", err);
+            alert("Error adding audit photo: " + err.message);
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
+    const handleDeleteHistoryItem = async (imageUrl) => {
+        if (!isAdmin) return;
+        if (!confirm("Are you sure you want to delete this specific audit photo?")) return;
+
         setIsLoading(true);
         try {
-            const fileData = await new Promise((resolve) => {
-                const reader = new FileReader();
-                reader.onload = () => resolve(reader.result);
-                reader.readAsDataURL(file);
-            });
-            const mimeType = file.type;
-            const previewUrl = URL.createObjectURL(file);
-
             await fetch(scriptUrl, {
                 method: 'POST',
                 mode: 'no-cors',
                 headers: { 'Content-Type': 'text/plain' },
                 body: JSON.stringify({
-                    action: 'updateHoarding',
+                    action: 'deleteHistoryItem',
                     siteName: hoarding["Locality Site Location"],
-                    fileData: fileData,
-                    mimeType: mimeType,
-                    mode: 'archive' 
+                    imageUrl: imageUrl 
                 })
             });
 
-            alert("✅ Audit Photo Added Successfully!");
-            const newAudit = { url: previewUrl, timestamp: new Date().getTime() };
-            setHoardings(prev => prev.map(h =>
-                h["Locality Site Location"] === hoarding["Locality Site Location"]
-                    ? { ...h, History: [newAudit, ...(h.History || [])] }
-                    : h
-            ));
+            // Update local state
+            setHoardings(prev => prev.map(h => {
+                if (h["Locality Site Location"] === hoarding["Locality Site Location"]) {
+                    return {
+                        ...h,
+                        History: (h.History || []).filter(item => {
+                            const url = typeof item === 'object' ? item.url : item;
+                            return url !== imageUrl;
+                        })
+                    };
+                }
+                return h;
+            }));
         } catch (err) {
-            alert("Error adding audit photo: " + err.message);
+            alert("Error deleting history item: " + err.message);
         } finally {
             setIsLoading(false);
         }
@@ -196,12 +276,12 @@ const HoardingDetail = ({ hoardings, setHoardings }) => {
 
 
     React.useEffect(() => {
-        if (isEditModalOpen) {
+        if (isEditModalOpen || isPhotoActionModalOpen) {
             document.body.style.overflow = 'hidden';
         } else {
             document.body.style.overflow = 'unset';
         }
-    }, [isEditModalOpen]);
+    }, [isEditModalOpen, isPhotoActionModalOpen]);
 
     if (!hoarding) {
         return (
@@ -217,6 +297,41 @@ const HoardingDetail = ({ hoardings, setHoardings }) => {
 
     return (
         <>
+            {/* Photo Action Choice Modal */}
+            {isPhotoActionModalOpen && (
+                <div className="modal-overlay" style={{ zIndex: 10002 }}>
+                    <div className="modal-card action-choice-modal animate-in">
+                        <div className="modal-header">
+                            <h3>Select Photo Action</h3>
+                            <button onClick={() => { setIsPhotoActionModalOpen(false); setPendingFile(null); }}><X size={20} /></button>
+                        </div>
+                        <div className="modal-body choice-body">
+                            {pendingFile && (
+                                <div className="choice-preview">
+                                    <img src={URL.createObjectURL(pendingFile)} alt="Pending" />
+                                    <p>How would you like to use this photo?</p>
+                                </div>
+                            )}
+                            <div className="choice-btns">
+                                <button className="choice-btn history" onClick={() => handlePhotoChoice('history')}>
+                                    <div className="choice-icon"><Zap size={20} /></div>
+                                    <div className="choice-text">
+                                        <span>Archive Old & Update</span>
+                                        <small>Save current photo to history before replacing</small>
+                                    </div>
+                                </button>
+                                <button className="choice-btn master" onClick={() => handlePhotoChoice('master')}>
+                                    <div className="choice-icon"><Camera size={20} /></div>
+                                    <div className="choice-text">
+                                        <span>Just Update Photo</span>
+                                        <small>Directly replace the main photo</small>
+                                    </div>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
             <div className="detail-page container animate-in">
                 {isAdmin && (
                     <div className="admin-quick-actions">
@@ -274,7 +389,12 @@ const HoardingDetail = ({ hoardings, setHoardings }) => {
                                     accept="image/*"
                                     capture="environment"
                                     style={{ display: 'none' }}
-                                    onChange={(e) => handleQuickPhotoUpdate(e.target.files[0])}
+                                    onChange={(e) => {
+                                        if (e.target.files[0]) {
+                                            setPendingFile(e.target.files[0]);
+                                            setIsPhotoActionModalOpen(true);
+                                        }
+                                    }}
                                 />
                             </label>
                             <div className="visual-badge">
@@ -357,7 +477,16 @@ const HoardingDetail = ({ hoardings, setHoardings }) => {
                                         return (
                                             <div key={idx} className="audit-card">
                                                 <div className="audit-card-media">
-                                                    <img src={finalUrl} alt={`Audit update ${idx + 1}`} />
+                                                    <img src={finalUrl} alt={`Audit Update ${idx + 1}`} loading="lazy" />
+                                                    {isAdmin && (
+                                                        <button 
+                                                            className="delete-item-btn" 
+                                                            onClick={() => handleDeleteHistoryItem(finalUrl)}
+                                                            title="Delete this update"
+                                                        >
+                                                            <Trash2 size={14} />
+                                                        </button>
+                                                    )}
                                                     {idx === 0 ? (
                                                         <span className="audit-badge latest">LATEST AUDIT</span>
                                                     ) : (
@@ -408,13 +537,14 @@ const HoardingDetail = ({ hoardings, setHoardings }) => {
                                 </button>
 
                                 <label className="audit-upload-btn-sidebar">
-                                    <Camera size={18} /> Add Site Audit Photo
+                                    <Camera size={18} /> Add Site Audit Photo(s)
                                     <input 
                                         type="file" 
+                                        multiple
                                         accept="image/*" 
                                         capture="environment" 
                                         style={{ display: 'none' }} 
-                                        onChange={(e) => handleAddAuditPhoto(e.target.files[0])} 
+                                        onChange={(e) => handleAddAuditPhoto(e.target.files)} 
                                     />
                                 </label>
 
@@ -439,13 +569,7 @@ const HoardingDetail = ({ hoardings, setHoardings }) => {
                             </div>
                         </div>
 
-                        <div className="assistance-card animate-in" style={{ animationDelay: '0.3s' }}>
-                            <h4>Need Campaign Assistance?</h4>
-                            <p>Our media planning experts can help you design the perfect outdoor strategy.</p>
-                            <a href="tel:+919569528771" className="call-link">
-                                <Phone size={16} /> Contact Account Manager
-                            </a>
-                        </div>
+
                     </aside>
                 </div>
             </div>

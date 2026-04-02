@@ -29,6 +29,7 @@ function doPost(e) {
     if (p.action === 'updateHoarding') return updateHoardingDetails(p);
     if (p.action === 'addHoarding') return addHoardingDetails(p);
     if (p.action === 'deleteHoarding') return deleteHoardingDetails(p);
+    if (p.action === 'deleteHistoryItem') return deleteHistoryItem(p);
 
     // Legacy: File Upload to Input Folder
     if (p.fileData) {
@@ -89,7 +90,7 @@ function uploadImageToDrive(data) {
     var blob = Utilities.newBlob(decoded, data.mimeType || 'image/jpeg', (data.siteName || "Site") + "_" + new Date().getTime() + ".jpg");
     var file = folder.createFile(blob);
     file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
-    return "https://drive.google.com/thumbnail?sz=w1280&id=" + file.getId();
+    return "https://lh3.googleusercontent.com/d/" + file.getId();
   } catch (err) {
     logDebug("uploadImageToDrive FAILED: " + err.toString());
     return null;
@@ -132,114 +133,196 @@ function updateHoardingDetails(data) {
   if (!data || !data.siteName || typeof data.siteName !== 'string') {
     return res({ success: false, error: 'siteName is required and must be a string' });
   }
-  if (data.siteName.length > 500) {
-    return res({ success: false, error: 'siteName is too long (max 500 chars)' });
+  
+  // ✅ STEP 1: LockService to prevent race conditions (especially for History appends)
+  var lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(10000); // Max 10 seconds wait
+  } catch (e) {
+    return res({ success: false, error: 'Could not obtain lock on spreadsheet. Please try again.' });
   }
 
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
-  var sheet = ss.getSheetByName(CONFIG.SHEET_NAME);
-  
-  // Use getMaxColumns to get ALL headers including empty-data columns
-  var headers = getAllHeaders(sheet);
-  
-  var idxSite = headers.findIndex(h => cleanFull(h) === cleanFull(CONFIG.COL_SITE_NAME));
-  if (idxSite === -1) return res({ success: false, error: 'Site Name column not found' });
+  try {
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var sheet = ss.getSheetByName(CONFIG.SHEET_NAME);
+    
+    // Use getMaxColumns to get ALL headers including empty-data columns
+    var headers = getAllHeaders(sheet);
+    
+    var idxSite = headers.findIndex(h => cleanFull(h) === cleanFull(CONFIG.COL_SITE_NAME));
+    if (idxSite === -1) return res({ success: false, error: 'Site Name column not found' });
 
-  // Find the target row
-  var rows = sheet.getDataRange().getValues();
-  var rowIndex = -1;
-  var searchName = cleanFull(data.siteName);
+    // Find the target row
+    var rows = sheet.getDataRange().getValues();
+    var rowIndex = -1;
+    var searchName = cleanFull(data.siteName);
 
-  for (var i = 1; i < rows.length; i++) {
-    if (cleanFull(rows[i][idxSite]) === searchName) {
-      rowIndex = i + 1;
-      break;
+    for (var i = 1; i < rows.length; i++) {
+      if (cleanFull(rows[i][idxSite]) === searchName) {
+        rowIndex = i + 1;
+        break;
+      }
     }
-  }
 
-  if (rowIndex === -1) return res({ success: false, error: 'Site not found: ' + data.siteName });
+    if (rowIndex === -1) return res({ success: false, error: 'Site not found: ' + data.siteName });
 
-  // 1. Identify Image Column
-  var idxImg = findImageColumn(headers);
-  logDebug("UPDATE | Site: " + data.siteName + " | Row: " + rowIndex + " | idxImg: " + idxImg + " | hasFile: " + (!!data.fileData));
+    // 1. Identify Image Column
+    var idxImg = findImageColumn(headers);
+    logDebug("UPDATE | Site: " + data.siteName + " | Row: " + rowIndex + " | idxImg: " + idxImg + " | hasFile: " + (!!data.fileData));
 
-  // 2. Update specified fields (General Edit)
-  if (data.fields) {
-    for (var fKey in data.fields) {
-      var fieldKey = cleanFull(fKey);
+    // 2. Update specified fields (General Edit)
+    if (data.fields) {
+      for (var fKey in data.fields) {
+        var fieldKey = cleanFull(fKey);
+        
+        // Prevent overwriting ImageURL via fields if a new file is being uploaded
+        if (data.fileData && (fieldKey === 'imageurl' || fieldKey.includes('image') || fieldKey.includes('photo') || fieldKey.includes('img') || fieldKey.includes('pic'))) continue;
+        
+        // Always skip history from fields
+        if (fieldKey === 'history' || fieldKey === 'executionhistory') continue;
+
+        var idx = headers.findIndex(h => {
+          var sheetKey = cleanFull(h);
+          if (sheetKey === fieldKey) return true;
+          // Map common synonyms
+          if ((fieldKey.includes('cost') || fieldKey.includes('price')) && 
+              (sheetKey.includes('cost') || sheetKey.includes('price'))) return true;
+          if (fieldKey.startsWith('lat') && sheetKey.startsWith('lat')) return true;
+          if (fieldKey.startsWith('long') && sheetKey.startsWith('long')) return true;
+          return false;
+        });
+        
+        if (idx !== -1) {
+          var newVal = data.fields[fKey];
+          // 🛡️ SAFETY CHECK: DO NOT erase a Drive link with an empty update
+          if (idx === idxImg && (!newVal || newVal === "")) {
+            var existing = sheet.getRange(rowIndex, idx + 1).getValue();
+            if (existing && (existing.toString().indexOf('drive.google.com') > -1 || existing.toString().indexOf('lh3.googleusercontent.com') > -1)) {
+              logDebug("UPDATE | Protected existing image from empty override.");
+              continue; 
+            }
+          }
+          sheet.getRange(rowIndex, idx + 1).setValue(newVal);
+        }
+      }
+    }
+
+    // 3. Handle Status (Legacy/AI path)
+    if (data.status) {
+      var idxStatus = headers.findIndex(h => cleanFull(h) === 'status');
+      if (idxStatus !== -1) sheet.getRange(rowIndex, idxStatus + 1).setValue(data.status);
+    }
+
+    // 4. Handle Image Upload - DIRECT WRITE to cell
+    if (data.fileData) {
+      var fileUrl = uploadImageToDrive(data);
       
-      // Prevent overwriting ImageURL via fields if a new file is being uploaded
-      if (data.fileData && (fieldKey === 'imageurl' || fieldKey.includes('image') || fieldKey.includes('photo') || fieldKey.includes('img') || fieldKey.includes('pic'))) continue;
-      
-      // Always skip history from fields
-      if (fieldKey === 'history' || fieldKey === 'executionhistory') continue;
+      if (fileUrl) {
+        logDebug("UPDATE IMG OK | URL: " + fileUrl);
+        
+        // Check for specific modes: 
+        // 'archive' = New file -> History
+        // 'archive_existing' = Current Master -> History, New file -> Master
+        
+        var historyUpdated = false;
+        if (idxHistory !== -1) {
+          var currentHistory = sheet.getRange(rowIndex, idxHistory + 1).getValue();
+          var itemToArchive = null;
 
-      var idx = headers.findIndex(h => {
-        var sheetKey = cleanFull(h);
-        if (sheetKey === fieldKey) return true;
-        // Map common synonyms
-        if ((fieldKey.includes('cost') || fieldKey.includes('price')) && 
-            (sheetKey.includes('cost') || sheetKey.includes('price'))) return true;
-        if (fieldKey.startsWith('lat') && sheetKey.startsWith('lat')) return true;
-        if (fieldKey.startsWith('long') && sheetKey.startsWith('long')) return true;
-        return false;
-      });
-      
-      if (idx !== -1) {
-        var newVal = data.fields[fKey];
-        // 🛡️ SAFETY CHECK: DO NOT erase a Drive link with an empty update
-        if (idx === idxImg && (!newVal || newVal === "")) {
-          var existing = sheet.getRange(rowIndex, idx + 1).getValue();
-          if (existing && existing.toString().indexOf('drive.google.com') > -1) {
-            logDebug("UPDATE | Protected existing image from empty override.");
-            continue; 
+          if (data.mode === 'archive' || data.mode === 'both') {
+            itemToArchive = fileUrl + "|" + new Date().getTime(); 
+            logDebug("UPDATE | Archiving NEW upload to history");
+          } else if (data.mode === 'archive_existing') {
+            var existingMaster = sheet.getRange(rowIndex, idxImg + 1).getValue();
+            if (existingMaster && existingMaster.toString().indexOf('http') > -1) {
+              itemToArchive = existingMaster + "|" + new Date().getTime();
+              logDebug("UPDATE | Archiving EXISTING master to history before update");
+            }
+          }
+
+          if (itemToArchive) {
+            var updatedHistory = currentHistory ? currentHistory + "," + itemToArchive : itemToArchive;
+            sheet.getRange(rowIndex, idxHistory + 1).setValue(updatedHistory);
+            historyUpdated = true;
           }
         }
-        sheet.getRange(rowIndex, idx + 1).setValue(newVal);
+
+        // Only update master image if mode is NOT 'archive'
+        if (idxImg !== -1 && data.mode !== 'archive') {
+          sheet.getRange(rowIndex, idxImg + 1).setValue(fileUrl);
+          SpreadsheetApp.flush(); 
+          logDebug("UPDATE WROTE ImageURL to Row " + rowIndex + " Col " + (idxImg + 1));
+        }
+      } else {
+        logDebug("UPDATE IMG FAILED - uploadImageToDrive returned null");
       }
     }
+
+    SpreadsheetApp.flush(); // ✅ Ensure all field updates are persisted
+    return res({ success: true, message: 'Updated successfully' });
+  } catch (err) {
+    logDebug("UPDATE CRITICAL ERROR: " + err.toString());
+    return res({ success: false, error: err.toString() });
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function deleteHistoryItem(data) {
+  if (!data || !data.siteName || !data.imageUrl) {
+    return res({ success: false, error: 'siteName and imageUrl are required' });
   }
 
-  // 3. Handle Status (Legacy/AI path)
-  if (data.status) {
-    var idxStatus = headers.findIndex(h => cleanFull(h) === 'status');
-    if (idxStatus !== -1) sheet.getRange(rowIndex, idxStatus + 1).setValue(data.status);
+  var lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(10000);
+  } catch (e) {
+    return res({ success: false, error: 'Could not obtain lock.' });
   }
 
-  // 4. Handle Image Upload - DIRECT WRITE to cell
-  if (data.fileData) {
-    var fileUrl = uploadImageToDrive(data);
-    
-    if (fileUrl) {
-      logDebug("UPDATE IMG OK | URL: " + fileUrl);
-      
-      // Only update master image if mode is NOT archive
-      if (idxImg !== -1 && data.mode !== 'archive') {
-        sheet.getRange(rowIndex, idxImg + 1).setValue(fileUrl);
-        SpreadsheetApp.flush(); // ✅ Force immediate write to sheet
-        logDebug("UPDATE WROTE ImageURL to Row " + rowIndex + " Col " + (idxImg + 1));
-      }
+  try {
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var sheet = ss.getSheetByName(CONFIG.SHEET_NAME);
+    var headers = getAllHeaders(sheet);
+    var idxSite = headers.findIndex(h => cleanFull(h) === cleanFull(CONFIG.COL_SITE_NAME));
+    var idxHistory = headers.findIndex(h => {
+      var clean = h.toString().toLowerCase().replace(/[^a-z0-9]/g, '');
+      return clean === 'executionhistory' || clean === 'history';
+    });
 
-      var idxHistory = headers.findIndex(h => {
-        var clean = h.toString().toLowerCase().replace(/[^a-z0-9]/g, '');
-        return clean === 'executionhistory' || clean === 'history';
-      });
+    if (idxSite === -1 || idxHistory === -1) return res({ success: false, error: 'Required columns not found' });
 
-      if (idxHistory !== -1 && (data.mode === 'archive' || data.mode === 'both')) {
-        var currentHistory = sheet.getRange(rowIndex, idxHistory + 1).getValue();
-        // Append URL with a timestamp separator for the frontend to parse
-        var timestampedUrl = fileUrl + "|" + new Date().getTime(); 
-        var updatedHistory = currentHistory ? currentHistory + "," + timestampedUrl : timestampedUrl;
-        sheet.getRange(rowIndex, idxHistory + 1).setValue(updatedHistory);
-        logDebug("UPDATE | Added to History: " + timestampedUrl);
+    var rows = sheet.getDataRange().getValues();
+    var rowIndex = -1;
+    var searchName = cleanFull(data.siteName);
+
+    for (var i = 1; i < rows.length; i++) {
+      if (cleanFull(rows[i][idxSite]) === searchName) {
+        rowIndex = i + 1;
+        break;
       }
-    } else {
-      logDebug("UPDATE IMG FAILED - uploadImageToDrive returned null");
     }
-  }
 
-  SpreadsheetApp.flush(); // ✅ Ensure all field updates are persisted
-  return res({ success: true, message: 'Updated successfully' });
+    if (rowIndex === -1) return res({ success: false, error: 'Site not found' });
+
+    var currentHistory = sheet.getRange(rowIndex, idxHistory + 1).getValue().toString();
+    if (!currentHistory) return res({ success: true, message: 'History already empty' });
+
+    // Filter out the item that contains the target URL
+    var items = currentHistory.split(',');
+    var filteredItems = items.filter(function(item) {
+      // item might be "url|timestamp"
+      return item.indexOf(data.imageUrl) === -1;
+    });
+
+    sheet.getRange(rowIndex, idxHistory + 1).setValue(filteredItems.join(','));
+    SpreadsheetApp.flush();
+    return res({ success: true, message: 'History item removed' });
+  } catch (err) {
+    return res({ success: false, error: err.toString() });
+  } finally {
+    lock.releaseLock();
+  }
 }
 
 function addHoardingDetails(data) {
@@ -482,7 +565,7 @@ function mapExistingImagesToSheet() {
     if (imageMap[site]) {
       var img = imageMap[site];
       img.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
-      var url = "https://drive.google.com/thumbnail?sz=w1280&id=" + img.getId() + "&t=" + Date.now();
+      var url = "https://lh3.googleusercontent.com/d/" + img.getId();
       updates.push([i + 1, idxImg + 1, url]);
     }
   }

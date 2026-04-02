@@ -28,6 +28,7 @@ const CityList = ({ hoardings }) => {
     const [viewType, setViewType] = useState('grid'); // 'grid' or 'map'
 
     // Filter states
+    const [filterCity, setFilterCity] = useState('All');
     const [filterLocality, setFilterLocality] = useState('All');
     const [filterSize, setFilterSize] = useState('All');
     const [filterDigital, setFilterDigital] = useState('All');
@@ -39,23 +40,32 @@ const CityList = ({ hoardings }) => {
 
     const cityHoardings = useMemo(() => {
         if (isAllCities) {
-            return hoardings.filter(h => h.Status !== 'Disabled');
+            return hoardings.filter(h => h.STATUS && h.STATUS.toLowerCase() !== 'disabled');
         }
         return hoardings.filter(h =>
             h.City?.toLowerCase() === cityName?.toLowerCase() &&
-            h.Status !== 'Disabled'
+            h.STATUS && h.STATUS.toLowerCase() !== 'disabled'
         );
     }, [hoardings, cityName, isAllCities]);
 
+    const citiesOption = useMemo(() => {
+        const rawCities = hoardings.map(h => h.City?.trim()).filter(Boolean);
+        // Normalize to Title Case (e.g. "meerut" -> "Meerut") to avoid duplicates
+        const normalized = rawCities.map(c => c.charAt(0).toUpperCase() + c.slice(1).toLowerCase());
+        return ['All', ...new Set(normalized)];
+    }, [hoardings]);
 
-
-    const localities = ['All', ...new Set(cityHoardings.map(h => h.Locality))];
-    const sizes = ['All', ...new Set(cityHoardings.map(h => h["Size (Large/Medium/Small)"]))];
-    const mediaFormats = ['All', ...new Set(cityHoardings.map(h => h["Media Format (Front Lit / Back Lit / Non Lit)"]))];
+    const localities = useMemo(() => ['All', ...new Set(cityHoardings.map(h => h.Locality).filter(l => l))], [cityHoardings]);
+    const sizes = useMemo(() => ['All', ...new Set(cityHoardings.map(h => h["Size (Large/Medium/Small)"]).filter(s => s))], [cityHoardings]);
+    const mediaFormats = useMemo(() => ['All', ...new Set(cityHoardings.map(h => h["Media Format (Front Lit / Back Lit / Non Lit)"]).filter(m => m))], [cityHoardings]);
 
     const filteredHoardings = useMemo(() => {
         let filtered = cityHoardings.filter(h => {
             const hPrice = Number(h["Avg Monthly Cost (INR)"]);
+            const hCity = h.City?.trim().toLowerCase();
+            const selectedCity = filterCity.toLowerCase();
+            
+            const matchCity = filterCity === 'All' || hCity === selectedCity;
             const matchLocality = filterLocality === 'All' || h.Locality === filterLocality;
             const matchSize = filterSize === 'All' || h["Size (Large/Medium/Small)"] === filterSize;
             const matchDigital = filterDigital === 'All' || h["Digital / Non Digital"] === filterDigital;
@@ -70,7 +80,7 @@ const CityList = ({ hoardings }) => {
                 h.Locality?.toLowerCase().includes(searchQuery.toLowerCase()) ||
                 h["Locality Site Location"]?.toLowerCase().includes(searchQuery.toLowerCase());
 
-            return matchLocality && matchSize && matchDigital && matchMedia && matchPrice && matchSearch;
+            return matchCity && matchLocality && matchSize && matchDigital && matchMedia && matchPrice && matchSearch;
         });
 
         if (sortBy === 'price-low') {
@@ -83,7 +93,7 @@ const CityList = ({ hoardings }) => {
         }
 
         return filtered;
-    }, [cityHoardings, filterLocality, filterSize, filterDigital, filterMedia, priceRange, sortBy, searchQuery]);
+    }, [cityHoardings, filterCity, filterLocality, filterSize, filterDigital, filterMedia, priceRange, sortBy, searchQuery]);
 
     const mapCenter = cityHoardings.length > 0
         ? [Number(cityHoardings[0].Latitude), Number(cityHoardings[0].Longitude)]
@@ -139,6 +149,15 @@ const CityList = ({ hoardings }) => {
                         <h4><Filter size={16} /> Filters</h4>
                     </div>
 
+                    {isAllCities && (
+                        <div className="filter-group">
+                            <label>Select City</label>
+                            <select value={filterCity} onChange={(e) => setFilterCity(e.target.value)}>
+                                {citiesOption.map(c => <option key={c} value={c}>{c}</option>)}
+                            </select>
+                        </div>
+                    )}
+
                     <div className="filter-group">
                         <label>Locality</label>
                         <select value={filterLocality} onChange={(e) => setFilterLocality(e.target.value)}>
@@ -180,6 +199,7 @@ const CityList = ({ hoardings }) => {
                     </div>
 
                     <button className="reset-btn" onClick={() => {
+                        setFilterCity('All');
                         setFilterLocality('All');
                         setFilterSize('All');
                         setFilterDigital('All');

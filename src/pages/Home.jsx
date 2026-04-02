@@ -8,25 +8,24 @@ const Home = ({ hoardings }) => {
     const navigate = useNavigate();
     const [searchTerm, setSearchTerm] = useState('');
 
-    // Clean up city names and filter out empty/undefined
-    const cities = [...new Set(hoardings.map(h => h.City?.trim()).filter(Boolean))];
+    // Derive unique cities ONLY from the actual inventory (already filtered for active status)
+    const rawCities = hoardings.map(h => h.City?.trim()).filter(Boolean);
+    // Normalize to Title Case to avoid duplicates like "Meerut" and "meerut"
+    const normalizedCities = [...new Set(rawCities.map(c => c.charAt(0).toUpperCase() + c.slice(1).toLowerCase()))];
     const totalSites = hoardings.length;
 
-    // List of cities we want to feature prominently
-    const featuredList = [
-        'Delhi', 'Mumbai', 'Bangalore', 'Noida', 'Gurgaon', 'Meerut',
-        'Pune', 'Hyderabad', 'Jaipur', 'Lucknow', 'Ahmedabad', 'Chandigarh'
-    ];
-
-    // Combine spreadsheet cities with our featured list for a complete view
+    // Filter out any garbage or summary rows that might be in the sheet
     const garbageKeywords = ['all', 'total', 'active', 'sites'];
-    const allCities = [...new Set([...featuredList, ...cities])].filter(city => {
+    const allCities = normalizedCities.filter(city => {
         const lowerCity = city.toLowerCase();
         const isGarbage = (garbageKeywords.filter(kw => lowerCity.includes(kw)).length >= 2) ||
             lowerCity === 'grand total' ||
             city.length < 3;
         return !isGarbage;
     });
+
+    // Optional: Sort cities alphabetically
+    allCities.sort((a, b) => a.localeCompare(b));
 
     const handleCitySelect = (city) => {
         navigate(`/${city}`);

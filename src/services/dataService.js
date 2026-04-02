@@ -14,25 +14,18 @@ const getDirectDriveLink = (url) => {
   if (!url || typeof url !== 'string') return '';
   const cleanUrl = url.trim();
 
-  // If it's already a thumbnail link correctly formatted, return it
-  if (cleanUrl.includes('drive.google.com/thumbnail')) return cleanUrl;
+  // If it's already an lh3 link, return it as it's the most robust
+  if (cleanUrl.includes('lh3.googleusercontent.com')) return cleanUrl;
 
-  // Skip if it is not a Google Drive link
-  if (!cleanUrl.includes('drive.google.com') && !cleanUrl.includes('docs.google.com')) {
-    return cleanUrl;
-  }
+  // Extract the unique File ID from any Google Drive URL format (direct, preview, thumbnail, etc.)
+  const idMatch = cleanUrl.match(/\/file\/d\/([^/?#]+)/) || 
+                  cleanUrl.match(/[?&]id=([^&]+)/) || 
+                  cleanUrl.match(/\/d\/([^/?#]+)/);
 
-  try {
-    // Extract the unique File ID from any Google Drive URL format
-    const idMatch = cleanUrl.match(/\/file\/d\/([^/?#]+)/) || cleanUrl.match(/[?&]id=([^&]+)/);
-
-    if (idMatch && idMatch[1]) {
-      const fileId = idMatch[1];
-      // ⚡ Using the THUMBNAIL endpoint which avoids 403 errors common with 'uc' and 'lh3'
-      return `https://drive.google.com/thumbnail?sz=w1200&id=${fileId}`;
-    }
-  } catch (err) {
-    console.error("Drive URL Transform Error:", err);
+  if (idMatch && idMatch[1]) {
+    const fileId = idMatch[1];
+    // ⚡ Using lh3.googleusercontent.com/d/[ID] which is faster and bypasses many auth issues
+    return `https://lh3.googleusercontent.com/d/${fileId}`;
   }
 
   return cleanUrl;
