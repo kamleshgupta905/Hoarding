@@ -1039,44 +1039,34 @@ const AdminDashboard = ({ hoardings, setHoardings }) => {
         return sum + v;
     }, 0);
     const avgMonthlyRate = totalHoardingsCount > 0 ? Math.round(totalMonthlyRevenue / totalHoardingsCount) : 0;
+    
+    const totalSqFt = hoardings.reduce((sum, h) => {
+        const sqft = parseFloat(h["Total Sq. Ft"]) || (parseFloat(h["Width"]) * parseFloat(h["Height"])) || 0;
+        return sum + sqft;
+    }, 0);
 
-    // Prime Zones Breakdown (Top 7)
+    // Prime Corridors / Localities Breakdown (Top 8 from real Meerut data)
     const zoneMap = {};
     hoardings.forEach(h => {
-        const z = (h["Area"] || h["Locality"] || 'Prime Meerut').trim();
+        const z = (h["Locality"] || h["Area"] || 'Meerut Central').trim();
         if (z) zoneMap[z] = (zoneMap[z] || 0) + 1;
     });
     const overviewTopZones = Object.entries(zoneMap)
         .sort((a, b) => b[1] - a[1])
-        .slice(0, 7)
+        .slice(0, 8)
         .map(([name, count]) => ({
             name,
             count,
-            percent: Math.round((count / Math.max(totalHoardingsCount, 1)) * 100)
+            percent: ((count / Math.max(totalHoardingsCount, 1)) * 100).toFixed(1)
         }));
     const maxZoneCount = Math.max(...overviewTopZones.map(z => z.count), 1);
 
-    // Media Formats Breakdown
-    const mediaMap = {};
-    hoardings.forEach(h => {
-        const m = (h["Media"] || h["Type of Site"] || h["Media Format (Front Lit / Back Lit / Non Lit)"] || 'Unipole').trim();
-        if (m) mediaMap[m] = (mediaMap[m] || 0) + 1;
-    });
-    const overviewTopMedia = Object.entries(mediaMap)
-        .sort((a, b) => b[1] - a[1])
-        .slice(0, 5)
-        .map(([name, count]) => ({
-            name,
-            count,
-            percent: Math.round((count / Math.max(totalHoardingsCount, 1)) * 100)
-        }));
-
     // Pricing Distribution Tiers
     const overviewPriceTiers = [
-        { label: 'Under ₹25K', min: 0, max: 25000, count: 0, color: '#38bdf8' },
-        { label: '₹25K - ₹50K', min: 25000, max: 50000, count: 0, color: '#6366f1' },
-        { label: '₹50K - ₹1L', min: 50000, max: 100000, count: 0, color: '#a855f7' },
-        { label: 'Above ₹1L', min: 100000, max: Infinity, count: 0, color: '#ec4899' },
+        { label: 'Under ₹25,000 / mo', min: 0, max: 25000, count: 0, color: '#0ea5e9' },
+        { label: '₹25,000 - ₹50,000 / mo', min: 25000, max: 50000, count: 0, color: '#4f46e5' },
+        { label: '₹50,000 - ₹1,00,000 / mo', min: 50000, max: 100000, count: 0, color: '#8b5cf6' },
+        { label: 'Above ₹1,00,000 / mo', min: 100000, max: Infinity, count: 0, color: '#059669' },
     ];
     hoardings.forEach(h => {
         const p = parseFloat(String(h["Rental Per Month"] || h["Avg Monthly Cost (INR)"] || 0).replace(/[^0-9.]/g, '')) || 0;
