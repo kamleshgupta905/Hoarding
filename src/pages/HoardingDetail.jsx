@@ -64,14 +64,11 @@ const HoardingDetail = ({ hoardings, setHoardings }) => {
                 return `${url}|${time}`;
             }).join(',');
 
-            // Clean formData to remove any temporary blob URLs and image-related keys
             const cleanFields = { 
                 ...formData,
                 "ExecutionHistory": historyString
             };
             const imageKeys = ['ImageURL', 'imageurl', 'Image URL', 'Site Photo', 'Photo'];
-            
-            // Remove 'History' array, keep 'ExecutionHistory' string
             delete cleanFields.History;
 
             if (selectedAssetFile) {
@@ -80,19 +77,58 @@ const HoardingDetail = ({ hoardings, setHoardings }) => {
                 delete cleanFields.ImageURL;
             }
 
+            const siteLocationName = String(formData["Location "] || formData.Location || formData["Locality Site Location"] || hoarding["Location "] || '').trim();
+            const siteCityName = String(formData.City || formData.city || hoarding.City || '').trim();
+            const siteLocalityName = String(formData.Locality || formData.Area || formData["Area"] || hoarding.Locality || '').trim();
+            const price = String(formData["Avg Monthly Cost (INR)"] ?? formData["Rental Per Month"] ?? formData["Avg. monthly Cost"] ?? formData.Price ?? '0').trim();
+            const size = String(formData["Size (Large/Medium/Small)"] ?? formData["Size (Large/ Medium/ Small)"] ?? formData.Size ?? '').trim();
+            const mediaFormat = String(formData["Media Format (Front Lit / Back Lit / Non Lit)"] ?? formData["Media Format"] ?? formData["Media Type"] ?? '').trim();
+
+            const fullUpdatedFields = {
+                ...cleanFields,
+                "Locality Site Location": siteLocationName,
+                "Location ": siteLocationName,
+                Location: siteLocationName,
+                City: siteCityName,
+                city: siteCityName,
+                Locality: siteLocalityName,
+                Area: siteLocalityName,
+                "Avg Monthly Cost (INR)": price,
+                "Rental Per Month": price,
+                "Avg. monthly Cost": price,
+                Price: price,
+                "Size (Large/Medium/Small)": size,
+                "Size (Large/ Medium/ Small)": size,
+                Size: size,
+                "Media Format (Front Lit / Back Lit / Non Lit)": mediaFormat,
+                "Media Format": mediaFormat,
+                "Media Type": mediaFormat,
+                STATUS: formData.STATUS || 'Available',
+                Latitude: formData.Latitude || '',
+                Longitude: formData.Longitude || '',
+                ImageURL: updatedImageURL
+            };
+
             await syncToGoogleSheet({
                 action: 'updateHoarding',
-                siteName: hoarding["Location "],
-                fields: cleanFields,
+                siteName: hoarding["Location "] || hoarding.Location || hoarding["Locality Site Location"],
+                fields: fullUpdatedFields,
                 fileData: fileData,
                 mimeType: mimeType
             });
-            alert("✅ Asset Updated!");
-            setHoardings(prev => prev.map(h =>
-                h["Location "] === hoarding["Location "]
-                    ? { ...h, ...formData, ImageURL: updatedImageURL }
-                    : h
-            ));
+            alert("✅ Asset Updated Successfully!");
+            setHoardings(prev => {
+                const targetKey = String(hoarding["Location "] || hoarding.Location || hoarding["Locality Site Location"] || '').trim().toLowerCase();
+                const next = prev.map(h => {
+                    const hKey = String(h["Location "] || h.Location || h["Locality Site Location"] || '').trim().toLowerCase();
+                    return hKey === targetKey ? { ...h, ...fullUpdatedFields } : h;
+                });
+                try {
+                    localStorage.setItem('hoardings_cache', JSON.stringify(next));
+                    localStorage.setItem('last_hoardings_update', Date.now().toString());
+                } catch {}
+                return next;
+            });
             setIsEditModalOpen(false);
             setSelectedAssetFile(null);
         } catch (err) {
@@ -103,31 +139,66 @@ const HoardingDetail = ({ hoardings, setHoardings }) => {
     };
 
     const handleDeleteAsset = async () => {
-        if (!confirm(`Are you sure you want to PERMANENTLY delete "${hoarding["Location "]}"? This cannot be undone.`)) return;
+        const siteName = hoarding["Locality Site Location"] || hoarding["Location "] || hoarding.Location || "this site";
+        if (!confirm(`Are you sure you want to PERMANENTLY delete "${siteName}"? This cannot be undone.`)) return;
+
+        const targetClean = String(siteName).trim().toLowerCase();
+        setHoardings(prev => {
+            const next = prev.filter(h => {
+                const hName = String(h["Locality Site Location"] || h["Location "] || h.Location || '').trim().toLowerCase();
+                return hName !== targetClean;
+            });
+            try {
+                localStorage.setItem('hoardings_cache', JSON.stringify(next));
+                localStorage.setItem('last_hoardings_update', Date.now().toString());
+            } catch {}
+            return next;
+        });
 
         setIsLoading(true);
         try {
-            await fetch(scriptUrl, {
-                method: 'POST',
-                mode: 'no-cors',
-                headers: { 'Content-Type': 'text/plain' },
-                body: JSON.stringify({
-                    action: 'deleteHoarding',
-                    siteName: hoarding["Location "]
-                })
+            await syncToGoogleSheet({
+                action: 'deleteHoarding',
+                siteName: siteName
             });
             alert("✅ Asset Deleted!");
-            setHoardings(prev => prev.filter(h => h["Location "] !== hoarding["Location "]));
             navigate(`/${city}`);
         } catch (err) {
-            alert("Error deleting asset: " + err.message);
+            console.error("Delete sync warning:", err);
+            navigate(`/${city}`);
         } finally {
             setIsLoading(false);
         }
     };
 
     const openEditModal = () => {
-        setFormData({ ...hoarding });
+        const siteLocation = hoarding["Locality Site Location"] || hoarding["Location "] || hoarding.Location || '';
+        const price = hoarding["Avg Monthly Cost (INR)"] ?? hoarding["Rental Per Month"] ?? hoarding["Avg. monthly Cost"] ?? hoarding.Price ?? '';
+        const locality = hoarding.Locality || hoarding.Area || hoarding["Area"] || '';
+        const size = hoarding["Size (Large/Medium/Small)"] || hoarding["Size (Large/ Medium/ Small)"] || hoarding.Size || '';
+        const media = hoarding["Media Format (Front Lit / Back Lit / Non Lit)"] || hoarding["Media Format"] || hoarding["Media Type"] || '';
+
+        setFormData({
+            ...hoarding,
+            "Location ": siteLocation,
+            Location: siteLocation,
+            "Locality Site Location": siteLocation,
+            City: hoarding.City || hoarding.city || '',
+            city: hoarding.City || hoarding.city || '',
+            Locality: locality,
+            Area: locality,
+            "Rental Per Month": price,
+            "Avg Monthly Cost (INR)": price,
+            "Avg. monthly Cost": price,
+            Price: price,
+            "Size (Large/Medium/Small)": size,
+            "Size (Large/ Medium/ Small)": size,
+            Size: size,
+            "Media Format (Front Lit / Back Lit / Non Lit)": media,
+            "Media Format": media,
+            "Media Type": media,
+            STATUS: hoarding.STATUS || 'Available'
+        });
         setSelectedAssetFile(null);
         setIsEditModalOpen(true);
     };
@@ -671,41 +742,89 @@ const HoardingDetail = ({ hoardings, setHoardings }) => {
                                     <div className="form-row three-cols">
                                         <div className="form-group span-two">
                                             <label>Location</label>
-                                            <input value={formData["Location "] || ''} onChange={(e) => setFormData({ ...formData, ["Location "]: e.target.value })} />
+                                            <input 
+                                                value={formData["Location "] ?? formData.Location ?? formData["Locality Site Location"] ?? ''} 
+                                                onChange={(e) => setFormData({ 
+                                                    ...formData, 
+                                                    "Location ": e.target.value,
+                                                    Location: e.target.value,
+                                                    "Locality Site Location": e.target.value
+                                                })} 
+                                            />
                                         </div>
                                         <div className="form-group">
                                             <label>City</label>
-                                            <input value={formData.City || ''} onChange={(e) => setFormData({ ...formData, City: e.target.value })} />
+                                            <input 
+                                                value={formData.City ?? formData.city ?? ''} 
+                                                onChange={(e) => setFormData({ 
+                                                    ...formData, 
+                                                    City: e.target.value,
+                                                    city: e.target.value
+                                                })} 
+                                            />
                                         </div>
                                     </div>
 
                                     <div className="form-row three-cols">
                                         <div className="form-group">
                                             <label>Locality</label>
-                                            <input value={formData["Area"] || ''} onChange={(e) => setFormData({ ...formData, Locality: e.target.value })} />
+                                            <input 
+                                                value={formData.Locality ?? formData.Area ?? ''} 
+                                                onChange={(e) => setFormData({ 
+                                                    ...formData, 
+                                                    Locality: e.target.value,
+                                                    Area: e.target.value
+                                                })} 
+                                            />
                                         </div>
                                         <div className="form-group">
                                             <label>Media Format</label>
-                                            <input value={formData["Media Format (Front Lit / Back Lit / Non Lit)"] || ''} onChange={(e) => setFormData({ ...formData, ["Media Format (Front Lit / Back Lit / Non Lit)"]: e.target.value })} />
+                                            <input 
+                                                value={formData["Media Format (Front Lit / Back Lit / Non Lit)"] ?? formData["Media Format"] ?? formData["Media Type"] ?? ''} 
+                                                onChange={(e) => setFormData({ 
+                                                    ...formData, 
+                                                    "Media Format (Front Lit / Back Lit / Non Lit)": e.target.value,
+                                                    "Media Format": e.target.value,
+                                                    "Media Type": e.target.value
+                                                })} 
+                                            />
                                         </div>
                                         <div className="form-group">
                                             <label>Size</label>
-                                            <input value={formData["Size (Large/Medium/Small)"] || ''} onChange={(e) => setFormData({ ...formData, ["Size (Large/Medium/Small)"]: e.target.value })} />
+                                            <input 
+                                                value={formData["Size (Large/Medium/Small)"] ?? formData["Size (Large/ Medium/ Small)"] ?? formData.Size ?? ''} 
+                                                onChange={(e) => setFormData({ 
+                                                    ...formData, 
+                                                    "Size (Large/Medium/Small)": e.target.value,
+                                                    "Size (Large/ Medium/ Small)": e.target.value,
+                                                    Size: e.target.value
+                                                })} 
+                                            />
                                         </div>
                                     </div>
 
                                     <div className="form-row three-cols">
                                         <div className="form-group">
                                             <label>Monthly Cost (INR)</label>
-                                            <input type="number" value={formData["Rental Per Month"] || ''} onChange={(e) => setFormData({ ...formData, ["Rental Per Month"]: e.target.value })} />
+                                            <input 
+                                                type="number" 
+                                                value={formData["Avg Monthly Cost (INR)"] ?? formData["Rental Per Month"] ?? formData["Avg. monthly Cost"] ?? formData.Price ?? ''} 
+                                                onChange={(e) => setFormData({ 
+                                                    ...formData, 
+                                                    "Avg Monthly Cost (INR)": e.target.value,
+                                                    "Rental Per Month": e.target.value,
+                                                    "Avg. monthly Cost": e.target.value,
+                                                    Price: e.target.value
+                                                })} 
+                                            />
                                         </div>
                                         <div className="form-group">
                                             <label>Latitude</label>
-                                            <input value={formData.Latitude || ''} onChange={(e) => setFormData({ ...formData, Latitude: e.target.value })} />
+                                            <input value={formData.Latitude ?? ''} onChange={(e) => setFormData({ ...formData, Latitude: e.target.value })} />
                                         </div>
                                         <div className="form-group">
                                             <label>Longitude</label>
-                                            <input value={formData.Longitude || ''} onChange={(e) => setFormData({ ...formData, Longitude: e.target.value })} />
+                                            <input value={formData.Longitude ?? ''} onChange={(e) => setFormData({ ...formData, Longitude: e.target.value })} />
                                         </div>
                                     </div>
 

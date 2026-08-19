@@ -818,32 +818,58 @@ const AdminDashboard = ({ hoardings, setHoardings }) => {
                 delete cleanFields.ImageURL;
             }
 
-            const siteLocationName = String(formData["Location "] || formData.Location || formData["Locality Site Location"] || "Hoarding Site").trim();
-            const siteCityName = String(formData.City || formData.city || "Meerut").trim();
-            const siteLocalityName = String(formData.Locality || formData["Area"] || formData.Area || "").trim();
+            const siteLocationName = String(formData["Location "] || formData.Location || formData["Locality Site Location"] || '').trim();
+            const siteCityName = String(formData.City || formData.city || '').trim();
+            const siteLocalityName = String(formData.Locality || formData.Area || formData["Area"] || '').trim();
+            const price = String(formData["Avg Monthly Cost (INR)"] ?? formData["Rental Per Month"] ?? formData["Avg. monthly Cost"] ?? formData.Price ?? '0').trim();
+            const size = String(formData["Size (Large/Medium/Small)"] ?? formData["Size (Large/ Medium/ Small)"] ?? formData.Size ?? '').trim();
+            const mediaFormat = String(formData["Media Format (Front Lit / Back Lit / Non Lit)"] ?? formData["Media Format"] ?? formData["Media Type"] ?? '').trim();
 
-            const newAssetObject = {
+            const fullCleanFields = { 
                 ...cleanFields,
+                "Locality Site Location": siteLocationName,
                 "Location ": siteLocationName,
                 Location: siteLocationName,
-                "Locality Site Location": siteLocationName,
                 City: siteCityName,
                 city: siteCityName,
                 Locality: siteLocalityName,
                 Area: siteLocalityName,
+                "Avg Monthly Cost (INR)": price,
+                "Rental Per Month": price,
+                "Avg. monthly Cost": price,
+                Price: price,
+                "Size (Large/Medium/Small)": size,
+                "Size (Large/ Medium/ Small)": size,
+                Size: size,
+                "Media Format (Front Lit / Back Lit / Non Lit)": mediaFormat,
+                "Media Format": mediaFormat,
+                "Media Type": mediaFormat,
                 STATUS: formData.STATUS || 'Available',
+                Latitude: formData.Latitude || '',
+                Longitude: formData.Longitude || '',
+                BookedBy: formData.BookedBy || '',
+                BookingStart: formData.BookingStart || '',
+                BookingEnd: formData.BookingEnd || '',
+                "ExecutionHistory": historyString,
                 ImageURL: previewUrl
             };
 
             await syncToGoogleSheet({
                 action: 'addHoarding',
-                fields: cleanFields,
+                fields: fullCleanFields,
                 siteName: siteLocationName,
                 fileData: fileData,
                 mimeType: mimeType
             });
             alert("✅ Asset Added Successfully!");
-            setHoardings(prev => [...prev, newAssetObject]);
+            setHoardings(prev => {
+                const next = [...prev, fullCleanFields];
+                try {
+                    localStorage.setItem('hoardings_cache', JSON.stringify(next));
+                    localStorage.setItem('last_hoardings_update', Date.now().toString());
+                } catch {}
+                return next;
+            });
             window.dispatchEvent(new CustomEvent('hoardings:sync-requested', { detail: { action: 'addHoarding' } }));
             setIsAddModalOpen(false);
             setFormData({});
@@ -882,8 +908,6 @@ const AdminDashboard = ({ hoardings, setHoardings }) => {
             };
             
             const imageKeys = ['ImageURL', 'imageurl', 'Image URL', 'Site Photo', 'Photo'];
-            
-            // Remove 'History' (array), keep 'ExecutionHistory' (string)
             delete cleanFields.History;
             
             if (selectedAssetFile) {
@@ -892,19 +916,61 @@ const AdminDashboard = ({ hoardings, setHoardings }) => {
                 delete cleanFields.ImageURL;
             }
 
+            const siteLocationName = String(formData["Location "] || formData.Location || formData["Locality Site Location"] || selectedHoarding["Location "] || '').trim();
+            const siteCityName = String(formData.City || formData.city || selectedHoarding.City || '').trim();
+            const siteLocalityName = String(formData.Locality || formData.Area || formData["Area"] || selectedHoarding.Locality || '').trim();
+            const price = String(formData["Avg Monthly Cost (INR)"] ?? formData["Rental Per Month"] ?? formData["Avg. monthly Cost"] ?? formData.Price ?? '0').trim();
+            const size = String(formData["Size (Large/Medium/Small)"] ?? formData["Size (Large/ Medium/ Small)"] ?? formData.Size ?? '').trim();
+            const mediaFormat = String(formData["Media Format (Front Lit / Back Lit / Non Lit)"] ?? formData["Media Format"] ?? formData["Media Type"] ?? '').trim();
+
+            const fullUpdatedFields = {
+                ...cleanFields,
+                "Locality Site Location": siteLocationName,
+                "Location ": siteLocationName,
+                Location: siteLocationName,
+                City: siteCityName,
+                city: siteCityName,
+                Locality: siteLocalityName,
+                Area: siteLocalityName,
+                "Avg Monthly Cost (INR)": price,
+                "Rental Per Month": price,
+                "Avg. monthly Cost": price,
+                Price: price,
+                "Size (Large/Medium/Small)": size,
+                "Size (Large/ Medium/ Small)": size,
+                Size: size,
+                "Media Format (Front Lit / Back Lit / Non Lit)": mediaFormat,
+                "Media Format": mediaFormat,
+                "Media Type": mediaFormat,
+                STATUS: formData.STATUS || 'Available',
+                Latitude: formData.Latitude || '',
+                Longitude: formData.Longitude || '',
+                BookedBy: formData.BookedBy || '',
+                BookingStart: formData.BookingStart || '',
+                BookingEnd: formData.BookingEnd || '',
+                ImageURL: updatedImageURL
+            };
+
             await syncToGoogleSheet({
                 action: 'updateHoarding',
-                siteName: selectedHoarding["Location "],
-                fields: cleanFields,
+                siteName: selectedHoarding["Location "] || selectedHoarding.Location || selectedHoarding["Locality Site Location"],
+                fields: fullUpdatedFields,
                 fileData: fileData,
                 mimeType: mimeType
             });
-            alert("✅ Asset Updated!");
-            setHoardings(prev => prev.map(h => 
-                h["Location "] === selectedHoarding["Location "] 
-                ? { ...h, ...formData, ImageURL: updatedImageURL } 
-                : h
-            ));
+            alert("✅ Asset Updated Successfully!");
+            setHoardings(prev => {
+                const targetKey = String(selectedHoarding["Location "] || selectedHoarding.Location || selectedHoarding["Locality Site Location"] || '').trim().toLowerCase();
+                const next = prev.map(h => {
+                    const hKey = String(h["Location "] || h.Location || h["Locality Site Location"] || '').trim().toLowerCase();
+                    return hKey === targetKey ? { ...h, ...fullUpdatedFields } : h;
+                });
+                try {
+                    localStorage.setItem('hoardings_cache', JSON.stringify(next));
+                    localStorage.setItem('last_hoardings_update', Date.now().toString());
+                } catch {}
+                return next;
+            });
             setIsEditModalOpen(false);
             setSelectedHoarding(null);
             setFormData({});
@@ -917,6 +983,22 @@ const AdminDashboard = ({ hoardings, setHoardings }) => {
     };
 
     const handleDeleteAsset = async (siteName) => {
+        if (!siteName) return;
+        const targetClean = String(siteName).trim().toLowerCase();
+
+        // Optimistically remove from state immediately
+        setHoardings(prev => {
+            const next = prev.filter(h => {
+                const hName = String(h["Locality Site Location"] || h["Location "] || h.Location || '').trim().toLowerCase();
+                return hName !== targetClean;
+            });
+            try {
+                localStorage.setItem('hoardings_cache', JSON.stringify(next));
+                localStorage.setItem('last_hoardings_update', Date.now().toString());
+            } catch {}
+            return next;
+        });
+
         setIsLoading(true);
         try {
             await syncToGoogleSheet({
@@ -924,11 +1006,11 @@ const AdminDashboard = ({ hoardings, setHoardings }) => {
                 siteName: siteName
             });
             alert("✅ Asset Deleted!");
-            setHoardings(prev => prev.filter(h => h["Location "] !== siteName));
         } catch (err) {
-            alert("Error deleting asset: " + err.message);
+            console.error("Delete sync warning:", err);
         } finally {
             setIsLoading(false);
+            setDeleteTarget(null);
         }
     };
 
@@ -967,8 +1049,34 @@ const AdminDashboard = ({ hoardings, setHoardings }) => {
     };
 
     const openEditModal = (h) => {
+        const siteLocation = h["Locality Site Location"] || h["Location "] || h["Location"] || '';
+        const price = h["Avg Monthly Cost (INR)"] ?? h["Rental Per Month"] ?? h["Avg. monthly Cost"] ?? h.Price ?? '';
+        const locality = h.Locality || h.Area || h["Area"] || '';
+        const size = h["Size (Large/Medium/Small)"] || h["Size (Large/ Medium/ Small)"] || h.Size || '';
+        const media = h["Media Format (Front Lit / Back Lit / Non Lit)"] || h["Media Format"] || h["Media Type"] || '';
+
         setSelectedHoarding(h);
-        setFormData({ ...h });
+        setFormData({
+            ...h,
+            "Location ": siteLocation,
+            Location: siteLocation,
+            "Locality Site Location": siteLocation,
+            City: h.City || h.city || '',
+            city: h.City || h.city || '',
+            Locality: locality,
+            Area: locality,
+            "Rental Per Month": price,
+            "Avg Monthly Cost (INR)": price,
+            "Avg. monthly Cost": price,
+            Price: price,
+            "Size (Large/Medium/Small)": size,
+            "Size (Large/ Medium/ Small)": size,
+            Size: size,
+            "Media Format (Front Lit / Back Lit / Non Lit)": media,
+            "Media Format": media,
+            "Media Type": media,
+            STATUS: h.STATUS || 'Available'
+        });
         setSelectedAssetFile(null);
         setIsEditModalOpen(true);
     };
@@ -1722,11 +1830,16 @@ const AdminDashboard = ({ hoardings, setHoardings }) => {
                             <div className="modal-body crud-form">
                                 <div className="form-row three-cols">
                                     <div className="form-group span-two">
-                                        <label>Location  (Unique ID)*</label>
+                                        <label>Location (Unique ID)*</label>
                                         <input 
                                             required 
-                                            value={formData["Location "] || ''} 
-                                            onChange={e => setFormData({...formData, "Location ": e.target.value})}
+                                            value={formData["Location "] ?? formData.Location ?? formData["Locality Site Location"] ?? ''} 
+                                            onChange={e => setFormData({
+                                                ...formData, 
+                                                "Location ": e.target.value, 
+                                                Location: e.target.value, 
+                                                "Locality Site Location": e.target.value
+                                            })}
                                             disabled={isEditModalOpen}
                                             placeholder="e.g. Maruti True Value Meerut"
                                         />
@@ -1735,8 +1848,12 @@ const AdminDashboard = ({ hoardings, setHoardings }) => {
                                         <label>City*</label>
                                         <input 
                                             required 
-                                            value={formData.City || ''} 
-                                            onChange={e => setFormData({...formData, City: e.target.value})}
+                                            value={formData.City ?? formData.city ?? ''} 
+                                            onChange={e => setFormData({
+                                                ...formData, 
+                                                City: e.target.value, 
+                                                city: e.target.value
+                                            })}
                                             placeholder="e.g. Meerut"
                                         />
                                     </div>
@@ -1745,16 +1862,25 @@ const AdminDashboard = ({ hoardings, setHoardings }) => {
                                     <div className="form-group">
                                         <label>Locality</label>
                                         <input 
-                                            value={formData["Area"] || ''} 
-                                            onChange={e => setFormData({...formData, Locality: e.target.value})}
+                                            value={formData.Locality ?? formData.Area ?? ''} 
+                                            onChange={e => setFormData({
+                                                ...formData, 
+                                                Locality: e.target.value, 
+                                                Area: e.target.value
+                                            })}
                                             placeholder="e.g. Partapur"
                                         />
                                     </div>
                                     <div className="form-group">
                                         <label>Media Format</label>
                                         <select 
-                                            value={formData["Media Format (Front Lit / Back Lit / Non Lit)"] || ''} 
-                                            onChange={e => setFormData({...formData, "Media Format (Front Lit / Back Lit / Non Lit)": e.target.value})}
+                                            value={formData["Media Format (Front Lit / Back Lit / Non Lit)"] ?? formData["Media Format"] ?? formData["Media Type"] ?? ''} 
+                                            onChange={e => setFormData({
+                                                ...formData, 
+                                                "Media Format (Front Lit / Back Lit / Non Lit)": e.target.value,
+                                                "Media Format": e.target.value,
+                                                "Media Type": e.target.value
+                                            })}
                                         >
                                             <option value="">Select Format</option>
                                             <option value="Front Lit">Front Lit</option>
@@ -1765,8 +1891,13 @@ const AdminDashboard = ({ hoardings, setHoardings }) => {
                                     <div className="form-group">
                                         <label>Size</label>
                                         <input 
-                                            value={formData["Size (Large/Medium/Small)"] || ''} 
-                                            onChange={e => setFormData({...formData, "Size (Large/Medium/Small)": e.target.value})}
+                                            value={formData["Size (Large/Medium/Small)"] ?? formData["Size (Large/ Medium/ Small)"] ?? formData.Size ?? ''} 
+                                            onChange={e => setFormData({
+                                                ...formData, 
+                                                "Size (Large/Medium/Small)": e.target.value,
+                                                "Size (Large/ Medium/ Small)": e.target.value,
+                                                Size: e.target.value
+                                            })}
                                             placeholder="e.g. 20x10"
                                         />
                                     </div>
@@ -1776,15 +1907,21 @@ const AdminDashboard = ({ hoardings, setHoardings }) => {
                                         <label>Monthly Cost (INR)</label>
                                         <input 
                                             type="number"
-                                            value={formData["Rental Per Month"] || ''} 
-                                            onChange={e => setFormData({...formData, "Rental Per Month": e.target.value})}
+                                            value={formData["Avg Monthly Cost (INR)"] ?? formData["Rental Per Month"] ?? formData["Avg. monthly Cost"] ?? formData.Price ?? ''} 
+                                            onChange={e => setFormData({
+                                                ...formData, 
+                                                "Avg Monthly Cost (INR)": e.target.value,
+                                                "Rental Per Month": e.target.value,
+                                                "Avg. monthly Cost": e.target.value,
+                                                Price: e.target.value
+                                            })}
                                             placeholder="e.g. 50000"
                                         />
                                     </div>
                                     <div className="form-group">
                                         <label>Latitude (Optional)</label>
                                         <input 
-                                            value={formData.Latitude || ''} 
+                                            value={formData.Latitude ?? ''} 
                                             onChange={e => setFormData({...formData, Latitude: e.target.value})}
                                             placeholder="e.g. 28.9845"
                                         />
@@ -1792,7 +1929,7 @@ const AdminDashboard = ({ hoardings, setHoardings }) => {
                                     <div className="form-group">
                                         <label>Longitude (Optional)</label>
                                         <input 
-                                            value={formData.Longitude || ''} 
+                                            value={formData.Longitude ?? ''} 
                                             onChange={e => setFormData({...formData, Longitude: e.target.value})}
                                             placeholder="e.g. 77.7064"
                                         />
@@ -3204,7 +3341,12 @@ const AdminDashboard = ({ hoardings, setHoardings }) => {
                                                         </button>
                                                         <button 
                                                             className="btn-icon-small delete" 
-                                                            onClick={() => setDeleteTarget(h["Location "] || h.Location)}
+                                                            onClick={() => {
+                                                                const targetSite = h["Locality Site Location"] || h["Location "] || h.Location;
+                                                                if (window.confirm(`Are you sure you want to delete "${targetSite}"? This cannot be undone.`)) {
+                                                                    handleDeleteAsset(targetSite);
+                                                                }
+                                                            }}
                                                             title="Delete Site"
                                                         >
                                                             <X size={16} />
