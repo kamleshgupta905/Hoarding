@@ -1,0 +1,144 @@
+import JSZip from 'jszip';
+import { XMLParser } from 'fast-xml-parser';
+import { normalizeText } from './hoardingSchema';
+
+const xmlParser = new XMLParser({
+  ignoreAttributes: false,
+  attributeNamePrefix: '@_',
+  removeNSPrefix: true,
+  parseTagValue: false,
+  trimValues: false
+});
+
+const collectXmlNodes = (value, key, output = []) => {
+  if (!value || typeof value !== 'object') return output;
+  Object.entries(value).forEach(([entryKey, entryValue]) => {
+    if (entryKey === key) {
+      if (Array.isArray(entryValue)) output.push(...entryValue);
+      else output.push(entryValue);
+    }
+    if (entryValue && typeof entryValue === 'object') collectXmlNodes(entryValue, key, output);
+  });
+  return output;
+};
+
+const xmlText = (node) => typeof node === 'string' ? node : String(node?.['#text'] || '');
+
+const getImageDimensions = async (blob) => {
+  try {
+    const bitmap = await createImageBitmap(blob);
+    const dimensions = { width: bitmap.width, height: bitmap.height };
+    bitmap.close();
+    return dimensions;
+  } catch {
+    return { width: 0, height: 0 };
+  }
+};
+
+const hashBlob = async (blob) => {
+  const digest = await crypto.subtle.digest('SHA-256', await blob.arrayBuffer());
+  return [...new Uint8Array(digest)].map((value) => value.toString(16).padStart(2, '0')).join('');
+};
+
+const slideNumber = (path) => Number(path.match(/slide(\d+)\.xml$/)?.[1] || 0);
+
+const scoreSite = (text, site) => {
+  const normalized = normalizeText(text);
+  const siteId = normalizeText(site._SiteID);
+  const siteName = normalizeText(site['Locality Site Location']);
+  if (siteId && normalized.includes(siteId)) return 10000;
+  if (siteName && normalized.includes(siteName)) return 4000 + siteName.length;
+
+  const ignored = new Set(['road', 'near', 'site', 'main', 'facing', 'opposite', 'towards']);
+  const tokens = siteName.split(' ').filter((token) => token.length >= 4 && !ignored.has(token));
+  const hits = tokens.filter((token) => normalized.includes(token)).length;
+  let score = tokens.length && hits >= 2 ? Math.round((hits / tokens.length) * 1200) : 0;
+  const city = normalizeText(site.City);
+  const locality = normalizeText(site.Locality);
+  if (city && normalized.includes(city)) score += 180;
+  if (locality && normalized.includes(locality)) score += 260;
+  const width = Math.round(Number(site.Width || 0));
+  const height = Math.round(Number(site.Height || 0));
+  if (width && height && (normalized.includes(`${width}x${height}`) || normalized.includes(`${height}x${width}`))) score += 500;
+  return score;
+};
+
+export const parsePptx = async (arrayBuffer, sites) => {
+  const zip = await JSZip.loadAsync(arrayBuffer);
+  const slidePaths = Object.keys(zip.files)
+    .filter((path) => /^ppt\/slides\/slide\d+\.xml$/.test(path))
+    .sort((left, right) => slideNumber(left) - slideNumber(right));
+
+  const slides = [];
+  const hashUsage = new Map();
+  for (const slidePath of slidePaths) {
+    const number = slideNumber(slidePath);
+    const xml = xmlParser.parse(await zip.file(slidePath).async('text'));
+    const text = collectXmlNodes(xml, 't').map(xmlText).join(' ').trim();
+    const relationshipPath = `ppt/slides/_rels/slide${number}.xml.rels`;
+    const relationshipFile = zip.file(relationshipPath);
+    const relationships = relationshipFile ? xmlParser.parse(await relationshipFile.async('text')) : null;
+    const relationshipMap = new Map();
+    if (relationships) {
+      collectXmlNodes(relationships, 'Relationship').forEach((node) => {
+        relationshipMap.set(node?.['@_Id'], node?.['@_Target']);
+      });
+    }
+
+    const embedIds = collectXmlNodes(xml, 'blip')
+      .map((node) => node?.['@_embed'])
+      .filter(Boolean);
+    const images = [];
+    for (const embedId of embedIds) {
+      const target = relationshipMap.get(embedId);
+      if (!target || !target.includes('media/')) continue;
+      const mediaName = target.split('/').pop();
+      const path = `ppt/media/${mediaName}`;
+      const file = zip.file(path);
+      if (!file) continue;
+      const blob = await file.async('blob');
+      const hash = await hashBlob(blob);
+      const dimensions = await getImageDimensions(blob);
+      hashUsage.set(hash, (hashUsage.get(hash) || 0) + 1);
+      images.push({
+        id: `${number}-${embedId}`,
+        mediaName,
+        blob,
+        hash,
+        size: blob.size,
+        width: dimensions.width,
+        height: dimensions.height,
+        previewUrl: ''
+      });
+    }
+
+    const candidates = sites
+      .map((site) => ({ site, score: scoreSite(text, site) }))
+      .filter((item) => item.score > 0)
+      .sort((left, right) => right.score - left.score)
+      .slice(0, 6);
+    slides.push({ number, text, images, candidates });
+  }
+
+  slides.forEach((slide) => {
+    const maxArea = Math.max(1, ...slide.images.map((image) => image.width * image.height));
+    slide.images = slide.images.map((image) => {
+      const repeated = (hashUsage.get(image.hash) || 0) > 1;
+      const relativeArea = (image.width * image.height) / maxArea;
+      const tooSmall = image.size < 18000 || image.width < 240 || image.height < 120 || relativeArea < 0.08;
+      return { ...image, repeated, logoCandidate: repeated && tooSmall };
+    });
+    slide.photoCandidates = slide.images.filter((image) => !image.logoCandidate);
+    slide.suggestedSiteId = slide.candidates[0]?.site?._SiteID || '';
+    slide.confidence = slide.candidates[0]?.score >= 4000 ? 'HIGH' : slide.candidates[0]?.score >= 900 ? 'MEDIUM' : 'LOW';
+    slide.status = slide.suggestedSiteId && slide.photoCandidates.length ? (slide.confidence === 'HIGH' ? 'MATCHED' : 'REVIEW') : 'SKIPPED';
+  });
+
+  return slides;
+};
+
+export const releasePptxPreviews = (slides) => {
+  slides.forEach((slide) => slide.images.forEach((image) => {
+    if (image.previewUrl) URL.revokeObjectURL(image.previewUrl);
+  }));
+};

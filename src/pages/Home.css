@@ -1,0 +1,240 @@
+.hero {
+    background: #fdf6f9;
+    /* Warm luxury tint */
+    padding: 168px 0 80px;
+    text-align: center;
+    position: relative;
+    overflow: hidden;
+}
+
+.hero::after {
+    content: '';
+    position: absolute;
+    top: -20%;
+    right: -10%;
+    width: 600px;
+    height: 600px;
+    background: radial-gradient(circle, rgba(234, 76, 137, 0.05) 0%, transparent 70%);
+}
+
+.hero-content {
+    position: relative;
+    z-index: 1;
+}
+
+.hero h1 {
+    font-size: 4rem;
+    font-weight: 800;
+    line-height: 1.1;
+    margin-bottom: 24px;
+    max-width: 980px;
+    margin-left: auto;
+    margin-right: auto;
+    letter-spacing: 0;
+    overflow-wrap: anywhere;
+    color: var(--text-dark);
+}
+
+.hero h1 span {
+    color: var(--primary);
+}
+
+.hero p {
+    font-size: 1.3rem;
+    color: var(--text-muted);
+    max-width: 600px;
+    margin: 0 auto 56px;
+    font-weight: 500;
+}
+
+.search-container {
+    max-width: 880px;
+    margin: 0 auto;
+}
+
+.search-box {
+    background: white;
+    padding: 8px 8px 8px 24px;
+    border-radius: var(--radius-full);
+    display: flex;
+    align-items: center;
+    box-shadow: 0 0 0 1px var(--border-light), 0 30px 60px rgba(0, 0, 0, 0.1);
+    transition: var(--transition);
+}
+
+.search-box:focus-within {
+    box-shadow: 0 0 0 4px rgba(234, 76, 137, 0.1), 0 30px 60px rgba(0, 0, 0, 0.1);
+}
+
+.input-group {
+    display: flex;
+    align-items: center;
+    flex: 1;
+    gap: 12px;
+    min-width: 0;
+}
+
+.input-group:first-child {
+    flex: 0 0 240px;
+}
+
+.input-group .icon {
+    color: var(--text-light);
+}
+
+.input-group select,
+.input-group input {
+    border: none;
+    background: none;
+    width: 100%;
+    font-size: 1.05rem;
+    color: var(--text-dark);
+    outline: none;
+    font-weight: 500;
+    min-width: 0;
+}
+
+.divider {
+    width: 1px;
+    height: 32px;
+    background: var(--border-light);
+    margin: 0 16px;
+}
+
+.search-btn {
+    background: var(--primary);
+    color: white;
+    padding: 14px 28px;
+    border-radius: var(--radius-full);
+    font-weight: 700;
+    font-size: 0.95rem;
+    flex: 0 0 auto;
+    white-space: nowrap;
+}
+
+.search-btn:hover {
+    background: var(--primary-hover);
+    transform: scale(1.02);
+}
+
+.hero-metrics {
+    display: flex;
+    justify-content: center;
+    gap: 48px;
+    margin-top: 64px;
+}
+
+.metric {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: var(--text-muted);
+}
+
+.metric strong {
+    color: var(--text-dark);
+    font-size: 1.1rem;
+}
+
+/* Featured Section */
+.featured-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-end;
+    margin-bottom: 40px;
+}
+
+.featured-header h2 {
+    font-size: 1.8rem;
+    font-weight: 800;
+}
+
+.city-cards {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 32px;
+}
+
+.city-card {
+    border-radius: var(--radius-md);
+    overflow: hidden;
+    position: relative;
+    aspect-ratio: 1 / 1;
+    cursor: pointer;
+}
+
+.city-card img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    transition: var(--transition);
+}
+
+.city-card:hover img {
+    transform: scale(1.1);
+}
+
+.city-overlay {
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(transparent, rgba(0, 0, 0, 0.6));
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end;
+    padding: 24px;
+    color: white;
+}
+
+.city-overlay h3 {
+    color: white;
+    font-size: 1.5rem;
+    margin-bottom: 4px;
+}
+
+.city-overlay p {
+    font-size: 0.85rem;
+    font-weight: 600;
+    opacity: 0.8;
+}
+
+@media (max-width: 768px) {
+    .hero {
+        padding: 124px 0 64px;
+    }
+
+    .hero h1 {
+        font-size: 2.8rem;
+    }
+
+    .hero p {
+        font-size: 1.1rem;
+    }
+
+    .search-box {
+        flex-direction: column;
+        border-radius: var(--radius-md);
+        padding: 12px;
+    }
+
+    .divider {
+        display: none;
+    }
+
+    .input-group {
+        width: 100%;
+        flex: 1 1 auto;
+        padding: 12px 0;
+    }
+
+    .search-btn {
+        width: 100%;
+    }
+
+    .hero-metrics {
+        flex-direction: column;
+        gap: 16px;
+        align-items: center;
+    }
+}

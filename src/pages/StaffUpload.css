@@ -1,0 +1,232 @@
+.staff-camera-page {
+    position: fixed;
+    inset: 0;
+    overflow: hidden;
+    background: #06070a;
+    color: #ffffff;
+    font-family: var(--font-body);
+    touch-action: manipulation;
+}
+
+.staff-camera-video {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    background: #101217;
+}
+
+.staff-camera-topbar,
+.staff-camera-counts,
+.staff-camera-bottom,
+.staff-camera-error {
+    position: absolute;
+    z-index: 2;
+}
+
+.staff-camera-topbar {
+    top: max(14px, env(safe-area-inset-top));
+    left: 12px;
+    right: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+}
+
+.staff-camera-pill {
+    min-height: 38px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 7px;
+    max-width: 52vw;
+    padding: 0 12px;
+    border: 1px solid rgba(255, 255, 255, 0.24);
+    border-radius: 999px;
+    background: rgba(7, 9, 14, 0.66);
+    color: #f4f5f7;
+    backdrop-filter: blur(14px);
+    font-size: 0.76rem;
+    font-weight: 900;
+    white-space: nowrap;
+}
+
+.staff-camera-pill.ready svg {
+    color: #31d978;
+}
+
+.staff-camera-pill.offline svg {
+    color: #ff6b6b;
+}
+
+.staff-camera-counts {
+    right: 12px;
+    top: calc(max(14px, env(safe-area-inset-top)) + 50px);
+    display: grid;
+    gap: 8px;
+}
+
+.staff-camera-counts div {
+    width: 94px;
+    min-height: 72px;
+    display: grid;
+    place-items: center;
+    padding: 8px 6px;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    border-radius: 8px;
+    background: rgba(7, 9, 14, 0.58);
+    backdrop-filter: blur(14px);
+}
+
+.staff-camera-counts svg {
+    color: #31d978;
+}
+
+.staff-camera-counts strong {
+    font-size: 1.2rem;
+    line-height: 1;
+}
+
+.staff-camera-counts span {
+    color: rgba(255, 255, 255, 0.72);
+    font-size: 0.67rem;
+    font-weight: 900;
+    text-transform: uppercase;
+}
+
+.staff-camera-error {
+    left: 14px;
+    right: 14px;
+    bottom: calc(150px + env(safe-area-inset-bottom));
+    display: grid;
+    grid-template-columns: auto 1fr auto;
+    align-items: center;
+    gap: 10px;
+    padding: 12px;
+    border-radius: 8px;
+    background: rgba(18, 19, 26, 0.9);
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    box-shadow: 0 18px 40px rgba(0, 0, 0, 0.32);
+}
+
+.staff-camera-error svg {
+    color: #ff6b6b;
+}
+
+.staff-camera-error span {
+    font-size: 0.85rem;
+    font-weight: 800;
+}
+
+.staff-camera-error button {
+    min-height: 38px;
+    padding: 0 14px;
+    border: 0;
+    border-radius: 8px;
+    color: #ffffff;
+    background: #6c5dd3;
+    font-weight: 900;
+}
+
+.staff-camera-bottom {
+    left: 0;
+    right: 0;
+    bottom: 0;
+    display: grid;
+    grid-template-columns: 1fr 112px 1fr;
+    align-items: center;
+    min-height: calc(130px + env(safe-area-inset-bottom));
+    padding: 18px 22px calc(22px + env(safe-area-inset-bottom));
+    background: linear-gradient(180deg, transparent, rgba(0, 0, 0, 0.72));
+}
+
+.staff-latest-preview,
+.staff-undo-button {
+    justify-self: center;
+}
+
+.staff-latest-preview {
+    width: 58px;
+    height: 58px;
+    display: grid;
+    place-items: center;
+    border: 2px solid rgba(255, 255, 255, 0.75);
+    border-radius: 8px;
+    overflow: hidden;
+    background: rgba(255, 255, 255, 0.12);
+}
+
+.staff-latest-preview img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.staff-shutter {
+    width: 94px;
+    height: 94px;
+    display: grid;
+    place-items: center;
+    border: 5px solid rgba(255, 255, 255, 0.95);
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.22);
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.28);
+}
+
+.staff-shutter span {
+    width: 70px;
+    height: 70px;
+    display: block;
+    border-radius: 50%;
+    background: #ffffff;
+    transition: transform 0.14s ease, opacity 0.14s ease;
+}
+
+.staff-shutter:active span,
+.staff-shutter.capturing span {
+    transform: scale(0.82);
+    opacity: 0.78;
+}
+
+.staff-shutter:disabled {
+    opacity: 0.45;
+}
+
+.staff-undo-button {
+    min-width: 72px;
+    min-height: 58px;
+    display: grid;
+    place-items: center;
+    gap: 3px;
+    border: 0;
+    border-radius: 8px;
+    color: #ffffff;
+    background: rgba(7, 9, 14, 0.58);
+    font-size: 0.7rem;
+    font-weight: 900;
+    backdrop-filter: blur(14px);
+}
+
+.staff-undo-button:disabled {
+    opacity: 0.32;
+}
+
+.spin {
+    animation: staff-spin 1s linear infinite;
+}
+
+@keyframes staff-spin {
+    to { transform: rotate(360deg); }
+}
+
+@media (min-width: 720px) {
+    .staff-camera-page {
+        position: relative;
+        min-height: 100vh;
+        max-width: 520px;
+        margin: 0 auto;
+        box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.08);
+    }
+}
