@@ -84,6 +84,36 @@ export const getHoardingImageCandidates = (hoarding = {}) => {
     .filter(Boolean))];
 };
 
+export const normalizeHoarding = (item) => {
+  if (!item || typeof item !== 'object') return item;
+  const siteLocation = (item['Locality Site Location'] || item['Location '] || item['Location'] || item['Site Name'] || item['site_name'] || '').trim();
+  const locality = (item['Locality'] || item['Area'] || item['locality'] || '').trim();
+  const rawPrice = item['Avg Monthly Cost (INR)'] ?? item['Rental Per Month'] ?? item['Price'] ?? item['price'] ?? 0;
+  const price = typeof rawPrice === 'string' ? parseFloat(rawPrice.replace(/[^0-9.]/g, '')) || 0 : (Number(rawPrice) || 0);
+  const areaSqFt = item['Total Sq. Ft'] || item['Total Sq Ft'] || item['Area Sq Ft'] || item['SqFt'] || '';
+  const mediaFormat = item['Media Format (Front Lit / Back Lit / Non Lit)'] || item['Media Format'] || item['Media Type'] || item['Media'] || '';
+  const siteType = item['Type of Site (Unipole/Billboard)'] || item['Type'] || item['site_type'] || '';
+  const siteCategory = item['Site Category'] || item['Category'] || '';
+
+  return {
+    ...item,
+    'Location ': siteLocation,
+    'Location': siteLocation,
+    'Locality Site Location': siteLocation,
+    'Locality': locality,
+    'Area': locality,
+    'Rental Per Month': price,
+    'Avg Monthly Cost (INR)': price,
+    'Total Sq. Ft': areaSqFt,
+    'Total Sq Ft': areaSqFt,
+    'Media Format (Front Lit / Back Lit / Non Lit)': mediaFormat,
+    'Media Format': mediaFormat,
+    'Type of Site (Unipole/Billboard)': siteType,
+    'Type': siteType,
+    'Site Category': siteCategory
+  };
+};
+
 /**
  * 🚀 FETCH LIVE DATA
  * Syncs with the spreadsheet and maps columns precisely.
@@ -93,7 +123,9 @@ export const fetchHoardings = async () => {
     const rawData = await requestText(GOOGLE_SHEET_URL, { cache: 'no-store' }, 45000);
     const parsed = Papa.parse(rawData, { header: true, skipEmptyLines: true });
     if (!parsed.data || parsed.data.length === 0) throw new Error('No data found in spreadsheet');
-    return parsed.data.filter(item => item.City && item.City.toLowerCase() !== 'total');
+    return parsed.data
+      .filter(item => item.City && item.City.toLowerCase() !== 'total')
+      .map(normalizeHoarding);
   } catch (error) {
     console.error("Live Spreadsheet Fetch Failed:", error);
     return [];

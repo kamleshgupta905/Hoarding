@@ -926,21 +926,23 @@ const AdminDashboard = ({ hoardings, setHoardings }) => {
     };
 
     const filteredInventory = hoardings.filter(h => {
-        const matchSearch = String(h["Location "]).toLowerCase().includes(searchTerm.toLowerCase()) ||
-            String(h.City).toLowerCase().includes(searchTerm.toLowerCase()) ||
-            String(h["Area"]).toLowerCase().includes(searchTerm.toLowerCase()) ||
-            String(h["Traffic From"]).toLowerCase().includes(searchTerm.toLowerCase()) ||
-            String(h["Traffic To"]).toLowerCase().includes(searchTerm.toLowerCase());
-        const hCity = h.City?.trim().toLowerCase();
+        const siteTitle = String(h["Locality Site Location"] || h["Location "] || h["Location"] || "");
+        const siteLocality = String(h["Locality"] || h["Area"] || "");
+        const matchSearch = siteTitle.toLowerCase().includes(searchTerm.toLowerCase()) ||
+            String(h.City || "").toLowerCase().includes(searchTerm.toLowerCase()) ||
+            siteLocality.toLowerCase().includes(searchTerm.toLowerCase()) ||
+            String(h["Traffic From"] || "").toLowerCase().includes(searchTerm.toLowerCase()) ||
+            String(h["Traffic To"] || "").toLowerCase().includes(searchTerm.toLowerCase());
+        const hCity = (h.City || "").trim().toLowerCase();
         const selectedCity = inventoryCityFilter.toLowerCase();
         const matchCity = inventoryCityFilter === 'All' || hCity === selectedCity;
         const matchStatus = inventoryStatusFilter === 'All' ||
             (inventoryStatusFilter === 'Offline' ? h.STATUS === 'Disabled' : h.STATUS === inventoryStatusFilter);
-        const matchLocality = inventoryLocalityFilter === 'All' || h["Area"] === inventoryLocalityFilter;
-        const matchMedia = inventoryMediaFilter === 'All' || h["Media Format (Front Lit / Back Lit / Non Lit)"] === inventoryMediaFilter;
-        const matchSize = inventorySizeFilter === 'All' || h["Size (Large/Medium/Small)"] === inventorySizeFilter;
-        const matchCategory = inventoryCategoryFilter === 'All' || h["Site Category"] === inventoryCategoryFilter;
-        const price = Number(h["Rental Per Month"] || 0);
+        const matchLocality = inventoryLocalityFilter === 'All' || siteLocality === inventoryLocalityFilter;
+        const matchMedia = inventoryMediaFilter === 'All' || (h["Media Format (Front Lit / Back Lit / Non Lit)"] || h["Media Format"] || h["Media Type"]) === inventoryMediaFilter;
+        const matchSize = inventorySizeFilter === 'All' || (h["Size (Large/Medium/Small)"] || h["Size"]) === inventorySizeFilter;
+        const matchCategory = inventoryCategoryFilter === 'All' || (h["Site Category"] || h["Category"]) === inventoryCategoryFilter;
+        const price = Number(h["Avg Monthly Cost (INR)"] || h["Rental Per Month"] || 0);
         let matchPrice = true;
         if (inventoryPriceFilter === '0-25k') matchPrice = price <= 25000;
         if (inventoryPriceFilter === '25k-50k') matchPrice = price > 25000 && price <= 50000;
@@ -3051,14 +3053,19 @@ const AdminDashboard = ({ hoardings, setHoardings }) => {
                                                     />
                                                 </td>
                                                 <td>
-                                                    <div className="asset-title">{h["Location "]}</div>
-                                                    <div className="asset-meta">{h["Area"]}</div>
+                                                    <div className="asset-title">{h["Locality Site Location"] || h["Location "] || h["Location"] || "Hoarding Site"}</div>
+                                                    <div className="asset-meta">
+                                                        {h["Locality"] || h["Area"] || h.City}
+                                                        {h.Width && h.Height ? ` • ${h.Width}x${h.Height} ft` : ''}
+                                                        {h["Type of Site (Unipole/Billboard)"] || h["Type"] ? ` • ${h["Type of Site (Unipole/Billboard)"] || h["Type"]}` : ''}
+                                                    </div>
                                                 </td>
                                                 <td>
                                                     <div className="asset-region">{h.City}</div>
                                                 </td>
                                                 <td className="asset-price">
-                                                    ₹{Number(h["Rental Per Month"] || 0).toLocaleString()}
+                                                    ₹{Number(h["Avg Monthly Cost (INR)"] || h["Rental Per Month"] || 0).toLocaleString('en-IN')}
+                                                    <span style={{ fontSize: '11px', color: '#94a3b8', display: 'block', fontWeight: '500' }}>/ month</span>
                                                 </td>
                                                 <td>
                                                     <span className={`status-pill ${h.STATUS === 'Disabled' ? 'disabled' :
