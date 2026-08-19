@@ -9,12 +9,24 @@ import './HoardingDetail.css';
 const HoardingDetail = ({ hoardings, setHoardings }) => {
     const navigate = useNavigate();
     const { city, siteName } = useParams();
-    const decodedSiteName = decodeURIComponent(siteName);
+    const decodedSiteName = decodeURIComponent(siteName || '').trim();
+    const targetCity = decodeURIComponent(city || '').trim().toLowerCase();
 
-    const hoarding = hoardings.find(h =>
-        h.City.toLowerCase() === city.toLowerCase() &&
-        h["Location "] === decodedSiteName
-    );
+    const hoarding = hoardings.find(h => {
+        if (!h) return false;
+        const hCity = String(h.City || h.city || h.CITY || '').trim().toLowerCase();
+        const hSite = String(h["Location "] || h.Location || h["Location"] || h["Locality Site Location"] || h["Site Name"] || '').trim();
+        
+        const cityMatch = !targetCity || targetCity === 'all' || targetCity === 'city' || hCity === targetCity;
+        const siteMatch = hSite.toLowerCase() === decodedSiteName.toLowerCase() ||
+            hSite.replace(/\s+/g, ' ').toLowerCase() === decodedSiteName.replace(/\s+/g, ' ').toLowerCase();
+        return cityMatch && siteMatch;
+    }) || hoardings.find(h => {
+        if (!h) return false;
+        const hSite = String(h["Location "] || h.Location || h["Location"] || h["Locality Site Location"] || h["Site Name"] || '').trim();
+        return hSite.toLowerCase() === decodedSiteName.toLowerCase() ||
+            hSite.replace(/\s+/g, ' ').toLowerCase() === decodedSiteName.replace(/\s+/g, ' ').toLowerCase();
+    });
 
     const [isAdmin] = React.useState(localStorage.getItem('isAdminAuthenticated') === 'true');
     const [isEditModalOpen, setIsEditModalOpen] = React.useState(false);

@@ -1,5 +1,4 @@
-import React, { useState, useEffect } from 'react';
-import { useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
     LayoutDashboard, Database, FileUp, Settings,
@@ -117,6 +116,37 @@ const AdminDashboard = ({ hoardings, setHoardings }) => {
         // initializeAI(); // Auto-initialized in service via env var
     }, [navigate]);
 
+    // Handle ESC key to exit fullscreen, close modals, or dismiss popups
+    useEffect(() => {
+        const handleGlobalKeyDown = (e) => {
+            if (e.key === 'Escape') {
+                if (document.fullscreenElement) {
+                    document.exitFullscreen().catch(() => {});
+                    setIsSheetFullscreen(false);
+                } else if (isSheetFullscreen) {
+                    setIsSheetFullscreen(false);
+                } else if (previewHoarding) {
+                    setPreviewHoarding(null);
+                } else if (isAddModalOpen || isEditModalOpen) {
+                    setIsAddModalOpen(false);
+                    setIsEditModalOpen(false);
+                    setSelectedAssetFile(null);
+                } else if (deleteTarget) {
+                    setDeleteTarget(null);
+                } else if (bulkDeleteTarget) {
+                    setBulkDeleteTarget(null);
+                } else if (isExcelImportOpen) {
+                    setIsExcelImportOpen(false);
+                } else if (isInventoryFilterOpen) {
+                    setIsInventoryFilterOpen(false);
+                }
+            }
+        };
+
+        window.addEventListener('keydown', handleGlobalKeyDown);
+        return () => window.removeEventListener('keydown', handleGlobalKeyDown);
+    }, [isSheetFullscreen, previewHoarding, isAddModalOpen, isEditModalOpen, deleteTarget, bulkDeleteTarget, isExcelImportOpen, isInventoryFilterOpen]);
+
     useEffect(() => {
         let active = true;
         const refreshStaffUploads = async () => {
@@ -124,7 +154,7 @@ const AdminDashboard = ({ hoardings, setHoardings }) => {
             if (active) setStaffUploads(uploads);
         };
         refreshStaffUploads();
-        const intervalId = setInterval(refreshStaffUploads, 10000);
+        const intervalId = setInterval(refreshStaffUploads, 30000);
         return () => {
             active = false;
             clearInterval(intervalId);
@@ -788,15 +818,33 @@ const AdminDashboard = ({ hoardings, setHoardings }) => {
                 delete cleanFields.ImageURL;
             }
 
+            const siteLocationName = String(formData["Location "] || formData.Location || formData["Locality Site Location"] || "Hoarding Site").trim();
+            const siteCityName = String(formData.City || formData.city || "Meerut").trim();
+            const siteLocalityName = String(formData.Locality || formData["Area"] || formData.Area || "").trim();
+
+            const newAssetObject = {
+                ...cleanFields,
+                "Location ": siteLocationName,
+                Location: siteLocationName,
+                "Locality Site Location": siteLocationName,
+                City: siteCityName,
+                city: siteCityName,
+                Locality: siteLocalityName,
+                Area: siteLocalityName,
+                STATUS: formData.STATUS || 'Available',
+                ImageURL: previewUrl
+            };
+
             await syncToGoogleSheet({
                 action: 'addHoarding',
                 fields: cleanFields,
-                siteName: formData["Location "],
+                siteName: siteLocationName,
                 fileData: fileData,
                 mimeType: mimeType
             });
-            alert("✅ Asset Added! Please refresh to see changes.");
-            setHoardings(prev => [...prev, { ...formData, ImageURL: previewUrl }]);
+            alert("✅ Asset Added Successfully!");
+            setHoardings(prev => [...prev, newAssetObject]);
+            window.dispatchEvent(new CustomEvent('hoardings:sync-requested', { detail: { action: 'addHoarding' } }));
             setIsAddModalOpen(false);
             setFormData({});
             setSelectedAssetFile(null);
@@ -925,32 +973,52 @@ const AdminDashboard = ({ hoardings, setHoardings }) => {
         setIsEditModalOpen(true);
     };
 
-    const filteredInventory = hoardings.filter(h => {
-        const siteTitle = String(h["Locality Site Location"] || h["Location "] || h["Location"] || "");
-        const siteLocality = String(h["Locality"] || h["Area"] || "");
-        const matchSearch = siteTitle.toLowerCase().includes(searchTerm.toLowerCase()) ||
-            String(h.City || "").toLowerCase().includes(searchTerm.toLowerCase()) ||
-            siteLocality.toLowerCase().includes(searchTerm.toLowerCase()) ||
-            String(h["Traffic From"] || "").toLowerCase().includes(searchTerm.toLowerCase()) ||
-            String(h["Traffic To"] || "").toLowerCase().includes(searchTerm.toLowerCase());
-        const hCity = (h.City || "").trim().toLowerCase();
+    const filteredInventory = useMemo(() => {
+        const cleanSearch = searchTerm.trim().toLowerCase();
         const selectedCity = inventoryCityFilter.toLowerCase();
-        const matchCity = inventoryCityFilter === 'All' || hCity === selectedCity;
-        const matchStatus = inventoryStatusFilter === 'All' ||
-            (inventoryStatusFilter === 'Offline' ? h.STATUS === 'Disabled' : h.STATUS === inventoryStatusFilter);
-        const matchLocality = inventoryLocalityFilter === 'All' || siteLocality === inventoryLocalityFilter;
-        const matchMedia = inventoryMediaFilter === 'All' || (h["Media Format (Front Lit / Back Lit / Non Lit)"] || h["Media Format"] || h["Media Type"]) === inventoryMediaFilter;
-        const matchSize = inventorySizeFilter === 'All' || (h["Size (Large/Medium/Small)"] || h["Size"]) === inventorySizeFilter;
-        const matchCategory = inventoryCategoryFilter === 'All' || (h["Site Category"] || h["Category"]) === inventoryCategoryFilter;
-        const price = Number(h["Avg Monthly Cost (INR)"] || h["Rental Per Month"] || 0);
-        let matchPrice = true;
-        if (inventoryPriceFilter === '0-25k') matchPrice = price <= 25000;
-        if (inventoryPriceFilter === '25k-50k') matchPrice = price > 25000 && price <= 50000;
-        if (inventoryPriceFilter === '50k-100k') matchPrice = price > 50000 && price <= 100000;
-        if (inventoryPriceFilter === '100k+') matchPrice = price > 100000;
 
-        return matchSearch && matchCity && matchStatus && matchLocality && matchMedia && matchSize && matchCategory && matchPrice;
-    });
+        return hoardings.filter(h => {
+            if (!h) return false;
+            const siteTitle = String(h["Locality Site Location"] || h["Location "] || h["Location"] || "");
+            const siteLocality = String(h["Locality"] || h["Area"] || "");
+            const matchSearch = !cleanSearch ||
+                siteTitle.toLowerCase().includes(cleanSearch) ||
+                String(h.City || "").toLowerCase().includes(cleanSearch) ||
+                siteLocality.toLowerCase().includes(cleanSearch) ||
+                String(h["Traffic From"] || "").toLowerCase().includes(cleanSearch) ||
+                String(h["Traffic To"] || "").toLowerCase().includes(cleanSearch);
+            if (!matchSearch) return false;
+
+            const hCity = (h.City || "").trim().toLowerCase();
+            const matchCity = inventoryCityFilter === 'All' || hCity === selectedCity;
+            if (!matchCity) return false;
+
+            const matchStatus = inventoryStatusFilter === 'All' ||
+                (inventoryStatusFilter === 'Offline' ? h.STATUS === 'Disabled' : h.STATUS === inventoryStatusFilter);
+            if (!matchStatus) return false;
+
+            const matchLocality = inventoryLocalityFilter === 'All' || siteLocality === inventoryLocalityFilter;
+            if (!matchLocality) return false;
+
+            const matchMedia = inventoryMediaFilter === 'All' || (h["Media Format (Front Lit / Back Lit / Non Lit)"] || h["Media Format"] || h["Media Type"]) === inventoryMediaFilter;
+            if (!matchMedia) return false;
+
+            const matchSize = inventorySizeFilter === 'All' || (h["Size (Large/Medium/Small)"] || h["Size"]) === inventorySizeFilter;
+            if (!matchSize) return false;
+
+            const matchCategory = inventoryCategoryFilter === 'All' || (h["Site Category"] || h["Category"]) === inventoryCategoryFilter;
+            if (!matchCategory) return false;
+
+            const price = Number(h["Avg Monthly Cost (INR)"] || h["Rental Per Month"] || 0);
+            let matchPrice = true;
+            if (inventoryPriceFilter === '0-25k') matchPrice = price <= 25000;
+            if (inventoryPriceFilter === '25k-50k') matchPrice = price > 25000 && price <= 50000;
+            if (inventoryPriceFilter === '50k-100k') matchPrice = price > 50000 && price <= 100000;
+            if (inventoryPriceFilter === '100k+') matchPrice = price > 100000;
+
+            return matchPrice;
+        });
+    }, [hoardings, searchTerm, inventoryCityFilter, inventoryStatusFilter, inventoryLocalityFilter, inventoryMediaFilter, inventorySizeFilter, inventoryCategoryFilter, inventoryPriceFilter]);
 
     const getProposalKey = (h, index = 0) => [
         h["Location "],
@@ -3074,7 +3142,14 @@ const AdminDashboard = ({ hoardings, setHoardings }) => {
                                                     />
                                                 </td>
                                                 <td>
-                                                    <div className="asset-title">{h["Locality Site Location"] || h["Location "] || h["Location"] || "Hoarding Site"}</div>
+                                                    <div 
+                                                        className="asset-title" 
+                                                        style={{ cursor: 'pointer', transition: 'color 0.2s' }}
+                                                        onClick={() => navigate(`/${encodeURIComponent(h.City || 'city')}/${encodeURIComponent(h["Location "] || h.Location || h["Locality Site Location"] || '')}`)}
+                                                        title="Open site detail page"
+                                                    >
+                                                        {h["Locality Site Location"] || h["Location "] || h["Location"] || "Hoarding Site"}
+                                                    </div>
                                                     <div className="asset-meta">
                                                         {h["Locality"] || h["Area"] || h.City}
                                                         {h.Width && h.Height ? ` • ${h.Width}x${h.Height} ft` : ''}
@@ -3106,6 +3181,14 @@ const AdminDashboard = ({ hoardings, setHoardings }) => {
                                                 <td>
                                                     <div className="action-row">
                                                         <button 
+                                                            className="btn-icon-small view" 
+                                                            onClick={() => navigate(`/${encodeURIComponent(h.City || 'city')}/${encodeURIComponent(h["Location "] || h.Location || h["Locality Site Location"] || '')}`)}
+                                                            title="View Detail Page"
+                                                            style={{ color: '#6c5dd3' }}
+                                                        >
+                                                            <ExternalLink size={16} />
+                                                        </button>
+                                                        <button 
                                                             className="btn-icon-small edit" 
                                                             onClick={() => openEditModal(h)}
                                                             title="Edit Details"
@@ -3114,14 +3197,14 @@ const AdminDashboard = ({ hoardings, setHoardings }) => {
                                                         </button>
                                                         <button
                                                             className={`btn-icon-small ${h.STATUS === 'Disabled' ? 'hidden' : 'visible'}`}
-                                                            onClick={() => toggleStatus(h["Location "])}
+                                                            onClick={() => toggleStatus(h["Location "] || h.Location)}
                                                             title={h.STATUS === 'Disabled' ? 'Enable Site' : 'Disable Site'}
                                                         >
                                                             {h.STATUS === 'Disabled' ? <EyeOff size={16} /> : <Eye size={16} />}
                                                         </button>
                                                         <button 
                                                             className="btn-icon-small delete" 
-                                                            onClick={() => setDeleteTarget(h["Location "])}
+                                                            onClick={() => setDeleteTarget(h["Location "] || h.Location)}
                                                             title="Delete Site"
                                                         >
                                                             <X size={16} />

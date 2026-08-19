@@ -37,6 +37,20 @@ function createWindow() {
         }
     });
 
+    // Handle ESC key to exit full screen and F11 to toggle full screen
+    mainWindow.webContents.on('before-input-event', (event, input) => {
+        if (input.key === 'Escape' && input.type === 'keyDown') {
+            if (mainWindow.isFullScreen()) {
+                mainWindow.setFullScreen(false);
+                event.preventDefault();
+            }
+        }
+        if (input.key === 'F11' && input.type === 'keyDown') {
+            mainWindow.setFullScreen(!mainWindow.isFullScreen());
+            event.preventDefault();
+        }
+    });
+
     // Open external links in default system browser
     mainWindow.webContents.setWindowOpenHandler(({ url }) => {
         if (url.startsWith('http:') || url.startsWith('https:')) {

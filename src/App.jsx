@@ -14,7 +14,7 @@ import { fetchHoardings } from './services/dataService';
 import { getChangeVersion } from './services/secureApi';
 import { HelmetProvider } from 'react-helmet-async';
 
-const LIVE_REFRESH_INTERVAL_MS = 10000;
+const LIVE_REFRESH_INTERVAL_MS = 60000;
 const LOCAL_SYNC_PRESERVATION_MS = 30000;
 
 function AppContent({ hoardings, setHoardings }) {
@@ -62,18 +62,34 @@ function App() {
   const applyFreshHoardings = useCallback((data) => {
     if (!data || data.length === 0) return;
     setHoardings(prev => {
-      const previousJson = JSON.stringify(prev);
-      const nextJson = JSON.stringify(data);
-      if (previousJson === nextJson) return prev;
-      localStorage.setItem('hoardings_cache', nextJson);
+      if (prev === data) return prev;
+      if (prev.length === data.length && prev[0]?.["Location "] === data[0]?.["Location "] && prev[prev.length - 1]?.["Location "] === data[data.length - 1]?.["Location "]) {
+        // Shallow comparison to avoid heavy JSON.stringify on every tick
+        const previousJson = JSON.stringify(prev);
+        const nextJson = JSON.stringify(data);
+        if (previousJson === nextJson) return prev;
+      }
+      try {
+        localStorage.setItem('hoardings_cache', JSON.stringify(data));
+      } catch {
+        // Ignore quota error if storage full
+      }
       return data;
     });
   }, []);
 
   const refreshHoardings = useCallback(async (force = false) => {
+    // If the user is currently typing in an input or editing, do not interrupt
+    const isTyping = document.activeElement && (
+      document.activeElement.tagName === 'INPUT' ||
+      document.activeElement.tagName === 'TEXTAREA' ||
+      document.activeElement.isContentEditable
+    );
+    if (isTyping && !force) return;
+
     const lastUpdate = parseInt(localStorage.getItem('last_hoardings_update') || '0', 10);
     const recentlyChangedLocally = Date.now() - lastUpdate < LOCAL_SYNC_PRESERVATION_MS;
-    if (recentlyChangedLocally) return;
+    if (recentlyChangedLocally && !force) return;
 
     if (!force && Date.now() - lastFullRefreshRef.current < 5 * 60 * 1000) {
       try {
@@ -91,27 +107,22 @@ function App() {
   }, [applyFreshHoardings]);
 
   useEffect(() => {
-    const refreshDelays = [0, 5000, 15000, 32000];
-    const timers = new Set();
-
+    let focusTimer = null;
     const scheduleRefresh = () => {
-      refreshDelays.forEach(delay => {
-        const timerId = setTimeout(() => {
-          timers.delete(timerId);
-          refreshHoardings();
-        }, delay);
-        timers.add(timerId);
-      });
+      if (focusTimer) clearTimeout(focusTimer);
+      focusTimer = setTimeout(() => {
+        refreshHoardings();
+      }, 2000);
     };
 
     const intervalId = setInterval(refreshHoardings, LIVE_REFRESH_INTERVAL_MS);
-    window.addEventListener('hoardings:sync-requested', scheduleRefresh);
+    window.addEventListener('hoardings:sync-requested', () => refreshHoardings(true));
     window.addEventListener('focus', scheduleRefresh);
 
     return () => {
       clearInterval(intervalId);
-      timers.forEach(clearTimeout);
-      window.removeEventListener('hoardings:sync-requested', scheduleRefresh);
+      if (focusTimer) clearTimeout(focusTimer);
+      window.removeEventListener('hoardings:sync-requested', () => refreshHoardings(true));
       window.removeEventListener('focus', scheduleRefresh);
     };
   }, [refreshHoardings]);
