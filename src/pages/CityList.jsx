@@ -79,16 +79,16 @@ const CityList = ({ hoardings }) => {
         return ['All', ...new Set(normalized)];
     }, [hoardings]);
 
-    const localities = useMemo(() => ['All', ...new Set(cityHoardings.map(h => h.Locality).filter(l => l))], [cityHoardings]);
+    const localities = useMemo(() => ['All', ...new Set(cityHoardings.map(h => h["Area"]).filter(l => l))], [cityHoardings]);
 
     const filteredHoardings = useMemo(() => {
         let filtered = cityHoardings.filter(h => {
-            const hPrice = Number(h["Avg Monthly Cost (INR)"]);
+            const hPrice = Number(h["Rental Per Month"]);
             const hCity = h.City?.trim().toLowerCase();
             const selectedCity = filterCity.toLowerCase();
             
             const matchCity = filterCity === 'All' || hCity === selectedCity;
-            const matchLocality = filterLocality === 'All' || h.Locality === filterLocality;
+            const matchLocality = filterLocality === 'All' || h["Area"] === filterLocality;
 
             let matchPrice = true;
             if (priceRange === '0-25k') matchPrice = hPrice <= 25000;
@@ -96,8 +96,8 @@ const CityList = ({ hoardings }) => {
             else if (priceRange === '50k+') matchPrice = hPrice > 50000;
 
             const matchSearch = searchQuery === '' ||
-                h.Locality?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                h["Locality Site Location"]?.toLowerCase().includes(searchQuery.toLowerCase());
+                h["Area"]?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                h["Location "]?.toLowerCase().includes(searchQuery.toLowerCase());
 
             // Date Range Filter Logic
             let matchDates = true;
@@ -133,9 +133,9 @@ const CityList = ({ hoardings }) => {
         });
 
         if (sortBy === 'price-low') {
-            filtered.sort((a, b) => Number(a["Avg Monthly Cost (INR)"]) - Number(b["Avg Monthly Cost (INR)"]));
+            filtered.sort((a, b) => Number(a["Rental Per Month"]) - Number(b["Rental Per Month"]));
         } else if (sortBy === 'price-high') {
-            filtered.sort((a, b) => Number(b["Avg Monthly Cost (INR)"]) - Number(a["Avg Monthly Cost (INR)"]));
+            filtered.sort((a, b) => Number(b["Rental Per Month"]) - Number(a["Rental Per Month"]));
         } else if (sortBy === 'size') {
             const sizeOrder = { 'Large': 3, 'Medium': 2, 'Small': 1 };
             filtered.sort((a, b) => sizeOrder[(b["Size (Large/Medium/Small)"] || 'Small')] - sizeOrder[(a["Size (Large/Medium/Small)"] || 'Small')]);
@@ -264,11 +264,11 @@ const CityList = ({ hoardings }) => {
                                     <Marker key={i} position={[Number(h.Latitude), Number(h.Longitude)]}>
                                         <Popup>
                                             <div className="map-popup">
-                                                <img src={getImageUrl(h)} alt={h["Locality Site Location"]}
+                                                <img src={getImageUrl(h)} alt={h["Location "]}
                                                     onError={(e) => e.target.src = 'https://placehold.co/200x120?text=Hoarding'} />
-                                                <h4>{h["Locality Site Location"]}</h4>
-                                                <p>₹{Number(h["Avg Monthly Cost (INR)"]).toLocaleString()} / month</p>
-                                                <Link to={`/${h.City}/${encodeURIComponent(h["Locality Site Location"])}`} className="popup-link">
+                                                <h4>{h["Location "]}</h4>
+                                                <p>₹{Number(h["Rental Per Month"]).toLocaleString()} / month</p>
+                                                <Link to={`/${h.City}/${encodeURIComponent(h["Location "])}`} className="popup-link">
                                                     View Details
                                                 </Link>
                                             </div>

@@ -10,11 +10,16 @@ const HoardingCard = ({ hoarding }) => {
     const [isImageOpen, setIsImageOpen] = React.useState(false);
     const clickTimer = React.useRef(null);
     const imageUrl = getImageUrl(hoarding);
+    const locality = hoarding["Area"] || hoarding["Locality"] || 'Unknown Locality';
+    const siteLocation = hoarding["Location "] || hoarding["Locality Site Location"] || hoarding["Location"] || 'Unknown Location';
+    const size = hoarding["Total SQ.ft"] || hoarding["Total Sq. Ft"] || hoarding["Size (Large/Medium/Small)"] || 'N/A';
+    const typeOfSite = hoarding["Media"] || hoarding["Type of Site (Unipole/Billboard)"] || 'N/A';
+    const cost = hoarding["Rental Per Month"] || hoarding["Avg Monthly Cost (INR)"] || '0';
     const status = (hoarding.STATUS || 'Available').trim().toLowerCase();
 
     const handleClick = () => {
         clickTimer.current = setTimeout(() => {
-            navigate(`/${hoarding.City}/${encodeURIComponent(hoarding["Locality Site Location"])}`);
+            navigate(`/${hoarding.City}/${encodeURIComponent(siteLocation)}`);
         }, 220);
     };
 
@@ -33,7 +38,7 @@ const HoardingCard = ({ hoarding }) => {
             }}>
                 <img
                     src={imageUrl}
-                    alt={hoarding["Locality Site Location"]}
+                    alt={siteLocation}
                     loading="lazy"
                     onError={(e) => {
                         e.target.src = 'https://placehold.co/600x400?text=Premium+Hoarding';
@@ -62,24 +67,24 @@ const HoardingCard = ({ hoarding }) => {
 
             <div className="shot-details">
                 <div className="shot-info">
-                    <h3 className="shot-title">{hoarding["Locality Site Location"]}</h3>
+                    <h3 className="shot-title">{siteLocation}</h3>
                     <div className="shot-meta">
                         <MapPin size={12} />
-                        <span>{hoarding.City}, {hoarding.Locality}</span>
+                        <span>{hoarding.City}, {locality}</span>
                     </div>
                 </div>
                 <div className="shot-secondary">
                     <div className="shot-price">
-                        {Number(hoarding["Avg Monthly Cost (INR)"]) >= 1000 
-                          ? `₹${Math.round(Number(hoarding["Avg Monthly Cost (INR)"]) / 1000)}k/mo` 
-                          : `₹${hoarding["Avg Monthly Cost (INR)"]}/mo`}
+                        {Number(hoarding["Rental Per Month"]) >= 1000 
+                          ? `₹${Math.round(Number(hoarding["Rental Per Month"]) / 1000)}k/mo` 
+                          : `₹${hoarding["Rental Per Month"]}/mo`}
                     </div>
                 </div>
             </div>
         </div>
         <ImageLightbox
             imageUrl={isImageOpen ? imageUrl : ''}
-            alt={hoarding["Locality Site Location"]}
+            alt={hoarding["Location "]}
             onClose={() => setIsImageOpen(false)}
             onDownload={() => downloadHoardingImage(hoarding)}
         />

@@ -123,7 +123,7 @@ const ClientReport = ({ hoardings }) => {
                         return (
                             <div key={index} className="asset-report-card animate-in" style={{ animationDelay: `${index * 0.1}s` }}>
                                 <div className="card-media">
-                                    <img src={getImageUrl(site)} alt={site["Locality Site Location"]} />
+                                    <img src={getImageUrl(site)} alt={site["Location "]} />
                                     <div className="city-pill">{site.City}</div>
                                     <button 
                                         className="map-float-btn"
@@ -133,7 +133,7 @@ const ClientReport = ({ hoardings }) => {
                                     </button>
                                 </div>
                                 <div className="card-details">
-                                    <h4 style={{ color: '#ffffff', fontSize: '1.2rem', marginBottom: '12px' }}>{site["Locality Site Location"]}</h4>
+                                    <h4 style={{ color: '#ffffff', fontSize: '1.2rem', marginBottom: '12px' }}>{site["Location "]}</h4>
                                     
                                     <div className="commercials-pill" style={{ 
                                         background: 'rgba(74, 222, 128, 0.1)', 
@@ -146,7 +146,7 @@ const ClientReport = ({ hoardings }) => {
                                         marginBottom: '16px',
                                         border: '1px solid rgba(74, 222, 128, 0.2)'
                                     }}>
-                                        ₹{Number(site["Avg Monthly Cost (INR)"] || 0).toLocaleString('en-IN')}/mo
+                                        ₹{Number(site["Rental Per Month"] || 0).toLocaleString('en-IN')}/mo
                                     </div>
 
                                     <div className="timeline-section">

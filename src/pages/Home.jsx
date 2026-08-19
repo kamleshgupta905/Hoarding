@@ -35,8 +35,8 @@ const Home = ({ hoardings }) => {
         e.preventDefault();
         if (searchTerm) {
             const match = hoardings.find(h =>
-                h.Locality?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                h["Locality Site Location"]?.toLowerCase().includes(searchTerm.toLowerCase())
+                h["Area"]?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                h["Location "]?.toLowerCase().includes(searchTerm.toLowerCase())
             );
             if (match) {
                 navigate(`/${match.City}?search=${searchTerm}`);

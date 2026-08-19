@@ -3,7 +3,7 @@ import { analyzeImport, buildHeaderMapping, detectHeaderRow } from './importEngi
 import { canonicalizeHeaders } from './hoardingSchema';
 
 const headers = [
-  'City', 'Locality', 'Locality Site Location', 'Traffic From', 'Traffic To',
+  'City', 'Locality', 'Location ', 'Traffic From', 'Traffic To',
   'Lat.', 'Long.', 'Width', 'Height', 'Avg. monthly Cost', 'STATUS', 'ImageURL',
   'BookedBy', 'BookingStart', 'BookingEnd', '_SiteID', '_RowVersion'
 ];
@@ -11,7 +11,7 @@ const headers = [
 describe('Excel import safety engine', () => {
   it('normalizes manually-cased sheet headers without exposing backend W/X/Y/Z fields', () => {
     expect(canonicalizeHeaders(['City', 'locality site location', 'W', 'X', 'STATUS'])).toEqual([
-      'City', 'Locality Site Location', 'W', 'X', 'STATUS'
+      'City', 'Location ', 'W', 'X', 'STATUS'
     ]);
   });
 
@@ -25,7 +25,7 @@ describe('Excel import safety engine', () => {
   it('prefers an exact Traffic To header over an earlier Facing alias', () => {
     const mapping = buildHeaderMapping(
       ['Location', 'Facing', 'Traffic From', 'Traffic To'],
-      ['Locality Site Location', 'Traffic From', 'Traffic To']
+      ['Location ', 'Traffic From', 'Traffic To']
     );
     expect(mapping.mappings.find((item) => item.targetHeader === 'Traffic To')).toMatchObject({
       incomingHeader: 'Traffic To',
@@ -56,7 +56,7 @@ describe('Excel import safety engine', () => {
   it('uses Site ID first and preserves protected image and booking values', () => {
     const existing = [{
       _SiteID: 'site-1', _RowVersion: 4, City: 'Meerut', Locality: 'Begum Bridge',
-      'Locality Site Location': 'Old Name', ImageURL: 'https://images.test/current.jpg',
+      'Location ': 'Old Name', ImageURL: 'https://images.test/current.jpg',
       BookedBy: 'Client A', BookingStart: '2026-07-01', BookingEnd: '2026-07-31'
     }];
     const grid = [
@@ -68,7 +68,7 @@ describe('Excel import safety engine', () => {
     expect(result.rows[0].matchMethod).toBe('SITE_ID');
     expect(result.rows[0].merged.ImageURL).toBe(existing[0].ImageURL);
     expect(result.rows[0].merged.BookedBy).toBe('Client A');
-    expect(result.rows[0].merged['Locality Site Location']).toBe('Renamed Site');
+    expect(result.rows[0].merged['Location ']).toBe('Renamed Site');
   });
 
   it('blocks duplicate rows and invalid latitude instead of importing them', () => {
@@ -86,7 +86,7 @@ describe('Excel import safety engine', () => {
 
   it('does not silently update when multiple existing rows have the same composite identity', () => {
     const base = {
-      City: 'Meerut', Locality: 'Hapur Road', 'Locality Site Location': 'Evez Crossing',
+      City: 'Meerut', Locality: 'Hapur Road', 'Location ': 'Evez Crossing',
       'Traffic From': 'Modipuram', 'Traffic To': 'Baccha Park', Width: 20, Height: 10
     };
     const grid = [

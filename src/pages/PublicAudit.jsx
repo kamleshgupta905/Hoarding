@@ -12,7 +12,7 @@ const PublicAudit = ({ hoardings, setHoardings }) => {
     
     const hoarding = hoardings.find(h => 
         h.City.toLowerCase() === city.toLowerCase() && 
-        h["Locality Site Location"] === decodedSiteName
+        h["Location "] === decodedSiteName
     );
 
     const [files, setFiles] = useState([]);
@@ -139,7 +139,7 @@ const PublicAudit = ({ hoardings, setHoardings }) => {
 
                 await syncToGoogleSheet({
                     action: 'updateHoarding',
-                    siteName: hoarding["Locality Site Location"],
+                    siteName: hoarding["Location "],
                     fields: { "ExecutionHistory": historyString },
                     fileData: compressedBase64,
                     mimeType: 'image/jpeg',
@@ -147,7 +147,7 @@ const PublicAudit = ({ hoardings, setHoardings }) => {
                 });
             }
             setHoardings(prev => prev.map(h => 
-                h["Locality Site Location"] === hoarding["Locality Site Location"] 
+                h["Location "] === hoarding["Location "] 
                 ? { ...h, History: currentHistory } : h
             ));
             setIsSuccess(true);
@@ -181,7 +181,7 @@ const PublicAudit = ({ hoardings, setHoardings }) => {
                     
                     <div className="camera-header-overlay">
                         <span className="city-label">{hoarding.City}</span>
-                        <h1>{hoarding["Locality Site Location"]}</h1>
+                        <h1>{hoarding["Location "]}</h1>
                     </div>
 
                     <div className="camera-overlay">
@@ -216,7 +216,7 @@ const PublicAudit = ({ hoardings, setHoardings }) => {
 
                     <div className="site-info-banner">
                         <span className="city-label">{hoarding.City}</span>
-                        <h1>{hoarding["Locality Site Location"]}</h1>
+                        <h1>{hoarding["Location "]}</h1>
                     </div>
 
                     <div className="preview-strip">

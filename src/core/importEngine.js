@@ -21,7 +21,7 @@ export const detectHeaderRow = (rows, targetHeaders, maxRows = 25) => {
       const normalized = normalizeHeader(cell);
       if (!normalized) return;
       if (targetAliases.has(normalized)) score += 3;
-      if (getHeaderAliases('Locality Site Location').includes(normalized)) {
+      if (getHeaderAliases('Location ').includes(normalized)) {
         score += 10;
         siteHeader = true;
       }
@@ -102,16 +102,16 @@ export const analyzeImport = ({
     const sourceRow = detectedHeaderRow + offset + 2;
     const incoming = mapIncomingRecord(rawRow, targetHeaders, mapping);
     const missing = REQUIRED_IMPORT_HEADERS.filter((header) => !hasRequiredValue(incoming, header));
-    if (missing.length) missingRequired.push({ row: sourceRow, site: incoming['Locality Site Location'], fields: missing });
+    if (missing.length) missingRequired.push({ row: sourceRow, site: incoming['Location '], fields: missing });
 
     if (!isValidCoordinate(incoming['Lat.'], 'lat') || !isValidCoordinate(incoming['Long.'], 'long')) {
-      invalidCoordinates.push({ row: sourceRow, site: incoming['Locality Site Location'], lat: incoming['Lat.'], long: incoming['Long.'] });
+      invalidCoordinates.push({ row: sourceRow, site: incoming['Location '], lat: incoming['Lat.'], long: incoming['Long.'] });
     }
 
     const siteId = String(incoming._SiteID || '').trim();
     const composite = buildCompositeIdentity(incoming);
     const duplicateKey = siteId || composite;
-    if (seen.has(duplicateKey)) duplicates.push({ row: sourceRow, duplicateOfRow: seen.get(duplicateKey), site: incoming['Locality Site Location'] });
+    if (seen.has(duplicateKey)) duplicates.push({ row: sourceRow, duplicateOfRow: seen.get(duplicateKey), site: incoming['Location '] });
     else if (duplicateKey) seen.set(duplicateKey, sourceRow);
 
     let existing = siteId ? existingById.get(siteId) : null;

@@ -15,7 +15,7 @@ var CONFIG = {
   // ─── Images yahan save hongi — INPUT_FOLDER se ALAG folder banao! ────────
   // ⚠️  Google Drive → New Folder → ID copy karke yahan paste karo
   IMAGE_FOLDER_ID: '1gJmB53z4Ab7Jy-JTxU0v_05_A9Lq5BuE', // ✅ Dedicated images folder (alag!)
-  COL_SITE_NAME: 'Locality Site Location',
+  COL_SITE_NAME: 'Location ',
   COL_IMAGE_URL: 'ImageURL',
   STAFF_UPLOADS_SHEET: 'Staff_Uploads',
   EXCEL_IMPORTS_SHEET: 'Excel_Import_Previews',

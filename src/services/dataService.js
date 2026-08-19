@@ -258,7 +258,7 @@ const sanitizeFileName = (value) => String(value || 'hoarding-image')
 
 export const downloadHoardingImage = async (hoarding) => {
   const imageUrl = getImageUrl(hoarding);
-  const name = sanitizeFileName(`${hoarding?.City || 'site'}-${hoarding?.["Locality Site Location"] || 'image'}.jpg`);
+  const name = sanitizeFileName(`${hoarding?.City || 'site'}-${hoarding?.["Location "] || 'image'}.jpg`);
 
   try {
     const response = await fetch(imageUrl, { mode: 'cors', cache: 'no-store' });
@@ -296,8 +296,8 @@ export const PROPOSAL_COLUMNS = [
   ['S. No.', (_site, index) => index + 1],
   ['State', site => site.State],
   ['City', site => site.City],
-  ['Locality', site => site.Locality],
-  ['Locality Site Location', site => site["Locality Site Location"]],
+  ['Locality', site => site["Area"]],
+  ['Location ', site => site["Location "]],
   ['Pin Code', site => site["Pin Code"]],
   ['Traffic From', site => site["Traffic From"]],
   ['Traffic To', site => site["Traffic To"]],
@@ -308,14 +308,14 @@ export const PROPOSAL_COLUMNS = [
   ['Width', site => site.Width],
   ['Height', site => site.Height],
   ['Units', site => site.Units],
-  ['Total Sq. Ft', site => site["Total Sq. Ft"]],
-  ['Type of Site (Unipole/ Billboard)', site => site["Type of Site (Unipole/Billboard)"]],
+  ['Total SQ.ft', site => site["Total SQ.ft"]],
+  ['Type of Site (Unipole/ Billboard)', site => site["Media"]],
   ['Media Format (Front Lit/ Back Lit/Non Lit)', site => site["Media Format (Front Lit / Back Lit / Non Lit)"]],
   ['LHS/ Non LHS', site => site["LHS / Non LHS"]],
   ['Digital/ Non Digital', site => site["Digital / Non Digital"]],
   ['Solus (Y/N)', site => site["Solus (Y/N)"]],
   ['Site Category', site => site["Site Category"]],
-  ['Avg. monthly Cost', site => site["Avg Monthly Cost (INR)"]],
+  ['Avg. monthly Cost', site => site["Rental Per Month"]],
   ['STATUS', site => site.STATUS || 'Available'],
   ['BookedBy', site => site.BookedBy],
   ['BookingStart', site => site.BookingStart],

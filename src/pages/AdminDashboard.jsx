@@ -459,12 +459,12 @@ const AdminDashboard = ({ hoardings, setHoardings }) => {
                     else if (aiResult.matchedLocation) {
                         const aiLoc = String(aiResult.matchedLocation).toLowerCase().trim();
                         matchedData = hoardings.find(h => {
-                            const listName = String(h["Locality Site Location"]).toLowerCase();
+                            const listName = String(h["Location "]).toLowerCase();
                             return listName === aiLoc || listName.includes(aiLoc) || aiLoc.includes(listName);
                         });
                     }
 
-                    const finalLocation = matchedData ? matchedData["Locality Site Location"] : null;
+                    const finalLocation = matchedData ? matchedData["Location "] : null;
 
                     if (!finalLocation) {
                         console.warn("AI Result did not produce a valid location match:", aiResult);
@@ -516,7 +516,7 @@ const AdminDashboard = ({ hoardings, setHoardings }) => {
         try {
             const base64 = await compressImage(imageData.file);
 
-            const targetHoarding = hoardings.find(h => h["Locality Site Location"] === imageData.matchedLocation);
+            const targetHoarding = hoardings.find(h => h["Location "] === imageData.matchedLocation);
             const hasExistingImage = targetHoarding && targetHoarding.ImageURL &&
                 targetHoarding.ImageURL.trim() !== "" &&
                 !targetHoarding.ImageURL.includes("unsplash.com");
@@ -551,7 +551,7 @@ const AdminDashboard = ({ hoardings, setHoardings }) => {
             });
 
             setHoardings(prev => prev.map(h => {
-                if (h["Locality Site Location"] === imageData.matchedLocation) {
+                if (h["Location "] === imageData.matchedLocation) {
                     const hasValidOldImage = h.ImageURL && h.ImageURL.trim() !== "" && !h.ImageURL.includes("unsplash.com");
 
                     let updatedHistory = h.History || [];
@@ -663,7 +663,7 @@ const AdminDashboard = ({ hoardings, setHoardings }) => {
             const base64 = await compressImage(img.file);
 
             // 🛡️ Logic to prevent replacing master images
-            const targetHoarding = hoardings.find(h => h["Locality Site Location"] === img.matchedLocation);
+            const targetHoarding = hoardings.find(h => h["Location "] === img.matchedLocation);
             const hasExistingImage = targetHoarding && targetHoarding.ImageURL &&
                 targetHoarding.ImageURL.trim() !== "" &&
                 !targetHoarding.ImageURL.includes("unsplash.com");
@@ -697,7 +697,7 @@ const AdminDashboard = ({ hoardings, setHoardings }) => {
 
             // Also update the main hoardings list locally
             setHoardings(prev => prev.map(h => {
-                if (h["Locality Site Location"] === img.matchedLocation) {
+                if (h["Location "] === img.matchedLocation) {
                     let updatedHistory = h.History || [];
                     let finalImageURL = h.ImageURL;
 
@@ -739,7 +739,7 @@ const AdminDashboard = ({ hoardings, setHoardings }) => {
 
     const toggleStatus = (siteName) => {
         const updated = hoardings.map(h => {
-            if (h["Locality Site Location"] === siteName) {
+            if (h["Location "] === siteName) {
                 return { ...h, STATUS: h.STATUS === 'Disabled' ? 'Available' : 'Disabled' };
             }
             return h;
@@ -788,7 +788,7 @@ const AdminDashboard = ({ hoardings, setHoardings }) => {
             await syncToGoogleSheet({
                 action: 'addHoarding',
                 fields: cleanFields,
-                siteName: formData["Locality Site Location"],
+                siteName: formData["Location "],
                 fileData: fileData,
                 mimeType: mimeType
             });
@@ -843,14 +843,14 @@ const AdminDashboard = ({ hoardings, setHoardings }) => {
 
             await syncToGoogleSheet({
                 action: 'updateHoarding',
-                siteName: selectedHoarding["Locality Site Location"],
+                siteName: selectedHoarding["Location "],
                 fields: cleanFields,
                 fileData: fileData,
                 mimeType: mimeType
             });
             alert("✅ Asset Updated!");
             setHoardings(prev => prev.map(h => 
-                h["Locality Site Location"] === selectedHoarding["Locality Site Location"] 
+                h["Location "] === selectedHoarding["Location "] 
                 ? { ...h, ...formData, ImageURL: updatedImageURL } 
                 : h
             ));
@@ -873,7 +873,7 @@ const AdminDashboard = ({ hoardings, setHoardings }) => {
                 siteName: siteName
             });
             alert("✅ Asset Deleted!");
-            setHoardings(prev => prev.filter(h => h["Locality Site Location"] !== siteName));
+            setHoardings(prev => prev.filter(h => h["Location "] !== siteName));
         } catch (err) {
             alert("Error deleting asset: " + err.message);
         } finally {
@@ -923,9 +923,9 @@ const AdminDashboard = ({ hoardings, setHoardings }) => {
     };
 
     const filteredInventory = hoardings.filter(h => {
-        const matchSearch = String(h["Locality Site Location"]).toLowerCase().includes(searchTerm.toLowerCase()) ||
+        const matchSearch = String(h["Location "]).toLowerCase().includes(searchTerm.toLowerCase()) ||
             String(h.City).toLowerCase().includes(searchTerm.toLowerCase()) ||
-            String(h.Locality).toLowerCase().includes(searchTerm.toLowerCase()) ||
+            String(h["Area"]).toLowerCase().includes(searchTerm.toLowerCase()) ||
             String(h["Traffic From"]).toLowerCase().includes(searchTerm.toLowerCase()) ||
             String(h["Traffic To"]).toLowerCase().includes(searchTerm.toLowerCase());
         const hCity = h.City?.trim().toLowerCase();
@@ -933,11 +933,11 @@ const AdminDashboard = ({ hoardings, setHoardings }) => {
         const matchCity = inventoryCityFilter === 'All' || hCity === selectedCity;
         const matchStatus = inventoryStatusFilter === 'All' ||
             (inventoryStatusFilter === 'Offline' ? h.STATUS === 'Disabled' : h.STATUS === inventoryStatusFilter);
-        const matchLocality = inventoryLocalityFilter === 'All' || h.Locality === inventoryLocalityFilter;
+        const matchLocality = inventoryLocalityFilter === 'All' || h["Area"] === inventoryLocalityFilter;
         const matchMedia = inventoryMediaFilter === 'All' || h["Media Format (Front Lit / Back Lit / Non Lit)"] === inventoryMediaFilter;
         const matchSize = inventorySizeFilter === 'All' || h["Size (Large/Medium/Small)"] === inventorySizeFilter;
         const matchCategory = inventoryCategoryFilter === 'All' || h["Site Category"] === inventoryCategoryFilter;
-        const price = Number(h["Avg Monthly Cost (INR)"] || 0);
+        const price = Number(h["Rental Per Month"] || 0);
         let matchPrice = true;
         if (inventoryPriceFilter === '0-25k') matchPrice = price <= 25000;
         if (inventoryPriceFilter === '25k-50k') matchPrice = price > 25000 && price <= 50000;
@@ -948,7 +948,7 @@ const AdminDashboard = ({ hoardings, setHoardings }) => {
     });
 
     const getProposalKey = (h, index = 0) => [
-        h["Locality Site Location"],
+        h["Location "],
         h.City,
         h.Width,
         h.Height,
@@ -1000,7 +1000,7 @@ const AdminDashboard = ({ hoardings, setHoardings }) => {
         return city.charAt(0).toUpperCase() + city.slice(1).toLowerCase();
     }).filter(Boolean))];
     const inventoryStatuses = ['All', 'Available', 'Occupied', 'Offline'];
-    const inventoryLocalities = ['All', ...new Set(hoardings.map(h => h.Locality).filter(Boolean))];
+    const inventoryLocalities = ['All', ...new Set(hoardings.map(h => h["Area"]).filter(Boolean))];
     const inventoryMediaFormats = ['All', ...new Set(hoardings.map(h => h["Media Format (Front Lit / Back Lit / Non Lit)"]).filter(Boolean))];
     const inventorySizes = ['All', ...new Set(hoardings.map(h => h["Size (Large/Medium/Small)"]).filter(Boolean))];
     const inventoryCategories = ['All', ...new Set(hoardings.map(h => h["Site Category"]).filter(Boolean))];
@@ -1450,7 +1450,7 @@ const AdminDashboard = ({ hoardings, setHoardings }) => {
         <div className={`admin-dashboard ${isSidebarCollapsed ? 'sidebar-collapsed' : ''}`}>
             <ImageLightbox
                 imageUrl={previewHoarding ? getImageUrl(previewHoarding) : ''}
-                alt={previewHoarding?.["Locality Site Location"]}
+                alt={previewHoarding?.["Location "]}
                 onClose={() => setPreviewHoarding(null)}
                 onDownload={previewHoarding ? () => downloadHoardingImage(previewHoarding) : null}
             />
@@ -1592,11 +1592,11 @@ const AdminDashboard = ({ hoardings, setHoardings }) => {
                             <div className="modal-body crud-form">
                                 <div className="form-row three-cols">
                                     <div className="form-group span-two">
-                                        <label>Locality Site Location (Unique ID)*</label>
+                                        <label>Location  (Unique ID)*</label>
                                         <input 
                                             required 
-                                            value={formData["Locality Site Location"] || ''} 
-                                            onChange={e => setFormData({...formData, "Locality Site Location": e.target.value})}
+                                            value={formData["Location "] || ''} 
+                                            onChange={e => setFormData({...formData, "Location ": e.target.value})}
                                             disabled={isEditModalOpen}
                                             placeholder="e.g. Maruti True Value Meerut"
                                         />
@@ -1615,7 +1615,7 @@ const AdminDashboard = ({ hoardings, setHoardings }) => {
                                     <div className="form-group">
                                         <label>Locality</label>
                                         <input 
-                                            value={formData.Locality || ''} 
+                                            value={formData["Area"] || ''} 
                                             onChange={e => setFormData({...formData, Locality: e.target.value})}
                                             placeholder="e.g. Partapur"
                                         />
@@ -1646,8 +1646,8 @@ const AdminDashboard = ({ hoardings, setHoardings }) => {
                                         <label>Monthly Cost (INR)</label>
                                         <input 
                                             type="number"
-                                            value={formData["Avg Monthly Cost (INR)"] || ''} 
-                                            onChange={e => setFormData({...formData, "Avg Monthly Cost (INR)": e.target.value})}
+                                            value={formData["Rental Per Month"] || ''} 
+                                            onChange={e => setFormData({...formData, "Rental Per Month": e.target.value})}
                                             placeholder="e.g. 50000"
                                         />
                                     </div>
@@ -2118,7 +2118,7 @@ const AdminDashboard = ({ hoardings, setHoardings }) => {
                                     <div className="recent-photo-grid">
                                         {recentPhotoUpdates.map(upload => (
                                             <article className="recent-photo-card" key={upload.UploadId}>
-                                                <img src={upload.ImageURL} alt={upload.ApprovedSite || 'Staff upload'} onClick={() => setPreviewHoarding({ ImageURL: upload.ImageURL, City: 'Staff', "Locality Site Location": upload.ApprovedSite || 'Staff upload' })} />
+                                                <img src={upload.ImageURL} alt={upload.ApprovedSite || 'Staff upload'} onClick={() => setPreviewHoarding({ ImageURL: upload.ImageURL, City: 'Staff', "Location ": upload.ApprovedSite || 'Staff upload' })} />
                                                 <div>
                                                     <strong>{upload.ApprovedSite || upload.SuggestedSite || 'History upload'}</strong>
                                                     <span>{String(upload.Status || 'REVIEW_REQUIRED').replaceAll('_', ' ')}</span>
@@ -2352,7 +2352,7 @@ const AdminDashboard = ({ hoardings, setHoardings }) => {
 
                                                 {img.matchedLocation && (
                                                     <div className="img-preview ref-image" title="Old Reference Image" style={{
-                                                        backgroundImage: `url(${hoardings.find(h => h["Locality Site Location"] === img.matchedLocation)?.ImageURL})`,
+                                                        backgroundImage: `url(${hoardings.find(h => h["Location "] === img.matchedLocation)?.ImageURL})`,
                                                         backgroundSize: 'cover',
                                                         backgroundPosition: 'center'
                                                     }}>
@@ -2375,7 +2375,7 @@ const AdminDashboard = ({ hoardings, setHoardings }) => {
                                                     >
                                                         <option value="">-- Select Location --</option>
                                                         {hoardings.map((h, i) => (
-                                                            <option key={i} value={h["Locality Site Location"]}>{h["Locality Site Location"]}</option>
+                                                            <option key={i} value={h["Location "]}>{h["Location "]}</option>
                                                         ))}
                                                     </select>
                                                 </div>
@@ -2413,7 +2413,7 @@ const AdminDashboard = ({ hoardings, setHoardings }) => {
                                                     {img.reasoning && <p className="ai-reasoning-text"><span>Logic:</span> {img.reasoning}</p>}
 
                                                     {img.matchedLocation && (() => {
-                                                        const site = hoardings.find(h => h["Locality Site Location"] === img.matchedLocation);
+                                                        const site = hoardings.find(h => h["Location "] === img.matchedLocation);
                                                         if (site && site.Latitude && site.Longitude) {
                                                             return (
                                                                 <a
@@ -2468,7 +2468,7 @@ const AdminDashboard = ({ hoardings, setHoardings }) => {
                             <>
                             <datalist id="staff-site-options">
                                 {hoardings.map(site => (
-                                    <option value={site["Locality Site Location"]} key={`${site.City}-${site["Locality Site Location"]}`}>{site.City}</option>
+                                    <option value={site["Location "]} key={`${site.City}-${site["Location "]}`}>{site.City}</option>
                                 ))}
                             </datalist>
                             <div className="staff-review-grid">
@@ -2478,7 +2478,7 @@ const AdminDashboard = ({ hoardings, setHoardings }) => {
                                     const reviewImageUrl = preview?.previewUrl || upload.ImageURL;
                                     return (
                                         <article className="staff-review-card" key={upload.UploadId}>
-                                            <button className="staff-review-image" onClick={() => setPreviewHoarding({ ImageURL: reviewImageUrl, City: 'Staff', "Locality Site Location": selectedSite || 'Review photo' })}>
+                                            <button className="staff-review-image" onClick={() => setPreviewHoarding({ ImageURL: reviewImageUrl, City: 'Staff', "Location ": selectedSite || 'Review photo' })}>
                                                 <img src={reviewImageUrl} alt="Staff capture" />
                                             </button>
                                             <div className="staff-review-body">
@@ -2500,7 +2500,7 @@ const AdminDashboard = ({ hoardings, setHoardings }) => {
                                                 </label>
                                                 <div className="nearby-sites">
                                                     {(upload.NearbySites || []).slice(0, 4).map(site => {
-                                                        const hoarding = hoardings.find(item => item["Locality Site Location"] === site.siteName);
+                                                        const hoarding = hoardings.find(item => item["Location "] === site.siteName);
                                                         return (
                                                             <button type="button" key={site.siteName} onClick={() => setReviewSelections(prev => ({ ...prev, [upload.UploadId]: site.siteName }))}>
                                                                 <img src={getImageUrl(hoarding)} alt={site.siteName} />
@@ -2657,7 +2657,7 @@ const AdminDashboard = ({ hoardings, setHoardings }) => {
                                             <span>Proposal Headers</span>
                                             <div>
                                                 <button type="button" onClick={() => setSelectedProposalHeaders(PROPOSAL_COLUMNS.map(([label]) => label))}>All</button>
-                                                <button type="button" onClick={() => setSelectedProposalHeaders(['Image Link', 'S. No.', 'City', 'Locality', 'Locality Site Location', 'Traffic From', 'Traffic To', 'Size (Large/ Medium/ Small)', 'Avg. monthly Cost', 'STATUS'])}>Basic</button>
+                                                <button type="button" onClick={() => setSelectedProposalHeaders(['Image Link', 'S. No.', 'City', 'Locality', 'Location ', 'Traffic From', 'Traffic To', 'Size (Large/ Medium/ Small)', 'Avg. monthly Cost', 'STATUS'])}>Basic</button>
                                             </div>
                                         </div>
                                         <div className="proposal-header-options">
@@ -2703,14 +2703,14 @@ const AdminDashboard = ({ hoardings, setHoardings }) => {
                                                         type="checkbox"
                                                         checked={selectedProposalKeys.includes(getProposalKey(h, i))}
                                                         onChange={() => toggleProposalSelection(getProposalKey(h, i))}
-                                                        aria-label={`Select ${h["Locality Site Location"]}`}
+                                                        aria-label={`Select ${h["Location "]}`}
                                                     />
                                                 </td>
                                                 <td className="image-col">
                                                     <img
                                                         className="inventory-thumbnail"
                                                         src={getImageUrl(h)}
-                                                        alt={h["Locality Site Location"]}
+                                                        alt={h["Location "]}
                                                         loading="lazy"
                                                         onClick={() => setPreviewHoarding(h)}
                                                         title="Open full screen preview"
@@ -2720,14 +2720,14 @@ const AdminDashboard = ({ hoardings, setHoardings }) => {
                                                     />
                                                 </td>
                                                 <td>
-                                                    <div className="asset-title">{h["Locality Site Location"]}</div>
-                                                    <div className="asset-meta">{h.Locality}</div>
+                                                    <div className="asset-title">{h["Location "]}</div>
+                                                    <div className="asset-meta">{h["Area"]}</div>
                                                 </td>
                                                 <td>
                                                     <div className="asset-region">{h.City}</div>
                                                 </td>
                                                 <td className="asset-price">
-                                                    ₹{Number(h["Avg Monthly Cost (INR)"] || 0).toLocaleString()}
+                                                    ₹{Number(h["Rental Per Month"] || 0).toLocaleString()}
                                                 </td>
                                                 <td>
                                                     <span className={`status-pill ${h.STATUS === 'Disabled' ? 'disabled' :
@@ -2755,14 +2755,14 @@ const AdminDashboard = ({ hoardings, setHoardings }) => {
                                                         </button>
                                                         <button
                                                             className={`btn-icon-small ${h.STATUS === 'Disabled' ? 'hidden' : 'visible'}`}
-                                                            onClick={() => toggleStatus(h["Locality Site Location"])}
+                                                            onClick={() => toggleStatus(h["Location "])}
                                                             title={h.STATUS === 'Disabled' ? 'Enable Site' : 'Disable Site'}
                                                         >
                                                             {h.STATUS === 'Disabled' ? <EyeOff size={16} /> : <Eye size={16} />}
                                                         </button>
                                                         <button 
                                                             className="btn-icon-small delete" 
-                                                            onClick={() => setDeleteTarget(h["Locality Site Location"])}
+                                                            onClick={() => setDeleteTarget(h["Location "])}
                                                             title="Delete Site"
                                                         >
                                                             <X size={16} />
@@ -2804,11 +2804,11 @@ const AdminDashboard = ({ hoardings, setHoardings }) => {
                                             </thead>
                                             <tbody>
                                                 {selectedProposalSites.map((site, idx) => (
-                                                    <tr key={`${site["Locality Site Location"]}-${idx}`}>
+                                                    <tr key={`${site["Location "]}-${idx}`}>
                                                         <td>{idx + 1}</td>
                                                         <td>{site.City}</td>
-                                                        <td>{site.Locality}</td>
-                                                        <td>{site["Locality Site Location"]}</td>
+                                                        <td>{site["Area"]}</td>
+                                                        <td>{site["Location "]}</td>
                                                         <td>{[site["Traffic From"], site["Traffic To"]].filter(Boolean).join(' to ')}</td>
                                                         <td>{site.STATUS || 'Available'}</td>
                                                         <td>
@@ -2816,7 +2816,7 @@ const AdminDashboard = ({ hoardings, setHoardings }) => {
                                                                 ? [site.BookingStart, site.BookingEnd].filter(Boolean).join(' to ') || site.BookedBy || 'Occupied'
                                                                 : 'Available'}
                                                         </td>
-                                                        <td>₹{Number(site["Avg Monthly Cost (INR)"] || 0).toLocaleString()}</td>
+                                                        <td>₹{Number(site["Rental Per Month"] || 0).toLocaleString()}</td>
                                                     </tr>
                                                 ))}
                                             </tbody>

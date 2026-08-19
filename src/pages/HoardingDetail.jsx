@@ -13,7 +13,7 @@ const HoardingDetail = ({ hoardings, setHoardings }) => {
 
     const hoarding = hoardings.find(h =>
         h.City.toLowerCase() === city.toLowerCase() &&
-        h["Locality Site Location"] === decodedSiteName
+        h["Location "] === decodedSiteName
     );
 
     const [isAdmin] = React.useState(localStorage.getItem('isAdminAuthenticated') === 'true');
@@ -70,14 +70,14 @@ const HoardingDetail = ({ hoardings, setHoardings }) => {
 
             await syncToGoogleSheet({
                 action: 'updateHoarding',
-                siteName: hoarding["Locality Site Location"],
+                siteName: hoarding["Location "],
                 fields: cleanFields,
                 fileData: fileData,
                 mimeType: mimeType
             });
             alert("✅ Asset Updated!");
             setHoardings(prev => prev.map(h =>
-                h["Locality Site Location"] === hoarding["Locality Site Location"]
+                h["Location "] === hoarding["Location "]
                     ? { ...h, ...formData, ImageURL: updatedImageURL }
                     : h
             ));
@@ -91,7 +91,7 @@ const HoardingDetail = ({ hoardings, setHoardings }) => {
     };
 
     const handleDeleteAsset = async () => {
-        if (!confirm(`Are you sure you want to PERMANENTLY delete "${hoarding["Locality Site Location"]}"? This cannot be undone.`)) return;
+        if (!confirm(`Are you sure you want to PERMANENTLY delete "${hoarding["Location "]}"? This cannot be undone.`)) return;
 
         setIsLoading(true);
         try {
@@ -101,11 +101,11 @@ const HoardingDetail = ({ hoardings, setHoardings }) => {
                 headers: { 'Content-Type': 'text/plain' },
                 body: JSON.stringify({
                     action: 'deleteHoarding',
-                    siteName: hoarding["Locality Site Location"]
+                    siteName: hoarding["Location "]
                 })
             });
             alert("✅ Asset Deleted!");
-            setHoardings(prev => prev.filter(h => h["Locality Site Location"] !== hoarding["Locality Site Location"]));
+            setHoardings(prev => prev.filter(h => h["Location "] !== hoarding["Location "]));
             navigate(`/${city}`);
         } catch (err) {
             alert("Error deleting asset: " + err.message);
@@ -173,7 +173,7 @@ const HoardingDetail = ({ hoardings, setHoardings }) => {
             // 🔄 REAL-TIME SYNC
             await syncToGoogleSheet({
                 action: 'updateHoarding',
-                siteName: hoarding["Locality Site Location"],
+                siteName: hoarding["Location "],
                 fields: cleanHoardingFields,
                 fileData: fileData,
                 mimeType: mimeType,
@@ -184,7 +184,7 @@ const HoardingDetail = ({ hoardings, setHoardings }) => {
             
             // Local state update (with cache sync via wrappedSetHoardings)
             setHoardings(prev => prev.map(h => {
-                if (h["Locality Site Location"] === hoarding["Locality Site Location"]) {
+                if (h["Location "] === hoarding["Location "]) {
                     return { ...h, ImageURL: previewUrl, History: newHistory };
                 }
                 return h;
@@ -215,7 +215,7 @@ const HoardingDetail = ({ hoardings, setHoardings }) => {
 
                 // Update local state using functional update to handle multiple photos in a loop
                 setHoardings(prev => prev.map(h => {
-                    if (h["Locality Site Location"] === hoarding["Locality Site Location"]) {
+                    if (h["Location "] === hoarding["Location "]) {
                         const newAudit = { url: previewUrl, timestamp: new Date().getTime() };
                         return { ...h, History: [newAudit, ...(h.History || [])] };
                     }
@@ -225,7 +225,7 @@ const HoardingDetail = ({ hoardings, setHoardings }) => {
                 // 🔄 SYNC TO BACKEND
                 await syncToGoogleSheet({
                     action: 'updateHoarding',
-                    siteName: hoarding["Locality Site Location"],
+                    siteName: hoarding["Location "],
                     fileData: fileData,
                     mimeType: mimeType,
                     mode: 'archive'
@@ -246,13 +246,13 @@ const HoardingDetail = ({ hoardings, setHoardings }) => {
     };
 
     const handleShareAudit = () => {
-        const auditLink = `${window.location.origin}/audit/${hoarding.City.toLowerCase()}/${encodeURIComponent(hoarding["Locality Site Location"])}`;
-        const message = `👋 *Audit Required*\n\nSite: *${hoarding["Locality Site Location"]}*\nCity: *${hoarding.City}*\n\nPlease click the link below to take a live site photo for verification:\n\n🔗 ${auditLink}`;
+        const auditLink = `${window.location.origin}/audit/${hoarding.City.toLowerCase()}/${encodeURIComponent(hoarding["Location "])}`;
+        const message = `👋 *Audit Required*\n\nSite: *${hoarding["Location "]}*\nCity: *${hoarding.City}*\n\nPlease click the link below to take a live site photo for verification:\n\n🔗 ${auditLink}`;
         window.open(`https://wa.me/?text=${encodeURIComponent(message)}`, '_blank');
     };
 
     const handleCopyLink = () => {
-        const auditLink = `${window.location.origin}/audit/${hoarding.City.toLowerCase()}/${encodeURIComponent(hoarding["Locality Site Location"])}`;
+        const auditLink = `${window.location.origin}/audit/${hoarding.City.toLowerCase()}/${encodeURIComponent(hoarding["Location "])}`;
         navigator.clipboard.writeText(auditLink);
         setCopySuccess(true);
         setTimeout(() => setCopySuccess(false), 2000);
@@ -270,14 +270,14 @@ const HoardingDetail = ({ hoardings, setHoardings }) => {
                 headers: { 'Content-Type': 'text/plain' },
                 body: JSON.stringify({
                     action: 'deleteHistoryItem',
-                    siteName: hoarding["Locality Site Location"],
+                    siteName: hoarding["Location "],
                     imageUrl: imageUrl 
                 })
             });
 
             // Update local state
             setHoardings(prev => prev.map(h => {
-                if (h["Locality Site Location"] === hoarding["Locality Site Location"]) {
+                if (h["Location "] === hoarding["Location "]) {
                     return {
                         ...h,
                         History: (h.History || []).filter(item => {
@@ -320,7 +320,7 @@ const HoardingDetail = ({ hoardings, setHoardings }) => {
         <>
             <ImageLightbox
                 imageUrl={previewImage}
-                alt={hoarding["Locality Site Location"]}
+                alt={hoarding["Location "]}
                 onClose={() => setPreviewImage('')}
                 onDownload={previewImage === imageUrl ? () => downloadHoardingImage(hoarding) : null}
             />
@@ -379,9 +379,9 @@ const HoardingDetail = ({ hoardings, setHoardings }) => {
                     </div>
                 )}
                 <Helmet>
-                    <title>{hoarding["Locality Site Location"]} | Billboard Ads in {hoarding.City}</title>
-                    <meta name="description" content={`Book this premium ${hoarding["Type of Site (Unipole/Billboard)"]} at ${hoarding.Locality}, ${hoarding.City}. Size: ${hoarding.Width}x${hoarding.Height}ft. Targeted reach for your brand in ${hoarding.City}.`} />
-                    <meta name="keywords" content={`hoarding, billboard, advertising, ${hoarding.City}, ${hoarding.Locality}, outdoor media`} />
+                    <title>{hoarding["Location "]} | Billboard Ads in {hoarding.City}</title>
+                    <meta name="description" content={`Book this premium ${hoarding["Media"]} at ${hoarding["Area"]}, ${hoarding.City}. Size: ${hoarding.Width}x${hoarding.Height}ft. Targeted reach for your brand in ${hoarding.City}.`} />
+                    <meta name="keywords" content={`hoarding, billboard, advertising, ${hoarding.City}, ${hoarding["Area"]}, outdoor media`} />
                 </Helmet>
 
                 <div className="detail-nav-header">
@@ -391,7 +391,7 @@ const HoardingDetail = ({ hoardings, setHoardings }) => {
                     <nav className="site-identity" aria-label="Breadcrumb">
                         <span className="city-tag">{hoarding.City}</span>
                         <span className="separator">/</span>
-                        <span className="locality-tag">{hoarding.Locality}</span>
+                        <span className="locality-tag">{hoarding["Area"]}</span>
                     </nav>
                     <div className="header-actions">
                         <button className="action-circle" aria-label="Share site"><Share2 size={18} /></button>
@@ -404,7 +404,7 @@ const HoardingDetail = ({ hoardings, setHoardings }) => {
                         <article className="hero-visual-wrapper photo-editable-wrapper" onDoubleClick={() => setPreviewImage(imageUrl)}>
                             <img
                                 src={imageUrl}
-                                alt={`Advertising site at ${hoarding["Locality Site Location"]}`}
+                                alt={`Advertising site at ${hoarding["Location "]}`}
                                 className="hero-media"
                                 onError={(e) => { e.target.src = 'https://placehold.co/1200x800?text=Premium+Media+Asset'; }}
                             />
@@ -439,7 +439,7 @@ const HoardingDetail = ({ hoardings, setHoardings }) => {
                         </article>
 
                         <section className="content-intro">
-                            <h1>{hoarding["Locality Site Location"]}</h1>
+                            <h1>{hoarding["Location "]}</h1>
                             
                             {/* 🕒 BOOKING STATUS LOGIC */}
                             <div className={`booking-status-card ${status}`}>
@@ -464,7 +464,7 @@ const HoardingDetail = ({ hoardings, setHoardings }) => {
                             </div>
 
                             <p className="detailed-desc">
-                                This premium {hoarding["Type of Site (Unipole/Billboard)"]} is strategically positioned in <strong>{hoarding.Locality}</strong>, capturing heavy commuters and high-intent shoppers. With a massive visibility area of {hoarding["Total Sq. Ft"]} sq. ft, your brand gains an authoritative stance in the heart of {hoarding.City}.
+                                This premium {hoarding["Media"]} is strategically positioned in <strong>{hoarding["Area"]}</strong>, capturing heavy commuters and high-intent shoppers. With a massive visibility area of {hoarding["Total SQ.ft"]} sq. ft, your brand gains an authoritative stance in the heart of {hoarding.City}.
                             </p>
                         </section>
 
@@ -579,7 +579,7 @@ const HoardingDetail = ({ hoardings, setHoardings }) => {
                             <div className="card-top">
                                 <div className="price-info">
                                     <span className="price-lbl">Monthly Exposure Rate</span>
-                                    <div className="price-val">{Number(hoarding["Avg Monthly Cost (INR)"]).toLocaleString()}<span> /mo</span></div>
+                                    <div className="price-val">{Number(hoarding["Rental Per Month"]).toLocaleString()}<span> /mo</span></div>
                                     <p className="gst">*GST extra as applicable</p>
                                 </div>
                                 <div className={`status-pill-detail ${status}`} role="status">
@@ -590,7 +590,7 @@ const HoardingDetail = ({ hoardings, setHoardings }) => {
                             <div className="booking-actions">
                                 <button
                                     className="whatsapp-btn-large"
-                                    onClick={() => window.open(`https://wa.me/919569528771?text=Hi, I am interested in booking the hoarding site: ${encodeURIComponent(hoarding["Locality Site Location"])} in ${hoarding.City}. Please share more details.`, '_blank')}
+                                    onClick={() => window.open(`https://wa.me/919569528771?text=Hi, I am interested in booking the hoarding site: ${encodeURIComponent(hoarding["Location "])} in ${hoarding.City}. Please share more details.`, '_blank')}
                                 >
                                     <Phone size={20} fill="currentColor" /> Book via WhatsApp
                                 </button>
@@ -650,7 +650,7 @@ const HoardingDetail = ({ hoardings, setHoardings }) => {
                 <div className="modal-overlay">
                     <div className="modal-card wide-modal">
                         <div className="modal-header">
-                            <h3>Edit: {hoarding["Locality Site Location"]}</h3>
+                            <h3>Edit: {hoarding["Location "]}</h3>
                             <button onClick={() => setIsEditModalOpen(false)}><X size={20} /></button>
                         </div>
                         <form onSubmit={handleEditAsset}>
@@ -658,8 +658,8 @@ const HoardingDetail = ({ hoardings, setHoardings }) => {
                                 <div className="crud-form">
                                     <div className="form-row three-cols">
                                         <div className="form-group span-two">
-                                            <label>Locality Site Location</label>
-                                            <input value={formData["Locality Site Location"] || ''} onChange={(e) => setFormData({ ...formData, ["Locality Site Location"]: e.target.value })} />
+                                            <label>Location</label>
+                                            <input value={formData["Location "] || ''} onChange={(e) => setFormData({ ...formData, ["Location "]: e.target.value })} />
                                         </div>
                                         <div className="form-group">
                                             <label>City</label>
@@ -670,7 +670,7 @@ const HoardingDetail = ({ hoardings, setHoardings }) => {
                                     <div className="form-row three-cols">
                                         <div className="form-group">
                                             <label>Locality</label>
-                                            <input value={formData.Locality || ''} onChange={(e) => setFormData({ ...formData, Locality: e.target.value })} />
+                                            <input value={formData["Area"] || ''} onChange={(e) => setFormData({ ...formData, Locality: e.target.value })} />
                                         </div>
                                         <div className="form-group">
                                             <label>Media Format</label>
@@ -685,7 +685,7 @@ const HoardingDetail = ({ hoardings, setHoardings }) => {
                                     <div className="form-row three-cols">
                                         <div className="form-group">
                                             <label>Monthly Cost (INR)</label>
-                                            <input type="number" value={formData["Avg Monthly Cost (INR)"] || ''} onChange={(e) => setFormData({ ...formData, ["Avg Monthly Cost (INR)"]: e.target.value })} />
+                                            <input type="number" value={formData["Rental Per Month"] || ''} onChange={(e) => setFormData({ ...formData, ["Rental Per Month"]: e.target.value })} />
                                         </div>
                                         <div className="form-group">
                                             <label>Latitude</label>

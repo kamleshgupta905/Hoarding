@@ -35,7 +35,7 @@ const meaningfulTokens = (value) => {
 
 const scoreLocation = (detectedText, location) => {
     const normalizedDetected = normalizeText(detectedText);
-    const siteName = location?.['Locality Site Location'] || '';
+    const siteName = location?.['Location '] || '';
     const normalizedSite = normalizeText(siteName);
     if (!normalizedSite) return 0;
     if (normalizedDetected.includes(normalizedSite)) return 100;
@@ -44,7 +44,7 @@ const scoreLocation = (detectedText, location) => {
     const hits = siteTokens.filter((token) => normalizedDetected.includes(token)).length;
     let score = Math.round((hits / siteTokens.length) * 75);
     if (location.City && normalizedDetected.includes(normalizeText(location.City))) score += 10;
-    if (location.Locality && normalizedDetected.includes(normalizeText(location.Locality))) score += 15;
+    if (location["Area"] && normalizedDetected.includes(normalizeText(location["Area"]))) score += 15;
     return Math.min(100, score);
 };
 
@@ -70,7 +70,7 @@ export const analyzeHoardingImage = async (base64Image, locationList) => {
         return {
             detectedStampText,
             matchedIndex: decisive ? best.index : -1,
-            matchedLocation: decisive ? best.location['Locality Site Location'] : null,
+            matchedLocation: decisive ? best.location['Location '] : null,
             status: decisive ? status : 'Review',
             confidence: best?.score || 0,
             reasoning: decisive ? 'Local OCR matched unique site keywords.' : 'Local OCR was ambiguous; manual review required.'

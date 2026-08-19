@@ -45,7 +45,7 @@ const slideNumber = (path) => Number(path.match(/slide(\d+)\.xml$/)?.[1] || 0);
 const scoreSite = (text, site) => {
   const normalized = normalizeText(text);
   const siteId = normalizeText(site._SiteID);
-  const siteName = normalizeText(site['Locality Site Location']);
+  const siteName = normalizeText(site['Location ']);
   if (siteId && normalized.includes(siteId)) return 10000;
   if (siteName && normalized.includes(siteName)) return 4000 + siteName.length;
 
@@ -54,7 +54,7 @@ const scoreSite = (text, site) => {
   const hits = tokens.filter((token) => normalized.includes(token)).length;
   let score = tokens.length && hits >= 2 ? Math.round((hits / tokens.length) * 1200) : 0;
   const city = normalizeText(site.City);
-  const locality = normalizeText(site.Locality);
+  const locality = normalizeText(site["Area"]);
   if (city && normalized.includes(city)) score += 180;
   if (locality && normalized.includes(locality)) score += 260;
   const width = Math.round(Number(site.Width || 0));

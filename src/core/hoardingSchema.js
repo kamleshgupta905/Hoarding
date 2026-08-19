@@ -9,7 +9,7 @@ export const INTERNAL_HEADERS = [
 export const REQUIRED_IMPORT_HEADERS = [
   'City',
   'Locality',
-  'Locality Site Location'
+  'Location '
 ];
 
 export const PROTECTED_IMPORT_HEADERS = new Set([
@@ -27,7 +27,7 @@ export const HEADER_ALIASES = {
   State: ['state', 'province'],
   City: ['city', 'market city', 'market'],
   Locality: ['locality', 'area', 'zone'],
-  'Locality Site Location': ['locality site location', 'site location', 'site name', 'location name', 'location', 'site'],
+  'Location ': ['locality site location', 'site location', 'site name', 'location name', 'location', 'site'],
   'Pin Code': ['pin code', 'pincode', 'postal code', 'zip'],
   'Traffic From': ['traffic from', 'from', 'facing from'],
   'Traffic To': ['traffic to', 'to', 'facing', 'traffic facing'],
@@ -38,7 +38,7 @@ export const HEADER_ALIASES = {
   Width: ['width', 'w'],
   Height: ['height', 'h'],
   Units: ['units', 'unit', 'quantity', 'qty'],
-  'Total Sq. Ft': ['total sq ft', 'total sqft', 'total square feet', 'sq ft', 'sqft'],
+  'Total SQ.ft': ['total sq ft', 'total sqft', 'total square feet', 'sq ft', 'sqft'],
   'Type of Site (Unipole/ Billboard)': ['type', 'site type', 'media type', 'structure type'],
   'Media Format (Front Lit/ Back Lit/Non Lit)': ['media', 'media format', 'lighting', 'illumination', 'lit type'],
   'LHS/ Non LHS': ['lhs', 'non lhs', 'road side'],
@@ -114,8 +114,8 @@ const roundedCoordinate = (value) => {
 
 export const buildCompositeIdentity = (row) => [
   normalizeText(row.City),
-  normalizeText(row['Locality Site Location']),
-  normalizeText(row.Locality),
+  normalizeText(row['Location ']),
+  normalizeText(row["Area"]),
   normalizeText(row['Traffic From']),
   normalizeText(row['Traffic To']),
   normalizeText(row.Width),
