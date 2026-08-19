@@ -453,7 +453,7 @@
 
 /* Assistance Card */
 .assistance-card {
-    background: linear-gradient(135deg, #1c1c2d, #25253b);
+    background: #1c1c2d;
     color: white;
     padding: 32px;
     border-radius: 24px;

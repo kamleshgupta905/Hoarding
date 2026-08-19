@@ -182,8 +182,7 @@ const ClientReport = ({ hoardings }) => {
                 .client-report-portal { background: #0f1015; min-height: 100vh; color: white; font-family: 'Inter', sans-serif; padding-bottom: 60px; }
                 .container { max-width: 1200px; margin: 0 auto; padding: 0 24px; }
                 
-                .portal-header { background: linear-gradient(135deg, #16171f 0%, #0f1015 100%); padding: 30px 0 60px; border-bottom: 1px solid #2a2b35; position: relative; overflow: hidden; }
-                .portal-header::before { content: ''; position: absolute; top: -100px; right: -100px; width: 400px; height: 400px; background: radial-gradient(circle, rgba(108, 93, 211, 0.15) 0%, transparent 70%); filter: blur(50px); }
+                .portal-header { background: #0f1015; padding: 30px 0 60px; border-bottom: 1px solid #2a2b35; position: relative; overflow: hidden; }
                 
                 .header-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 60px; }
                 .brand-logo { display: flex; align-items: center; gap: 12px; font-weight: 800; font-size: 1.1rem; letter-spacing: -0.02em; }
@@ -226,7 +225,7 @@ const ClientReport = ({ hoardings }) => {
                 .timeline-header { display: flex; justify-content: space-between; font-weight: 700; margin-bottom: 6px; }
                 .timeline-header span { display: flex; align-items: center; gap: 4px; }
                 .progress-track { height: 6px; background: #2a2b35; border-radius: 3px; margin-bottom: 8px; overflow: hidden; }
-                .progress-fill { height: 100%; background: linear-gradient(90deg, #6c5dd3, #a855f7); border-radius: 3px; }
+                .progress-fill { height: 100%; background: #6c5dd3; border-radius: 3px; }
                 
                 .audit-info { border-top: 1px solid rgba(255,255,255,0.05); padding-top: 12px; display: flex; justify-content: space-between; align-items: center; }
                 .audit-verified { display: flex; align-items: center; gap: 6px; font-size: 0.8rem; font-weight: 800; }

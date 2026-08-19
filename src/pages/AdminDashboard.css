@@ -24,7 +24,7 @@
 /* 🧊 Sleek QuickMart / Apple-Grade Executive Sidebar */
 .admin-sidebar {
     width: 268px;
-    background: linear-gradient(180deg, #0b1120 0%, #0f172a 100%);
+    background: #0f172a;
     padding: 22px 16px;
     display: flex;
     flex-direction: column;
@@ -91,7 +91,7 @@
 .logo-icon {
     width: 38px;
     height: 38px;
-    background: linear-gradient(135deg, #00c851 0%, #0284c7 100%);
+    background: #00c851;
     border-radius: 11px;
     display: flex;
     align-items: center;
@@ -664,7 +664,7 @@
     padding: 32px 40px;
     display: block;
     width: 100%;
-    background: radial-gradient(circle at 10% 20%, rgba(240, 244, 255, 0.6) 0%, rgba(245, 245, 247, 1) 90%);
+    background: #f8fafc;
     min-height: 100vh;
 }
 
@@ -930,10 +930,10 @@
     transition: width 1s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
-.apple-kpi-meter-fill.blue { background: linear-gradient(90deg, #0071e3, #47a3ff); }
-.apple-kpi-meter-fill.green { background: linear-gradient(90deg, #34c759, #30d158); }
-.apple-kpi-meter-fill.teal { background: linear-gradient(90deg, #0284c7, #38bdf8); }
-.apple-kpi-meter-fill.purple { background: linear-gradient(90deg, #af52de, #bf5af2); }
+.apple-kpi-meter-fill.blue { background: #0071e3; }
+.apple-kpi-meter-fill.green { background: #34c759; }
+.apple-kpi-meter-fill.teal { background: #0284c7; }
+.apple-kpi-meter-fill.purple { background: #af52de; }
 
 .apple-kpi-footer-row {
     display: flex;
@@ -1077,12 +1077,12 @@
 .apple-bar-fill {
     height: 100%;
     border-radius: 999px;
-    background: linear-gradient(90deg, #0071e3 0%, #47a3ff 100%);
+    background: #0071e3;
     transition: width 0.8s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .apple-corridor-row:hover .apple-bar-fill {
-    background: linear-gradient(90deg, #005bb5 0%, #0071e3 100%);
+    background: #005bb5;
 }
 
 .apple-corridor-stats {
@@ -1869,7 +1869,7 @@
 
 .loading-progress-bar {
     height: 100%;
-    background: linear-gradient(90deg, var(--primary-accent), #a855f7);
+    background: #6558d6;
     border-radius: 2px;
     animation: progress 2s ease-in-out infinite;
 }
@@ -3920,7 +3920,7 @@
     right: 0;
     top: 0;
     height: 4px;
-    background: linear-gradient(90deg, #6c5dd3, #20c997);
+    background: #00c851;
 }
 
 .clients-tab .client-data-card:hover {
@@ -4441,7 +4441,7 @@
 
 .qm-corridor-bar-fill {
     height: 100%;
-    background: linear-gradient(90deg, #3b82f6 0%, #00c851 100%);
+    background: #00c851;
     border-radius: 999px;
     transition: width 0.6s cubic-bezier(0.16, 1, 0.3, 1);
 }

@@ -3300,7 +3300,7 @@ const AdminDashboard = ({ hoardings, setHoardings }) => {
                             .client-data-card:hover { transform: translateY(-8px); border-color: #6c5dd3; box-shadow: 0 20px 40px rgba(108, 93, 211, 0.08); }
                             
                             .client-card-header { display: flex; align-items: center; gap: 20px; margin-bottom: 30px; }
-                            .client-avatar { width: 60px; height: 60px; background: linear-gradient(135deg, #6c5dd3 0%, #a855f7 100%); color: white; border-radius: 20px; display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: 1.5rem; box-shadow: 0 10px 20px rgba(108, 93, 211, 0.15); }
+                            .client-avatar { width: 60px; height: 60px; background: #6c5dd3; color: white; border-radius: 20px; display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: 1.5rem; box-shadow: 0 10px 20px rgba(108, 93, 211, 0.15); }
                             .client-main-info h4 { font-size: 1.35rem; font-weight: 900; color: #11142d; margin-bottom: 4px; }
                             .status-badge-row { display: flex; align-items: center; gap: 8px; font-size: 0.75rem; color: #20c997; font-weight: 800; text-transform: uppercase; }
                             .status-dot { width: 8px; height: 8px; background: #20c997; border-radius: 50%; animation: blink 2s infinite; }

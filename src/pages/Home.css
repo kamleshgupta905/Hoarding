@@ -8,13 +8,7 @@
 }
 
 .hero::after {
-    content: '';
-    position: absolute;
-    top: -20%;
-    right: -10%;
-    width: 600px;
-    height: 600px;
-    background: radial-gradient(circle, rgba(234, 76, 137, 0.05) 0%, transparent 70%);
+    display: none;
 }
 
 .hero-content {
@@ -179,7 +173,7 @@
 .city-overlay {
     position: absolute;
     inset: 0;
-    background: linear-gradient(transparent, rgba(0, 0, 0, 0.6));
+    background: rgba(0, 0, 0, 0.45);
     display: flex;
     flex-direction: column;
     justify-content: flex-end;

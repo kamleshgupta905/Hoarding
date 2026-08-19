@@ -72,19 +72,31 @@
 
 .login-btn {
     width: 100%;
-    background: var(--primary);
-    color: white;
+    background: #00c851;
+    color: #ffffff;
     padding: 14px;
     border-radius: 8px;
     font-weight: 700;
     font-size: 1rem;
     margin-top: 32px;
-    transition: all 0.2s;
+    border: none;
+    cursor: pointer;
+    transition: all 0.2s ease;
 }
 
-.login-btn:hover {
-    background: var(--primary-dark);
+.login-btn:hover:not(:disabled) {
+    background: #00a844;
+    color: #ffffff;
     transform: translateY(-1px);
+}
+
+.login-btn:disabled,
+.login-btn:disabled:hover {
+    background: #00c851 !important;
+    color: #ffffff !important;
+    opacity: 0.8;
+    cursor: not-allowed;
+    transform: none !important;
 }
 
 .login-footer {

@@ -139,7 +139,7 @@
     align-items: center;
     min-height: calc(130px + env(safe-area-inset-bottom));
     padding: 18px 22px calc(22px + env(safe-area-inset-bottom));
-    background: linear-gradient(180deg, transparent, rgba(0, 0, 0, 0.72));
+    background: rgba(0, 0, 0, 0.72);
 }
 
 .staff-latest-preview,

@@ -290,10 +290,10 @@ const PublicAudit = ({ hoardings, setHoardings }) => {
                 .camera-fullscreen { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: #000; z-index: 1000; }
                 .camera-fullscreen video { width: 100%; height: 100%; object-fit: cover; }
                 
-                .camera-header-overlay { position: absolute; top: 0; left: 0; right: 0; padding: 20px; background: linear-gradient(to bottom, rgba(0,0,0,0.8), transparent); color: white; text-align: center; }
+                .camera-header-overlay { position: absolute; top: 0; left: 0; right: 0; padding: 20px; background: rgba(0,0,0,0.7); color: white; text-align: center; }
                 .camera-header-overlay h1 { font-size: 1.2rem; margin: 8px 0 0; font-weight: 600; text-shadow: 0 2px 4px rgba(0,0,0,0.5); }
                 
-                .camera-overlay { position: absolute; bottom: 0; left: 0; right: 0; padding: 30px 20px; background: linear-gradient(to top, rgba(0,0,0,0.9), transparent); display: flex; flex-direction: column; align-items: center; gap: 24px; }
+                .camera-overlay { position: absolute; bottom: 0; left: 0; right: 0; padding: 30px 20px; background: rgba(0,0,0,0.75); display: flex; flex-direction: column; align-items: center; gap: 24px; }
                 
                 .preview-mini-strip { display: flex; gap: 8px; align-items: center; height: 48px; }
                 .mini-preview { width: 48px; height: 48px; border-radius: 8px; object-fit: cover; border: 2px solid white; }
