@@ -2090,361 +2090,222 @@ const AdminDashboard = ({ hoardings, setHoardings }) => {
                 </header>
 
                 {activeTab === 'dashboard' && (
-                    <div className="dashboard-view overview-premium-view animate-in">
+                    <div className="dashboard-view pro-ooh-dashboard animate-in">
                         <div className="main-grid">
                             
-                            {/* 🌟 Top Intelligence & Quick Launch Strip */}
-                            <div className="overview-hero-banner">
-                                <div className="overview-hero-content">
-                                    <div className="hero-badge-pill">
-                                        <Sparkles size={14} className="sparkle-icon" />
-                                        <span>AI Media Executive Suite • Meerut Network</span>
+                            {/* 🌟 Professional Clean Header & Action Strip */}
+                            <div className="ooh-page-header">
+                                <div className="ooh-header-main">
+                                    <div className="ooh-title-row">
+                                        <h2 className="ooh-page-title">Media Inventory Overview</h2>
+                                        <div className="ooh-sync-badge" title="Real-time link with Google Sheet Master">
+                                            <span className="ooh-sync-dot"></span>
+                                            <span>{totalHoardingsCount} Sites Synced • Google Sheet Master</span>
+                                        </div>
                                     </div>
-                                    <h2 className="overview-hero-title">Network Performance & Asset Overview</h2>
-                                    <p className="overview-hero-desc">
-                                        Real-time telemetry across {totalHoardingsCount} prime OOH locations. All assets linked with verified Google Drive CDN media.
+                                    <p className="ooh-page-subtitle">
+                                        Operational performance, corridor distribution, and media verification across Meerut District
                                     </p>
                                 </div>
-                                <div className="overview-hero-actions">
-                                    <div className="live-sync-indicator" title="Connected to Google Sheet Master">
-                                        <span className="live-sync-dot"></span>
-                                        <span>Google Sheet Live (307 Synced)</span>
-                                    </div>
-                                    <div className="hero-action-buttons">
-                                        <button className="btn-hero-action primary" onClick={() => setIsAddModalOpen(true)}>
-                                            <Plus size={16} /> Add Asset
-                                        </button>
-                                        <button className="btn-hero-action" onClick={() => setActiveTab('sheet-editor')}>
-                                            <Table2 size={16} /> Master Sheet
-                                        </button>
-                                        <button className="btn-hero-action" onClick={() => exportProposalExcel(hoardings)}>
-                                            <FileDown size={16} /> Export Deck
-                                        </button>
-                                    </div>
+                                <div className="ooh-header-actions">
+                                    <button className="btn-ooh-secondary" onClick={() => exportProposalExcel(hoardings)} title="Export clean proposal deck for clients">
+                                        <FileDown size={15} /> Export Proposal
+                                    </button>
+                                    <button className="btn-ooh-secondary" onClick={() => setActiveTab('sheet-editor')} title="Open Master Sheet Editor">
+                                        <Table2 size={15} /> Open Sheet
+                                    </button>
+                                    <button className="btn-ooh-primary" onClick={() => setIsAddModalOpen(true)}>
+                                        <Plus size={16} /> Add New Site
+                                    </button>
                                 </div>
                             </div>
 
-                            {/* 📈 4 Animated Ultra-KPI Stat Cards */}
-                            <div className="top-stats modern-kpi-grid">
+                            {/* 📈 4 Clean Dribbble-Style Metric Cards */}
+                            <div className="ooh-kpi-grid">
                                 
-                                {/* Card 1: Total Assets */}
+                                {/* Card 1: Total Inventory */}
                                 <div 
-                                    className="stat-card modern-kpi-card kpi-indigo clickable" 
+                                    className="ooh-kpi-card clickable" 
                                     role="button" 
                                     tabIndex={0} 
                                     onClick={() => openInventory('All')} 
                                     onKeyDown={(e) => e.key === 'Enter' && openInventory('All')}
                                 >
-                                    <div className="kpi-card-glow"></div>
-                                    <div className="stat-header">
-                                        <div className="kpi-icon-wrap">
-                                            <Layers size={20} />
+                                    <div className="ooh-kpi-top">
+                                        <span className="ooh-kpi-label">TOTAL INVENTORY</span>
+                                        <div className="ooh-kpi-icon indigo">
+                                            <Layers size={18} />
                                         </div>
-                                        <span className="trend up badge-trend">
-                                            <TrendingUp size={12} /> 100% Synced
-                                        </span>
                                     </div>
-                                    <div className="kpi-body">
-                                        <span className="title">Total Inventory Assets</span>
-                                        <div className="value count-glow">{totalHoardingsCount}</div>
+                                    <div className="ooh-kpi-metric-row">
+                                        <span className="ooh-kpi-value">{totalHoardingsCount}</span>
+                                        <span className="ooh-kpi-unit">Sites</span>
                                     </div>
-                                    <div className="kpi-footer">
-                                        <div className="progress-bar">
-                                            <div className="progress-fill fill-indigo" style={{ width: '100%' }}></div>
-                                        </div>
-                                        <span className="kpi-subtext">307/307 Live in Master Grid</span>
+                                    <div className="ooh-kpi-footer">
+                                        <span className="ooh-kpi-detail">{totalSqFt.toLocaleString('en-IN')} sq. ft total display area</span>
+                                        <span className="ooh-kpi-tag neutral">100% Active</span>
                                     </div>
                                 </div>
 
-                                {/* Card 2: Ready / Available */}
+                                {/* Card 2: Commercial Capacity */}
                                 <div 
-                                    className="stat-card modern-kpi-card kpi-emerald clickable" 
+                                    className="ooh-kpi-card" 
+                                >
+                                    <div className="ooh-kpi-top">
+                                        <span className="ooh-kpi-label">PORTFOLIO CAPACITY</span>
+                                        <div className="ooh-kpi-icon emerald">
+                                            <DollarSign size={18} />
+                                        </div>
+                                    </div>
+                                    <div className="ooh-kpi-metric-row">
+                                        <span className="ooh-kpi-value">₹{(totalMonthlyRevenue / 10000000).toFixed(2)}</span>
+                                        <span className="ooh-kpi-unit">Cr / mo</span>
+                                    </div>
+                                    <div className="ooh-kpi-footer">
+                                        <span className="ooh-kpi-detail">₹{avgMonthlyRate.toLocaleString('en-IN')} avg rental / site</span>
+                                        <span className="ooh-kpi-tag emerald">Valued</span>
+                                    </div>
+                                </div>
+
+                                {/* Card 3: Ready / Available */}
+                                <div 
+                                    className="ooh-kpi-card clickable" 
                                     role="button" 
                                     tabIndex={0} 
                                     onClick={() => openInventory('Available')} 
                                     onKeyDown={(e) => e.key === 'Enter' && openInventory('Available')}
                                 >
-                                    <div className="kpi-card-glow"></div>
-                                    <div className="stat-header">
-                                        <div className="kpi-icon-wrap">
-                                            <CheckCircle size={20} />
+                                    <div className="ooh-kpi-top">
+                                        <span className="ooh-kpi-label">AVAILABLE FOR SALE</span>
+                                        <div className="ooh-kpi-icon sky">
+                                            <CheckCircle size={18} />
                                         </div>
-                                        <span className="trend up badge-trend success">
-                                            ● Ready to Sell
-                                        </span>
                                     </div>
-                                    <div className="kpi-body">
-                                        <span className="title">Available for Booking</span>
-                                        <div className="value count-emerald">{availableCount}</div>
+                                    <div className="ooh-kpi-metric-row">
+                                        <span className="ooh-kpi-value">{availableCount}</span>
+                                        <span className="ooh-kpi-unit">Sites</span>
                                     </div>
-                                    <div className="kpi-footer">
-                                        <div className="progress-bar">
-                                            <div 
-                                                className="progress-fill fill-emerald" 
-                                                style={{ width: `${(availableCount / Math.max(totalHoardingsCount, 1)) * 100}%` }}
-                                            ></div>
-                                        </div>
-                                        <span className="kpi-subtext">100% Ready for Client Proposals</span>
+                                    <div className="ooh-kpi-footer">
+                                        <span className="ooh-kpi-detail">{((availableCount / Math.max(totalHoardingsCount, 1)) * 100).toFixed(0)}% available to pitch</span>
+                                        <span className="ooh-kpi-tag sky">Ready to Sell</span>
                                     </div>
                                 </div>
 
-                                {/* Card 3: Occupied / Booked */}
+                                {/* Card 4: Photo Verification */}
                                 <div 
-                                    className="stat-card modern-kpi-card kpi-rose clickable" 
-                                    role="button" 
-                                    tabIndex={0} 
-                                    onClick={() => openInventory('Occupied')} 
-                                    onKeyDown={(e) => e.key === 'Enter' && openInventory('Occupied')}
+                                    className="ooh-kpi-card" 
                                 >
-                                    <div className="kpi-card-glow"></div>
-                                    <div className="stat-header">
-                                        <div className="kpi-icon-wrap">
-                                            <Flame size={20} />
+                                    <div className="ooh-kpi-top">
+                                        <span className="ooh-kpi-label">MEDIA VERIFICATION</span>
+                                        <div className="ooh-kpi-icon purple">
+                                            <Camera size={18} />
                                         </div>
-                                        <span className="trend up badge-trend alert">
-                                            ● Booked Sites
-                                        </span>
                                     </div>
-                                    <div className="kpi-body">
-                                        <span className="title">Active Campaigns</span>
-                                        <div className="value count-rose">{occupiedCount}</div>
+                                    <div className="ooh-kpi-metric-row">
+                                        <span className="ooh-kpi-value">100%</span>
+                                        <span className="ooh-kpi-unit">Synced</span>
                                     </div>
-                                    <div className="kpi-footer">
-                                        <div className="progress-bar">
-                                            <div 
-                                                className="progress-fill fill-rose" 
-                                                style={{ width: `${(occupiedCount / Math.max(totalHoardingsCount, 1)) * 100}%` }}
-                                            ></div>
-                                        </div>
-                                        <span className="kpi-subtext">{occupiedCount === 0 ? 'High Capacity for New Deals' : `${occupiedCount} Live Billboard Runs`}</span>
-                                    </div>
-                                </div>
-
-                                {/* Card 4: Operational Health / Offline */}
-                                <div 
-                                    className="stat-card modern-kpi-card kpi-cyan clickable" 
-                                    role="button" 
-                                    tabIndex={0} 
-                                    onClick={() => openInventory('Offline')} 
-                                    onKeyDown={(e) => e.key === 'Enter' && openInventory('Offline')}
-                                >
-                                    <div className="kpi-card-glow"></div>
-                                    <div className="stat-header">
-                                        <div className="kpi-icon-wrap">
-                                            <Activity size={20} />
-                                        </div>
-                                        <span className="trend up badge-trend cyan">
-                                            ● 100% Health
-                                        </span>
-                                    </div>
-                                    <div className="kpi-body">
-                                        <span className="title">Maintenance & Offline</span>
-                                        <div className="value count-cyan">{offlineCount}</div>
-                                    </div>
-                                    <div className="kpi-footer">
-                                        <div className="progress-bar">
-                                            <div 
-                                                className="progress-fill fill-cyan" 
-                                                style={{ width: `${(offlineCount / Math.max(totalHoardingsCount, 1)) * 100}%` }}
-                                            ></div>
-                                        </div>
-                                        <span className="kpi-subtext">Zero System Downtime</span>
+                                    <div className="ooh-kpi-footer">
+                                        <span className="ooh-kpi-detail">307 Google Drive URLs connected</span>
+                                        <span className="ooh-kpi-tag purple">Drive CDN</span>
                                     </div>
                                 </div>
 
                             </div>
 
-                            {/* 📊 Premium Visual Charts Grid (Interactive SVG Charts) */}
-                            <div className="overview-charts-grid">
+                            {/* 📊 Two-Column OOH Analytics Grid */}
+                            <div className="ooh-analytics-grid">
                                 
-                                {/* 🗺️ Chart 1: Prime Zones & Media Density Bar Breakdown */}
-                                <div className="premium-chart-card">
-                                    <div className="chart-card-glow"></div>
-                                    <div className="chart-header-custom">
-                                        <div className="chart-title-group">
-                                            <div className="chart-icon-box">
-                                                <BarChart3 size={20} />
-                                            </div>
-                                            <div>
-                                                <h3>{overviewChartTab === 'zones' ? 'Prime Locality & Zone Distribution' : 'Media Format Breakdown'}</h3>
-                                                <p>Density & coverage across high-traffic transit corridors</p>
-                                            </div>
+                                {/* 🗺️ Left Card: Prime Transit Corridors (Real Meerut Data) */}
+                                <div className="ooh-panel-card">
+                                    <div className="ooh-panel-header">
+                                        <div>
+                                            <h3 className="ooh-panel-title">Prime Corridors & Locality Distribution</h3>
+                                            <p className="ooh-panel-desc">Billboard concentration across key arterial roads in Meerut</p>
                                         </div>
-                                        <div className="chart-tab-toggles">
-                                            <button 
-                                                className={`chart-toggle-btn ${overviewChartTab === 'zones' ? 'active' : ''}`}
-                                                onClick={() => setOverviewChartTab('zones')}
-                                            >
-                                                <MapPin size={13} /> Prime Zones
-                                            </button>
-                                            <button 
-                                                className={`chart-toggle-btn ${overviewChartTab === 'media' ? 'active' : ''}`}
-                                                onClick={() => setOverviewChartTab('media')}
-                                            >
-                                                <Layers size={13} /> Media Formats
-                                            </button>
-                                        </div>
+                                        <span className="ooh-panel-badge">{overviewTopZones.length} Prime Corridors</span>
                                     </div>
 
-                                    <div className="custom-bar-chart-container">
-                                        {overviewChartTab === 'zones' ? (
-                                            <div className="zone-bars-list">
-                                                {overviewTopZones.map((zone, idx) => {
-                                                    const barWidth = Math.max(8, (zone.count / maxZoneCount) * 100);
-                                                    return (
+                                    <div className="ooh-corridors-list">
+                                        {overviewTopZones.map((zone, idx) => {
+                                            const barWidth = Math.max(6, (parseFloat(zone.percent) / (parseFloat(overviewTopZones[0]?.percent) || 1)) * 100);
+                                            return (
+                                                <div 
+                                                    key={zone.name} 
+                                                    className="ooh-corridor-row"
+                                                    onClick={() => {
+                                                        setInventoryLocalityFilter(zone.name);
+                                                        setActiveTab('inventory');
+                                                    }}
+                                                    title={`Click to view ${zone.count} sites on ${zone.name}`}
+                                                >
+                                                    <div className="corridor-name-wrap">
+                                                        <span className="corridor-index">0{idx + 1}</span>
+                                                        <span className="corridor-name">{zone.name}</span>
+                                                    </div>
+                                                    <div className="corridor-bar-track">
                                                         <div 
-                                                            key={zone.name} 
-                                                            className="zone-bar-row"
-                                                            onMouseEnter={() => setHoveredChartItem(zone.name)}
-                                                            onMouseLeave={() => setHoveredChartItem(null)}
-                                                            onClick={() => {
-                                                                setInventoryLocalityFilter(zone.name);
-                                                                setActiveTab('inventory');
-                                                            }}
-                                                            title="Click to view sites in this locality"
-                                                        >
-                                                            <div className="zone-info">
-                                                                <span className="zone-rank">#{idx + 1}</span>
-                                                                <span className="zone-name">{zone.name}</span>
-                                                            </div>
-                                                            <div className="zone-track">
-                                                                <div 
-                                                                    className="zone-fill" 
-                                                                    style={{ 
-                                                                        width: `${barWidth}%`,
-                                                                        animationDelay: `${idx * 80}ms`
-                                                                    }}
-                                                                >
-                                                                    <span className="zone-fill-shine"></span>
-                                                                </div>
-                                                            </div>
-                                                            <div className="zone-metrics">
-                                                                <span className="zone-count">{zone.count} <small>sites</small></span>
-                                                                <span className="zone-pct">{zone.percent}%</span>
-                                                            </div>
-                                                        </div>
-                                                    );
-                                                })}
-                                            </div>
-                                        ) : (
-                                            <div className="zone-bars-list">
-                                                {overviewTopMedia.map((media, idx) => {
-                                                    const barWidth = Math.max(8, (media.count / Math.max(totalHoardingsCount, 1)) * 100);
-                                                    return (
-                                                        <div 
-                                                            key={media.name} 
-                                                            className="zone-bar-row"
-                                                            onClick={() => {
-                                                                setInventoryMediaFilter(media.name);
-                                                                setActiveTab('inventory');
-                                                            }}
-                                                            title="Click to filter by this media format"
-                                                        >
-                                                            <div className="zone-info">
-                                                                <span className="zone-rank">#{idx + 1}</span>
-                                                                <span className="zone-name">{media.name}</span>
-                                                            </div>
-                                                            <div className="zone-track">
-                                                                <div 
-                                                                    className="zone-fill fill-media" 
-                                                                    style={{ 
-                                                                        width: `${barWidth}%`,
-                                                                        animationDelay: `${idx * 80}ms`
-                                                                    }}
-                                                                >
-                                                                    <span className="zone-fill-shine"></span>
-                                                                </div>
-                                                            </div>
-                                                            <div className="zone-metrics">
-                                                                <span className="zone-count">{media.count} <small>sites</small></span>
-                                                                <span className="zone-pct">{media.percent}%</span>
-                                                            </div>
-                                                        </div>
-                                                    );
-                                                })}
-                                            </div>
-                                        )}
+                                                            className="corridor-bar-fill" 
+                                                            style={{ width: `${barWidth}%` }}
+                                                        ></div>
+                                                    </div>
+                                                    <div className="corridor-stat-wrap">
+                                                        <span className="corridor-count">{zone.count} <small>sites</small></span>
+                                                        <span className="corridor-pct">{zone.percent}%</span>
+                                                    </div>
+                                                </div>
+                                            );
+                                        })}
                                     </div>
                                 </div>
 
-                                {/* 🍩 Chart 2: Pricing Tiers & Revenue Capacity Donut */}
-                                <div className="premium-chart-card">
-                                    <div className="chart-card-glow"></div>
-                                    <div className="chart-header-custom">
-                                        <div className="chart-title-group">
-                                            <div className="chart-icon-box cyan">
-                                                <DollarSign size={20} />
-                                            </div>
-                                            <div>
-                                                <h3>Monthly Rental Valuation & Tiers</h3>
-                                                <p>Rate brackets across portfolio inventory</p>
-                                            </div>
+                                {/* 📋 Right Card: Commercial Matrix & Price Tiers */}
+                                <div className="ooh-panel-card">
+                                    <div className="ooh-panel-header">
+                                        <div>
+                                            <h3 className="ooh-panel-title">Network Commercial Matrix</h3>
+                                            <p className="ooh-panel-desc">Rental tiers and display specifications</p>
                                         </div>
-                                        <div className="portfolio-val-pill">
-                                            <span>₹{avgMonthlyRate.toLocaleString('en-IN')}/mo avg</span>
+                                        <span className="ooh-panel-badge">307 Sites Priced</span>
+                                    </div>
+
+                                    <div className="ooh-spec-matrix">
+                                        <div className="spec-tile">
+                                            <span className="spec-label">AVG MONTHLY RENT</span>
+                                            <strong className="spec-value">₹{avgMonthlyRate.toLocaleString('en-IN')}</strong>
+                                            <small className="spec-sub">per hoarding</small>
+                                        </div>
+                                        <div className="spec-tile">
+                                            <span className="spec-label">TOTAL DISPLAY AREA</span>
+                                            <strong className="spec-value">{totalSqFt.toLocaleString('en-IN')}</strong>
+                                            <small className="spec-sub">sq. ft coverage</small>
+                                        </div>
+                                        <div className="spec-tile">
+                                            <span className="spec-label">MEDIA FORMAT</span>
+                                            <strong className="spec-value">Billboard / Unipole</strong>
+                                            <small className="spec-sub">100% Front Lit (FL)</small>
+                                        </div>
+                                        <div className="spec-tile">
+                                            <span className="spec-label">SITE CATEGORY</span>
+                                            <strong className="spec-value">Grade-A Prime</strong>
+                                            <small className="spec-sub">100% verified OOH</small>
                                         </div>
                                     </div>
 
-                                    <div className="donut-and-tiers-layout">
-                                        <div className="donut-visual-container">
-                                            <div className="donut-ring-wrapper">
-                                                <svg viewBox="0 0 160 160" className="donut-svg">
-                                                    <circle cx="80" cy="80" r="62" fill="none" stroke="rgba(255,255,255,0.06)" strokeWidth="16" />
-                                                    {/* Segment 1: <25k (38bdf8) */}
-                                                    <circle 
-                                                        cx="80" cy="80" r="62" fill="none" stroke="#38bdf8" strokeWidth="16"
-                                                        strokeDasharray={`${(overviewPriceTiers[0].count / Math.max(totalHoardingsCount, 1)) * 390} 390`}
-                                                        strokeDashoffset="0"
-                                                        strokeLinecap="round"
-                                                        className="donut-segment"
-                                                    />
-                                                    {/* Segment 2: 25k-50k (6366f1) */}
-                                                    <circle 
-                                                        cx="80" cy="80" r="62" fill="none" stroke="#6366f1" strokeWidth="16"
-                                                        strokeDasharray={`${(overviewPriceTiers[1].count / Math.max(totalHoardingsCount, 1)) * 390} 390`}
-                                                        strokeDashoffset={`-${(overviewPriceTiers[0].count / Math.max(totalHoardingsCount, 1)) * 390}`}
-                                                        strokeLinecap="round"
-                                                        className="donut-segment"
-                                                    />
-                                                    {/* Segment 3: 50k-100k (a855f7) */}
-                                                    <circle 
-                                                        cx="80" cy="80" r="62" fill="none" stroke="#a855f7" strokeWidth="16"
-                                                        strokeDasharray={`${(overviewPriceTiers[2].count / Math.max(totalHoardingsCount, 1)) * 390} 390`}
-                                                        strokeDashoffset={`-${((overviewPriceTiers[0].count + overviewPriceTiers[1].count) / Math.max(totalHoardingsCount, 1)) * 390}`}
-                                                        strokeLinecap="round"
-                                                        className="donut-segment"
-                                                    />
-                                                    {/* Segment 4: >100k (ec4899) */}
-                                                    <circle 
-                                                        cx="80" cy="80" r="62" fill="none" stroke="#ec4899" strokeWidth="16"
-                                                        strokeDasharray={`${(overviewPriceTiers[3].count / Math.max(totalHoardingsCount, 1)) * 390} 390`}
-                                                        strokeDashoffset={`-${((overviewPriceTiers[0].count + overviewPriceTiers[1].count + overviewPriceTiers[2].count) / Math.max(totalHoardingsCount, 1)) * 390}`}
-                                                        strokeLinecap="round"
-                                                        className="donut-segment"
-                                                    />
-                                                </svg>
-                                                <div className="donut-center-content">
-                                                    <span className="donut-center-label">Capacity</span>
-                                                    <strong className="donut-center-val">
-                                                        ₹{(totalMonthlyRevenue >= 10000000) ? (totalMonthlyRevenue / 10000000).toFixed(2) + ' Cr' : (totalMonthlyRevenue / 100000).toFixed(1) + ' L'}
-                                                    </strong>
-                                                    <small>/month</small>
-                                                </div>
-                                            </div>
-                                        </div>
-
-                                        <div className="pricing-tiers-list">
+                                    <div className="ooh-price-breakdown">
+                                        <span className="price-breakdown-title">Rental Bracket Distribution</span>
+                                        <div className="price-bracket-list">
                                             {overviewPriceTiers.map(tier => {
-                                                const tierPct = Math.round((tier.count / Math.max(totalHoardingsCount, 1)) * 100);
+                                                const pct = ((tier.count / Math.max(totalHoardingsCount, 1)) * 100).toFixed(1);
                                                 return (
-                                                    <div key={tier.label} className="pricing-tier-card">
-                                                        <div className="tier-dot-and-label">
-                                                            <span className="tier-dot" style={{ background: tier.color, boxShadow: `0 0 10px ${tier.color}80` }}></span>
-                                                            <span className="tier-name">{tier.label}</span>
+                                                    <div key={tier.label} className="price-bracket-item">
+                                                        <div className="price-bracket-left">
+                                                            <span className="price-dot" style={{ background: tier.color }}></span>
+                                                            <span className="price-label">{tier.label}</span>
                                                         </div>
-                                                        <div className="tier-numbers">
-                                                            <strong>{tier.count} sites</strong>
-                                                            <span className="tier-pill">{tierPct}%</span>
+                                                        <div className="price-bracket-right">
+                                                            <strong className="price-count">{tier.count} sites</strong>
+                                                            <span className="price-pct">{pct}%</span>
                                                         </div>
                                                     </div>
                                                 );
@@ -2455,102 +2316,28 @@ const AdminDashboard = ({ hoardings, setHoardings }) => {
 
                             </div>
 
-                            {/* 📈 6-Month Asset Velocity & Inquiries Spline Graph */}
-                            <div className="premium-chart-card full-width-chart">
-                                <div className="chart-card-glow"></div>
-                                <div className="chart-header-custom">
-                                    <div className="chart-title-group">
-                                        <div className="chart-icon-box emerald">
-                                            <TrendingUp size={20} />
-                                        </div>
-                                        <div>
-                                            <h3>Network Inquiries & Booking Trajectory</h3>
-                                            <p>6-Month client engagement & billboard utilization curve</p>
-                                        </div>
+                            {/* 📷 Field Photo Feed (Clean Authentic Empty State) */}
+                            <div className="ooh-panel-card">
+                                <div className="ooh-panel-header">
+                                    <div>
+                                        <h3 className="ooh-panel-title">Field Inspection Photos</h3>
+                                        <p className="ooh-panel-desc">Mobile uploads and site photo verification feed</p>
                                     </div>
-                                    <div className="chart-legend-pills">
-                                        <span className="legend-pill"><span className="dot dot-indigo"></span> Network Capacity (307)</span>
-                                        <span className="legend-pill"><span className="dot dot-emerald"></span> Verified Media (100%)</span>
-                                    </div>
-                                </div>
-
-                                <div className="spline-chart-container">
-                                    <svg viewBox="0 0 800 180" className="spline-svg" preserveAspectRatio="none">
-                                        <defs>
-                                            <linearGradient id="areaGradient" x1="0%" y1="0%" x2="0%" y2="100%">
-                                                <stop offset="0%" stopColor="#6366f1" stopOpacity="0.35" />
-                                                <stop offset="100%" stopColor="#6366f1" stopOpacity="0.0" />
-                                            </linearGradient>
-                                            <linearGradient id="lineGradient" x1="0%" y1="0%" x2="100%" y2="0%">
-                                                <stop offset="0%" stopColor="#38bdf8" />
-                                                <stop offset="50%" stopColor="#6366f1" />
-                                                <stop offset="100%" stopColor="#10b981" />
-                                            </linearGradient>
-                                        </defs>
-                                        {/* Grid lines */}
-                                        <line x1="0" y1="40" x2="800" y2="40" stroke="rgba(255,255,255,0.05)" strokeDasharray="4 4" />
-                                        <line x1="0" y1="90" x2="800" y2="90" stroke="rgba(255,255,255,0.05)" strokeDasharray="4 4" />
-                                        <line x1="0" y1="140" x2="800" y2="140" stroke="rgba(255,255,255,0.05)" strokeDasharray="4 4" />
-
-                                        {/* Spline Area Fill */}
-                                        <path 
-                                            d="M 40 130 C 180 115, 320 85, 460 65 C 600 45, 680 35, 760 30 L 760 160 L 40 160 Z" 
-                                            fill="url(#areaGradient)" 
-                                        />
-                                        {/* Spline Stroke Curve */}
-                                        <path 
-                                            d="M 40 130 C 180 115, 320 85, 460 65 C 600 45, 680 35, 760 30" 
-                                            fill="none" 
-                                            stroke="url(#lineGradient)" 
-                                            strokeWidth="3.5" 
-                                            strokeLinecap="round"
-                                        />
-                                        {/* Data Nodes */}
-                                        <circle cx="40" cy="130" r="5" fill="#38bdf8" className="chart-node" />
-                                        <circle cx="180" cy="115" r="5" fill="#6366f1" className="chart-node" />
-                                        <circle cx="320" cy="85" r="5" fill="#6366f1" className="chart-node" />
-                                        <circle cx="460" cy="65" r="5" fill="#a855f7" className="chart-node" />
-                                        <circle cx="600" cy="45" r="5" fill="#10b981" className="chart-node" />
-                                        <circle cx="760" cy="30" r="6" fill="#10b981" className="chart-node pulse-node" />
-                                    </svg>
-
-                                    <div className="spline-x-axis">
-                                        <span>Mar 2026</span>
-                                        <span>Apr 2026</span>
-                                        <span>May 2026</span>
-                                        <span>Jun 2026</span>
-                                        <span>Jul 2026</span>
-                                        <span className="current-month">Aug 2026 (Live)</span>
-                                    </div>
-                                </div>
-                            </div>
-
-                            {/* 📷 Recent Photo Updates Section (Zero State - Clean, Animated & Professional) */}
-                            <section className="staff-updates-section modern-staff-section">
-                                <div className="staff-section-heading">
-                                    <div className="staff-title-wrap">
-                                        <div className="live-feed-badge">
-                                            <span className="pulse-dot"></span>
-                                            <span>LIVE STREAM</span>
-                                        </div>
-                                        <h3>Recent Photo Updates ({recentPhotoUpdates.length})</h3>
-                                        <p>Staff mobile camera uploads and automated site verification</p>
-                                    </div>
-                                    <div className="staff-heading-actions">
+                                    <div className="ooh-panel-actions">
                                         <button 
-                                            className="btn-staff-secondary"
+                                            className="btn-ooh-secondary"
                                             onClick={() => {
                                                 if (navigator.clipboard) {
                                                     navigator.clipboard.writeText(window.location.origin + '/staff/upload');
-                                                    alert('Staff camera upload link copied to clipboard!');
+                                                    alert('Staff mobile upload link copied to clipboard!');
                                                 }
                                             }}
-                                            title="Copy link to send to field staff"
+                                            title="Copy mobile camera upload link for ground staff"
                                         >
-                                            <Share2 size={16} /> Copy Staff Link
+                                            <Share2 size={14} /> Copy Staff Link
                                         </button>
-                                        <button className="btn-primary-admin" onClick={() => setActiveTab('staff-review')}>
-                                            <Camera size={18} /> Review Queue ({reviewQueue.length})
+                                        <button className="btn-ooh-secondary" onClick={() => setActiveTab('staff-review')}>
+                                            <Camera size={14} /> Review Queue ({reviewQueue.length})
                                         </button>
                                     </div>
                                 </div>
@@ -2602,72 +2389,69 @@ const AdminDashboard = ({ hoardings, setHoardings }) => {
                                         ))}
                                     </div>
                                 ) : (
-                                    <div className="modern-empty-state-card">
-                                        <div className="radar-animation-container">
-                                            <div className="radar-circle ring-1"></div>
-                                            <div className="radar-circle ring-2"></div>
-                                            <div className="radar-circle ring-3"></div>
-                                            <div className="radar-icon-center">
-                                                <Camera size={26} className="radar-camera-icon" />
-                                            </div>
+                                    <div className="ooh-empty-feed">
+                                        <div className="ooh-empty-icon-wrap">
+                                            <Camera size={22} />
                                         </div>
-                                        <div className="empty-state-text">
-                                            <h4>All 307 Site Photos Synchronized & Verified</h4>
+                                        <div className="ooh-empty-content">
+                                            <h4>All 307 billboard photos verified & linked</h4>
                                             <p>
-                                                100% of billboard inventory is verified with high-resolution Google Drive CDN images. When field staff capture new photos on-site, they will appear here in real-time for instant one-click approval.
+                                                Every site in the master sheet currently has a verified Google Drive CDN photo. New inspection photos captured by ground staff via mobile will automatically appear here for review.
                                             </p>
                                         </div>
-                                        <div className="empty-state-pills">
-                                            <span className="status-pill"><Check size={13} /> 307 Drive CDN Links Active</span>
-                                            <span className="status-pill"><Check size={13} /> GPS Geofence Enabled</span>
-                                            <span className="status-pill"><Check size={13} /> Zero Pending Re-verifications</span>
+                                        <div className="ooh-empty-tags">
+                                            <span className="ooh-status-tag"><Check size={12} /> 307 Public Drive URLs</span>
+                                            <span className="ooh-status-tag"><Check size={12} /> 0 Missing Photos</span>
+                                            <span className="ooh-status-tag"><Check size={12} /> Mobile Upload Ready</span>
                                         </div>
                                     </div>
                                 )}
-                            </section>
+                            </div>
 
-                            {/* 🏆 Top Prime Billboard Showcases */}
-                            <div className="prime-showcase-section">
-                                <div className="showcase-header">
+                            {/* 🏆 Featured Prime Inventory Showcase */}
+                            <div className="ooh-panel-card">
+                                <div className="ooh-panel-header">
                                     <div>
-                                        <h3>Featured High-Impact Assets • Meerut City</h3>
-                                        <p>Top visibility prime locations from Master Inventory</p>
+                                        <h3 className="ooh-panel-title">Featured Prime Billboard Locations</h3>
+                                        <p className="ooh-panel-desc">Sample high-visibility assets from Delhi Road & Begum Bridge</p>
                                     </div>
-                                    <button className="btn-view-all-inventory" onClick={() => openInventory('All')}>
-                                        View All 307 Assets <ChevronRight size={16} />
+                                    <button className="btn-ooh-secondary" onClick={() => openInventory('All')}>
+                                        View All {totalHoardingsCount} Sites <ChevronRight size={14} />
                                     </button>
                                 </div>
-                                <div className="prime-showcase-grid">
+
+                                <div className="ooh-featured-grid">
                                     {primeHighlightSites.map((site, index) => {
                                         const siteImage = getImageUrl(site);
-                                        const siteLocation = site["Location "] || site["Location"] || site["Site Name"] || `Site #${index + 1}`;
-                                        const siteArea = site["Area"] || site["Locality"] || 'Meerut';
+                                        const siteLocation = site["Locality Site Location"] || site["Location "] || site["Location"] || site["Site Name"] || `Site #${index + 1}`;
+                                        const siteArea = site["Locality"] || site["Area"] || 'Meerut';
                                         const siteSize = site["Size (Large/Medium/Small)"] || site["Size"] || '40x20';
-                                        const siteMedia = site["Media"] || site["Type of Site"] || 'Unipole';
+                                        const siteMedia = site["Media Format (Front Lit / Back Lit / Non Lit)"] || site["Type of Site (Unipole/Billboard)"] || 'Front Lit';
                                         const sitePrice = site["Rental Per Month"] || site["Avg Monthly Cost (INR)"] || '₹45,000';
 
                                         return (
                                             <div 
                                                 key={index} 
-                                                className="showcase-card"
+                                                className="ooh-site-card"
                                                 onClick={() => setPreviewHoarding(site)}
-                                                title="Click to view high-resolution photo"
+                                                title="Click to open image preview"
                                             >
-                                                <div className="showcase-thumb-wrap">
-                                                    <img src={siteImage} alt={siteLocation} className="showcase-thumb" loading="lazy" />
-                                                    <span className="showcase-rank-badge">#{index + 1} Prime</span>
-                                                    <span className="showcase-media-tag">{siteMedia}</span>
+                                                <div className="ooh-site-thumb-wrap">
+                                                    <img src={siteImage} alt={siteLocation} className="ooh-site-thumb" loading="lazy" />
+                                                    <span className="ooh-site-tag">{siteArea}</span>
                                                 </div>
-                                                <div className="showcase-info">
-                                                    <h4 className="showcase-title">{siteLocation}</h4>
-                                                    <div className="showcase-meta">
-                                                        <span><MapPin size={12} /> {siteArea}</span>
+                                                <div className="ooh-site-info">
+                                                    <h4 className="ooh-site-title">{siteLocation}</h4>
+                                                    <div className="ooh-site-specs">
+                                                        <span>{siteMedia}</span>
                                                         <span>{siteSize}</span>
                                                     </div>
-                                                    <div className="showcase-footer">
-                                                        <strong className="showcase-price">{typeof sitePrice === 'number' ? `₹${sitePrice.toLocaleString('en-IN')}` : sitePrice}/mo</strong>
-                                                        <button className="showcase-preview-btn" onClick={(e) => { e.stopPropagation(); setPreviewHoarding(site); }}>
-                                                            <Eye size={14} /> Preview
+                                                    <div className="ooh-site-footer">
+                                                        <span className="ooh-site-price">
+                                                            {typeof sitePrice === 'number' ? `₹${sitePrice.toLocaleString('en-IN')}` : (String(sitePrice).startsWith('₹') ? sitePrice : `₹${sitePrice}`)} <small>/mo</small>
+                                                        </span>
+                                                        <button className="btn-site-preview" onClick={(e) => { e.stopPropagation(); setPreviewHoarding(site); }}>
+                                                            <Eye size={13} /> Preview
                                                         </button>
                                                     </div>
                                                 </div>
