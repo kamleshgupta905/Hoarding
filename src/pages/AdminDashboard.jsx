@@ -2080,168 +2080,177 @@ const AdminDashboard = ({ hoardings, setHoardings }) => {
                 </header>
 
                 {activeTab === 'dashboard' && (
-                    <div className="dashboard-view pro-ooh-dashboard animate-in">
-                        <div className="main-grid">
+                    <div className="dashboard-view apple-dashboard-view animate-in">
+                        <div className="apple-main-container">
                             
-                            {/* 🌟 Professional Clean Header & Action Strip */}
-                            <div className="ooh-page-header">
-                                <div className="ooh-header-main">
-                                    <div className="ooh-title-row">
-                                        <h2 className="ooh-page-title">Media Inventory Overview</h2>
-                                        <div className="ooh-sync-badge" title="Real-time link with Google Sheet Master">
-                                            <span className="ooh-sync-dot"></span>
-                                            <span>{totalHoardingsCount} Sites Synced • Google Sheet Master</span>
-                                        </div>
+                            {/* 🍎 Apple-Style Header Banner */}
+                            <div className="apple-header-section">
+                                <div className="apple-header-text">
+                                    <div className="apple-status-pill" title="Live connection with Google Sheets Master">
+                                        <span className="apple-pulse-dot"></span>
+                                        <span>307 Assets Live • Google Sheet CDN Synced</span>
                                     </div>
-                                    <p className="ooh-page-subtitle">
-                                        Operational performance, corridor distribution, and media verification across Meerut District
+                                    <h2 className="apple-page-title">Media Inventory Overview</h2>
+                                    <p className="apple-page-subtitle">
+                                        Network analytics, arterial corridor distribution, and verified media assets across Meerut District
                                     </p>
                                 </div>
-                                <div className="ooh-header-actions">
-                                    <button className="btn-ooh-secondary" onClick={() => exportProposalExcel(hoardings)} title="Export clean proposal deck for clients">
+                                <div className="apple-header-controls">
+                                    <button className="apple-btn-secondary" onClick={() => exportProposalExcel(hoardings)} title="Export clean proposal deck for clients">
                                         <FileDown size={15} /> Export Proposal
                                     </button>
-                                    <button className="btn-ooh-secondary" onClick={() => setActiveTab('sheet-editor')} title="Open Master Sheet Editor">
-                                        <Table2 size={15} /> Open Sheet
+                                    <button className="apple-btn-secondary" onClick={() => setActiveTab('sheet-editor')} title="Open Master Sheet Editor">
+                                        <Table2 size={15} /> Sheet Editor
                                     </button>
-                                    <button className="btn-ooh-primary" onClick={() => setIsAddModalOpen(true)}>
-                                        <Plus size={16} /> Add New Site
+                                    <button className="apple-btn-primary" onClick={() => setIsAddModalOpen(true)}>
+                                        <Plus size={16} /> Add Asset
                                     </button>
                                 </div>
                             </div>
 
-                            {/* 📈 4 Clean Dribbble-Style Metric Cards */}
-                            <div className="ooh-kpi-grid">
+                            {/* 📈 4 Apple Bento Metric Cards */}
+                            <div className="apple-kpi-grid">
                                 
                                 {/* Card 1: Total Inventory */}
                                 <div 
-                                    className="ooh-kpi-card clickable" 
+                                    className="apple-kpi-card clickable" 
                                     role="button" 
                                     tabIndex={0} 
                                     onClick={() => openInventory('All')} 
                                     onKeyDown={(e) => e.key === 'Enter' && openInventory('All')}
                                 >
-                                    <div className="ooh-kpi-top">
-                                        <span className="ooh-kpi-label">TOTAL INVENTORY</span>
-                                        <div className="ooh-kpi-icon indigo">
+                                    <div className="apple-kpi-header">
+                                        <span className="apple-kpi-caption">TOTAL INVENTORY</span>
+                                        <div className="apple-kpi-symbol blue">
                                             <Layers size={18} />
                                         </div>
                                     </div>
-                                    <div className="ooh-kpi-metric-row">
-                                        <span className="ooh-kpi-value">{totalHoardingsCount}</span>
-                                        <span className="ooh-kpi-unit">Sites</span>
+                                    <div className="apple-kpi-number-wrap">
+                                        <span className="apple-kpi-val">{totalHoardingsCount}</span>
+                                        <span className="apple-kpi-sub">Sites</span>
                                     </div>
-                                    <div className="ooh-kpi-footer">
-                                        <span className="ooh-kpi-detail">{totalSqFt.toLocaleString('en-IN')} sq. ft total display area</span>
-                                        <span className="ooh-kpi-tag neutral">100% Active</span>
+                                    <div className="apple-kpi-meter-track">
+                                        <div className="apple-kpi-meter-fill blue" style={{ width: '100%' }}></div>
+                                    </div>
+                                    <div className="apple-kpi-footer-row">
+                                        <span>{totalSqFt.toLocaleString('en-IN')} sq. ft total area</span>
+                                        <span className="apple-pill-tag blue">100% Active</span>
                                     </div>
                                 </div>
 
                                 {/* Card 2: Commercial Capacity */}
-                                <div 
-                                    className="ooh-kpi-card" 
-                                >
-                                    <div className="ooh-kpi-top">
-                                        <span className="ooh-kpi-label">PORTFOLIO CAPACITY</span>
-                                        <div className="ooh-kpi-icon emerald">
+                                <div className="apple-kpi-card">
+                                    <div className="apple-kpi-header">
+                                        <span className="apple-kpi-caption">PORTFOLIO CAPACITY</span>
+                                        <div className="apple-kpi-symbol green">
                                             <DollarSign size={18} />
                                         </div>
                                     </div>
-                                    <div className="ooh-kpi-metric-row">
-                                        <span className="ooh-kpi-value">₹{(totalMonthlyRevenue / 10000000).toFixed(2)}</span>
-                                        <span className="ooh-kpi-unit">Cr / mo</span>
+                                    <div className="apple-kpi-number-wrap">
+                                        <span className="apple-kpi-val">₹{(totalMonthlyRevenue / 10000000).toFixed(2)}</span>
+                                        <span className="apple-kpi-sub">Cr / mo</span>
                                     </div>
-                                    <div className="ooh-kpi-footer">
-                                        <span className="ooh-kpi-detail">₹{avgMonthlyRate.toLocaleString('en-IN')} avg rental / site</span>
-                                        <span className="ooh-kpi-tag emerald">Valued</span>
+                                    <div className="apple-kpi-meter-track">
+                                        <div className="apple-kpi-meter-fill green" style={{ width: '100%' }}></div>
+                                    </div>
+                                    <div className="apple-kpi-footer-row">
+                                        <span>₹{avgMonthlyRate.toLocaleString('en-IN')} avg / site</span>
+                                        <span className="apple-pill-tag green">Valued</span>
                                     </div>
                                 </div>
 
                                 {/* Card 3: Ready / Available */}
                                 <div 
-                                    className="ooh-kpi-card clickable" 
+                                    className="apple-kpi-card clickable" 
                                     role="button" 
                                     tabIndex={0} 
                                     onClick={() => openInventory('Available')} 
                                     onKeyDown={(e) => e.key === 'Enter' && openInventory('Available')}
                                 >
-                                    <div className="ooh-kpi-top">
-                                        <span className="ooh-kpi-label">AVAILABLE FOR SALE</span>
-                                        <div className="ooh-kpi-icon sky">
+                                    <div className="apple-kpi-header">
+                                        <span className="apple-kpi-caption">AVAILABLE FOR SALE</span>
+                                        <div className="apple-kpi-symbol teal">
                                             <CheckCircle size={18} />
                                         </div>
                                     </div>
-                                    <div className="ooh-kpi-metric-row">
-                                        <span className="ooh-kpi-value">{availableCount}</span>
-                                        <span className="ooh-kpi-unit">Sites</span>
+                                    <div className="apple-kpi-number-wrap">
+                                        <span className="apple-kpi-val">{availableCount}</span>
+                                        <span className="apple-kpi-sub">Sites</span>
                                     </div>
-                                    <div className="ooh-kpi-footer">
-                                        <span className="ooh-kpi-detail">{((availableCount / Math.max(totalHoardingsCount, 1)) * 100).toFixed(0)}% available to pitch</span>
-                                        <span className="ooh-kpi-tag sky">Ready to Sell</span>
+                                    <div className="apple-kpi-meter-track">
+                                        <div 
+                                            className="apple-kpi-meter-fill teal" 
+                                            style={{ width: `${(availableCount / Math.max(totalHoardingsCount, 1)) * 100}%` }}
+                                        ></div>
+                                    </div>
+                                    <div className="apple-kpi-footer-row">
+                                        <span>100% available to pitch</span>
+                                        <span className="apple-pill-tag teal">Ready to Sell</span>
                                     </div>
                                 </div>
 
-                                {/* Card 4: Photo Verification */}
-                                <div 
-                                    className="ooh-kpi-card" 
-                                >
-                                    <div className="ooh-kpi-top">
-                                        <span className="ooh-kpi-label">MEDIA VERIFICATION</span>
-                                        <div className="ooh-kpi-icon purple">
+                                {/* Card 4: Media Verification */}
+                                <div className="apple-kpi-card">
+                                    <div className="apple-kpi-header">
+                                        <span className="apple-kpi-caption">MEDIA VERIFICATION</span>
+                                        <div className="apple-kpi-symbol purple">
                                             <Camera size={18} />
                                         </div>
                                     </div>
-                                    <div className="ooh-kpi-metric-row">
-                                        <span className="ooh-kpi-value">100%</span>
-                                        <span className="ooh-kpi-unit">Synced</span>
+                                    <div className="apple-kpi-number-wrap">
+                                        <span className="apple-kpi-val">100%</span>
+                                        <span className="apple-kpi-sub">Verified</span>
                                     </div>
-                                    <div className="ooh-kpi-footer">
-                                        <span className="ooh-kpi-detail">307 Google Drive URLs connected</span>
-                                        <span className="ooh-kpi-tag purple">Drive CDN</span>
+                                    <div className="apple-kpi-meter-track">
+                                        <div className="apple-kpi-meter-fill purple" style={{ width: '100%' }}></div>
+                                    </div>
+                                    <div className="apple-kpi-footer-row">
+                                        <span>307 Drive CDN URLs active</span>
+                                        <span className="apple-pill-tag purple">Synced</span>
                                     </div>
                                 </div>
 
                             </div>
 
-                            {/* 📊 Two-Column OOH Analytics Grid */}
-                            <div className="ooh-analytics-grid">
+                            {/* 📊 Apple Two-Column Analytics Bento */}
+                            <div className="apple-bento-grid">
                                 
-                                {/* 🗺️ Left Card: Prime Transit Corridors (Real Meerut Data) */}
-                                <div className="ooh-panel-card">
-                                    <div className="ooh-panel-header">
+                                {/* 🗺️ Left Bento: Prime Corridors (Real Meerut Data) */}
+                                <div className="apple-card bento-card">
+                                    <div className="apple-card-header">
                                         <div>
-                                            <h3 className="ooh-panel-title">Prime Corridors & Locality Distribution</h3>
-                                            <p className="ooh-panel-desc">Billboard concentration across key arterial roads in Meerut</p>
+                                            <h3 className="apple-card-title">Prime Corridors & Locality Distribution</h3>
+                                            <p className="apple-card-desc">Billboard concentration across key arterial roads in Meerut</p>
                                         </div>
-                                        <span className="ooh-panel-badge">{overviewTopZones.length} Prime Corridors</span>
+                                        <span className="apple-badge-capsule">{overviewTopZones.length} Corridors</span>
                                     </div>
 
-                                    <div className="ooh-corridors-list">
+                                    <div className="apple-corridors-list">
                                         {overviewTopZones.map((zone, idx) => {
                                             const barWidth = Math.max(6, (parseFloat(zone.percent) / (parseFloat(overviewTopZones[0]?.percent) || 1)) * 100);
                                             return (
                                                 <div 
                                                     key={zone.name} 
-                                                    className="ooh-corridor-row"
+                                                    className="apple-corridor-row"
                                                     onClick={() => {
                                                         setInventoryLocalityFilter(zone.name);
                                                         setActiveTab('inventory');
                                                     }}
                                                     title={`Click to view ${zone.count} sites on ${zone.name}`}
                                                 >
-                                                    <div className="corridor-name-wrap">
-                                                        <span className="corridor-index">0{idx + 1}</span>
-                                                        <span className="corridor-name">{zone.name}</span>
+                                                    <div className="apple-corridor-label-group">
+                                                        <span className="apple-corridor-index">0{idx + 1}</span>
+                                                        <span className="apple-corridor-name">{zone.name}</span>
                                                     </div>
-                                                    <div className="corridor-bar-track">
+                                                    <div className="apple-bar-track">
                                                         <div 
-                                                            className="corridor-bar-fill" 
+                                                            className="apple-bar-fill" 
                                                             style={{ width: `${barWidth}%` }}
                                                         ></div>
                                                     </div>
-                                                    <div className="corridor-stat-wrap">
-                                                        <span className="corridor-count">{zone.count} <small>sites</small></span>
-                                                        <span className="corridor-pct">{zone.percent}%</span>
+                                                    <div className="apple-corridor-stats">
+                                                        <span className="apple-corridor-count">{zone.count} <small>sites</small></span>
+                                                        <span className="apple-corridor-pct">{zone.percent}%</span>
                                                     </div>
                                                 </div>
                                             );
@@ -2249,53 +2258,53 @@ const AdminDashboard = ({ hoardings, setHoardings }) => {
                                     </div>
                                 </div>
 
-                                {/* 📋 Right Card: Commercial Matrix & Price Tiers */}
-                                <div className="ooh-panel-card">
-                                    <div className="ooh-panel-header">
+                                {/* 📋 Right Bento: Commercial Matrix & Price Tiers */}
+                                <div className="apple-card bento-card">
+                                    <div className="apple-card-header">
                                         <div>
-                                            <h3 className="ooh-panel-title">Network Commercial Matrix</h3>
-                                            <p className="ooh-panel-desc">Rental tiers and display specifications</p>
+                                            <h3 className="apple-card-title">Network Commercial Matrix</h3>
+                                            <p className="apple-card-desc">Rental tiers and display specifications</p>
                                         </div>
-                                        <span className="ooh-panel-badge">307 Sites Priced</span>
+                                        <span className="apple-badge-capsule">307 Sites Priced</span>
                                     </div>
 
-                                    <div className="ooh-spec-matrix">
-                                        <div className="spec-tile">
-                                            <span className="spec-label">AVG MONTHLY RENT</span>
-                                            <strong className="spec-value">₹{avgMonthlyRate.toLocaleString('en-IN')}</strong>
-                                            <small className="spec-sub">per hoarding</small>
+                                    <div className="apple-spec-grid">
+                                        <div className="apple-spec-box">
+                                            <span className="apple-spec-label">AVG MONTHLY RENT</span>
+                                            <strong className="apple-spec-number">₹{avgMonthlyRate.toLocaleString('en-IN')}</strong>
+                                            <small className="apple-spec-sub">per billboard</small>
                                         </div>
-                                        <div className="spec-tile">
-                                            <span className="spec-label">TOTAL DISPLAY AREA</span>
-                                            <strong className="spec-value">{totalSqFt.toLocaleString('en-IN')}</strong>
-                                            <small className="spec-sub">sq. ft coverage</small>
+                                        <div className="apple-spec-box">
+                                            <span className="apple-spec-label">TOTAL DISPLAY AREA</span>
+                                            <strong className="apple-spec-number">{totalSqFt.toLocaleString('en-IN')}</strong>
+                                            <small className="apple-spec-sub">sq. ft coverage</small>
                                         </div>
-                                        <div className="spec-tile">
-                                            <span className="spec-label">MEDIA FORMAT</span>
-                                            <strong className="spec-value">Billboard / Unipole</strong>
-                                            <small className="spec-sub">100% Front Lit (FL)</small>
+                                        <div className="apple-spec-box">
+                                            <span className="apple-spec-label">MEDIA FORMAT</span>
+                                            <strong className="apple-spec-number">Billboard / Unipole</strong>
+                                            <small className="apple-spec-sub">100% Front Lit (FL)</small>
                                         </div>
-                                        <div className="spec-tile">
-                                            <span className="spec-label">SITE CATEGORY</span>
-                                            <strong className="spec-value">Grade-A Prime</strong>
-                                            <small className="spec-sub">100% verified OOH</small>
+                                        <div className="apple-spec-box">
+                                            <span className="apple-spec-label">SITE CATEGORY</span>
+                                            <strong className="apple-spec-number">Grade-A Prime</strong>
+                                            <small className="apple-spec-sub">100% verified OOH</small>
                                         </div>
                                     </div>
 
-                                    <div className="ooh-price-breakdown">
-                                        <span className="price-breakdown-title">Rental Bracket Distribution</span>
-                                        <div className="price-bracket-list">
+                                    <div className="apple-tier-section">
+                                        <span className="apple-tier-heading">Rental Bracket Distribution</span>
+                                        <div className="apple-tier-stack">
                                             {overviewPriceTiers.map(tier => {
                                                 const pct = ((tier.count / Math.max(totalHoardingsCount, 1)) * 100).toFixed(1);
                                                 return (
-                                                    <div key={tier.label} className="price-bracket-item">
-                                                        <div className="price-bracket-left">
-                                                            <span className="price-dot" style={{ background: tier.color }}></span>
-                                                            <span className="price-label">{tier.label}</span>
+                                                    <div key={tier.label} className="apple-tier-row">
+                                                        <div className="apple-tier-left">
+                                                            <span className="apple-color-dot" style={{ background: tier.color }}></span>
+                                                            <span className="apple-tier-label">{tier.label}</span>
                                                         </div>
-                                                        <div className="price-bracket-right">
-                                                            <strong className="price-count">{tier.count} sites</strong>
-                                                            <span className="price-pct">{pct}%</span>
+                                                        <div className="apple-tier-right">
+                                                            <strong className="apple-tier-count">{tier.count} sites</strong>
+                                                            <span className="apple-tier-pct">{pct}%</span>
                                                         </div>
                                                     </div>
                                                 );
@@ -2306,16 +2315,16 @@ const AdminDashboard = ({ hoardings, setHoardings }) => {
 
                             </div>
 
-                            {/* 📷 Field Photo Feed (Clean Authentic Empty State) */}
-                            <div className="ooh-panel-card">
-                                <div className="ooh-panel-header">
+                            {/* 📷 Field Photo Feed (Clean Apple Glass Empty State) */}
+                            <div className="apple-card">
+                                <div className="apple-card-header">
                                     <div>
-                                        <h3 className="ooh-panel-title">Field Inspection Photos</h3>
-                                        <p className="ooh-panel-desc">Mobile uploads and site photo verification feed</p>
+                                        <h3 className="apple-card-title">Field Inspection Photos</h3>
+                                        <p className="apple-card-desc">Ground staff mobile camera uploads and site photo audit feed</p>
                                     </div>
-                                    <div className="ooh-panel-actions">
+                                    <div className="apple-header-controls">
                                         <button 
-                                            className="btn-ooh-secondary"
+                                            className="apple-btn-secondary"
                                             onClick={() => {
                                                 if (navigator.clipboard) {
                                                     navigator.clipboard.writeText(window.location.origin + '/staff/upload');
@@ -2326,7 +2335,7 @@ const AdminDashboard = ({ hoardings, setHoardings }) => {
                                         >
                                             <Share2 size={14} /> Copy Staff Link
                                         </button>
-                                        <button className="btn-ooh-secondary" onClick={() => setActiveTab('staff-review')}>
+                                        <button className="apple-btn-secondary" onClick={() => setActiveTab('staff-review')}>
                                             <Camera size={14} /> Review Queue ({reviewQueue.length})
                                         </button>
                                     </div>
@@ -2379,38 +2388,39 @@ const AdminDashboard = ({ hoardings, setHoardings }) => {
                                         ))}
                                     </div>
                                 ) : (
-                                    <div className="ooh-empty-feed">
-                                        <div className="ooh-empty-icon-wrap">
-                                            <Camera size={22} />
+                                    <div className="apple-empty-state">
+                                        <div className="apple-empty-icon-box">
+                                            <div className="apple-icon-ripple"></div>
+                                            <Camera size={24} className="apple-camera-icon" />
                                         </div>
-                                        <div className="ooh-empty-content">
+                                        <div className="apple-empty-text">
                                             <h4>All 307 billboard photos verified & linked</h4>
                                             <p>
-                                                Every site in the master sheet currently has a verified Google Drive CDN photo. New inspection photos captured by ground staff via mobile will automatically appear here for review.
+                                                Every site in the master sheet currently has a verified Google Drive CDN photo. When field inspection photos are submitted via the mobile link, they will appear here for one-click admin verification.
                                             </p>
                                         </div>
-                                        <div className="ooh-empty-tags">
-                                            <span className="ooh-status-tag"><Check size={12} /> 307 Public Drive URLs</span>
-                                            <span className="ooh-status-tag"><Check size={12} /> 0 Missing Photos</span>
-                                            <span className="ooh-status-tag"><Check size={12} /> Mobile Upload Ready</span>
+                                        <div className="apple-empty-capsules">
+                                            <span className="apple-status-capsule"><Check size={13} /> 307 Public Drive URLs</span>
+                                            <span className="apple-status-capsule"><Check size={13} /> 0 Missing Photos</span>
+                                            <span className="apple-status-capsule"><Check size={13} /> Mobile Camera Ready</span>
                                         </div>
                                     </div>
                                 )}
                             </div>
 
-                            {/* 🏆 Featured Prime Inventory Showcase */}
-                            <div className="ooh-panel-card">
-                                <div className="ooh-panel-header">
+                            {/* 🏆 Featured Prime Inventory (Apple Showcase) */}
+                            <div className="apple-card">
+                                <div className="apple-card-header">
                                     <div>
-                                        <h3 className="ooh-panel-title">Featured Prime Billboard Locations</h3>
-                                        <p className="ooh-panel-desc">Sample high-visibility assets from Delhi Road & Begum Bridge</p>
+                                        <h3 className="apple-card-title">Featured Prime Billboard Locations</h3>
+                                        <p className="apple-card-desc">High-visibility inventory from Delhi Road & Begum Bridge</p>
                                     </div>
-                                    <button className="btn-ooh-secondary" onClick={() => openInventory('All')}>
+                                    <button className="apple-btn-secondary" onClick={() => openInventory('All')}>
                                         View All {totalHoardingsCount} Sites <ChevronRight size={14} />
                                     </button>
                                 </div>
 
-                                <div className="ooh-featured-grid">
+                                <div className="apple-showcase-grid">
                                     {primeHighlightSites.map((site, index) => {
                                         const siteImage = getImageUrl(site);
                                         const siteLocation = site["Locality Site Location"] || site["Location "] || site["Location"] || site["Site Name"] || `Site #${index + 1}`;
@@ -2422,25 +2432,25 @@ const AdminDashboard = ({ hoardings, setHoardings }) => {
                                         return (
                                             <div 
                                                 key={index} 
-                                                className="ooh-site-card"
+                                                className="apple-showcase-card"
                                                 onClick={() => setPreviewHoarding(site)}
                                                 title="Click to open image preview"
                                             >
-                                                <div className="ooh-site-thumb-wrap">
-                                                    <img src={siteImage} alt={siteLocation} className="ooh-site-thumb" loading="lazy" />
-                                                    <span className="ooh-site-tag">{siteArea}</span>
+                                                <div className="apple-showcase-media">
+                                                    <img src={siteImage} alt={siteLocation} className="apple-showcase-img" loading="lazy" />
+                                                    <span className="apple-media-badge">{siteArea}</span>
                                                 </div>
-                                                <div className="ooh-site-info">
-                                                    <h4 className="ooh-site-title">{siteLocation}</h4>
-                                                    <div className="ooh-site-specs">
+                                                <div className="apple-showcase-body">
+                                                    <h4 className="apple-showcase-heading">{siteLocation}</h4>
+                                                    <div className="apple-showcase-specs">
                                                         <span>{siteMedia}</span>
                                                         <span>{siteSize}</span>
                                                     </div>
-                                                    <div className="ooh-site-footer">
-                                                        <span className="ooh-site-price">
+                                                    <div className="apple-showcase-footer">
+                                                        <span className="apple-showcase-price">
                                                             {typeof sitePrice === 'number' ? `₹${sitePrice.toLocaleString('en-IN')}` : (String(sitePrice).startsWith('₹') ? sitePrice : `₹${sitePrice}`)} <small>/mo</small>
                                                         </span>
-                                                        <button className="btn-site-preview" onClick={(e) => { e.stopPropagation(); setPreviewHoarding(site); }}>
+                                                        <button className="apple-btn-preview" onClick={(e) => { e.stopPropagation(); setPreviewHoarding(site); }}>
                                                             <Eye size={13} /> Preview
                                                         </button>
                                                     </div>
