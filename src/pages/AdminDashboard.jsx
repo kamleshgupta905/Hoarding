@@ -1005,7 +1005,10 @@ const AdminDashboard = ({ hoardings, setHoardings }) => {
         return city.charAt(0).toUpperCase() + city.slice(1).toLowerCase();
     }).filter(Boolean))];
     const inventoryStatuses = ['All', 'Available', 'Occupied', 'Offline'];
-    const inventoryLocalities = ['All', ...new Set(hoardings.map(h => h["Area"]).filter(Boolean))];
+    const inventoryTargetHoardings = inventoryCityFilter === 'All'
+        ? hoardings
+        : hoardings.filter(h => (h.City || '').trim().toLowerCase() === inventoryCityFilter.toLowerCase());
+    const inventoryLocalities = ['All', ...new Set(inventoryTargetHoardings.map(h => (h["Locality"] || h["Area"] || '').trim()).filter(Boolean))].sort((a, b) => a === 'All' ? -1 : b === 'All' ? 1 : a.localeCompare(b));
     const inventoryMediaFormats = ['All', ...new Set(hoardings.map(h => h["Media Format (Front Lit / Back Lit / Non Lit)"]).filter(Boolean))];
     const inventorySizes = ['All', ...new Set(hoardings.map(h => h["Size (Large/Medium/Small)"]).filter(Boolean))];
     const inventoryCategories = ['All', ...new Set(hoardings.map(h => h["Site Category"]).filter(Boolean))];
@@ -2912,7 +2915,10 @@ const AdminDashboard = ({ hoardings, setHoardings }) => {
                                         <label>Region / City</label>
                                         <select
                                             value={inventoryCityFilter}
-                                            onChange={(e) => setInventoryCityFilter(e.target.value)}
+                                            onChange={(e) => {
+                                                setInventoryCityFilter(e.target.value);
+                                                setInventoryLocalityFilter('All');
+                                            }}
                                         >
                                             {inventoryCities.map(city => (
                                                 <option key={city} value={city}>{city}</option>

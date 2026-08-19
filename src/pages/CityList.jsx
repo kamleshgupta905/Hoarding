@@ -79,16 +79,32 @@ const CityList = ({ hoardings }) => {
         return ['All', ...new Set(normalized)];
     }, [hoardings]);
 
-    const localities = useMemo(() => ['All', ...new Set(cityHoardings.map(h => h["Area"]).filter(l => l))], [cityHoardings]);
+    const activeCityHoardings = useMemo(() => {
+        if (isAllCities) {
+            if (filterCity === 'All') return cityHoardings;
+            return cityHoardings.filter(h => (h.City || '').trim().toLowerCase() === filterCity.trim().toLowerCase());
+        }
+        return cityHoardings;
+    }, [isAllCities, filterCity, cityHoardings]);
+
+    const localities = useMemo(() => {
+        const raw = activeCityHoardings
+            .map(h => (h["Locality"] || h["Area"] || '').trim())
+            .filter(Boolean);
+        const unique = [...new Set(raw)].sort((a, b) => a.localeCompare(b));
+        return ['All', ...unique];
+    }, [activeCityHoardings]);
 
     const filteredHoardings = useMemo(() => {
         let filtered = cityHoardings.filter(h => {
-            const hPrice = Number(h["Rental Per Month"]);
-            const hCity = h.City?.trim().toLowerCase();
+            const rawPrice = h["Avg Monthly Cost (INR)"] ?? h["Rental Per Month"] ?? 0;
+            const hPrice = typeof rawPrice === 'string' ? parseFloat(rawPrice.replace(/[^0-9.]/g, '')) || 0 : (Number(rawPrice) || 0);
+            const hCity = (h.City || '').trim().toLowerCase();
             const selectedCity = filterCity.toLowerCase();
+            const siteLocality = (h["Locality"] || h["Area"] || '').trim();
             
             const matchCity = filterCity === 'All' || hCity === selectedCity;
-            const matchLocality = filterLocality === 'All' || h["Area"] === filterLocality;
+            const matchLocality = filterLocality === 'All' || siteLocality.toLowerCase() === filterLocality.toLowerCase();
 
             let matchPrice = true;
             if (priceRange === '0-25k') matchPrice = hPrice <= 25000;
@@ -96,8 +112,8 @@ const CityList = ({ hoardings }) => {
             else if (priceRange === '50k+') matchPrice = hPrice > 50000;
 
             const matchSearch = searchQuery === '' ||
-                h["Area"]?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                h["Location "]?.toLowerCase().includes(searchQuery.toLowerCase());
+                siteLocality.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                String(h["Locality Site Location"] || h["Location "] || h["Location"] || '').toLowerCase().includes(searchQuery.toLowerCase());
 
             // Date Range Filter Logic
             let matchDates = true;
@@ -133,16 +149,24 @@ const CityList = ({ hoardings }) => {
         });
 
         if (sortBy === 'price-low') {
-            filtered.sort((a, b) => Number(a["Rental Per Month"]) - Number(b["Rental Per Month"]));
+            filtered.sort((a, b) => {
+                const pA = Number(a["Avg Monthly Cost (INR)"] || a["Rental Per Month"] || 0);
+                const pB = Number(b["Avg Monthly Cost (INR)"] || b["Rental Per Month"] || 0);
+                return pA - pB;
+            });
         } else if (sortBy === 'price-high') {
-            filtered.sort((a, b) => Number(b["Rental Per Month"]) - Number(a["Rental Per Month"]));
+            filtered.sort((a, b) => {
+                const pA = Number(a["Avg Monthly Cost (INR)"] || a["Rental Per Month"] || 0);
+                const pB = Number(b["Avg Monthly Cost (INR)"] || b["Rental Per Month"] || 0);
+                return pB - pA;
+            });
         } else if (sortBy === 'size') {
             const sizeOrder = { 'Large': 3, 'Medium': 2, 'Small': 1 };
-            filtered.sort((a, b) => sizeOrder[(b["Size (Large/Medium/Small)"] || 'Small')] - sizeOrder[(a["Size (Large/Medium/Small)"] || 'Small')]);
+            filtered.sort((a, b) => (sizeOrder[b["Size (Large/Medium/Small)"]] || 0) - (sizeOrder[a["Size (Large/Medium/Small)"]] || 0));
         }
 
         return filtered;
-    }, [cityHoardings, filterCity, filterLocality, priceRange, sortBy, searchQuery, campaignStart, campaignEnd]);
+    }, [cityHoardings, filterCity, filterLocality, priceRange, searchQuery, sortBy, campaignStart, campaignEnd]);
 
     const mapCenter = cityHoardings.length > 0
         ? [Number(cityHoardings[0].Latitude), Number(cityHoardings[0].Longitude)]
@@ -151,8 +175,8 @@ const CityList = ({ hoardings }) => {
     return (
         <div className="city-list-page container">
             <Helmet>
-                <title>{isAllCities ? 'All India Premium Billboards' : `Hoardings in ${cityName} | Premium Billboard Ads`}</title>
-                <meta name="description" content={`Exclusive outdoor advertising opportunities in ${isAllCities ? 'India' : cityName}. Browse ${filteredHoardings.length} verified hoarding sites, check rates and view map locations.`} />
+                <title>{isAllCities ? 'All Available Hoardings' : `Hoardings in ${cityName}`} | AdHoardings</title>
+                <meta name="description" content={`Discover and book premium billboard locations in ${isAllCities ? 'all cities' : cityName}. Verified sites with pricing and availability.`} />
                 <meta name="keywords" content={`hoardings ${cityName}, billboards ${cityName}, outdoor media ${cityName}, advertising sites ${cityName}`} />
             </Helmet>
 
@@ -201,7 +225,13 @@ const CityList = ({ hoardings }) => {
                     {isAllCities && (
                         <div className="filter-group">
                             <label>Select City</label>
-                            <select value={filterCity} onChange={(e) => setFilterCity(e.target.value)}>
+                            <select 
+                                value={filterCity} 
+                                onChange={(e) => {
+                                    setFilterCity(e.target.value);
+                                    setFilterLocality('All');
+                                }}
+                            >
                                 {citiesOption.map(c => <option key={c} value={c}>{c}</option>)}
                             </select>
                         </div>
