@@ -11,10 +11,56 @@
     "build": "vite build",
     "test": "vitest run",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "electron:dev": "concurrently \"vite\" \"wait-on tcp:5173 && electron .\"",
+    "electron:build": "vite build && electron-builder --win --x64",
+    "electron:release": "vite build && electron-builder --win --x64 --publish always"
+  },
+  "main": "electron/main.cjs",
+  "build": {
+    "appId": "com.adhoardings.admin",
+    "productName": "AdHoardings Admin",
+    "copyright": "Copyright © 2026 AdHoardings",
+    "directories": {
+      "output": "dist_electron"
+    },
+    "files": [
+      "dist/**/*",
+      "electron/**/*"
+    ],
+    "publish": {
+      "provider": "github",
+      "owner": "kamleshgupta905",
+      "repo": "Hoarding"
+    },
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "public/favicon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "AdHoardings Admin"
+    }
   },
   "dependencies": {
     "@hookform/resolvers": "^5.2.2",
+    "electron-updater": "^6.8.9",
     "fast-xml-parser": "^5.2.5",
     "idb": "^8.0.3",
     "jszip": "^3.10.1",
@@ -38,11 +84,16 @@
     "@types/react": "^19.2.5",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^5.1.1",
+    "concurrently": "^10.0.5",
+    "cross-env": "^10.1.0",
+    "electron": "^43.4.1",
+    "electron-builder": "^26.15.3",
     "eslint": "^9.39.1",
     "eslint-plugin-react-hooks": "^7.0.1",
     "eslint-plugin-react-refresh": "^0.4.24",
     "globals": "^16.5.0",
     "vite": "^7.2.4",
-    "vitest": "^3.2.4"
+    "vitest": "^3.2.4",
+    "wait-on": "^9.1.0"
   }
 }
