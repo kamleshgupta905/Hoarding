@@ -1153,12 +1153,15 @@ function updateHoardingDetails(data) {
     // Find the target row
     var rows = sheet.getDataRange().getValues();
     var rowIndex = -1;
-    var searchName = cleanFull(data.siteName);
-
-    for (var i = 1; i < rows.length; i++) {
-      if (cleanFull(rows[i][idxSite]) === searchName) {
-        rowIndex = i + 1;
-        break;
+    if (data.rowNumber && Number(data.rowNumber) >= 2 && Number(data.rowNumber) <= rows.length) {
+      rowIndex = Number(data.rowNumber);
+    } else {
+      var searchName = cleanFull(data.siteName);
+      for (var i = 1; i < rows.length; i++) {
+        if (cleanFull(rows[i][idxSite]) === searchName) {
+          rowIndex = i + 1;
+          break;
+        }
       }
     }
 
