@@ -260,12 +260,29 @@ export const detectStaffPhotoOrientation = async (imageUrl) => {
 };
 
 export const fetchSheetGrid = async () => {
+  try {
+    const rawData = await requestText(GOOGLE_SHEET_URL, { cache: 'no-store' }, 15000);
+    const parsed = Papa.parse(rawData, { skipEmptyLines: false });
+    if (parsed.data && parsed.data.length > 0) {
+      const headers = parsed.data[0] || [];
+      const rows = parsed.data.slice(1).filter(r => r.some(cell => String(cell || '').trim() !== ''));
+      return {
+        headers,
+        rows,
+        updatedAt: new Date().toISOString(),
+        hiddenColumns: []
+      };
+    }
+  } catch (err) {
+    console.warn("Direct CSV sheetGrid fetch failed, attempting Apps Script:", err);
+  }
+
   const result = await submitAdminOperation({
     type: 'sheetGrid',
     payload: {},
     siteId: '',
     baseVersion: null
-  }, { attempts: 18 });
+  }, { attempts: 3 });
   return {
     headers: result.headers || [],
     rows: result.rows || [],
