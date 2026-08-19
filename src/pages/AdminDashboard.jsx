@@ -1988,46 +1988,66 @@ const AdminDashboard = ({ hoardings, setHoardings }) => {
             {/* Side Navigation */}
             <aside className={`admin-sidebar ${isMobileMenuOpen ? 'mobile-open' : ''}`}>
                 <div className="sidebar-logo">
-                    <div className="logo-icon"><ShieldCheck size={20} color="white" /></div>
-                    Admin Panel
+                    <div className="logo-icon">
+                        <Layers size={20} color="white" strokeWidth={2.4} />
+                    </div>
+                    <div className="sidebar-brand-wrap">
+                        <span className="brand-title">AdHoardings</span>
+                        <span className="brand-badge">ADMIN</span>
+                    </div>
                 </div>
 
                 <div className="menu-group">
                     <div className="group-title">Analytics</div>
                     <button className={`nav-item ${activeTab === 'dashboard' ? 'active' : ''}`} onClick={() => setActiveTab('dashboard')}>
-                        <LayoutDashboard size={20} /> Overview
+                        <LayoutDashboard size={19} />
+                        <span>Overview</span>
                     </button>
                     <button className={`nav-item ${activeTab === 'inventory' ? 'active' : ''}`} onClick={() => setActiveTab('inventory')}>
-                        <Database size={20} /> Inventory
+                        <Database size={19} />
+                        <span>Inventory</span>
                     </button>
                     <button className={`nav-item ${activeTab === 'sheet-editor' ? 'active' : ''}`} onClick={() => setActiveTab('sheet-editor')}>
-                        <Table2 size={20} /> Excel Sheet
+                        <Table2 size={19} />
+                        <span>Excel Sheet</span>
                     </button>
                     <button className={`nav-item ${activeTab === 'clients' ? 'active' : ''}`} onClick={() => setActiveTab('clients')}>
-                        <User size={20} /> Clients & Booking
+                        <User size={19} />
+                        <span>Clients & Booking</span>
                     </button>
                 </div>
 
                 <div className="menu-group">
                     <div className="group-title">Automation</div>
                     <button className={`nav-item ${activeTab === 'daily-update' ? 'active' : ''}`} onClick={() => setActiveTab('daily-update')}>
-                        <Zap size={20} /> Daily Updates <span className="badge-new">AI</span>
+                        <Zap size={19} />
+                        <span>Daily Updates</span>
+                        <span className="badge-new badge-ai">AI</span>
                     </button>
                     <button className={`nav-item ${activeTab === 'staff-review' ? 'active' : ''}`} onClick={() => setActiveTab('staff-review')}>
-                        <Camera size={20} /> Review Required {reviewQueue.length > 0 && <span className="badge-new">{reviewQueue.length}</span>}
+                        <Camera size={19} />
+                        <span>Review Required</span>
+                        {reviewQueue.length > 0 && <span className="badge-new badge-count">{reviewQueue.length}</span>}
                     </button>
                 </div>
 
-
                 <div className="sidebar-footer">
-                    <button className="nav-item" onClick={() => navigate('/')}><ExternalLink size={20} /> View Website</button>
+                    <button className="nav-item view-website-btn" onClick={() => navigate('/')}>
+                        <ExternalLink size={18} />
+                        <span>View Website</span>
+                    </button>
                     <div className="user-profile">
-                        <div className="user-avatar" style={{ backgroundImage: 'url(https://i.pravatar.cc/100?u=admin)', backgroundSize: 'cover' }}></div>
+                        <div className="user-avatar-wrap">
+                            <div className="user-avatar" style={{ backgroundImage: 'url(https://i.pravatar.cc/100?u=admin)', backgroundSize: 'cover' }}></div>
+                            <span className="online-indicator"></span>
+                        </div>
                         <div className="user-info">
                             <span className="name">Admin Manager</span>
                             <span className="email">admin@adhoardings.com</span>
                         </div>
-                        <button onClick={handleLogout} style={{ marginLeft: 'auto', color: '#808191' }} title="Logout"><LogOut size={16} /></button>
+                        <button onClick={handleLogout} className="sidebar-logout-btn" title="Logout">
+                            <LogOut size={16} />
+                        </button>
                     </div>
                 </div>
             </aside>
