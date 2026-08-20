@@ -121,9 +121,11 @@ function createApplicationMenu() {
 function checkForUpdatesSilently() {
     autoUpdater.autoDownload = true;
     autoUpdater.autoInstallOnAppQuit = true;
-    autoUpdater.checkForUpdates().catch(err => {
-        console.log('Update check error:', err.message);
-    });
+    setTimeout(() => {
+        autoUpdater.checkForUpdates().catch(err => {
+            console.log('Silent update check error:', err.message);
+        });
+    }, 2500);
 }
 
 function checkForUpdatesManually() {
@@ -145,9 +147,21 @@ function checkForUpdatesManually() {
     });
 }
 
+autoUpdater.on('checking-for-update', () => {
+    if (mainWindow) {
+        mainWindow.webContents.send('update-checking');
+    }
+});
+
 autoUpdater.on('update-available', (info) => {
     if (mainWindow) {
         mainWindow.webContents.send('update-available', info);
+    }
+});
+
+autoUpdater.on('download-progress', (progressObj) => {
+    if (mainWindow) {
+        mainWindow.webContents.send('update-progress', progressObj);
     }
 });
 
@@ -155,16 +169,6 @@ autoUpdater.on('update-downloaded', (info) => {
     if (mainWindow) {
         mainWindow.webContents.send('update-downloaded', info);
     }
-    dialog.showMessageBox(mainWindow, {
-        type: 'info',
-        title: 'Update Ready',
-        message: `Version ${info.version} has been downloaded. Restart the application now to apply the update?`,
-        buttons: ['Restart & Install', 'Later']
-    }).then(res => {
-        if (res.response === 0) {
-            autoUpdater.quitAndInstall();
-        }
-    });
 });
 
 // IPC Handlers

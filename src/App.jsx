@@ -17,6 +17,157 @@ import { HelmetProvider } from 'react-helmet-async';
 const LIVE_REFRESH_INTERVAL_MS = 60000;
 const LOCAL_SYNC_PRESERVATION_MS = 30000;
 
+function AutoUpdateBar() {
+  const [updateState, setUpdateState] = useState(null);
+  const countdownTimerRef = useRef(null);
+
+  useEffect(() => {
+    if (!window.electronAPI) return;
+
+    window.electronAPI.onUpdateAvailable?.((info) => {
+      setUpdateState({
+        status: 'downloading',
+        version: info?.version || '',
+        percent: 0,
+        speed: '',
+        countdown: 5
+      });
+    });
+
+    window.electronAPI.onUpdateProgress?.((p) => {
+      setUpdateState(prev => prev ? {
+        ...prev,
+        percent: Math.min(100, Math.round(p.percent || 0)),
+        speed: p.bytesPerSecond ? `${(p.bytesPerSecond / (1024 * 1024)).toFixed(1)} MB/s` : ''
+      } : null);
+    });
+
+    window.electronAPI.onUpdateDownloaded?.((info) => {
+      setUpdateState({
+        status: 'ready',
+        version: info?.version || '',
+        percent: 100,
+        countdown: 5
+      });
+
+      let count = 5;
+      countdownTimerRef.current = setInterval(() => {
+        count -= 1;
+        if (count <= 0) {
+          clearInterval(countdownTimerRef.current);
+          window.electronAPI?.installUpdate?.();
+        } else {
+          setUpdateState(prev => prev ? { ...prev, countdown: count } : null);
+        }
+      }, 1000);
+    });
+
+    return () => {
+      if (countdownTimerRef.current) clearInterval(countdownTimerRef.current);
+    };
+  }, []);
+
+  if (!updateState) return null;
+
+  return (
+    <div style={{
+      position: 'fixed',
+      top: '18px',
+      right: '24px',
+      zIndex: 999999,
+      background: 'rgba(15, 23, 42, 0.96)',
+      backdropFilter: 'blur(16px)',
+      border: updateState.status === 'ready' ? '1px solid rgba(16, 185, 129, 0.4)' : '1px solid rgba(59, 130, 246, 0.4)',
+      borderRadius: '16px',
+      padding: '16px 20px',
+      boxShadow: '0 20px 40px rgba(0, 0, 0, 0.5), 0 0 20px rgba(59, 130, 246, 0.2)',
+      color: '#fff',
+      display: 'flex',
+      flexDirection: 'column',
+      gap: '10px',
+      minWidth: '340px',
+      maxWidth: '420px',
+      fontFamily: 'inherit'
+    }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          <span style={{ fontSize: '20px' }}>{updateState.status === 'ready' ? '🎉' : '🚀'}</span>
+          <div>
+            <div style={{ fontSize: '14px', fontWeight: '700' }}>
+              {updateState.status === 'ready' ? `Update Ready (v${updateState.version})` : `Downloading Update v${updateState.version}`}
+            </div>
+            <div style={{ fontSize: '12px', color: '#94a3b8' }}>
+              {updateState.status === 'ready' ? `Restarting in ${updateState.countdown}s...` : `Automatic background download ${updateState.speed ? `(${updateState.speed})` : ''}`}
+            </div>
+          </div>
+        </div>
+        <button 
+          onClick={() => {
+            if (countdownTimerRef.current) clearInterval(countdownTimerRef.current);
+            setUpdateState(null);
+          }}
+          style={{ background: 'none', border: 'none', color: '#64748b', cursor: 'pointer', padding: '4px', fontSize: '14px' }}
+        >
+          ✕
+        </button>
+      </div>
+
+      {updateState.status === 'downloading' && (
+        <div style={{ width: '100%', height: '6px', background: 'rgba(255,255,255,0.1)', borderRadius: '3px', overflow: 'hidden' }}>
+          <div style={{
+            width: `${updateState.percent}%`,
+            height: '100%',
+            background: 'linear-gradient(90deg, #3b82f6, #60a5fa)',
+            transition: 'width 0.3s ease'
+          }} />
+        </div>
+      )}
+
+      {updateState.status === 'ready' && (
+        <div style={{ display: 'flex', gap: '8px', marginTop: '4px' }}>
+          <button
+            onClick={() => {
+              if (countdownTimerRef.current) clearInterval(countdownTimerRef.current);
+              window.electronAPI?.installUpdate?.();
+            }}
+            style={{
+              flex: 1,
+              padding: '8px 14px',
+              background: '#10b981',
+              color: '#fff',
+              border: 'none',
+              borderRadius: '8px',
+              fontWeight: '700',
+              fontSize: '13px',
+              cursor: 'pointer'
+            }}
+          >
+            Restart Now
+          </button>
+          <button
+            onClick={() => {
+              if (countdownTimerRef.current) clearInterval(countdownTimerRef.current);
+              setUpdateState(null);
+            }}
+            style={{
+              padding: '8px 14px',
+              background: 'rgba(255,255,255,0.1)',
+              color: '#cbd5e1',
+              border: 'none',
+              borderRadius: '8px',
+              fontWeight: '600',
+              fontSize: '13px',
+              cursor: 'pointer'
+            }}
+          >
+            Later
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function AppContent({ hoardings, setHoardings }) {
   const location = useLocation();
   const isAdminPath = location.pathname.startsWith('/admin');
@@ -31,6 +182,7 @@ function AppContent({ hoardings, setHoardings }) {
 
   return (
     <div className="app-container">
+      <AutoUpdateBar />
       {!hideNav && <Navbar />}
       <main>
         <Routes>
