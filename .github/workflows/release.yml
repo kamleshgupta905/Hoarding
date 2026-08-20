@@ -35,9 +35,17 @@ jobs:
       - name: Auto-Publish Draft Releases
         if: success()
         run: |
-          gh api repos/${{ github.repository }}/releases --jq '.[] | select(.draft == true) | .id' | ForEach-Object {
-            Write-Host "Publishing Draft Release ID: $_"
-            gh api -X PATCH "repos/${{ github.repository }}/releases/$_" -F draft=false
+          $drafts = gh api repos/${{ github.repository }}/releases --jq '.[] | select(.draft == true) | {id: .id, hasYml: (.assets | map(.name) | contains(["latest.yml"]))}' | ConvertFrom-Json
+          if ($drafts) {
+            foreach ($d in $drafts) {
+              if ($d.hasYml) {
+                Write-Host "Publishing Full Release ID: $($d.id)"
+                gh api -X PATCH "repos/${{ github.repository }}/releases/$($d.id)" -F draft=false
+              } else {
+                Write-Host "Cleaning redundant draft ID: $($d.id)"
+                gh api -X DELETE "repos/${{ github.repository }}/releases/$($d.id)"
+              }
+            }
           }
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
