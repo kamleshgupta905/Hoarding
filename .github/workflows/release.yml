@@ -31,3 +31,13 @@ jobs:
         run: npm run electron:release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Auto-Publish Draft Releases
+        if: success()
+        run: |
+          gh api repos/${{ github.repository }}/releases --jq '.[] | select(.draft == true) | .id' | ForEach-Object {
+            Write-Host "Publishing Draft Release ID: $_"
+            gh api -X PATCH "repos/${{ github.repository }}/releases/$_" -F draft=false
+          }
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
