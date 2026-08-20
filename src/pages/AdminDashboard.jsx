@@ -58,6 +58,15 @@ const AdminDashboard = ({ hoardings, setHoardings }) => {
     const [inventoryCategoryFilter, setInventoryCategoryFilter] = useState('All');
     const [inventoryPriceFilter, setInventoryPriceFilter] = useState('All');
     const [isInventoryFilterOpen, setIsInventoryFilterOpen] = useState(false);
+    const [toast, setToast] = useState(null); // { message: string, type: 'success' | 'error' | 'info' }
+
+    const showToast = (message, type = 'success') => {
+        setToast({ message, type });
+        setTimeout(() => {
+            setToast(current => (current && current.message === message ? null : current));
+        }, 4000);
+    };
+
     const [isLoading, setIsLoading] = useState(false);
     const [fileProcessing, setFileProcessing] = useState(null);
     const [processingSeconds, setProcessingSeconds] = useState(0);
@@ -79,7 +88,7 @@ const AdminDashboard = ({ hoardings, setHoardings }) => {
     const [dailyImages, setDailyImages] = useState([]); // [{file, preview, status, location, aiLoading}]
     const [selectedAssetFile, setSelectedAssetFile] = useState(null);
     const [isDragging, setIsDragging] = useState(false);
-    const [deleteTarget, setDeleteTarget] = useState(null);
+    const [deleteTarget, setDeleteTarget] = useState(null); // { site, index, name, city, locality } or string
     const [bulkDeleteTarget, setBulkDeleteTarget] = useState(null);
     const [bulkDeleteConfirmText, setBulkDeleteConfirmText] = useState('');
     const [selectedProposalKeys, setSelectedProposalKeys] = useState([]);
@@ -197,10 +206,10 @@ const AdminDashboard = ({ hoardings, setHoardings }) => {
             if (freshData && freshData.length > 0) {
                 setHoardings(freshData);
                 localStorage.setItem('hoardings_cache', JSON.stringify(freshData));
-                alert("✅ Data Synced with Google Sheet!");
+                showToast("Data Synced with Google Sheet!", "success");
             }
         } catch (err) {
-            alert("❌ Sync Failed: " + err.message);
+            showToast("Sync Failed: " + err.message, "error");
         } finally {
             setIsLoading(false);
         }
@@ -861,7 +870,7 @@ const AdminDashboard = ({ hoardings, setHoardings }) => {
                 fileData: fileData,
                 mimeType: mimeType
             });
-            alert("✅ Asset Added Successfully!");
+            showToast("Asset Added Successfully!", "success");
             setHoardings(prev => {
                 const next = [...prev, fullCleanFields];
                 try {
@@ -875,7 +884,7 @@ const AdminDashboard = ({ hoardings, setHoardings }) => {
             setFormData({});
             setSelectedAssetFile(null);
         } catch (err) {
-            alert("Error adding asset: " + err.message);
+            showToast("Error adding asset: " + err.message, "error");
         } finally {
             setIsLoading(false);
         }
@@ -958,7 +967,7 @@ const AdminDashboard = ({ hoardings, setHoardings }) => {
                 fileData: fileData,
                 mimeType: mimeType
             });
-            alert("✅ Asset Updated Successfully!");
+            showToast("Asset Updated Successfully!", "success");
             setHoardings(prev => {
                 const targetKey = String(selectedHoarding["Location "] || selectedHoarding.Location || selectedHoarding["Locality Site Location"] || '').trim().toLowerCase();
                 const next = prev.map(h => {
@@ -976,21 +985,27 @@ const AdminDashboard = ({ hoardings, setHoardings }) => {
             setFormData({});
             setSelectedAssetFile(null);
         } catch (err) {
-            alert("Error updating asset: " + err.message);
+            showToast("Error updating asset: " + err.message, "error");
         } finally {
             setIsLoading(false);
         }
     };
 
-    const handleDeleteAsset = async (siteName) => {
-        if (!siteName) return;
-        const targetClean = String(siteName).trim().toLowerCase();
+    const handleDeleteAsset = async (target) => {
+        if (!target) return;
+        const targetSiteObj = typeof target === 'object' ? target.site : null;
+        const targetIndex = typeof target === 'object' ? target.index : -1;
+        const siteName = typeof target === 'object' ? target.name : String(target).trim();
+        const targetClean = siteName ? siteName.trim().toLowerCase() : '';
 
         // Optimistically remove from state immediately
         setHoardings(prev => {
-            const next = prev.filter(h => {
-                const hName = String(h["Locality Site Location"] || h["Location "] || h.Location || '').trim().toLowerCase();
-                return hName !== targetClean;
+            const next = prev.filter((h, idx) => {
+                if (targetSiteObj && h === targetSiteObj) return false;
+                if (targetIndex !== -1 && idx === targetIndex && !targetClean) return false;
+                const hName = String(h["Locality Site Location"] || h["Location "] || h.Location || h.site_name || '').trim().toLowerCase();
+                if (targetClean && hName === targetClean) return false;
+                return true;
             });
             try {
                 localStorage.setItem('hoardings_cache', JSON.stringify(next));
@@ -1001,13 +1016,16 @@ const AdminDashboard = ({ hoardings, setHoardings }) => {
 
         setIsLoading(true);
         try {
-            await syncToGoogleSheet({
-                action: 'deleteHoarding',
-                siteName: siteName
-            });
-            alert("✅ Asset Deleted!");
+            if (siteName) {
+                await syncToGoogleSheet({
+                    action: 'deleteHoarding',
+                    siteName: siteName
+                });
+            }
+            showToast("Asset Deleted Successfully!", "success");
         } catch (err) {
             console.error("Delete sync warning:", err);
+            showToast("Asset deleted from dashboard.", "info");
         } finally {
             setIsLoading(false);
             setDeleteTarget(null);
@@ -2057,52 +2075,100 @@ const AdminDashboard = ({ hoardings, setHoardings }) => {
                 </div>
             )}
 
-            {/* Custom Delete Confirmation Modal */}
+            {/* 🗑️ Custom Premium Glassmorphic Delete Confirmation Modal */}
             {deleteTarget && (
-                <div className="modal-overlay">
-                    <div className="modal-card confirmation-modal animate-in" style={{ maxWidth: '450px' }}>
-                        <div className="modal-header">
-                            <h3 style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                                <XCircle size={22} color="#f87171" /> Confirm Delete
+                <div className="modal-overlay" style={{ zIndex: 99999 }}>
+                    <div className="modal-card confirmation-modal animate-in" style={{ 
+                        maxWidth: '460px',
+                        background: '#1e293b',
+                        border: '1px solid rgba(248, 113, 113, 0.3)',
+                        borderRadius: '20px',
+                        boxShadow: '0 25px 60px -15px rgba(0, 0, 0, 0.7), 0 0 30px rgba(248, 113, 113, 0.15)',
+                        overflow: 'hidden'
+                    }}>
+                        <div className="modal-header" style={{ borderBottom: '1px solid rgba(255, 255, 255, 0.08)', padding: '20px 24px' }}>
+                            <h3 style={{ display: 'flex', alignItems: 'center', gap: '10px', color: '#f87171', margin: 0, fontSize: '1.15rem' }}>
+                                <Trash2 size={22} color="#f87171" /> Confirm Deletion
                             </h3>
-                            <button onClick={() => setDeleteTarget(null)}><X size={20} /></button>
+                            <button onClick={() => setDeleteTarget(null)} style={{ color: '#94a3b8' }}><X size={20} /></button>
                         </div>
                         <div className="modal-body" style={{ padding: '24px' }}>
-                            <p style={{ fontSize: '15px', lineHeight: '1.5', color: '#808191' }}>
-                                Are you sure you want to delete <strong style={{ color: '#fff' }}>"{deleteTarget}"</strong>? 
-                                This operation is permanent and cannot be reversed.
+                            <p style={{ fontSize: '15px', lineHeight: '1.6', color: '#cbd5e1', margin: 0 }}>
+                                Are you sure you want to permanently delete <strong style={{ color: '#ffffff', fontWeight: '700' }}>"{typeof deleteTarget === 'object' ? deleteTarget.name : deleteTarget}"</strong>?
                             </p>
+                            {typeof deleteTarget === 'object' && (deleteTarget.city || deleteTarget.locality) && (
+                                <div style={{ 
+                                    marginTop: '12px', 
+                                    display: 'inline-flex', 
+                                    alignItems: 'center',
+                                    gap: '6px',
+                                    padding: '6px 14px', 
+                                    background: 'rgba(255,255,255,0.06)', 
+                                    borderRadius: '20px', 
+                                    fontSize: '13px', 
+                                    color: '#94a3b8' 
+                                }}>
+                                    📍 {deleteTarget.city} {deleteTarget.locality ? `• ${deleteTarget.locality}` : ''}
+                                </div>
+                            )}
                             <div className="warning-box" style={{ 
                                 marginTop: '20px', 
-                                padding: '15px', 
-                                background: 'rgba(249, 115, 22, 0.08)', 
-                                border: '1px solid rgba(249, 115, 22, 0.2)',
-                                borderLeft: '4px solid #f97316',
-                                borderRadius: '8px',
+                                padding: '14px 16px', 
+                                background: 'rgba(239, 68, 68, 0.08)', 
+                                border: '1px solid rgba(239, 68, 68, 0.25)',
+                                borderLeft: '4px solid #ef4444',
+                                borderRadius: '10px',
                                 display: 'flex',
                                 alignItems: 'flex-start',
                                 gap: '12px',
                                 fontSize: '13px',
-                                color: '#f97316'
+                                color: '#fca5a5'
                             }}>
-                                <Zap size={18} style={{ marginTop: '2px', flexShrink: 0 }} />
-                                <span>Wait! Deleting this will also remove it from the public website and all associated history.</span>
+                                <Zap size={18} style={{ marginTop: '2px', flexShrink: 0, color: '#ef4444' }} />
+                                <span>This operation is permanent. It will immediately remove the site from this dashboard and the live website.</span>
                             </div>
                         </div>
-                        <div className="modal-footer" style={{ background: 'rgba(255,255,255,0.02)', padding: '16px 24px', justifyContent: 'flex-end', gap: '12px' }}>
-                            <button type="button" className="btn-secondary" style={{ padding: '10px 20px' }} onClick={() => setDeleteTarget(null)}>No, Keep it</button>
-                            <button type="button" className="btn-primary-admin danger" style={{ 
-                                padding: '10px 20px', 
-                                background: '#f87171', 
-                                color: 'white',
-                                fontWeight: '600',
-                                border: 'none',
-                                borderRadius: '8px',
-                                cursor: 'pointer'
-                            }} onClick={() => {
-                                handleDeleteAsset(deleteTarget);
-                                setDeleteTarget(null);
-                            }}>Yes, Delete Forever</button>
+                        <div className="modal-footer" style={{ 
+                            background: 'rgba(0,0,0,0.25)', 
+                            padding: '16px 24px', 
+                            display: 'flex', 
+                            justifyContent: 'flex-end', 
+                            gap: '12px',
+                            borderTop: '1px solid rgba(255, 255, 255, 0.06)'
+                        }}>
+                            <button 
+                                type="button" 
+                                className="btn-secondary" 
+                                style={{ 
+                                    padding: '10px 20px',
+                                    background: 'rgba(255,255,255,0.06)',
+                                    color: '#cbd5e1',
+                                    border: '1px solid rgba(255,255,255,0.1)',
+                                    borderRadius: '8px',
+                                    fontWeight: '600',
+                                    cursor: 'pointer'
+                                }} 
+                                onClick={() => setDeleteTarget(null)}
+                            >
+                                No, Keep it
+                            </button>
+                            <button 
+                                type="button" 
+                                className="btn-primary-admin danger" 
+                                style={{ 
+                                    padding: '10px 24px', 
+                                    background: 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)', 
+                                    color: 'white',
+                                    fontWeight: '700',
+                                    border: 'none',
+                                    borderRadius: '8px',
+                                    cursor: 'pointer',
+                                    boxShadow: '0 4px 14px rgba(239, 68, 68, 0.4)'
+                                }} 
+                                onClick={() => handleDeleteAsset(deleteTarget)}
+                            >
+                                Yes, Delete Site
+                            </button>
                         </div>
                     </div>
                 </div>
@@ -3342,10 +3408,14 @@ const AdminDashboard = ({ hoardings, setHoardings }) => {
                                                         <button 
                                                             className="btn-icon-small delete" 
                                                             onClick={() => {
-                                                                const targetSite = h["Locality Site Location"] || h["Location "] || h.Location;
-                                                                if (window.confirm(`Are you sure you want to delete "${targetSite}"? This cannot be undone.`)) {
-                                                                    handleDeleteAsset(targetSite);
-                                                                }
+                                                                const siteTitle = h["Locality Site Location"] || h["Location "] || h.Location || h.site_name || (h.City ? `${h.City} Site` : "Hoarding Site");
+                                                                setDeleteTarget({
+                                                                    site: h,
+                                                                    index: i,
+                                                                    name: siteTitle,
+                                                                    city: h.City || h.city || '',
+                                                                    locality: h.Locality || h.Area || ''
+                                                                });
                                                             }}
                                                             title="Delete Site"
                                                         >
@@ -3569,6 +3639,21 @@ const AdminDashboard = ({ hoardings, setHoardings }) => {
                         </div>
                         <button type="button" onClick={() => setReviewNotice(null)} title="Close notification" aria-label="Close notification"><X size={17} /></button>
                     </aside>
+                )}
+
+                {/* 🍞 Floating Glassmorphic Toast Notifications */}
+                {toast && (
+                    <div className="admin-toast-container">
+                        <div className={`admin-toast ${toast.type}`}>
+                            {toast.type === 'success' && <CheckCircle size={18} color="#10b981" />}
+                            {toast.type === 'error' && <XCircle size={18} color="#f43f5e" />}
+                            {toast.type === 'info' && <Zap size={18} color="#3b82f6" />}
+                            <span>{toast.message}</span>
+                            <button type="button" onClick={() => setToast(null)} title="Dismiss">
+                                <X size={14} />
+                            </button>
+                        </div>
+                    </div>
                 )}
             </main>
         </div>
