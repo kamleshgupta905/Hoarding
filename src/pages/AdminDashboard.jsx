@@ -997,14 +997,24 @@ const AdminDashboard = ({ hoardings, setHoardings }) => {
         const targetIndex = typeof target === 'object' ? target.index : -1;
         const siteName = typeof target === 'object' ? target.name : String(target).trim();
         const targetClean = siteName ? siteName.trim().toLowerCase() : '';
+        const targetCity = typeof target === 'object' ? String(target.city || '').trim().toLowerCase() : '';
+        const targetLocality = typeof target === 'object' ? String(target.locality || '').trim().toLowerCase() : '';
 
-        // Optimistically remove from state immediately
+        // 1. Immediately dismiss modal so UI is fully responsive
+        setDeleteTarget(null);
+
+        // 2. Optimistically remove from state immediately
         setHoardings(prev => {
             const next = prev.filter((h, idx) => {
                 if (targetSiteObj && h === targetSiteObj) return false;
-                if (targetIndex !== -1 && idx === targetIndex && !targetClean) return false;
+                if (targetIndex !== -1 && idx === targetIndex) return false;
                 const hName = String(h["Locality Site Location"] || h["Location "] || h.Location || h.site_name || '').trim().toLowerCase();
-                if (targetClean && hName === targetClean) return false;
+                const hCity = String(h.City || h.city || '').trim().toLowerCase();
+                const hLocality = String(h.Locality || h.Area || '').trim().toLowerCase();
+
+                if (targetClean && targetClean !== 'hoarding site' && hName === targetClean) return false;
+                if (targetCity && targetLocality && hCity === targetCity && hLocality === targetLocality) return false;
+                if ((!hName || hName === 'hoarding site') && hCity === targetCity && hLocality === targetLocality) return false;
                 return true;
             });
             try {
@@ -1014,21 +1024,20 @@ const AdminDashboard = ({ hoardings, setHoardings }) => {
             return next;
         });
 
-        setIsLoading(true);
+        showToast("Asset Deleted Successfully!", "success");
+
+        // 3. Fire-and-forget sync to Google Sheets in background without freezing the UI
         try {
-            if (siteName) {
-                await syncToGoogleSheet({
-                    action: 'deleteHoarding',
-                    siteName: siteName
-                });
-            }
-            showToast("Asset Deleted Successfully!", "success");
+            syncToGoogleSheet({
+                action: 'deleteHoarding',
+                siteName: siteName || targetLocality || 'Hoarding Site',
+                city: targetCity,
+                locality: targetLocality
+            }).catch(err => {
+                console.error("Delete background sync warning:", err);
+            });
         } catch (err) {
-            console.error("Delete sync warning:", err);
-            showToast("Asset deleted from dashboard.", "info");
-        } finally {
-            setIsLoading(false);
-            setDeleteTarget(null);
+            console.error("Delete background sync warning:", err);
         }
     };
 

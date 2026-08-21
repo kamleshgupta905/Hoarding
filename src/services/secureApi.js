@@ -142,29 +142,37 @@ export const submitAdminOperation = async ({ type, payload = {}, siteId = '', ba
   const sessionToken = getAdminSession();
   if (!sessionToken) throw new Error('Admin session required.');
 
-  await postOpaque({
+  const postPromise = postOpaque({
     action: 'submitOperation',
     sessionToken,
     operation: { operationId, type, payload, siteId, baseVersion }
-  });
+  }).catch(err => console.warn('Operation post warning:', err));
 
-  const attempts = options.attempts ?? 30;
-  for (let attempt = 0; attempt < attempts; attempt += 1) {
-    const status = await getOperationStatus(operationId);
-    if (status.status === 'COMPLETED') return { ...status.result, operationId, status: status.status };
-    if (status.status === 'CONFLICT') {
-      const error = new Error(status.error || 'This record changed on another device.');
-      error.code = 'CONFLICT';
-      error.conflict = status.result;
-      throw error;
-    }
-    if (status.status === 'FAILED') throw new Error(status.error || 'Operation failed.');
-    await sleep(Math.min(3000, POLL_DELAY_MS + attempt * 120));
+  if (options.async || type === 'deleteHoarding' || (payload && payload.action === 'deleteHoarding')) {
+    return { status: 'QUEUED', operationId };
   }
-  const timeout = new Error('Operation is still processing. It will continue in the sync queue.');
-  timeout.code = 'PENDING';
-  timeout.operationId = operationId;
-  throw timeout;
+
+  await postPromise;
+
+  const attempts = options.attempts ?? 3;
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    try {
+      const status = await getOperationStatus(operationId);
+      if (status && status.status === 'COMPLETED') return { ...status.result, operationId, status: status.status };
+      if (status && status.status === 'CONFLICT') {
+        const error = new Error(status.error || 'This record changed on another device.');
+        error.code = 'CONFLICT';
+        error.conflict = status.result;
+        throw error;
+      }
+      if (status && status.status === 'FAILED') throw new Error(status.error || 'Operation failed.');
+    } catch (err) {
+      if (err.code === 'CONFLICT' || (err.message && err.message.includes('failed'))) throw err;
+    }
+    await sleep(Math.min(1500, POLL_DELAY_MS + attempt * 120));
+  }
+
+  return { status: 'QUEUED', operationId };
 };
 
 export const getStaffTokenFromLocation = () => {
