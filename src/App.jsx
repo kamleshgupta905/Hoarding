@@ -277,23 +277,15 @@ function App() {
     );
     if (isTyping && !force) return;
 
-    const lastUpdate = parseInt(localStorage.getItem('last_hoardings_update') || '0', 10);
-    const recentlyChangedLocally = Date.now() - lastUpdate < LOCAL_SYNC_PRESERVATION_MS;
-    if (recentlyChangedLocally && !force) return;
-
-    if (!force && Date.now() - lastFullRefreshRef.current < 5 * 60 * 1000) {
-      try {
-        const version = await getChangeVersion();
-        if (version.success && changeVersionRef.current === version.version) return;
-        if (version.success) changeVersionRef.current = version.version;
-      } catch (error) {
-        console.warn('Change version check failed; using cached data.', error);
-        return;
+    try {
+      const data = await fetchHoardings();
+      if (data && data.length > 0) {
+        lastFullRefreshRef.current = Date.now();
+        applyFreshHoardings(data);
       }
+    } catch (error) {
+      console.warn('Auto-refresh background notice:', error);
     }
-    const data = await fetchHoardings();
-    lastFullRefreshRef.current = Date.now();
-    applyFreshHoardings(data);
   }, [applyFreshHoardings]);
 
   useEffect(() => {

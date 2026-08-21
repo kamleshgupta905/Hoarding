@@ -142,7 +142,8 @@ export const getDeletedSites = () => {
 
 export const fetchHoardings = async () => {
   try {
-    const rawData = await requestText(GOOGLE_SHEET_URL, { cache: 'no-store' }, 45000);
+    const fetchUrl = `${GOOGLE_SHEET_URL}&_t=${Date.now()}`;
+    const rawData = await requestText(fetchUrl, { cache: 'no-store' }, 45000);
     const parsed = Papa.parse(rawData, { header: true, skipEmptyLines: true });
     if (!parsed.data || parsed.data.length === 0) throw new Error('No data found in spreadsheet');
     

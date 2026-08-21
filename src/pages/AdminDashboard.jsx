@@ -206,8 +206,14 @@ const AdminDashboard = ({ hoardings, setHoardings }) => {
             const freshData = await fetchHoardings();
             if (freshData && freshData.length > 0) {
                 setHoardings(freshData);
-                localStorage.setItem('hoardings_cache', JSON.stringify(freshData));
-                showToast("Data Synced with Google Sheet!", "success");
+                try {
+                    localStorage.setItem('hoardings_cache', JSON.stringify(freshData));
+                    localStorage.setItem('last_hoardings_update', Date.now().toString());
+                } catch {}
+                showToast(`Data Synced! Loaded ${freshData.length} sites from Google Sheets.`, "success");
+                window.dispatchEvent(new CustomEvent('hoardings:sync-requested', { detail: { action: 'manual-sync' } }));
+            } else {
+                showToast("No data returned from Google Sheets.", "warning");
             }
         } catch (err) {
             showToast("Sync Failed: " + err.message, "error");
