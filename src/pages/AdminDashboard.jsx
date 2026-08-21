@@ -889,6 +889,11 @@ const AdminDashboard = ({ hoardings, setHoardings }) => {
                 try {
                     localStorage.setItem('hoardings_cache', JSON.stringify(next));
                     localStorage.setItem('last_hoardings_update', Date.now().toString());
+                    
+                    const localRaw = localStorage.getItem('local_added_sites_cache');
+                    const localList = localRaw ? JSON.parse(localRaw) : [];
+                    localList.push(fullCleanFields);
+                    localStorage.setItem('local_added_sites_cache', JSON.stringify(localList));
                 } catch {}
                 return next;
             });
@@ -1066,6 +1071,19 @@ const AdminDashboard = ({ hoardings, setHoardings }) => {
             try {
                 localStorage.setItem('hoardings_cache', JSON.stringify(next));
                 localStorage.setItem('last_hoardings_update', Date.now().toString());
+
+                const localRaw = localStorage.getItem('local_added_sites_cache');
+                if (localRaw) {
+                    const localList = JSON.parse(localRaw);
+                    const filtered = localList.filter(item => {
+                        const id = String(item.UniqueID || item["Unique ID"] || item.ID || '').trim().toLowerCase();
+                        const name = String(item["Location "] || item.Location || item["Locality Site Location"] || '').trim().toLowerCase();
+                        if (targetId && id === targetId) return false;
+                        if (targetClean && name === targetClean) return false;
+                        return true;
+                    });
+                    localStorage.setItem('local_added_sites_cache', JSON.stringify(filtered));
+                }
             } catch {}
             return next;
         });

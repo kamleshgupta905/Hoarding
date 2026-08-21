@@ -228,20 +228,44 @@ function App() {
   const applyFreshHoardings = useCallback((data) => {
     const cleanData = sanitizeHoardings(data);
     if (!cleanData || cleanData.length === 0) return;
-    setHoardings(prev => {
-      if (prev === cleanData) return prev;
-      if (prev.length === cleanData.length && prev[0]?.["Location "] === cleanData[0]?.["Location "] && prev[prev.length - 1]?.["Location "] === cleanData[cleanData.length - 1]?.["Location "]) {
-        const previousJson = JSON.stringify(prev);
-        const nextJson = JSON.stringify(cleanData);
-        if (previousJson === nextJson) return prev;
-      }
-      try {
-        localStorage.setItem('hoardings_cache', JSON.stringify(cleanData));
-      } catch {
-        // Ignore quota error if storage full
-      }
-      return cleanData;
-    });
+
+    // Smart Merge: Keep locally added sites that are not yet in Google Sheet CSV
+    let localAdded = [];
+    try {
+      const raw = localStorage.getItem('local_added_sites_cache');
+      if (raw) localAdded = JSON.parse(raw);
+    } catch {}
+
+    const remainingLocal = [];
+    const mergedList = [...cleanData];
+
+    if (Array.isArray(localAdded)) {
+      localAdded.forEach(localItem => {
+        if (!localItem) return;
+        const localId = String(localItem.UniqueID || localItem["Unique ID"] || localItem.ID || '').trim().toLowerCase();
+        const localName = String(localItem["Location "] || localItem.Location || localItem["Locality Site Location"] || '').trim().toLowerCase();
+        
+        const existsInSheet = cleanData.some(sheetItem => {
+          const sheetId = String(sheetItem.UniqueID || sheetItem["Unique ID"] || sheetItem.ID || '').trim().toLowerCase();
+          const sheetName = String(sheetItem["Location "] || sheetItem.Location || sheetItem["Locality Site Location"] || '').trim().toLowerCase();
+          if (localId && sheetId && localId === sheetId) return true;
+          if (localName && sheetName && localName === sheetName) return true;
+          return false;
+        });
+
+        if (!existsInSheet) {
+          remainingLocal.push(localItem);
+          mergedList.push(localItem);
+        }
+      });
+    }
+
+    try {
+      localStorage.setItem('local_added_sites_cache', JSON.stringify(remainingLocal));
+      localStorage.setItem('hoardings_cache', JSON.stringify(mergedList));
+    } catch {}
+
+    setHoardings(mergedList);
   }, []);
 
   const refreshHoardings = useCallback(async (force = false) => {
