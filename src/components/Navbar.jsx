@@ -21,25 +21,10 @@ const Navbar = () => {
     return (
         <nav className="navbar">
             <div className="container nav-content">
-                <Link to="/" className="logo" onClick={closeMenu} style={{ display: 'flex', alignItems: 'center', gap: '8px', textDecoration: 'none' }}>
-                    <span style={{ 
-                        background: 'linear-gradient(135deg, #f59e0b 0%, #ec4899 50%, #8b5cf6 100%)',
-                        WebkitBackgroundClip: 'text',
-                        WebkitTextFillColor: 'transparent',
-                        fontWeight: '900',
-                        fontSize: '1.4rem',
-                        letterSpacing: '-0.3px'
-                    }}>
-                        HEERA
-                    </span>
-                    <span style={{ 
-                        color: '#f8fafc', 
-                        fontWeight: '700', 
-                        fontSize: '1.15rem',
-                        letterSpacing: '0.2px'
-                    }}>
-                        ADVERTISING
-                    </span>
+                <Link to="/" className="logo" onClick={closeMenu} style={{ display: 'flex', alignItems: 'center', gap: '10px', textDecoration: 'none' }}>
+                    <div style={{ background: '#ffffff', padding: '3px 8px', borderRadius: '8px', display: 'flex', alignItems: 'center', boxShadow: '0 2px 8px rgba(0,0,0,0.15)' }}>
+                        <img src="/hira-logo.png" alt="HIRA Advertising" style={{ height: '36px', width: 'auto', display: 'block', objectFit: 'contain' }} />
+                    </div>
                 </Link>
 
                 <div className={`nav-links ${isMenuOpen ? 'open' : ''}`}>

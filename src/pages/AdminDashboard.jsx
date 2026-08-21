@@ -2303,14 +2303,11 @@ const AdminDashboard = ({ hoardings, setHoardings }) => {
 
             {/* Side Navigation */}
             <aside className={`admin-sidebar ${isMobileMenuOpen ? 'mobile-open' : ''}`}>
-                <div className="sidebar-logo">
-                    <div className="logo-icon" style={{ background: 'linear-gradient(135deg, #f59e0b 0%, #ec4899 50%, #8b5cf6 100%)' }}>
-                        <Sparkles size={20} color="white" strokeWidth={2.4} />
+                <div className="sidebar-logo" style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                    <div style={{ background: '#ffffff', padding: '3px 8px', borderRadius: '8px', display: 'flex', alignItems: 'center', boxShadow: '0 2px 8px rgba(0,0,0,0.15)' }}>
+                        <img src="/hira-logo.png" alt="HIRA Advertising" style={{ height: '32px', width: 'auto', display: 'block', objectFit: 'contain' }} />
                     </div>
-                    <div className="sidebar-brand-wrap">
-                        <span className="brand-title" style={{ letterSpacing: '-0.3px', fontWeight: '800' }}>Heera Ads</span>
-                        <span className="brand-badge">ADMIN</span>
-                    </div>
+                    <span className="brand-badge" style={{ marginLeft: 'auto' }}>ADMIN</span>
                 </div>
 
                 <div className="menu-group">

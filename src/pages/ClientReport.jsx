@@ -52,9 +52,11 @@ const ClientReport = ({ hoardings }) => {
             <header className="portal-header animate-in">
                 <div className="container">
                     <div className="header-top">
-                        <div className="brand-logo">
-                            <div className="icon-box"><ShieldCheck size={20} color="white" /></div>
-                            <span>Heera Advertising Live Portal</span>
+                        <div className="brand-logo" style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                            <div style={{ background: '#ffffff', padding: '3px 8px', borderRadius: '8px', display: 'flex', alignItems: 'center' }}>
+                                <img src="/hira-logo.png" alt="HIRA Advertising" style={{ height: '32px', width: 'auto', display: 'block' }} />
+                            </div>
+                            <span style={{ fontSize: '1.1rem', fontWeight: '600' }}>Live Campaign Portal</span>
                         </div>
                         <div className="header-actions">
                             <button className="glass-btn" onClick={() => {

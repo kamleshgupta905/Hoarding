@@ -8,8 +8,10 @@ const Footer = () => {
         <footer className="footer">
             <div className="container footer-grid">
                 <div className="footer-company-info">
-                    <div className="footer-logo">
-                        <span className="logo-accent">Heera</span> Advertising
+                    <div className="footer-logo" style={{ marginBottom: '14px' }}>
+                        <div style={{ background: '#ffffff', padding: '4px 10px', borderRadius: '8px', display: 'inline-flex', alignItems: 'center' }}>
+                            <img src="/hira-logo.png" alt="HIRA Advertising" style={{ height: '36px', width: 'auto', display: 'block' }} />
+                        </div>
                     </div>
                     <p className="footer-desc">
                         Elevating brands through high-impact outdoor storytelling.
