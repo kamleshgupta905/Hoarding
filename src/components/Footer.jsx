@@ -9,7 +9,7 @@ const Footer = () => {
             <div className="container footer-grid">
                 <div className="footer-company-info">
                     <div className="footer-logo">
-                        <span className="logo-accent">Ad</span>Hoardings
+                        <span className="logo-accent">Heera</span> Advertising
                     </div>
                     <p className="footer-desc">
                         Elevating brands through high-impact outdoor storytelling.
@@ -65,7 +65,7 @@ const Footer = () => {
                         <Mail className="reach-icon" />
                         <div>
                             <span>Send us a brief</span>
-                            <strong>media@adhoardings.com</strong>
+                            <strong>media@heeraadvertising.com</strong>
                         </div>
                     </div>
                     <div className="reach-item">
@@ -87,7 +87,7 @@ const Footer = () => {
 
             <div className="footer-legal">
                 <div className="container legal-flex">
-                    <p>&copy; 2026 AdHoardings Advertising Agency. All rights reserved.</p>
+                    <p>&copy; 2026 Heera Advertising Agency. All rights reserved.</p>
                     <div className="legal-links">
                         <a href="#">Terms of Service</a>
                         <span className="dot"></span>

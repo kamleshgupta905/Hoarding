@@ -11,7 +11,7 @@ function createWindow() {
         height: 900,
         minWidth: 1024,
         minHeight: 700,
-        title: 'AdHoardings Admin Desktop',
+        title: 'Heera Advertising Admin Desktop',
         backgroundColor: '#0f172a',
         show: false,
         webPreferences: {

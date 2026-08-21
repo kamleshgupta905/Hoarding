@@ -175,9 +175,9 @@ const CityList = ({ hoardings }) => {
     return (
         <div className="city-list-page container">
             <Helmet>
-                <title>{isAllCities ? 'All Available Hoardings' : `Hoardings in ${cityName}`} | AdHoardings</title>
+                <title>{isAllCities ? 'All Available Hoardings' : `Hoardings in ${cityName}`} | Heera Advertising</title>
                 <meta name="description" content={`Discover and book premium billboard locations in ${isAllCities ? 'all cities' : cityName}. Verified sites with pricing and availability.`} />
-                <meta name="keywords" content={`hoardings ${cityName}, billboards ${cityName}, outdoor media ${cityName}, advertising sites ${cityName}`} />
+                <meta name="keywords" content={`heera advertising, hoardings ${cityName}, billboards ${cityName}, outdoor media ${cityName}, advertising sites ${cityName}`} />
             </Helmet>
 
             <header className="list-header" role="banner">

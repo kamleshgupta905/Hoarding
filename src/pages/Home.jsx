@@ -47,9 +47,9 @@ const Home = ({ hoardings }) => {
     return (
         <div className="home-page">
             <Helmet>
-                <title>AdHoardings Discovery | Premium Outdoor Advertising in India</title>
-                <meta name="description" content="India's leading platform for premium outdoor advertising discovery. Browse verified hoarding sites, billboards, and unipoles across Delhi, Mumbai, Bangalore and more." />
-                <meta name="keywords" content="billboard advertising, hoarding listings, outdoor media india, unipole ads, OOH advertising" />
+                <title>Heera Advertising | Premium Outdoor Advertising & Billboard Discovery</title>
+                <meta name="description" content="Heera Advertising - India's leading platform for premium outdoor advertising discovery. Browse verified hoarding sites, billboards, and unipoles across Delhi, Mumbai, Bangalore and more." />
+                <meta name="keywords" content="heera advertising, billboard advertising, hoarding listings, outdoor media india, unipole ads, OOH advertising" />
             </Helmet>
 
             <main role="main">

@@ -54,7 +54,7 @@ const ClientReport = ({ hoardings }) => {
                     <div className="header-top">
                         <div className="brand-logo">
                             <div className="icon-box"><ShieldCheck size={20} color="white" /></div>
-                            <span>AdHoardings Live Portal</span>
+                            <span>Heera Advertising Live Portal</span>
                         </div>
                         <div className="header-actions">
                             <button className="glass-btn" onClick={() => {
@@ -174,7 +174,7 @@ const ClientReport = ({ hoardings }) => {
 
             <footer className="portal-footer">
                 <div className="container" style={{ opacity: 0.5 }}>
-                    <p>© 2026 AdHoardings Brand Campaign Portal. All Rights Reserved.</p>
+                    <p>© 2026 Heera Advertising Brand Campaign Portal. All Rights Reserved.</p>
                 </div>
             </footer>
 

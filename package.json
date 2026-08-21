@@ -1,7 +1,7 @@
 {
   "name": "hoarding-discovery",
   "private": true,
-  "version": "1.2.2",
+  "version": "1.2.3",
   "type": "module",
   "engines": {
     "node": ">=20"
@@ -18,9 +18,9 @@
   },
   "main": "electron/main.cjs",
   "build": {
-    "appId": "com.adhoardings.admin",
-    "productName": "AdHoardings Admin",
-    "copyright": "Copyright © 2026 AdHoardings",
+    "appId": "com.heeraadvertising.admin",
+    "productName": "Heera Advertising Admin",
+    "copyright": "Copyright © 2026 Heera Advertising",
     "directories": {
       "output": "dist_electron"
     },
@@ -55,7 +55,7 @@
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "shortcutName": "AdHoardings Admin"
+      "shortcutName": "Heera Advertising Admin"
     }
   },
   "dependencies": {

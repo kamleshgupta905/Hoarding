@@ -21,8 +21,25 @@ const Navbar = () => {
     return (
         <nav className="navbar">
             <div className="container nav-content">
-                <Link to="/" className="logo" onClick={closeMenu}>
-                    Ad<span className="logo-accent">Hoardings</span>
+                <Link to="/" className="logo" onClick={closeMenu} style={{ display: 'flex', alignItems: 'center', gap: '8px', textDecoration: 'none' }}>
+                    <span style={{ 
+                        background: 'linear-gradient(135deg, #f59e0b 0%, #ec4899 50%, #8b5cf6 100%)',
+                        WebkitBackgroundClip: 'text',
+                        WebkitTextFillColor: 'transparent',
+                        fontWeight: '900',
+                        fontSize: '1.4rem',
+                        letterSpacing: '-0.3px'
+                    }}>
+                        HEERA
+                    </span>
+                    <span style={{ 
+                        color: '#f8fafc', 
+                        fontWeight: '700', 
+                        fontSize: '1.15rem',
+                        letterSpacing: '0.2px'
+                    }}>
+                        ADVERTISING
+                    </span>
                 </Link>
 
                 <div className={`nav-links ${isMenuOpen ? 'open' : ''}`}>

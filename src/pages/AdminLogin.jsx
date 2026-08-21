@@ -69,7 +69,7 @@ const AdminLogin = () => {
                     </button>
                 </form>
 
-                <p className="login-footer">Protected by AdHoardings Secure Logic</p>
+                <p className="login-footer">Protected by Heera Advertising Secure Logic</p>
             </div>
         </div>
     );

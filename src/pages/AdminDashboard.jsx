@@ -2304,11 +2304,11 @@ const AdminDashboard = ({ hoardings, setHoardings }) => {
             {/* Side Navigation */}
             <aside className={`admin-sidebar ${isMobileMenuOpen ? 'mobile-open' : ''}`}>
                 <div className="sidebar-logo">
-                    <div className="logo-icon">
-                        <Layers size={20} color="white" strokeWidth={2.4} />
+                    <div className="logo-icon" style={{ background: 'linear-gradient(135deg, #f59e0b 0%, #ec4899 50%, #8b5cf6 100%)' }}>
+                        <Sparkles size={20} color="white" strokeWidth={2.4} />
                     </div>
                     <div className="sidebar-brand-wrap">
-                        <span className="brand-title">AdHoardings</span>
+                        <span className="brand-title" style={{ letterSpacing: '-0.3px', fontWeight: '800' }}>Heera Ads</span>
                         <span className="brand-badge">ADMIN</span>
                     </div>
                 </div>
@@ -2359,7 +2359,7 @@ const AdminDashboard = ({ hoardings, setHoardings }) => {
                         </div>
                         <div className="user-info">
                             <span className="name">Admin Manager</span>
-                            <span className="email">admin@adhoardings.com</span>
+                            <span className="email">admin@heeraadvertising.com</span>
                         </div>
                         <button onClick={handleLogout} className="sidebar-logout-btn" title="Logout">
                             <LogOut size={16} />
