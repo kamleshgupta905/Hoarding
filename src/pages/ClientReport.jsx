@@ -6,6 +6,7 @@ import {
     Share2, Download, CheckCircle2 
 } from 'lucide-react';
 import { getImageUrl } from '../services/dataService';
+import { HIRA_LOGO } from '../assets/hiraLogoData';
 
 const ClientReport = ({ hoardings }) => {
     const { clientName } = useParams();
@@ -54,7 +55,7 @@ const ClientReport = ({ hoardings }) => {
                     <div className="header-top">
                         <div className="brand-logo" style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                             <div style={{ background: '#ffffff', padding: '3px 8px', borderRadius: '8px', display: 'flex', alignItems: 'center' }}>
-                                <img src="/hira-logo.png" alt="HIRA Advertising" style={{ height: '32px', width: 'auto', display: 'block' }} />
+                                <img src={HIRA_LOGO} alt="HIRA Advertising" style={{ height: '32px', width: 'auto', display: 'block' }} />
                             </div>
                             <span style={{ fontSize: '1.1rem', fontWeight: '600' }}>Live Campaign Portal</span>
                         </div>

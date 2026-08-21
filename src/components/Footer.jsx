@@ -1,6 +1,7 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
 import { Mail, Phone, MapPin, Instagram, Facebook, Twitter, Linkedin, Send, ShieldCheck, Globe, Trophy } from 'lucide-react';
+import { HIRA_LOGO } from '../assets/hiraLogoData';
 import './Footer.css';
 
 const Footer = () => {
@@ -10,7 +11,7 @@ const Footer = () => {
                 <div className="footer-company-info">
                     <div className="footer-logo" style={{ marginBottom: '14px' }}>
                         <div style={{ background: '#ffffff', padding: '4px 10px', borderRadius: '8px', display: 'inline-flex', alignItems: 'center' }}>
-                            <img src="/hira-logo.png" alt="HIRA Advertising" style={{ height: '36px', width: 'auto', display: 'block' }} />
+                            <img src={HIRA_LOGO} alt="HIRA Advertising" style={{ height: '36px', width: 'auto', display: 'block' }} />
                         </div>
                     </div>
                     <p className="footer-desc">

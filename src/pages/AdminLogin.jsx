@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Lock, Mail } from 'lucide-react';
 import { loginAdmin } from '../services/secureApi';
+import { HIRA_LOGO } from '../assets/hiraLogoData';
 import './AdminLogin.css';
 
 const AdminLogin = () => {
@@ -30,7 +31,7 @@ const AdminLogin = () => {
             <div className="login-card">
                 <div className="login-header">
                     <div style={{ background: '#ffffff', padding: '6px 14px', borderRadius: '12px', display: 'inline-flex', alignItems: 'center', marginBottom: '16px', boxShadow: '0 4px 14px rgba(0,0,0,0.1)' }}>
-                        <img src="/hira-logo.png" alt="HIRA Advertising" style={{ height: '48px', width: 'auto', display: 'block', objectFit: 'contain' }} />
+                        <img src={HIRA_LOGO} alt="HIRA Advertising" style={{ height: '48px', width: 'auto', display: 'block', objectFit: 'contain' }} />
                     </div>
                     <h2>Admin Portal</h2>
                     <p>Login to manage your media inventory</p>

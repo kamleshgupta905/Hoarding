@@ -15,6 +15,7 @@ import ImageLightbox from '../components/ImageLightbox';
 import { clearAdminSession, getAdminSession, getStaffUploadLink } from '../services/secureApi';
 import { isInternalHeader } from '../core/hoardingSchema';
 import { blobToDataUrl, prepareImageOrientation } from '../core/imageOrientation';
+import { HIRA_LOGO } from '../assets/hiraLogoData';
 import './AdminDashboard.css';
 
 const SHEET_HISTORY_LIMIT = 30;
@@ -2305,7 +2306,7 @@ const AdminDashboard = ({ hoardings, setHoardings }) => {
             <aside className={`admin-sidebar ${isMobileMenuOpen ? 'mobile-open' : ''}`}>
                 <div className="sidebar-logo" style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                     <div style={{ background: '#ffffff', padding: '3px 8px', borderRadius: '8px', display: 'flex', alignItems: 'center', boxShadow: '0 2px 8px rgba(0,0,0,0.15)' }}>
-                        <img src="/hira-logo.png" alt="HIRA Advertising" style={{ height: '32px', width: 'auto', display: 'block', objectFit: 'contain' }} />
+                        <img src={HIRA_LOGO} alt="HIRA Advertising" style={{ height: '32px', width: 'auto', display: 'block', objectFit: 'contain' }} />
                     </div>
                     <span className="brand-badge" style={{ marginLeft: 'auto' }}>ADMIN</span>
                 </div>

@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { MapPin, Search, Menu, X } from 'lucide-react';
+import { HIRA_LOGO } from '../assets/hiraLogoData';
 import './Navbar.css';
 
 const Navbar = () => {
@@ -23,7 +24,7 @@ const Navbar = () => {
             <div className="container nav-content">
                 <Link to="/" className="logo" onClick={closeMenu} style={{ display: 'flex', alignItems: 'center', gap: '10px', textDecoration: 'none' }}>
                     <div style={{ background: '#ffffff', padding: '3px 8px', borderRadius: '8px', display: 'flex', alignItems: 'center', boxShadow: '0 2px 8px rgba(0,0,0,0.15)' }}>
-                        <img src="/hira-logo.png" alt="HIRA Advertising" style={{ height: '36px', width: 'auto', display: 'block', objectFit: 'contain' }} />
+                        <img src={HIRA_LOGO} alt="HIRA Advertising" style={{ height: '36px', width: 'auto', display: 'block', objectFit: 'contain' }} />
                     </div>
                 </Link>
 
