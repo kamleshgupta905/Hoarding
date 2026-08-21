@@ -2086,7 +2086,13 @@ const AdminDashboard = ({ hoardings, setHoardings }) => {
 
             {/* 🗑️ Custom Premium Glassmorphic Delete Confirmation Modal */}
             {deleteTarget && (
-                <div className="modal-overlay" style={{ zIndex: 99999 }}>
+                <div 
+                    className="modal-overlay" 
+                    style={{ zIndex: 99999 }}
+                    onClick={(e) => {
+                        if (e.target === e.currentTarget) setDeleteTarget(null);
+                    }}
+                >
                     <div className="modal-card confirmation-modal animate-in" style={{ 
                         maxWidth: '460px',
                         background: '#1e293b',
@@ -2099,7 +2105,7 @@ const AdminDashboard = ({ hoardings, setHoardings }) => {
                             <h3 style={{ display: 'flex', alignItems: 'center', gap: '10px', color: '#f87171', margin: 0, fontSize: '1.15rem' }}>
                                 <Trash2 size={22} color="#f87171" /> Confirm Deletion
                             </h3>
-                            <button onClick={() => setDeleteTarget(null)} style={{ color: '#94a3b8' }}><X size={20} /></button>
+                            <button type="button" onClick={() => setDeleteTarget(null)} style={{ color: '#94a3b8' }}><X size={20} /></button>
                         </div>
                         <div className="modal-body" style={{ padding: '24px' }}>
                             <p style={{ fontSize: '15px', lineHeight: '1.6', color: '#cbd5e1', margin: 0 }}>
@@ -2174,7 +2180,11 @@ const AdminDashboard = ({ hoardings, setHoardings }) => {
                                     cursor: 'pointer',
                                     boxShadow: '0 4px 14px rgba(239, 68, 68, 0.4)'
                                 }} 
-                                onClick={() => handleDeleteAsset(deleteTarget)}
+                                onClick={() => {
+                                    const target = deleteTarget;
+                                    setDeleteTarget(null);
+                                    if (target) handleDeleteAsset(target);
+                                }}
                             >
                                 Yes, Delete Site
                             </button>
