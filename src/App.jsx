@@ -205,6 +205,20 @@ function AppContent({ hoardings, setHoardings }) {
   );
 }
 
+const sanitizeHoardings = (list) => {
+  if (!Array.isArray(list)) return [];
+  return list.filter(item => {
+    if (!item) return false;
+    if (item._DeletedAt) return false;
+    const img = String(item.ImageURL || item['Site Photo'] || item.image || '');
+    if (img.includes('1gxuIMFvFbop-0usp0vf41QbwRgoOKJFr')) return false;
+    const loc = String(item['Location '] || item['Locality Site Location'] || item['Location'] || item.site_name || '').trim();
+    const locality = String(item.Locality || item.Area || item['Area'] || '').trim();
+    if (!loc && (!locality || locality.toLowerCase() === 't' || locality.length <= 1)) return false;
+    return true;
+  });
+};
+
 function App() {
   const [hoardings, setHoardings] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -212,21 +226,21 @@ function App() {
   const lastFullRefreshRef = useRef(0);
 
   const applyFreshHoardings = useCallback((data) => {
-    if (!data || data.length === 0) return;
+    const cleanData = sanitizeHoardings(data);
+    if (!cleanData || cleanData.length === 0) return;
     setHoardings(prev => {
-      if (prev === data) return prev;
-      if (prev.length === data.length && prev[0]?.["Location "] === data[0]?.["Location "] && prev[prev.length - 1]?.["Location "] === data[data.length - 1]?.["Location "]) {
-        // Shallow comparison to avoid heavy JSON.stringify on every tick
+      if (prev === cleanData) return prev;
+      if (prev.length === cleanData.length && prev[0]?.["Location "] === cleanData[0]?.["Location "] && prev[prev.length - 1]?.["Location "] === cleanData[cleanData.length - 1]?.["Location "]) {
         const previousJson = JSON.stringify(prev);
-        const nextJson = JSON.stringify(data);
+        const nextJson = JSON.stringify(cleanData);
         if (previousJson === nextJson) return prev;
       }
       try {
-        localStorage.setItem('hoardings_cache', JSON.stringify(data));
+        localStorage.setItem('hoardings_cache', JSON.stringify(cleanData));
       } catch {
         // Ignore quota error if storage full
       }
-      return data;
+      return cleanData;
     });
   }, []);
 
@@ -293,8 +307,9 @@ function App() {
         if (cachedData) {
           try {
             const parsed = JSON.parse(cachedData);
-            if (Array.isArray(parsed) && parsed.length > 0) {
-              setHoardings(parsed);
+            const sanitized = sanitizeHoardings(parsed);
+            if (Array.isArray(sanitized) && sanitized.length > 0) {
+              setHoardings(sanitized);
               setLoading(false); // Show cached data immediately
             }
           } catch (e) {

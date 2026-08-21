@@ -124,7 +124,19 @@ export const fetchHoardings = async () => {
     const parsed = Papa.parse(rawData, { header: true, skipEmptyLines: true });
     if (!parsed.data || parsed.data.length === 0) throw new Error('No data found in spreadsheet');
     return parsed.data
-      .filter(item => item.City && item.City.toLowerCase() !== 'total')
+      .filter(item => {
+        if (!item || !item.City || item.City.toLowerCase() === 'total') return false;
+        if (item._DeletedAt) return false;
+        
+        const loc = String(item['Location '] || item['Locality Site Location'] || item['Location'] || '').trim();
+        const locality = String(item['Locality'] || item['Area'] || '').trim();
+        const img = String(item.ImageURL || item['Site Photo'] || '');
+        
+        if (img.includes('1gxuIMFvFbop-0usp0vf41QbwRgoOKJFr')) return false;
+        if (!loc && (!locality || locality === 't' || locality.length <= 1)) return false;
+        
+        return true;
+      })
       .map(normalizeHoarding);
   } catch (error) {
     console.error("Live Spreadsheet Fetch Failed:", error);
