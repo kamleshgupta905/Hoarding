@@ -827,15 +827,34 @@ const AdminDashboard = ({ hoardings, setHoardings }) => {
                 delete cleanFields.ImageURL;
             }
 
-            const siteLocationName = String(formData["Location "] || formData.Location || formData["Locality Site Location"] || '').trim();
+            let siteLocationName = String(formData["Location "] || formData.Location || formData["Locality Site Location"] || '').trim();
             const siteCityName = String(formData.City || formData.city || '').trim();
             const siteLocalityName = String(formData.Locality || formData.Area || formData["Area"] || '').trim();
             const price = String(formData["Avg Monthly Cost (INR)"] ?? formData["Rental Per Month"] ?? formData["Avg. monthly Cost"] ?? formData.Price ?? '0').trim();
             const size = String(formData["Size (Large/Medium/Small)"] ?? formData["Size (Large/ Medium/ Small)"] ?? formData.Size ?? '').trim();
             const mediaFormat = String(formData["Media Format (Front Lit / Back Lit / Non Lit)"] ?? formData["Media Format"] ?? formData["Media Type"] ?? '').trim();
 
+            // Auto-generate Site Name if left blank
+            if (!siteLocationName) {
+                if (siteLocalityName && siteCityName) {
+                    siteLocationName = `${siteLocalityName} Site (${siteCityName})`;
+                } else if (siteLocalityName) {
+                    siteLocationName = `${siteLocalityName} Site`;
+                } else if (siteCityName) {
+                    siteLocationName = `${siteCityName} Site ${Date.now().toString().slice(-4)}`;
+                } else {
+                    siteLocationName = `Hoarding Site ${Date.now().toString().slice(-4)}`;
+                }
+            }
+
+            // Auto-generate Unique ID
+            const autoUniqueId = String(formData.UniqueID || formData["Unique ID"] || formData.ID || `ADH-${Date.now().toString().slice(-6)}`);
+
             const fullCleanFields = { 
                 ...cleanFields,
+                UniqueID: autoUniqueId,
+                "Unique ID": autoUniqueId,
+                ID: autoUniqueId,
                 "Locality Site Location": siteLocationName,
                 "Location ": siteLocationName,
                 Location: siteLocationName,
@@ -925,15 +944,24 @@ const AdminDashboard = ({ hoardings, setHoardings }) => {
                 delete cleanFields.ImageURL;
             }
 
-            const siteLocationName = String(formData["Location "] || formData.Location || formData["Locality Site Location"] || selectedHoarding["Location "] || '').trim();
+            let siteLocationName = String(formData["Location "] || formData.Location || formData["Locality Site Location"] || selectedHoarding["Location "] || selectedHoarding.Location || '').trim();
             const siteCityName = String(formData.City || formData.city || selectedHoarding.City || '').trim();
             const siteLocalityName = String(formData.Locality || formData.Area || formData["Area"] || selectedHoarding.Locality || '').trim();
             const price = String(formData["Avg Monthly Cost (INR)"] ?? formData["Rental Per Month"] ?? formData["Avg. monthly Cost"] ?? formData.Price ?? '0').trim();
             const size = String(formData["Size (Large/Medium/Small)"] ?? formData["Size (Large/ Medium/ Small)"] ?? formData.Size ?? '').trim();
             const mediaFormat = String(formData["Media Format (Front Lit / Back Lit / Non Lit)"] ?? formData["Media Format"] ?? formData["Media Type"] ?? '').trim();
 
+            if (!siteLocationName) {
+                siteLocationName = selectedHoarding["Location "] || selectedHoarding.Location || `${siteLocalityName || 'Hoarding'} Site`;
+            }
+
+            const autoUniqueId = String(formData.UniqueID || formData["Unique ID"] || selectedHoarding.UniqueID || selectedHoarding["Unique ID"] || `ADH-${Date.now().toString().slice(-6)}`);
+
             const fullUpdatedFields = {
                 ...cleanFields,
+                UniqueID: autoUniqueId,
+                "Unique ID": autoUniqueId,
+                ID: autoUniqueId,
                 "Locality Site Location": siteLocationName,
                 "Location ": siteLocationName,
                 Location: siteLocationName,
@@ -1857,9 +1885,8 @@ const AdminDashboard = ({ hoardings, setHoardings }) => {
                             <div className="modal-body crud-form">
                                 <div className="form-row three-cols">
                                     <div className="form-group span-two">
-                                        <label>Location (Unique ID)*</label>
+                                        <label>Site Name / Landmark</label>
                                         <input 
-                                            required 
                                             value={formData["Location "] ?? formData.Location ?? formData["Locality Site Location"] ?? ''} 
                                             onChange={e => setFormData({
                                                 ...formData, 
@@ -1867,8 +1894,7 @@ const AdminDashboard = ({ hoardings, setHoardings }) => {
                                                 Location: e.target.value, 
                                                 "Locality Site Location": e.target.value
                                             })}
-                                            disabled={isEditModalOpen}
-                                            placeholder="e.g. Maruti True Value Meerut"
+                                            placeholder="e.g. Maruti True Value / Clock Tower (Optional)"
                                         />
                                     </div>
                                     <div className="form-group">
