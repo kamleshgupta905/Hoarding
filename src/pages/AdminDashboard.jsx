@@ -10,7 +10,7 @@ import {
     BarChart3, PieChart, Activity, Sparkles, ArrowUpRight, Layers, Compass, DollarSign, Award, Flame, Check, ChevronRight
 } from 'lucide-react';
 import { analyzeHoardingImage } from '../services/aiService';
-import { fetchHoardings, compressImage, syncToGoogleSheet, exportProposalExcel, PROPOSAL_COLUMNS, getImageUrl, downloadHoardingImage, fetchStaffUploads, reviewStaffPhoto, detectStaffPhotoOrientation, fetchSheetGrid, saveSheetGrid } from '../services/dataService';
+import { fetchHoardings, compressImage, syncToGoogleSheet, exportProposalExcel, PROPOSAL_COLUMNS, getImageUrl, downloadHoardingImage, fetchStaffUploads, reviewStaffPhoto, detectStaffPhotoOrientation, fetchSheetGrid, saveSheetGrid, addDeletedSite } from '../services/dataService';
 import ImageLightbox from '../components/ImageLightbox';
 import { clearAdminSession, getAdminSession, getStaffUploadLink } from '../services/secureApi';
 import { isInternalHeader } from '../core/hoardingSchema';
@@ -883,14 +883,7 @@ const AdminDashboard = ({ hoardings, setHoardings }) => {
                 ImageURL: previewUrl
             };
 
-            await syncToGoogleSheet({
-                action: 'addHoarding',
-                fields: fullCleanFields,
-                siteName: siteLocationName,
-                fileData: fileData,
-                mimeType: mimeType
-            });
-            showToast("Asset Added Successfully!", "success");
+            // 1. Instantly update UI state & cache
             setHoardings(prev => {
                 const next = [...prev, fullCleanFields];
                 try {
@@ -899,10 +892,19 @@ const AdminDashboard = ({ hoardings, setHoardings }) => {
                 } catch {}
                 return next;
             });
-            window.dispatchEvent(new CustomEvent('hoardings:sync-requested', { detail: { action: 'addHoarding' } }));
+            showToast("Asset Added Successfully!", "success");
             setIsAddModalOpen(false);
             setFormData({});
             setSelectedAssetFile(null);
+
+            // 2. Background sync to Google Sheet
+            syncToGoogleSheet({
+                action: 'addHoarding',
+                fields: fullCleanFields,
+                siteName: siteLocationName,
+                fileData: fileData,
+                mimeType: mimeType
+            }).catch(err => console.warn("Add background sync notice:", err));
         } catch (err) {
             showToast("Error adding asset: " + err.message, "error");
         } finally {
@@ -912,7 +914,6 @@ const AdminDashboard = ({ hoardings, setHoardings }) => {
 
     const handleEditAsset = async (e) => {
         e.preventDefault();
-        setIsLoading(true);
         try {
             let fileData = null;
             let mimeType = null;
@@ -989,19 +990,17 @@ const AdminDashboard = ({ hoardings, setHoardings }) => {
                 ImageURL: updatedImageURL
             };
 
-            await syncToGoogleSheet({
-                action: 'updateHoarding',
-                siteName: selectedHoarding["Location "] || selectedHoarding.Location || selectedHoarding["Locality Site Location"],
-                fields: fullUpdatedFields,
-                fileData: fileData,
-                mimeType: mimeType
-            });
-            showToast("Asset Updated Successfully!", "success");
+            const targetSite = selectedHoarding;
+            const targetKey = String(targetSite["Location "] || targetSite.Location || targetSite["Locality Site Location"] || '').trim().toLowerCase();
+            const targetId = String(targetSite.UniqueID || targetSite["Unique ID"] || targetSite.ID || targetSite._SiteID || '').trim().toLowerCase();
+
+            // 1. Instantly update UI state & cache
             setHoardings(prev => {
-                const targetKey = String(selectedHoarding["Location "] || selectedHoarding.Location || selectedHoarding["Locality Site Location"] || '').trim().toLowerCase();
                 const next = prev.map(h => {
-                    const hKey = String(h["Location "] || h.Location || h["Locality Site Location"] || '').trim().toLowerCase();
-                    return hKey === targetKey ? { ...h, ...fullUpdatedFields } : h;
+                    const isTarget = h === targetSite || 
+                        (targetId && String(h.UniqueID || h["Unique ID"] || h.ID || h._SiteID || '').trim().toLowerCase() === targetId) ||
+                        (targetKey && String(h["Location "] || h.Location || h["Locality Site Location"] || '').trim().toLowerCase() === targetKey);
+                    return isTarget ? { ...h, ...fullUpdatedFields } : h;
                 });
                 try {
                     localStorage.setItem('hoardings_cache', JSON.stringify(next));
@@ -1009,10 +1008,21 @@ const AdminDashboard = ({ hoardings, setHoardings }) => {
                 } catch {}
                 return next;
             });
+
+            showToast("Asset Updated Successfully!", "success");
             setIsEditModalOpen(false);
             setSelectedHoarding(null);
             setFormData({});
             setSelectedAssetFile(null);
+
+            // 2. Background sync to Google Sheet
+            syncToGoogleSheet({
+                action: 'updateHoarding',
+                siteName: targetSite["Location "] || targetSite.Location || targetSite["Locality Site Location"],
+                fields: fullUpdatedFields,
+                fileData: fileData,
+                mimeType: mimeType
+            }).catch(err => console.warn("Update background sync notice:", err));
         } catch (err) {
             showToast("Error updating asset: " + err.message, "error");
         } finally {
@@ -1028,6 +1038,11 @@ const AdminDashboard = ({ hoardings, setHoardings }) => {
         const targetClean = siteName ? siteName.trim().toLowerCase() : '';
         const targetCity = typeof target === 'object' ? String(target.city || '').trim().toLowerCase() : '';
         const targetLocality = typeof target === 'object' ? String(target.locality || '').trim().toLowerCase() : '';
+        const targetId = targetSiteObj ? String(targetSiteObj.UniqueID || targetSiteObj["Unique ID"] || targetSiteObj.ID || targetSiteObj._SiteID || '').trim().toLowerCase() : '';
+
+        // Record in deleted sites cache so it NEVER returns on refresh
+        if (targetId) addDeletedSite(targetId);
+        if (targetClean) addDeletedSite(targetClean);
 
         // 1. Immediately dismiss modal so UI is fully responsive
         setDeleteTarget(null);
@@ -1037,6 +1052,8 @@ const AdminDashboard = ({ hoardings, setHoardings }) => {
             const next = prev.filter((h, idx) => {
                 if (targetSiteObj && h === targetSiteObj) return false;
                 if (targetIndex !== -1 && idx === targetIndex) return false;
+                const hId = String(h.UniqueID || h["Unique ID"] || h.ID || h._SiteID || '').trim().toLowerCase();
+                if (targetId && hId && hId === targetId) return false;
                 const hName = String(h["Locality Site Location"] || h["Location "] || h.Location || h.site_name || '').trim().toLowerCase();
                 const hCity = String(h.City || h.city || '').trim().toLowerCase();
                 const hLocality = String(h.Locality || h.Area || '').trim().toLowerCase();
@@ -1055,19 +1072,15 @@ const AdminDashboard = ({ hoardings, setHoardings }) => {
 
         showToast("Asset Deleted Successfully!", "success");
 
-        // 3. Fire-and-forget sync to Google Sheets in background without freezing the UI
-        try {
-            syncToGoogleSheet({
-                action: 'deleteHoarding',
-                siteName: siteName || targetLocality || 'Hoarding Site',
-                city: targetCity,
-                locality: targetLocality
-            }).catch(err => {
-                console.error("Delete background sync warning:", err);
-            });
-        } catch (err) {
+        // 3. Fire-and-forget sync to Google Sheets in background
+        syncToGoogleSheet({
+            action: 'deleteHoarding',
+            siteName: siteName || targetLocality || 'Hoarding Site',
+            city: targetCity,
+            locality: targetLocality
+        }).catch(err => {
             console.error("Delete background sync warning:", err);
-        }
+        });
     };
 
     const handleBulkDelete = async () => {

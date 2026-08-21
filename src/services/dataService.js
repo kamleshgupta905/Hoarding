@@ -118,11 +118,36 @@ export const normalizeHoarding = (item) => {
  * 🚀 FETCH LIVE DATA
  * Syncs with the spreadsheet and maps columns precisely.
  */
+export const addDeletedSite = (siteKey) => {
+  if (!siteKey) return;
+  try {
+    const clean = String(siteKey).trim().toLowerCase();
+    const raw = localStorage.getItem('deleted_sites_cache');
+    const list = raw ? JSON.parse(raw) : [];
+    if (!list.includes(clean)) {
+      list.push(clean);
+      localStorage.setItem('deleted_sites_cache', JSON.stringify(list));
+    }
+  } catch {}
+};
+
+export const getDeletedSites = () => {
+  try {
+    const raw = localStorage.getItem('deleted_sites_cache');
+    return raw ? new Set(JSON.parse(raw)) : new Set();
+  } catch {
+    return new Set();
+  }
+};
+
 export const fetchHoardings = async () => {
   try {
     const rawData = await requestText(GOOGLE_SHEET_URL, { cache: 'no-store' }, 45000);
     const parsed = Papa.parse(rawData, { header: true, skipEmptyLines: true });
     if (!parsed.data || parsed.data.length === 0) throw new Error('No data found in spreadsheet');
+    
+    const deletedSet = getDeletedSites();
+
     return parsed.data
       .filter(item => {
         if (!item || !item.City || item.City.toLowerCase() === 'total') return false;
@@ -131,9 +156,13 @@ export const fetchHoardings = async () => {
         const loc = String(item['Location '] || item['Locality Site Location'] || item['Location'] || '').trim();
         const locality = String(item['Locality'] || item['Area'] || '').trim();
         const img = String(item.ImageURL || item['Site Photo'] || '');
+        const id = String(item.UniqueID || item['Unique ID'] || item.ID || item._SiteID || '').trim().toLowerCase();
         
         if (img.includes('1gxuIMFvFbop-0usp0vf41QbwRgoOKJFr')) return false;
         if (!loc && (!locality || locality === 't' || locality.length <= 1)) return false;
+        
+        if (id && deletedSet.has(id)) return false;
+        if (loc && deletedSet.has(loc.toLowerCase())) return false;
         
         return true;
       })
