@@ -1,4 +1,7 @@
 import { normalizeText } from '../core/hoardingSchema';
+import { matchGeofencedHoardingWithGemini } from './geminiService';
+
+export { matchGeofencedHoardingWithGemini };
 
 let workerPromise = null;
 
@@ -54,6 +57,25 @@ export const analyzeHoardingImage = async (base64Image, locationList) => {
     if (!base64Image || !Array.isArray(locationList) || !locationList.length) {
         return { matchedLocation: null, status: 'Review', confidence: 0, reasoning: 'Image or master locations missing.' };
     }
+
+    // Try Gemini Vision AI first for highest accuracy
+    try {
+        const topCandidates = locationList.slice(0, 30); // Top slice if list is huge
+        const geminiResult = await matchGeofencedHoardingWithGemini(base64Image, topCandidates);
+        if (geminiResult.matchedIndex >= 0 && geminiResult.matchedSiteName) {
+            return {
+                matchedIndex: geminiResult.matchedIndex,
+                matchedLocation: geminiResult.matchedSiteName,
+                status: geminiResult.status || 'Available',
+                confidence: Math.round((geminiResult.confidence || 0.9) * 100),
+                reasoning: geminiResult.reasoning || 'Gemini Vision matched hoarding location.'
+            };
+        }
+    } catch (e) {
+        console.warn('Gemini batch vision failed, falling back to local OCR:', e);
+    }
+
+    // Local Tesseract OCR fallback
     try {
         const worker = await getOcrWorker();
         const crop = await cropStamp(base64Image);

@@ -905,12 +905,13 @@ function findNearbyHoardings(latitude, longitude) {
   return nearby;
 }
 
-function updateSitePhotoFromStaff(siteName, imageUrl, historyOnly) {
+function updateSitePhotoFromStaff(siteName, imageUrl, historyOnly, siteStatus) {
   var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(CONFIG.SHEET_NAME);
   var headers = getAllHeaders(sheet);
   var idxSite = headers.findIndex(function(h) { return cleanFull(h) === cleanFull(CONFIG.COL_SITE_NAME); });
   var idxImg = findImageColumn(headers);
   var idxHistory = findHistoryColumn(headers);
+  var idxStatus = headers.findIndex(function(h) { return cleanFull(h) === 'status'; });
   if (idxSite === -1 || idxImg === -1) return { success: false, error: 'Site or image column missing' };
 
   var rows = sheet.getDataRange().getValues();
@@ -928,6 +929,7 @@ function updateSitePhotoFromStaff(siteName, imageUrl, historyOnly) {
       }
     }
     if (!historyOnly) sheet.getRange(rowIndex, idxImg + 1).setValue(imageUrl);
+    if (siteStatus && idxStatus !== -1) sheet.getRange(rowIndex, idxStatus + 1).setValue(siteStatus);
     SpreadsheetApp.flush();
     return { success: true, previousImageUrl: previousImage || '' };
   }
@@ -938,10 +940,12 @@ function staffUploadPhoto(data) {
   var latitude = toNumber(data.latitude);
   var longitude = toNumber(data.longitude);
   var accuracy = toNumber(data.accuracy);
+  var matchedSite = String(data.matchedSite || '').trim();
+  var siteStatus = String(data.siteStatus || '').trim();
   var imageUrl = uploadImageToDrive({
     fileData: data.fileData,
     mimeType: data.mimeType || 'image/jpeg',
-    siteName: 'Staff_Capture'
+    siteName: matchedSite || 'Staff_Capture'
   });
   if (!imageUrl) return res({ success: false, error: 'Photo upload failed' });
 
@@ -949,14 +953,24 @@ function staffUploadPhoto(data) {
   var withinAutoRadius = nearby.filter(function(item) { return item.distanceM <= CONFIG.STAFF_AUTO_MATCH_METERS; });
   var suggested = nearby.length ? nearby[0] : null;
   var hasStrongGps = accuracy !== null && accuracy <= CONFIG.STAFF_MAX_AUTO_ACCURACY_METERS;
+  
   var status = hasStrongGps && withinAutoRadius.length === 1 ? 'AUTO_APPROVED' : 'REVIEW_REQUIRED';
   var decision = !hasStrongGps && suggested ? 'GPS_ACCURACY_REVIEW' : (withinAutoRadius.length > 1 ? 'ADJACENT_SITES' : (suggested ? 'GPS_REVIEW' : 'NO_NEARBY_SITE'));
   var approvedSite = '';
   var previousImage = '';
 
-  if (status === 'AUTO_APPROVED') {
+  // 🚀 Gemini Vision AI Geofenced Auto-Approval (Overrides review)
+  if (matchedSite && (data.status === 'AUTO_APPROVED' || data.aiDecision === 'GEMINI_GPS_AUTO_MATCH')) {
+    var aiUpdateResult = updateSitePhotoFromStaff(matchedSite, imageUrl, false, siteStatus);
+    if (aiUpdateResult.success) {
+      status = 'AUTO_APPROVED';
+      decision = data.aiDecision || 'GEMINI_GPS_AUTO_MATCH';
+      approvedSite = matchedSite;
+      previousImage = aiUpdateResult.previousImageUrl;
+    }
+  } else if (status === 'AUTO_APPROVED') {
     approvedSite = withinAutoRadius[0].siteName;
-    var updateResult = updateSitePhotoFromStaff(approvedSite, imageUrl, false);
+    var updateResult = updateSitePhotoFromStaff(approvedSite, imageUrl, false, siteStatus);
     if (!updateResult.success) {
       status = 'REVIEW_REQUIRED';
       decision = 'AUTO_UPDATE_FAILED';
@@ -972,13 +986,13 @@ function staffUploadPhoto(data) {
   getStaffUploadsSheet().appendRow([
     uploadId, capturedAt, new Date().toISOString(), latitude === null ? '' : latitude,
     longitude === null ? '' : longitude, imageUrl, status,
-    suggested ? suggested.siteName : '', suggested ? suggested.distanceM : '',
-    JSON.stringify(nearby.slice(0, 8)), decision, approvedSite,
+    suggested ? suggested.siteName : (matchedSite || ''), suggested ? suggested.distanceM : '',
+    JSON.stringify(nearby.slice(0, 8)), decision, approvedSite || matchedSite,
     status === 'AUTO_APPROVED' ? new Date().toISOString() : '', previousImage,
     data.orientationNormalized ? 'TRUE' : ''
   ]);
   if (status === 'AUTO_APPROVED') bumpChangeVersion_('staff:auto-photo', uploadId);
-  return res({ success: true, uploadId: uploadId, status: status, suggestedSite: suggested ? suggested.siteName : '' });
+  return res({ success: true, uploadId: uploadId, status: status, suggestedSite: approvedSite || (suggested ? suggested.siteName : matchedSite) });
 }
 
 function reviewStaffUpload(data) {

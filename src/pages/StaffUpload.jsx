@@ -1,6 +1,7 @@
 import React from 'react';
-import { Camera, CheckCircle2, MapPin, RefreshCw, RotateCcw, WifiOff, XCircle } from 'lucide-react';
-import { uploadStaffPhoto } from '../services/dataService';
+import { Camera, CheckCircle2, MapPin, MapPinOff, RefreshCw, RotateCcw, WifiOff, XCircle, Sparkles, Check, AlertCircle, Navigation, ChevronRight, Compass, Volume2, VolumeX } from 'lucide-react';
+import { uploadStaffPhoto, fetchHoardings } from '../services/dataService';
+import { matchGeofencedHoardingWithGemini } from '../services/aiService';
 import {
     blobToDataUrl,
     countPendingStaffPhotos,
@@ -21,9 +22,51 @@ const getStoredUploadedCount = () => {
     return Number.isFinite(value) ? value : 0;
 };
 
-const getGps = () => new Promise((resolve) => {
+// 🔊 100% OFFLINE DEVICE-NATIVE SPEECH SYNTHESIS (Zero Internet Required)
+const speakOfflineVoice = (text, rate = 1.02, pitch = 1.0) => {
+    if (typeof window === 'undefined' || !('speechSynthesis' in window)) return;
+    try {
+        window.speechSynthesis.cancel(); // Prevent audio overlapping
+        const utterance = new SpeechSynthesisUtterance(text);
+        utterance.lang = 'hi-IN'; // Hindi / Indian accent
+        utterance.rate = rate;
+        utterance.pitch = pitch;
+        utterance.volume = 1.0; // Maximum volume
+
+        const voices = window.speechSynthesis.getVoices();
+        const hiVoice = voices.find(v => v.lang && (v.lang.includes('hi') || v.lang.includes('IN')));
+        if (hiVoice) utterance.voice = hiVoice;
+
+        window.speechSynthesis.speak(utterance);
+    } catch (err) {
+        console.warn('Offline speech synthesis notice:', err);
+    }
+};
+
+const stopOfflineVoice = () => {
+    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+        try {
+            window.speechSynthesis.cancel();
+        } catch {}
+    }
+};
+
+const distanceMeters = (lat1, lon1, lat2, lon2) => {
+    if (lat1 === null || lon1 === null || lat2 === null || lon2 === null) return Infinity;
+    const R = 6371e3; // Earth radius in meters
+    const rad = Math.PI / 180;
+    const dLat = (lat2 - lat1) * rad;
+    const dLon = (lon2 - lon1) * rad;
+    const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+              Math.cos(lat1 * rad) * Math.cos(lat2 * rad) *
+              Math.sin(dLon / 2) * Math.sin(dLon / 2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    return R * c;
+};
+
+const requestGps = () => new Promise((resolve) => {
     if (!navigator.geolocation) {
-        resolve({ latitude: null, longitude: null, accuracy: null, capturedAt: new Date().toISOString() });
+        resolve({ latitude: null, longitude: null, accuracy: null, capturedAt: new Date().toISOString(), error: 'Aapke phone me Geolocation support nahi hai.' });
         return;
     }
     navigator.geolocation.getCurrentPosition(
@@ -31,10 +74,17 @@ const getGps = () => new Promise((resolve) => {
             latitude: coords.latitude,
             longitude: coords.longitude,
             accuracy: coords.accuracy,
-            capturedAt: new Date().toISOString()
+            capturedAt: new Date().toISOString(),
+            error: null
         }),
-        () => resolve({ latitude: null, longitude: null, accuracy: null, capturedAt: new Date().toISOString() }),
-        { enableHighAccuracy: true, timeout: 10000, maximumAge: 10000 }
+        (err) => {
+            let errorMsg = 'Location on karna zaroori hai.';
+            if (err.code === 1) errorMsg = 'Location permission block hai. Browser settings me allow karein.';
+            else if (err.code === 2) errorMsg = 'Phone ka GPS/Location OFF hai. Kripya phone settings se Location ON karein.';
+            else if (err.code === 3) errorMsg = 'GPS signal dhoondh raha hai. Dobara try karein.';
+            resolve({ latitude: null, longitude: null, accuracy: null, capturedAt: new Date().toISOString(), error: errorMsg, code: err.code });
+        },
+        { enableHighAccuracy: true, timeout: 12000, maximumAge: 0 }
     );
 });
 
@@ -61,8 +111,6 @@ const snapshotVideo = (video) => {
 };
 
 const captureCameraPhoto = (video) => {
-    // A canvas frame uses the same browser-normalized orientation as the live preview.
-    // Raw ImageCapture JPEGs can retain a phone-specific EXIF orientation and appear sideways after upload.
     return snapshotVideo(video);
 };
 
@@ -72,15 +120,35 @@ const StaffUpload = () => {
     const flushingRef = React.useRef(false);
     const flushTimerRef = React.useRef(null);
     const lastCaptureIdRef = React.useRef('');
+    const hoardingsRef = React.useRef([]);
+    const bannerTimerRef = React.useRef(null);
+
     const [pendingCount, setPendingCount] = React.useState(0);
     const [uploadedCount, setUploadedCount] = React.useState(getStoredUploadedCount);
     const [lastGps, setLastGps] = React.useState(null);
+    const [gpsError, setGpsError] = React.useState(null);
+    const [isGpsPromptOpen, setIsGpsPromptOpen] = React.useState(false);
+    const [isGpsLoading, setIsGpsLoading] = React.useState(false);
+    const [isOnline, setIsOnline] = React.useState(typeof navigator !== 'undefined' ? navigator.onLine : true);
+    const [isVoiceMuted, setIsVoiceMuted] = React.useState(false);
+
     const [lastCapture, setLastCapture] = React.useState(null);
     const [cameraError, setCameraError] = React.useState('');
     const [cameraReady, setCameraReady] = React.useState(false);
     const [isCapturing, setIsCapturing] = React.useState(false);
     const [isUploading, setIsUploading] = React.useState(false);
     const [latestStillPending, setLatestStillPending] = React.useState(false);
+    const [matchBanner, setMatchBanner] = React.useState(null); // { siteName, status, distance, confidence, warning, message }
+    const [isAiMatching, setIsAiMatching] = React.useState(false);
+
+    // Fetch hoardings once on mount for instant client-side GPS matching
+    React.useEffect(() => {
+        fetchHoardings().then(data => {
+            if (Array.isArray(data)) {
+                hoardingsRef.current = data;
+            }
+        }).catch(err => console.warn('Could not pre-load hoardings for GPS matching:', err));
+    }, []);
 
     const refreshPendingCount = React.useCallback(async () => {
         setPendingCount(await countPendingStaffPhotos());
@@ -114,7 +182,11 @@ const StaffUpload = () => {
                         latitude: item.latitude,
                         longitude: item.longitude,
                         accuracy: item.accuracy,
-                        orientationNormalized: true
+                        orientationNormalized: true,
+                        matchedSite: item.matchedSite || '',
+                        siteStatus: item.siteStatus || '',
+                        status: item.status || (item.matchedSite ? 'AUTO_APPROVED' : 'REVIEW_REQUIRED'),
+                        aiDecision: item.aiDecision || (item.matchedSite ? 'GEMINI_GPS_AUTO_MATCH' : 'GPS_REVIEW')
                     });
                     await removePendingStaffPhoto(item.id);
                     if (lastCaptureIdRef.current === item.id) setLatestStillPending(false);
@@ -161,51 +233,231 @@ const StaffUpload = () => {
         }
     }, []);
 
+    // 📍 Prompt and Enable GPS
+    const handleEnableLocation = async () => {
+        setIsGpsLoading(true);
+        try {
+            const gps = await requestGps();
+            if (gps.latitude && gps.longitude) {
+                setLastGps(gps);
+                setGpsError(null);
+                setIsGpsPromptOpen(false);
+                stopOfflineVoice();
+            } else {
+                setGpsError(gps.error || 'Location access nahi mila. Phone GPS check karein.');
+                setIsGpsPromptOpen(true);
+            }
+        } finally {
+            setIsGpsLoading(false);
+        }
+    };
+
+    // 📢 RECURRING OFFLINE AI VOICE ALERTS
+    React.useEffect(() => {
+        if (isVoiceMuted) {
+            stopOfflineVoice();
+            return;
+        }
+
+        const runVoiceAlert = () => {
+            if (!isOnline) {
+                speakOfflineVoice('Kripya apna mobile data ya Wi-Fi chalu karein. Internet band hai.');
+            } else if (!lastGps?.latitude) {
+                speakOfflineVoice('Kripya phone ki GPS location on karein aur permission allow karein.');
+            } else {
+                stopOfflineVoice();
+            }
+        };
+
+        // Run after component mount
+        const initialTimer = window.setTimeout(runVoiceAlert, 1400);
+        const loopTimer = window.setInterval(runVoiceAlert, 6000);
+
+        return () => {
+            window.clearTimeout(initialTimer);
+            window.clearInterval(loopTimer);
+            stopOfflineVoice();
+        };
+    }, [isOnline, lastGps, isVoiceMuted]);
+
     React.useEffect(() => {
         migrateLegacyStaffQueue().then(refreshPendingCount);
         startCamera();
-        const retryOnline = () => flushQueue();
-        window.addEventListener('online', retryOnline);
+        const handleOnline = () => {
+            setIsOnline(true);
+            flushQueue();
+        };
+        const handleOffline = () => {
+            setIsOnline(false);
+        };
+        window.addEventListener('online', handleOnline);
+        window.addEventListener('offline', handleOffline);
+
+        // Initial GPS check
+        handleEnableLocation();
 
         let watchId = null;
         if (navigator.geolocation) {
             watchId = navigator.geolocation.watchPosition(
-                ({ coords }) => setLastGps({
-                    latitude: coords.latitude,
-                    longitude: coords.longitude,
-                    accuracy: coords.accuracy,
-                    capturedAt: new Date().toISOString()
-                }),
-                () => {},
+                ({ coords }) => {
+                    setLastGps({
+                        latitude: coords.latitude,
+                        longitude: coords.longitude,
+                        accuracy: coords.accuracy,
+                        capturedAt: new Date().toISOString()
+                    });
+                    setGpsError(null);
+                    setIsGpsPromptOpen(false);
+                    stopOfflineVoice();
+                },
+                (err) => {
+                    let msg = 'GPS signal dhoondh raha hai...';
+                    if (err.code === 1) msg = 'Location permission block hai.';
+                    else if (err.code === 2) msg = 'Phone ka GPS OFF hai.';
+                    setGpsError(msg);
+                },
                 { enableHighAccuracy: true, timeout: 10000, maximumAge: 10000 }
             );
         }
 
         flushQueue();
         return () => {
-            window.removeEventListener('online', retryOnline);
+            window.removeEventListener('online', handleOnline);
+            window.removeEventListener('offline', handleOffline);
             window.clearTimeout(flushTimerRef.current);
+            window.clearTimeout(bannerTimerRef.current);
+            stopOfflineVoice();
             if (watchId !== null) navigator.geolocation.clearWatch(watchId);
             if (streamRef.current) streamRef.current.getTracks().forEach(track => track.stop());
         };
     }, [flushQueue, refreshPendingCount, startCamera]);
 
+    const showMatchBanner = (bannerData) => {
+        window.clearTimeout(bannerTimerRef.current);
+        setMatchBanner(bannerData);
+        bannerTimerRef.current = window.setTimeout(() => {
+            setMatchBanner(null);
+        }, 5500);
+    };
+
     const capturePhoto = async () => {
         if (!videoRef.current || !cameraReady || isCapturing) return;
+
+        // 🛡️ Ensure GPS is ON before taking photo for 50m auto-matching
+        let currentGps = lastGps;
+        if (!currentGps?.latitude) {
+            setIsGpsLoading(true);
+            const freshGps = await requestGps();
+            setIsGpsLoading(false);
+            if (freshGps.latitude && freshGps.longitude) {
+                currentGps = freshGps;
+                setLastGps(freshGps);
+                setGpsError(null);
+                setIsGpsPromptOpen(false);
+            } else {
+                setGpsError(freshGps.error || 'Photo lene se pehle phone ki Location ON karein.');
+                setIsGpsPromptOpen(true);
+                return;
+            }
+        }
+
         setIsCapturing(true);
+        setIsAiMatching(true);
+
         try {
             const blob = await captureCameraPhoto(videoRef.current);
-            const gps = await getGps();
-            setLastGps(gps);
+            const base64Data = await blobToDataUrl(blob);
+
+            // 📍 50M GEOFENCED AI MATCHING
+            let matchedSite = '';
+            let siteStatus = 'Available';
+            let status = 'REVIEW_REQUIRED';
+            let aiDecision = 'GPS_REVIEW';
+            let matchConfidence = 0;
+
+            const allHoardings = hoardingsRef.current;
+            if (currentGps?.latitude && currentGps?.longitude && allHoardings.length > 0) {
+                // Calculate distance to all hoardings
+                const candidatesWithDistance = allHoardings
+                    .map(h => {
+                        const lat = parseFloat(h.Latitude || h.Lat || h.lat);
+                        const lng = parseFloat(h.Longitude || h.Long || h.lng);
+                        if (isNaN(lat) || isNaN(lng)) return null;
+                        const dist = distanceMeters(currentGps.latitude, currentGps.longitude, lat, lng);
+                        return { ...h, distanceM: dist };
+                    })
+                    .filter(Boolean)
+                    .sort((a, b) => a.distanceM - b.distanceM);
+
+                // Primary 50m filter, fallback 75m
+                const candidates50m = candidatesWithDistance.filter(h => h.distanceM <= 50);
+                const candidates = candidates50m.length > 0 
+                    ? candidates50m 
+                    : candidatesWithDistance.filter(h => h.distanceM <= 75);
+
+                if (candidates.length > 0) {
+                    try {
+                        const geminiMatch = await matchGeofencedHoardingWithGemini(base64Data, candidates.slice(0, 4));
+                        if (geminiMatch.matchedSiteName) {
+                            matchedSite = geminiMatch.matchedSiteName;
+                            siteStatus = geminiMatch.status || 'Available';
+                            status = 'AUTO_APPROVED';
+                            aiDecision = 'GEMINI_GPS_AUTO_MATCH';
+                            matchConfidence = Math.round((geminiMatch.confidence || 0.95) * 100);
+
+                            showMatchBanner({
+                                siteName: matchedSite,
+                                status: siteStatus,
+                                distance: Math.round(candidates[0].distanceM),
+                                confidence: matchConfidence
+                            });
+                        } else if (candidates.length === 1 && candidates[0].distanceM <= 35) {
+                            matchedSite = candidates[0]["Location "] || candidates[0].siteName;
+                            siteStatus = 'Available';
+                            status = 'AUTO_APPROVED';
+                            aiDecision = 'GPS_AUTO_MATCH';
+                            showMatchBanner({
+                                siteName: matchedSite,
+                                status: siteStatus,
+                                distance: Math.round(candidates[0].distanceM),
+                                confidence: 85
+                            });
+                        }
+                    } catch (aiErr) {
+                        console.warn('Gemini vision matching error:', aiErr);
+                        if (candidates.length === 1 && candidates[0].distanceM <= 30) {
+                            matchedSite = candidates[0]["Location "] || candidates[0].siteName;
+                            status = 'AUTO_APPROVED';
+                            aiDecision = 'GPS_AUTO_MATCH';
+                            showMatchBanner({
+                                siteName: matchedSite,
+                                status: 'Available',
+                                distance: Math.round(candidates[0].distanceM),
+                                confidence: 80
+                            });
+                        }
+                    }
+                } else {
+                    showMatchBanner({
+                        warning: true,
+                        message: 'No registered hoarding within 75m GPS range.'
+                    });
+                }
+            }
 
             const item = {
                 id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
                 blob,
-                capturedAt: gps.capturedAt,
-                latitude: gps.latitude,
-                longitude: gps.longitude,
-                accuracy: gps.accuracy
+                capturedAt: currentGps?.capturedAt || new Date().toISOString(),
+                latitude: currentGps?.latitude || null,
+                longitude: currentGps?.longitude || null,
+                accuracy: currentGps?.accuracy || null,
+                matchedSite,
+                siteStatus,
+                status,
+                aiDecision
             };
+
             await enqueueStaffPhoto(item);
             await refreshPendingCount();
             setLastCapture({ ...item, preview: URL.createObjectURL(blob) });
@@ -216,6 +468,7 @@ const StaffUpload = () => {
             setCameraError(error instanceof Error ? error.message : 'Photo capture failed. Please try again.');
         } finally {
             setIsCapturing(false);
+            setIsAiMatching(false);
         }
     };
 
@@ -231,10 +484,12 @@ const StaffUpload = () => {
         lastCaptureIdRef.current = '';
         setLatestStillPending(false);
         setLastCapture(null);
+        setMatchBanner(null);
     };
+
     const gpsLabel = lastGps?.latitude
         ? `GPS ready${lastGps.accuracy ? ` (${Math.round(lastGps.accuracy)}m)` : ''}`
-        : 'GPS finding...';
+        : (gpsError || 'GPS dhoondh raha hai...');
 
     return (
         <main className="staff-camera-page">
@@ -246,17 +501,155 @@ const StaffUpload = () => {
                 autoPlay
             />
 
+            {/* 🌟 Top Status Bar */}
             <div className="staff-camera-topbar">
-                <div className={`staff-camera-pill ${lastGps?.latitude ? 'ready' : ''}`}>
-                    <MapPin size={16} />
+                <button 
+                    type="button" 
+                    className={`staff-camera-pill ${lastGps?.latitude ? 'ready' : 'gps-warning'}`}
+                    onClick={() => !lastGps?.latitude && setIsGpsPromptOpen(true)}
+                >
+                    {lastGps?.latitude ? <MapPin size={16} /> : <MapPinOff size={16} />}
                     <span>{gpsLabel}</span>
-                </div>
-                <div className={`staff-camera-pill ${navigator.onLine ? 'ready' : 'offline'}`}>
-                    {navigator.onLine ? <RefreshCw size={16} className={isUploading ? 'spin' : ''} /> : <WifiOff size={16} />}
-                    <span>{navigator.onLine ? 'Online' : 'Offline'}</span>
-                </div>
+                </button>
+                <button 
+                    type="button"
+                    className={`staff-camera-pill ${isOnline ? 'ready' : 'offline'}`}
+                    onClick={() => !isOnline && setIsOnline(navigator.onLine)}
+                >
+                    {isOnline ? <RefreshCw size={16} className={isUploading ? 'spin' : ''} /> : <WifiOff size={16} />}
+                    <span>{isOnline ? 'Online' : 'Offline'}</span>
+                </button>
+                <button
+                    type="button"
+                    className={`staff-camera-pill voice-pill ${!isVoiceMuted ? 'active' : 'muted'}`}
+                    onClick={() => {
+                        setIsVoiceMuted(prev => {
+                            if (!prev) stopOfflineVoice();
+                            return !prev;
+                        });
+                    }}
+                    title={isVoiceMuted ? 'Unmute AI Voice Guide' : 'Mute AI Voice Guide'}
+                >
+                    {!isVoiceMuted ? <Volume2 size={16} className="voice-pulse-icon" /> : <VolumeX size={16} />}
+                    <span>{!isVoiceMuted ? 'AI Voice ON' : 'Muted'}</span>
+                </button>
             </div>
 
+            {/* 📶 QuickMart Offline Alert Banner */}
+            {!isOnline && (
+                <div className="staff-offline-card animate-in">
+                    <div className="offline-card-left">
+                        <div className="offline-icon-wrap">
+                            <WifiOff size={20} />
+                        </div>
+                        <div className="offline-text">
+                            <div className="offline-tag">⚠️ Internet Band Hai / Offline Mode</div>
+                            <strong>Mobile Data ya Wi-Fi On Karein</strong>
+                            <p>Photos phone me surakshit save hain. Internet aate hi automatic Drive & History me sync ho jayengi.</p>
+                        </div>
+                    </div>
+                    <button 
+                        type="button" 
+                        className="offline-retry-btn"
+                        onClick={() => {
+                            setIsOnline(navigator.onLine);
+                            if (navigator.onLine) flushQueue();
+                        }}
+                    >
+                        <RefreshCw size={14} className={isUploading ? 'spin' : ''} />
+                        <span>Retry</span>
+                    </button>
+                </div>
+            )}
+
+            {/* 🚨 Mandatory GPS Location Prompt Modal */}
+            {isGpsPromptOpen && (
+                <div className="staff-gps-modal-overlay">
+                    <div className="staff-gps-modal animate-in">
+                        <div className="gps-modal-icon-wrap">
+                            <div className="gps-modal-pulse-ring"></div>
+                            <MapPin size={38} className="gps-modal-pin-icon" />
+                        </div>
+                        <h3>Location (GPS) On Karein</h3>
+                        <p>
+                            Hoarding photo ko <strong>50-meter auto-detect</strong> karke direct history me save karne ke liye aapke phone ka GPS On hona zaroori hai.
+                        </p>
+
+                        {gpsError && (
+                            <div className="gps-modal-error-note">
+                                <AlertCircle size={16} />
+                                <span>{gpsError}</span>
+                            </div>
+                        )}
+
+                        <div className="gps-modal-steps">
+                            <div className="gps-step">
+                                <span className="step-num">1</span>
+                                <span>Phone ke notification panel se <strong>Location / GPS ON</strong> karein.</span>
+                            </div>
+                            <div className="gps-step">
+                                <span className="step-num">2</span>
+                                <span>Niche diye gaye button par click karke <strong>Allow</strong> dabayein.</span>
+                            </div>
+                        </div>
+
+                        <button 
+                            type="button" 
+                            className="gps-modal-action-btn"
+                            onClick={handleEnableLocation}
+                            disabled={isGpsLoading}
+                        >
+                            {isGpsLoading ? (
+                                <>
+                                    <RefreshCw size={18} className="spin" />
+                                    <span>GPS Signal Finding...</span>
+                                </>
+                            ) : (
+                                <>
+                                    <Navigation size={18} />
+                                    <span>Turn On / Allow Location</span>
+                                </>
+                            )}
+                        </button>
+                    </div>
+                </div>
+            )}
+
+            {/* ⚡ Live AI Geofenced Match Banner */}
+            {matchBanner && (
+                <div className={`staff-match-banner ${matchBanner.warning ? 'warning' : 'success'}`} onClick={() => setMatchBanner(null)}>
+                    {matchBanner.warning ? (
+                        <>
+                            <AlertCircle size={24} className="banner-icon" />
+                            <div className="banner-text">
+                                <strong>Manual Review Needed</strong>
+                                <span>{matchBanner.message}</span>
+                            </div>
+                        </>
+                    ) : (
+                        <>
+                            <div className="banner-check-circle">
+                                <Check size={18} />
+                            </div>
+                            <div className="banner-text">
+                                <div className="banner-tag">
+                                    <Sparkles size={13} /> AUTO-MATCHED (50m)
+                                </div>
+                                <strong className="banner-site-name">{matchBanner.siteName}</strong>
+                                <div className="banner-meta">
+                                    <span className={`status-pill ${matchBanner.status === 'Occupied' ? 'occupied' : 'available'}`}>
+                                        {matchBanner.status}
+                                    </span>
+                                    <span>• {matchBanner.distance}m away</span>
+                                    <span>• Direct History Saved ✅</span>
+                                </div>
+                            </div>
+                        </>
+                    )}
+                </div>
+            )}
+
+            {/* 📊 Counts Display */}
             <div className="staff-camera-counts">
                 <div>
                     <CheckCircle2 size={18} />
@@ -264,9 +657,9 @@ const StaffUpload = () => {
                     <span>Uploaded</span>
                 </div>
                 <div>
-                    <RefreshCw size={18} className={isUploading ? 'spin' : ''} />
+                    <RefreshCw size={18} className={isUploading || isAiMatching ? 'spin' : ''} />
                     <strong>{pendingCount}</strong>
-                    <span>Pending</span>
+                    <span>{isAiMatching ? 'Matching...' : 'Pending'}</span>
                 </div>
             </div>
 
@@ -278,6 +671,7 @@ const StaffUpload = () => {
                 </div>
             )}
 
+            {/* 📸 Bottom Shutter Controls */}
             <div className="staff-camera-bottom">
                 <div className="staff-latest-preview">
                     {lastCapture?.preview ? <img src={lastCapture.preview} alt="Latest capture" /> : <Camera size={24} />}
@@ -285,7 +679,7 @@ const StaffUpload = () => {
 
                 <button
                     type="button"
-                    className={`staff-shutter ${isCapturing ? 'capturing' : ''}`}
+                    className={`staff-shutter ${isCapturing || isAiMatching ? 'capturing' : ''} ${!lastGps?.latitude ? 'gps-waiting' : ''}`}
                     onClick={capturePhoto}
                     disabled={!cameraReady || isCapturing}
                     aria-label="Capture site photo"

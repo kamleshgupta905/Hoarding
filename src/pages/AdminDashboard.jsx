@@ -1295,12 +1295,21 @@ const AdminDashboard = ({ hoardings, setHoardings }) => {
     };
 
     const reviewQueue = staffUploads.filter(upload => upload.Status === 'REVIEW_REQUIRED' && !pendingStaffReviewIds[upload.UploadId]);
-    // Filter to only recent approved/active uploads from the current session or last 24h (shows 0 when none today)
+    
+    // 📅 Today's Live Staff Uploads (Auto-approved by Gemini AI or approved)
+    const todayDateString = new Date().toDateString();
+    const todayStaffUploads = staffUploads.filter(upload => {
+        const d = new Date(upload.CapturedAt || upload.ReviewedAt || 0);
+        return d.toDateString() === todayDateString;
+    });
+    const todayAutoApprovedCount = todayStaffUploads.filter(u => u.Status === 'AUTO_APPROVED' || u.Decision === 'GEMINI_GPS_AUTO_MATCH' || u.Decision === 'GPS_AUTO_MATCH').length;
+
+    // Filter to only recent approved/active uploads from the last 24h
     const recentPhotoUpdates = staffUploads.filter(upload => {
         if (upload.Status === 'REVIEW_REQUIRED' || upload.Status === 'REJECTED') return false;
         const uploadTime = new Date(upload.ReviewedAt || upload.CapturedAt || 0).getTime();
         return uploadTime > 0 && (Date.now() - uploadTime < 86400000);
-    }).slice(0, 12);
+    }).slice(0, 16);
 
     // Dynamic Overview Analytics
     const totalHoardingsCount = hoardings.length;
@@ -2691,8 +2700,17 @@ const AdminDashboard = ({ hoardings, setHoardings }) => {
                             <div className="qm-card">
                                 <div className="qm-card-header">
                                     <div>
-                                        <h3 className="qm-card-title">Field Inspection & Audit Center</h3>
-                                        <p className="qm-card-desc">Ground staff mobile camera uploads and site photo audit feed</p>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
+                                            <h3 className="qm-card-title">📅 Today's Staff Live Uploads & Field Audit</h3>
+                                            <span style={{ background: 'rgba(16, 185, 129, 0.15)', color: '#10b981', border: '1px solid rgba(16, 185, 129, 0.3)', padding: '2px 8px', borderRadius: '12px', fontSize: '0.72rem', fontWeight: 800 }}>
+                                                ✨ Gemini AI Active (50m)
+                                            </span>
+                                        </div>
+                                        <p className="qm-card-desc">
+                                            {todayStaffUploads.length > 0
+                                                ? `${todayStaffUploads.length} photo(s) captured today (${todayAutoApprovedCount} auto-matched directly to History)`
+                                                : 'Real-time ground staff camera uploads and auto-matched billboard history'}
+                                        </p>
                                     </div>
                                     <div className="qm-header-controls">
                                         <button 
@@ -2744,20 +2762,32 @@ const AdminDashboard = ({ hoardings, setHoardings }) => {
 
                                 {recentPhotoUpdates.length > 0 ? (
                                     <div className="recent-photo-grid">
-                                        {recentPhotoUpdates.map(upload => (
-                                            <article className="recent-photo-card" key={upload.UploadId}>
-                                                <img 
-                                                    src={upload.ImageURL} 
-                                                    alt={upload.ApprovedSite || 'Staff upload'} 
-                                                    onClick={() => setPreviewHoarding({ ImageURL: upload.ImageURL, City: 'Staff', "Location ": upload.ApprovedSite || 'Staff upload' })} 
-                                                />
-                                                <div>
-                                                    <strong>{upload.ApprovedSite || upload.SuggestedSite || 'History upload'}</strong>
-                                                    <span>{String(upload.Status || 'REVIEW_REQUIRED').replaceAll('_', ' ')}</span>
-                                                    <small>{upload.CapturedAt ? new Date(upload.CapturedAt).toLocaleString('en-IN') : ''}</small>
-                                                </div>
-                                            </article>
-                                        ))}
+                                        {recentPhotoUpdates.map(upload => {
+                                            const isAuto = upload.Status === 'AUTO_APPROVED' || upload.Decision === 'GEMINI_GPS_AUTO_MATCH' || upload.Decision === 'GPS_AUTO_MATCH';
+                                            return (
+                                                <article className="recent-photo-card" key={upload.UploadId}>
+                                                    <img 
+                                                        src={upload.ImageURL} 
+                                                        alt={upload.ApprovedSite || 'Staff upload'} 
+                                                        onClick={() => setPreviewHoarding({ ImageURL: upload.ImageURL, City: 'Staff', "Location ": upload.ApprovedSite || 'Staff upload' })} 
+                                                        style={{ cursor: 'pointer' }}
+                                                    />
+                                                    <div>
+                                                        <strong>{upload.ApprovedSite || upload.SuggestedSite || 'History upload'}</strong>
+                                                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', margin: '3px 0' }}>
+                                                            {isAuto ? (
+                                                                <span style={{ color: '#10b981', fontWeight: 800, fontSize: '0.72rem' }}>
+                                                                    ✨ AI Auto-Approved (50m)
+                                                                </span>
+                                                            ) : (
+                                                                <span>{String(upload.Status || 'APPROVED').replaceAll('_', ' ')}</span>
+                                                            )}
+                                                        </div>
+                                                        <small>{upload.CapturedAt ? new Date(upload.CapturedAt).toLocaleString('en-IN') : ''}</small>
+                                                    </div>
+                                                </article>
+                                            );
+                                        })}
                                     </div>
                                 ) : (
                                     <div className="qm-empty-state">
@@ -2765,14 +2795,14 @@ const AdminDashboard = ({ hoardings, setHoardings }) => {
                                             <Camera size={26} className="qm-camera-icon" />
                                         </div>
                                         <div className="qm-empty-text">
-                                            <h4>All 307 billboard photos verified & linked</h4>
+                                            <h4>All billboard photos verified & linked</h4>
                                             <p>
-                                                Every site in the master sheet currently has a verified Google Drive CDN photo. When field inspection photos are submitted via the mobile link, they will appear here for one-click admin verification.
+                                                When ground staff captures a billboard photo on mobile, Gemini AI will automatically match it within a 50m radius and save it straight into the site's History section without manual review.
                                             </p>
                                         </div>
                                         <div className="qm-empty-capsules">
-                                            <span className="qm-status-capsule"><Check size={13} /> 307 Public Drive URLs</span>
-                                            <span className="qm-status-capsule"><Check size={13} /> 0 Missing Photos</span>
+                                            <span className="qm-status-capsule"><Check size={13} /> 50m Geofencing Ready</span>
+                                            <span className="qm-status-capsule"><Check size={13} /> Gemini Vision AI Active</span>
                                             <span className="qm-status-capsule"><Check size={13} /> Mobile Camera Ready</span>
                                         </div>
                                     </div>

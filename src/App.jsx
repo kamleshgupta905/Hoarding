@@ -170,15 +170,27 @@ function AutoUpdateBar() {
 
 function AppContent({ hoardings, setHoardings }) {
   const location = useLocation();
+  const searchParams = new URLSearchParams(location.search);
+  const isStaffMode = searchParams.get('mode') === 'staff' || searchParams.get('app') === 'staff' || (typeof window !== 'undefined' && (window.isStaffApp || window.Capacitor?.isNativePlatform?.()));
   const isAdminPath = location.pathname.startsWith('/admin');
   const isClientPath = location.pathname.startsWith('/client');
-  const isStaffPath = location.pathname.startsWith('/staff');
+  const isStaffPath = location.pathname.startsWith('/staff') || isStaffMode;
   const hideNav = isAdminPath || isClientPath || isStaffPath;
 
   // Filter out disabled/offline hoardings for public pages (only active ones visible)
   const publicHoardings = hoardings.filter(h =>
     h.STATUS && h.STATUS.toLowerCase() !== 'disabled'
   );
+
+  if (isStaffMode && location.pathname === '/') {
+    return (
+      <div className="app-container staff-app-mode">
+        <main>
+          <StaffUpload />
+        </main>
+      </div>
+    );
+  }
 
   return (
     <div className="app-container">
@@ -190,13 +202,13 @@ function AppContent({ hoardings, setHoardings }) {
           <Route path="/admin/login" element={<AdminLogin />} />
           <Route path="/admin/dashboard" element={<AdminDashboard hoardings={hoardings} setHoardings={setHoardings} />} />
 
-
           {/* Public Routes - Use Filtered List for lists, but Original for detail to allow admin actions */}
           <Route path="/" element={<Home hoardings={publicHoardings} />} />
           <Route path="/:cityName" element={<CityList hoardings={publicHoardings} />} />
           <Route path="/:city/:siteName" element={<HoardingDetail hoardings={hoardings} setHoardings={setHoardings} />} />
           <Route path="/audit/:city/:siteName" element={<PublicAudit hoardings={hoardings} setHoardings={setHoardings} />} />
           <Route path="/client/:clientName" element={<ClientReport hoardings={hoardings} />} />
+          <Route path="/staff" element={<StaffUpload />} />
           <Route path="/staff/upload" element={<StaffUpload />} />
         </Routes>
       </main>
