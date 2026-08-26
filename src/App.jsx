@@ -10,6 +10,7 @@ import AdminDashboard from './pages/AdminDashboard';
 import PublicAudit from './pages/PublicAudit';
 import ClientReport from './pages/ClientReport';
 import StaffUpload from './pages/StaffUpload';
+import SystemGuide from './pages/SystemGuide';
 import AppAutoUpdater from './components/AppAutoUpdater';
 import { fetchHoardings } from './services/dataService';
 import { getChangeVersion } from './services/secureApi';
@@ -176,7 +177,8 @@ function AppContent({ hoardings, setHoardings }) {
   const isAdminPath = location.pathname.startsWith('/admin');
   const isClientPath = location.pathname.startsWith('/client');
   const isStaffPath = location.pathname.startsWith('/staff') || isStaffMode;
-  const hideNav = isAdminPath || isClientPath || isStaffPath;
+  const isGuidePath = location.pathname === '/guide' || location.pathname === '/system-guide';
+  const hideNav = isAdminPath || isClientPath || isStaffPath || isGuidePath;
 
   // Filter out disabled/offline hoardings for public pages (only active ones visible)
   const publicHoardings = hoardings.filter(h =>
@@ -206,6 +208,10 @@ function AppContent({ hoardings, setHoardings }) {
           <Route path="/admin/login" element={<AdminLogin />} />
           <Route path="/admin/dashboard" element={<AdminDashboard hoardings={hoardings || []} setHoardings={setHoardings} />} />
 
+          {/* Standalone System Functionality & User Guide Route */}
+          <Route path="/guide" element={<SystemGuide />} />
+          <Route path="/system-guide" element={<SystemGuide />} />
+
           {/* Public Routes - Use Filtered List for lists, but Original for detail to allow admin actions */}
           <Route path="/" element={<Home hoardings={publicHoardings} />} />
           <Route path="/:cityName" element={<CityList hoardings={publicHoardings} />} />
@@ -219,6 +225,7 @@ function AppContent({ hoardings, setHoardings }) {
       {!hideNav && <Footer />}
     </div>
   );
+
 }
 
 const sanitizeHoardings = (list) => {
