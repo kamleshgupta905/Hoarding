@@ -120,8 +120,10 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
     const [overviewChartTab, setOverviewChartTab] = useState('zones'); // 'zones' | 'media' | 'pricing'
     const [hoveredChartItem, setHoveredChartItem] = useState(null);
     const [fieldAuditTab, setFieldAuditTab] = useState('matched'); // 'matched' | 'unmatched'
+    const [selectedPinpointUpload, setSelectedPinpointUpload] = useState(null);
     const [isAppDownloadModalOpen, setIsAppDownloadModalOpen] = useState(false);
     const [isSystemGuideOpen, setIsSystemGuideOpen] = useState(false);
+
 
 
     // Protect Route
