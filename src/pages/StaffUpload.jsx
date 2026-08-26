@@ -1,6 +1,6 @@
 import React from 'react';
 import { Camera, CheckCircle2, MapPin, MapPinOff, RefreshCw, RotateCcw, WifiOff, XCircle, Sparkles, Check, AlertCircle, Navigation, ChevronRight, Compass, Volume2, VolumeX } from 'lucide-react';
-import { uploadStaffPhoto, fetchHoardings } from '../services/dataService';
+import { uploadStaffPhoto, fetchHoardings, saveLocalStaffUpload } from '../services/dataService';
 import { matchGeofencedHoardingWithGemini } from '../services/aiService';
 import {
     blobToDataUrl,
@@ -583,6 +583,24 @@ const StaffUpload = () => {
                 status,
                 aiDecision
             };
+
+            // 💾 Instant Local Persistence & Real-Time Sync to Admin Dashboard
+            const localRecord = {
+                UploadId: item.id,
+                CapturedAt: item.capturedAt,
+                ReceivedAt: new Date().toISOString(),
+                Latitude: item.latitude,
+                Longitude: item.longitude,
+                Accuracy: item.accuracy,
+                ImageURL: base64Data,
+                Status: item.status || (matchedSite ? 'AUTO_APPROVED' : 'REVIEW_REQUIRED'),
+                Decision: item.aiDecision || (matchedSite ? 'GEMINI_GPS_AUTO_MATCH' : 'GPS_REVIEW'),
+                SuggestedSite: matchedSite || '',
+                ApprovedSite: matchedSite || '',
+                OrientationNormalized: true
+            };
+            saveLocalStaffUpload(localRecord);
+            window.dispatchEvent(new CustomEvent('staff:photo-uploaded', { detail: localRecord }));
 
             await enqueueStaffPhoto(item);
             await refreshPendingCount();

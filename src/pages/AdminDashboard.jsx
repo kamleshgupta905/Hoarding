@@ -166,10 +166,34 @@ const AdminDashboard = ({ hoardings, setHoardings }) => {
             if (active) setStaffUploads(uploads);
         };
         refreshStaffUploads();
-        const intervalId = setInterval(refreshStaffUploads, 30000);
+        const intervalId = setInterval(refreshStaffUploads, 8000);
+
+        const handleStaffPhotoUploaded = (e) => {
+            if (e && e.detail) {
+                setStaffUploads(prev => {
+                    const list = Array.isArray(prev) ? prev : [];
+                    const exists = list.some(u => u.UploadId === e.detail.UploadId);
+                    if (exists) return list;
+                    return [e.detail, ...list];
+                });
+            }
+            refreshStaffUploads();
+        };
+
+        const handleStorageChange = (e) => {
+            if (e.key === 'adh_local_staff_uploads') {
+                refreshStaffUploads();
+            }
+        };
+
+        window.addEventListener('staff:photo-uploaded', handleStaffPhotoUploaded);
+        window.addEventListener('storage', handleStorageChange);
+
         return () => {
             active = false;
             clearInterval(intervalId);
+            window.removeEventListener('staff:photo-uploaded', handleStaffPhotoUploaded);
+            window.removeEventListener('storage', handleStorageChange);
         };
     }, []);
 

@@ -254,10 +254,37 @@ export const getImageUrl = (hoarding) => {
   return 'https://images.unsplash.com/photo-1541535650810-10d26f592a7d?auto=format&fit=crop&q=80&w=800';
 };
 
-export const fetchStaffUploads = async () => {
+export const getLocalStaffUploads = () => {
   try {
-    const data = await requestJson(`${STAFF_SCRIPT_URL}?action=staffUploads&sessionToken=${encodeURIComponent(getAdminSession())}&t=${Date.now()}`, { cache: 'no-store' }, 60000);
-    return Array.isArray(data.uploads)
+    const raw = localStorage.getItem('adh_local_staff_uploads');
+    return raw ? JSON.parse(raw) : [];
+  } catch {
+    return [];
+  }
+};
+
+export const saveLocalStaffUpload = (uploadItem) => {
+  if (!uploadItem || !uploadItem.UploadId) return;
+  try {
+    const list = getLocalStaffUploads();
+    const existingIdx = list.findIndex(u => u.UploadId === uploadItem.UploadId);
+    if (existingIdx >= 0) {
+      list[existingIdx] = { ...list[existingIdx], ...uploadItem };
+    } else {
+      list.unshift(uploadItem);
+    }
+    localStorage.setItem('adh_local_staff_uploads', JSON.stringify(list.slice(0, 100)));
+  } catch (err) {
+    console.warn('Local staff upload caching notice:', err);
+  }
+};
+
+export const fetchStaffUploads = async () => {
+  const localList = getLocalStaffUploads();
+  try {
+    const session = getAdminSession();
+    const data = await requestJson(`${STAFF_SCRIPT_URL}?action=staffUploads&sessionToken=${encodeURIComponent(session || 'admin')}&t=${Date.now()}`, { cache: 'no-store' }, 15000);
+    const remoteList = Array.isArray(data.uploads)
       ? data.uploads
           .filter(item => item && item.UploadId)
           .map(item => ({
@@ -267,9 +294,26 @@ export const fetchStaffUploads = async () => {
             NearbySites: Array.isArray(item.NearbySites) ? item.NearbySites : []
           }))
       : [];
+
+    // Merge remote with local items
+    const map = new Map();
+    remoteList.forEach(item => map.set(item.UploadId, item));
+    localList.forEach(item => {
+      if (!map.has(item.UploadId)) {
+        map.set(item.UploadId, item);
+      }
+    });
+
+    const merged = Array.from(map.values()).sort((a, b) => {
+      const timeA = new Date(a.CapturedAt || a.ReceivedAt || 0).getTime();
+      const timeB = new Date(b.CapturedAt || b.ReceivedAt || 0).getTime();
+      return timeB - timeA;
+    });
+
+    return merged;
   } catch (error) {
-    console.error('Staff uploads fetch failed:', error);
-    return [];
+    console.warn('Staff uploads remote fetch fallback to local cache:', error);
+    return localList;
   }
 };
 
