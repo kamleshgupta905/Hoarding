@@ -27,30 +27,34 @@
 
 .staff-camera-topbar {
     top: max(14px, env(safe-area-inset-top));
-    left: 12px;
-    right: 12px;
+    left: 10px;
+    right: 10px;
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 10px;
+    gap: 6px;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
 }
 
 .staff-camera-pill {
-    min-height: 38px;
+    min-height: 36px;
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    gap: 7px;
-    max-width: 52vw;
-    padding: 0 12px;
+    gap: 6px;
+    padding: 0 10px;
     border: 1px solid rgba(255, 255, 255, 0.24);
     border-radius: 999px;
     background: rgba(7, 9, 14, 0.66);
     color: #f4f5f7;
     backdrop-filter: blur(14px);
-    font-size: 0.76rem;
+    font-size: 0.74rem;
     font-weight: 900;
     white-space: nowrap;
+    flex-shrink: 0;
 }
 
 .staff-camera-pill.ready svg {

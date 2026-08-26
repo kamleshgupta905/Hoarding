@@ -2,6 +2,7 @@ import React from 'react';
 import { Camera, CheckCircle2, MapPin, MapPinOff, RefreshCw, RotateCcw, WifiOff, XCircle, Sparkles, Check, AlertCircle, Navigation, ChevronRight, Compass, Volume2, VolumeX } from 'lucide-react';
 import { uploadStaffPhoto, fetchHoardings, saveLocalStaffUpload } from '../services/dataService';
 import { matchGeofencedHoardingWithGemini } from '../services/aiService';
+import { HIRA_LOGO } from '../assets/hiraLogoData';
 import {
     blobToDataUrl,
     countPendingStaffPhotos,
@@ -38,12 +39,10 @@ const unlockAudio = () => {
     try {
         const ctx = getAudioContext();
         if (ctx && ctx.state === 'suspended') {
-            ctx.resume();
+            ctx.resume().catch(() => {});
         }
         if (typeof window !== 'undefined' && window.speechSynthesis) {
-            if (window.speechSynthesis.paused) {
-                window.speechSynthesis.resume();
-            }
+            window.speechSynthesis.resume();
         }
     } catch (e) {
         console.warn('Audio unlock notice:', e);
@@ -55,52 +54,84 @@ const playAlertTone = (type = 'warning') => {
         unlockAudio();
         const ctx = getAudioContext();
         if (!ctx) return;
-        const osc = ctx.createOscillator();
-        const gain = ctx.createGain();
-        osc.connect(gain);
-        gain.connect(ctx.destination);
 
         const now = ctx.currentTime;
         if (type === 'success') {
-            osc.frequency.setValueAtTime(587.33, now); // D5
-            osc.frequency.exponentialRampToValueAtTime(880, now + 0.15); // A5
-            gain.gain.setValueAtTime(0.3, now);
-            gain.gain.exponentialRampToValueAtTime(0.001, now + 0.35);
-            osc.start(now);
-            osc.stop(now + 0.35);
-        } else if (type === 'error') {
-            osc.frequency.setValueAtTime(340, now);
-            osc.frequency.setValueAtTime(220, now + 0.15);
-            gain.gain.setValueAtTime(0.4, now);
-            gain.gain.exponentialRampToValueAtTime(0.001, now + 0.35);
-            osc.start(now);
-            osc.stop(now + 0.35);
+            // 🎶 Triple-chord chime
+            [523.25, 659.25, 783.99].forEach((freq, i) => {
+                const osc = ctx.createOscillator();
+                const gain = ctx.createGain();
+                osc.connect(gain);
+                gain.connect(ctx.destination);
+                osc.frequency.setValueAtTime(freq, now + i * 0.08);
+                gain.gain.setValueAtTime(0.35, now + i * 0.08);
+                gain.gain.exponentialRampToValueAtTime(0.001, now + i * 0.08 + 0.3);
+                osc.start(now + i * 0.08);
+                osc.stop(now + i * 0.08 + 0.3);
+            });
+        } else if (type === 'offline' || type === 'error') {
+            // 🚨 Loud repeating warning buzzer
+            [0, 0.22].forEach((offset) => {
+                const osc = ctx.createOscillator();
+                const gain = ctx.createGain();
+                osc.type = 'sawtooth';
+                osc.connect(gain);
+                gain.connect(ctx.destination);
+                osc.frequency.setValueAtTime(480, now + offset);
+                osc.frequency.linearRampToValueAtTime(280, now + offset + 0.16);
+                gain.gain.setValueAtTime(0.45, now + offset);
+                gain.gain.exponentialRampToValueAtTime(0.001, now + offset + 0.18);
+                osc.start(now + offset);
+                osc.stop(now + offset + 0.18);
+            });
         } else {
-            osc.frequency.setValueAtTime(440, now);
-            gain.gain.setValueAtTime(0.25, now);
-            gain.gain.exponentialRampToValueAtTime(0.001, now + 0.25);
-            osc.start(now);
-            osc.stop(now + 0.25);
+            // ⚠️ Dual warning beep
+            [0, 0.18].forEach((offset) => {
+                const osc = ctx.createOscillator();
+                const gain = ctx.createGain();
+                osc.type = 'sine';
+                osc.connect(gain);
+                gain.connect(ctx.destination);
+                osc.frequency.setValueAtTime(650, now + offset);
+                gain.gain.setValueAtTime(0.4, now + offset);
+                gain.gain.exponentialRampToValueAtTime(0.001, now + offset + 0.14);
+                osc.start(now + offset);
+                osc.stop(now + offset + 0.14);
+            });
         }
     } catch (err) {
         console.warn('Alert tone error:', err);
     }
 };
 
-const speakOfflineVoice = (text, rate = 1.05, pitch = 1.0) => {
+let cachedVoices = [];
+if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+    cachedVoices = window.speechSynthesis.getVoices();
+    window.speechSynthesis.onvoiceschanged = () => {
+        cachedVoices = window.speechSynthesis.getVoices();
+    };
+}
+
+const speakOfflineVoice = (text, rate = 1.0, pitch = 1.0) => {
     if (typeof window === 'undefined' || !('speechSynthesis' in window)) return;
     try {
         unlockAudio();
-        window.speechSynthesis.cancel(); // Prevent audio overlapping
+        window.speechSynthesis.resume();
+        window.speechSynthesis.cancel(); // Clear backlog
+
         const utterance = new SpeechSynthesisUtterance(text);
-        utterance.lang = 'hi-IN'; // Hindi / Indian accent
         utterance.rate = rate;
         utterance.pitch = pitch;
-        utterance.volume = 1.0; // Maximum volume
+        utterance.volume = 1.0;
 
-        const voices = window.speechSynthesis.getVoices();
-        const hiVoice = voices.find(v => v.lang && (v.lang.includes('hi') || v.lang.includes('IN')));
-        if (hiVoice) utterance.voice = hiVoice;
+        const voices = cachedVoices.length ? cachedVoices : window.speechSynthesis.getVoices();
+        const hiVoice = voices.find(v => v.lang && (v.lang.startsWith('hi') || v.lang.includes('IN')));
+        if (hiVoice) {
+            utterance.voice = hiVoice;
+            utterance.lang = hiVoice.lang;
+        } else {
+            utterance.lang = 'hi-IN';
+        }
 
         window.speechSynthesis.speak(utterance);
     } catch (err) {
@@ -645,8 +676,11 @@ const StaffUpload = () => {
                 autoPlay
             />
 
-            {/* 🌟 Top Status Bar */}
+            {/* 🌟 Top Status Bar & Official Brand Logo */}
             <div className="staff-camera-topbar">
+                <div style={{ background: '#ffffff', padding: '3px 8px', borderRadius: '10px', display: 'flex', alignItems: 'center', boxShadow: '0 2px 10px rgba(0,0,0,0.3)', flexShrink: 0 }}>
+                    <img src={HIRA_LOGO} alt="HIRA Advertising" style={{ height: '22px', width: 'auto', display: 'block', objectFit: 'contain' }} />
+                </div>
                 <button 
                     type="button" 
                     className={`staff-camera-pill ${lastGps?.latitude ? 'ready' : 'gps-warning'}`}
@@ -689,7 +723,7 @@ const StaffUpload = () => {
                         <div className="offline-text">
                             <div className="offline-tag">⚠️ Internet Band Hai / Offline Mode</div>
                             <strong>Mobile Data ya Wi-Fi On Karein</strong>
-                            <p>Photos phone me surakshit save hain. Internet aate hi automatic Drive & History me sync ho jayengi.</p>
+                            <p>Photos phone me surakshit save hain. Internet aate hi automatic Cloud Storage & History me sync ho jayengi.</p>
                         </div>
                     </div>
                     <button 

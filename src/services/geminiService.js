@@ -169,11 +169,11 @@ If NONE of the candidate sites match at all, return "matchedIndex": -1.
       matchedHoarding: matchedCandidate,
       status: result.status === 'Occupied' ? 'Occupied' : 'Available',
       confidence: typeof result.confidence === 'number' ? result.confidence : 0.85,
-      reasoning: result.reasoning || 'Matched using Gemini Vision + 50m GPS Geofence.'
+      reasoning: result.reasoning || 'Matched using Smart Vision AI + 50m GPS Geofence.'
     };
   } catch (error) {
-    console.error('matchGeofencedHoardingWithGemini error:', error);
-    // If Gemini fails, fallback to closest candidate if within 35m
+    console.error('matchGeofencedHoardingWithAI error:', error);
+    // If AI fails, fallback to closest candidate if within 35m
     if (candidates.length === 1 && (candidates[0].distanceM === undefined || candidates[0].distanceM <= 35)) {
       const best = candidates[0];
       return {
@@ -193,5 +193,110 @@ If NONE of the candidate sites match at all, return "matchedIndex": -1.
       confidence: 0,
       error: error.message
     };
+  }
+};
+
+/**
+ * 📸 DAILY PROOF OF EXECUTION MATCHING (GPS Stamp + Visual Intelligence)
+ * Inspects raw site image, reads printed GPS stamps/coordinates watermark,
+ * analyzes billboard environment, and matches with the master inventory.
+ */
+export const matchDailyExecutionProofWithAI = async (imageBase64, inventoryList) => {
+  if (!imageBase64 || !Array.isArray(inventoryList) || inventoryList.length === 0) {
+    return {
+      matchedLocation: null,
+      matchedIndex: -1,
+      status: 'Available',
+      confidence: 0,
+      reasoning: 'No inventory sites provided.'
+    };
+  }
+
+  const parsed = parseBase64(imageBase64);
+  if (!parsed) throw new Error('Invalid image data.');
+
+  // Concise inventory mapping
+  const inventoryText = inventoryList.slice(0, 75).map((item, index) => {
+    const loc = item["Location "] || item["Locality Site Location"] || item.Location || item.site_name || `Site ${index}`;
+    const city = item.City || item.city || '';
+    const area = item.Locality || item.Area || '';
+    const lat = item.Latitude || item.Lat || '';
+    const lng = item.Longitude || item.Long || '';
+    const latLng = lat && lng ? ` [GPS: ${lat}, ${lng}]` : '';
+    const traffic = [item["Traffic From"], item["Traffic To"]].filter(Boolean).join(' to ');
+    return `[Index ${index}]: "${loc}" | City: "${city}" | Area: "${area}"${traffic ? ` | Traffic: "${traffic}"` : ''}${latLng}`;
+  }).join('\n');
+
+  const prompt = `
+You are an expert Billboard & Hoarding Execution Verification AI.
+Analyze this Daily Proof of Execution photo and match it against our Master Inventory List.
+
+MASTER INVENTORY SITES:
+${inventoryText}
+
+INSTRUCTIONS:
+1. 📍 DETECT GPS STAMP / WATERMARK:
+   - Check if there is an on-image GPS stamp, coordinate text (e.g. Latitude: 28.9845, Longitude: 77.7064), camera watermark, or location address stamped at the bottom or corners.
+   - If GPS coordinates are found, calculate which inventory site has the nearest matching Lat/Long.
+2. 👁️ VISUAL & LANDMARK RECOGNITION:
+   - Read any road signs, shop boards, flyovers, intersections, or landmarks visible in the photo.
+   - Match the site name, area, or locality with the Master Inventory.
+3. 🏷️ STATUS DETECTION:
+   - "Occupied": Active brand/commercial flex ad is mounted.
+   - "Available": Blank, white sheet, torn flex, or "To-Let" advertisement.
+4. Output ONLY valid JSON:
+{
+  "matchedIndex": 0,
+  "matchedSiteName": "Exact Location Name from inventory",
+  "status": "Occupied",
+  "confidence": 0.95,
+  "reasoning": "Details of match (e.g. GPS stamp 28.984, 77.706 matches Begum Bridge or landmark detected)",
+  "gpsStampDetected": "28.9845, 77.7064"
+}
+If no reliable match is found, return "matchedIndex": -1.
+`;
+
+  const payload = {
+    contents: [
+      {
+        parts: [
+          { text: prompt },
+          {
+            inline_data: {
+              mime_type: parsed.mimeType,
+              data: parsed.base64
+            }
+          }
+        ]
+      }
+    ],
+    generationConfig: {
+      temperature: 0.1,
+      topP: 0.8,
+      maxOutputTokens: 600
+    }
+  };
+
+  try {
+    const rawResponse = await callGeminiVision(payload);
+    const cleanJson = rawResponse.replace(/```json\s*/i, '').replace(/```\s*$/i, '').trim();
+    const jsonMatch = cleanJson.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) throw new Error('Invalid JSON response.');
+    
+    const result = JSON.parse(jsonMatch[0]);
+    const idx = parseInt(result.matchedIndex, 10);
+    const matchedHoarding = (!isNaN(idx) && idx >= 0 && idx < inventoryList.length) ? inventoryList[idx] : null;
+
+    return {
+      matchedIndex: matchedHoarding ? idx : -1,
+      matchedSiteName: matchedHoarding ? (matchedHoarding["Location "] || matchedHoarding["Locality Site Location"] || matchedHoarding.Location) : (result.matchedSiteName || null),
+      status: result.status === 'Occupied' ? 'Occupied' : 'Available',
+      confidence: typeof result.confidence === 'number' ? result.confidence : 0.9,
+      reasoning: result.reasoning || 'Matched with Smart Vision AI.',
+      gpsStampDetected: result.gpsStampDetected || null
+    };
+  } catch (err) {
+    console.warn('matchDailyExecutionProofWithAI notice:', err);
+    throw err;
   }
 };

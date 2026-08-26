@@ -1,7 +1,7 @@
 import { normalizeText } from '../core/hoardingSchema';
-import { matchGeofencedHoardingWithGemini } from './geminiService';
+import { matchGeofencedHoardingWithGemini, matchDailyExecutionProofWithAI } from './geminiService';
 
-export { matchGeofencedHoardingWithGemini };
+export { matchGeofencedHoardingWithGemini, matchDailyExecutionProofWithAI };
 
 let workerPromise = null;
 
@@ -58,24 +58,24 @@ export const analyzeHoardingImage = async (base64Image, locationList) => {
         return { matchedLocation: null, status: 'Review', confidence: 0, reasoning: 'Image or master locations missing.' };
     }
 
-    // Try Gemini Vision AI first for highest accuracy
+    // 🎯 1. Primary AI Match: GPS Stamp Extraction + Visual Environment
     try {
-        const topCandidates = locationList.slice(0, 30); // Top slice if list is huge
-        const geminiResult = await matchGeofencedHoardingWithGemini(base64Image, topCandidates);
-        if (geminiResult.matchedIndex >= 0 && geminiResult.matchedSiteName) {
+        const aiResult = await matchDailyExecutionProofWithAI(base64Image, locationList);
+        if (aiResult.matchedIndex >= 0 && aiResult.matchedSiteName) {
             return {
-                matchedIndex: geminiResult.matchedIndex,
-                matchedLocation: geminiResult.matchedSiteName,
-                status: geminiResult.status || 'Available',
-                confidence: Math.round((geminiResult.confidence || 0.9) * 100),
-                reasoning: geminiResult.reasoning || 'Gemini Vision matched hoarding location.'
+                matchedIndex: aiResult.matchedIndex,
+                matchedLocation: aiResult.matchedSiteName,
+                status: aiResult.status || 'Available',
+                confidence: Math.round((aiResult.confidence || 0.92) * 100),
+                reasoning: aiResult.reasoning || 'Smart Vision AI matched location & GPS stamp.',
+                analysis: aiResult.gpsStampDetected ? `GPS Stamp: ${aiResult.gpsStampDetected}` : 'Visual landmark matching'
             };
         }
     } catch (e) {
-        console.warn('Gemini batch vision failed, falling back to local OCR:', e);
+        console.warn('Primary Vision AI batch match notice, trying local fallback:', e);
     }
 
-    // Local Tesseract OCR fallback
+    // 🛠️ 2. Local OCR Fallback (Exif GPS Stamp & OCR text)
     try {
         const worker = await getOcrWorker();
         const crop = await cropStamp(base64Image);
@@ -95,7 +95,7 @@ export const analyzeHoardingImage = async (base64Image, locationList) => {
             matchedLocation: decisive ? best.location['Location '] : null,
             status: decisive ? status : 'Review',
             confidence: best?.score || 0,
-            reasoning: decisive ? 'Local OCR matched unique site keywords.' : 'Local OCR was ambiguous; manual review required.'
+            reasoning: decisive ? 'OCR matched unique site stamp keywords.' : 'OCR was ambiguous; manual review required.'
         };
     } catch (error) {
         return { matchedIndex: -1, matchedLocation: null, status: 'Review', confidence: 0, error: error.message };
