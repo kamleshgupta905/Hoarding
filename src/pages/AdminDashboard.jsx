@@ -2759,8 +2759,11 @@ const AdminDashboard = ({ hoardings, setHoardings }) => {
                                     <div>
                                         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
                                             <h3 className="qm-card-title">📅 Live Field Audit & Staff Uploads</h3>
-                                            <span style={{ background: 'rgba(16, 185, 129, 0.15)', color: '#10b981', border: '1px solid rgba(16, 185, 129, 0.3)', padding: '2px 8px', borderRadius: '12px', fontSize: '0.72rem', fontWeight: 800 }}>
-                                                ✨ Gemini AI Active (50m)
+                                            <span style={{ background: 'rgba(217, 119, 87, 0.12)', color: '#d97757', border: '1px solid rgba(217, 119, 87, 0.35)', padding: '3px 10px', borderRadius: '12px', fontSize: '0.72rem', fontWeight: 800, display: 'inline-flex', alignItems: 'center', gap: '5px' }}>
+                                                <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" style={{ color: '#d97757' }}>
+                                                    <path d="M4.5 12a1.5 1.5 0 0 1 1.5-1.5h12a1.5 1.5 0 0 1 0 3H6A1.5 1.5 0 0 1 4.5 12zm7.5-7.5a1.5 1.5 0 0 1 1.5 1.5v12a1.5 1.5 0 0 1-3 0V6A1.5 1.5 0 0 1 12 4.5zm-5.3 2.2a1.5 1.5 0 0 1 2.12 0l8.48 8.48a1.5 1.5 0 1 1-2.12 2.12L6.7 8.82a1.5 1.5 0 0 1 0-2.12zm10.6 0a1.5 1.5 0 0 1 0 2.12L8.82 17.3a1.5 1.5 0 1 1-2.12-2.12l8.48-8.48a1.5 1.5 0 0 1 2.12 0z"/>
+                                                </svg>
+                                                Claude AI Active (50m)
                                             </span>
                                         </div>
                                         <p className="qm-card-desc">

@@ -390,7 +390,20 @@ function App() {
     }
   };
 
-  if (loading && !localStorage.getItem('hoardings_cache')) {
+  const isStaffAppEnvironment = (typeof window !== 'undefined' && (
+    window.isStaffApp ||
+    window.Capacitor?.isNativePlatform?.() ||
+    localStorage.getItem('is_staff_app') === 'true' ||
+    window.location.pathname.startsWith('/staff') ||
+    window.location.search.includes('staff')
+  ));
+
+  if (isStaffAppEnvironment && typeof window !== 'undefined') {
+    localStorage.setItem('is_staff_app', 'true');
+  }
+
+  // Never block Staff App with loading screen - open viewfinder instantly
+  if (!isStaffAppEnvironment && loading && !localStorage.getItem('hoardings_cache')) {
     return (
       <div style={{
         height: '100vh',
@@ -399,9 +412,10 @@ function App() {
         justifyContent: 'center',
         fontFamily: 'var(--font-heading)',
         color: 'var(--primary)',
-        fontSize: '1.5rem'
+        fontSize: '1.2rem',
+        background: '#f8fafc'
       }}>
-        Loading Hoardings...
+        Loading...
       </div>
     );
   }

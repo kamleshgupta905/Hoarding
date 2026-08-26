@@ -281,23 +281,46 @@ const StaffUpload = () => {
             if (streamRef.current) {
                 streamRef.current.getTracks().forEach(track => track.stop());
             }
-            const stream = await navigator.mediaDevices.getUserMedia({
-                video: {
-                    facingMode: { ideal: 'environment' },
-                    width: { ideal: 1920 },
-                    height: { ideal: 1080 }
-                },
-                audio: false
-            });
+
+            let stream = null;
+            try {
+                stream = await navigator.mediaDevices.getUserMedia({
+                    video: {
+                        facingMode: { ideal: 'environment' },
+                        width: { ideal: 1920, max: 2560 },
+                        height: { ideal: 1080, max: 1440 }
+                    },
+                    audio: false
+                });
+            } catch (pErr) {
+                console.warn('Initial HD camera constraint notice, trying basic camera:', pErr);
+                stream = await navigator.mediaDevices.getUserMedia({
+                    video: { facingMode: 'environment' },
+                    audio: false
+                }).catch(() => navigator.mediaDevices.getUserMedia({ video: true, audio: false }));
+            }
+
+            if (!stream) {
+                throw new Error('Camera stream not available');
+            }
+
             streamRef.current = stream;
             if (videoRef.current) {
                 videoRef.current.srcObject = stream;
-                await videoRef.current.play();
+                videoRef.current.onloadedmetadata = () => {
+                    videoRef.current?.play()?.catch(e => console.warn('Video play deferred:', e));
+                };
+                try {
+                    await videoRef.current.play();
+                } catch (playErr) {
+                    console.warn('Initial video play caught safely:', playErr);
+                }
             }
             setCameraReady(true);
-        } catch {
+        } catch (err) {
+            console.warn('Camera startup notice:', err);
             setCameraReady(false);
-            setCameraError('Camera permission allow karo, phir retry dabao.');
+            setCameraError('Camera permission allow karein aur Retry dabayein.');
         }
     }, []);
 
@@ -372,35 +395,42 @@ const StaffUpload = () => {
         window.addEventListener('online', handleOnline);
         window.addEventListener('offline', handleOffline);
 
-        // Initial GPS check
-        handleEnableLocation();
+        // Initial Staggered GPS check (runs smoothly after camera opens)
+        const gpsInitTimer = window.setTimeout(() => {
+            handleEnableLocation();
+        }, 700);
 
         let watchId = null;
-        if (navigator.geolocation) {
-            watchId = navigator.geolocation.watchPosition(
-                ({ coords }) => {
-                    setLastGps({
-                        latitude: coords.latitude,
-                        longitude: coords.longitude,
-                        accuracy: coords.accuracy,
-                        capturedAt: new Date().toISOString()
-                    });
-                    setGpsError(null);
-                    setIsGpsPromptOpen(false);
-                    stopOfflineVoice();
-                },
-                (err) => {
-                    let msg = 'GPS signal dhoondh raha hai...';
-                    if (err.code === 1) msg = 'Location permission block hai.';
-                    else if (err.code === 2) msg = 'Phone ka GPS OFF hai.';
-                    setGpsError(msg);
-                },
-                { enableHighAccuracy: true, timeout: 10000, maximumAge: 10000 }
-            );
+        if (typeof navigator !== 'undefined' && navigator.geolocation) {
+            try {
+                watchId = navigator.geolocation.watchPosition(
+                    ({ coords }) => {
+                        setLastGps({
+                            latitude: coords.latitude,
+                            longitude: coords.longitude,
+                            accuracy: coords.accuracy,
+                            capturedAt: new Date().toISOString()
+                        });
+                        setGpsError(null);
+                        setIsGpsPromptOpen(false);
+                        stopOfflineVoice();
+                    },
+                    (err) => {
+                        let msg = 'GPS signal dhoondh raha hai...';
+                        if (err.code === 1) msg = 'Location permission block hai.';
+                        else if (err.code === 2) msg = 'Phone ka GPS OFF hai.';
+                        setGpsError(msg);
+                    },
+                    { enableHighAccuracy: true, timeout: 10000, maximumAge: 10000 }
+                );
+            } catch (wErr) {
+                console.warn('watchPosition notice:', wErr);
+            }
         }
 
         flushQueue();
         return () => {
+            window.clearTimeout(gpsInitTimer);
             window.removeEventListener('touchstart', handleUserGesture);
             window.removeEventListener('click', handleUserGesture);
             window.removeEventListener('pointerdown', handleUserGesture);
@@ -409,8 +439,16 @@ const StaffUpload = () => {
             window.clearTimeout(flushTimerRef.current);
             window.clearTimeout(bannerTimerRef.current);
             stopOfflineVoice();
-            if (watchId !== null) navigator.geolocation.clearWatch(watchId);
-            if (streamRef.current) streamRef.current.getTracks().forEach(track => track.stop());
+            if (watchId !== null && typeof navigator !== 'undefined' && navigator.geolocation) {
+                try {
+                    navigator.geolocation.clearWatch(watchId);
+                } catch {}
+            }
+            if (streamRef.current) {
+                try {
+                    streamRef.current.getTracks().forEach(track => track.stop());
+                } catch {}
+            }
         };
     }, [flushQueue, refreshPendingCount, startCamera]);
 
