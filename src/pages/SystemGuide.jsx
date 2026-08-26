@@ -23,7 +23,7 @@ const SystemGuide = () => {
     const handleCopySummary = () => {
         if (navigator.clipboard) {
             navigator.clipboard.writeText(
-                `HIRA Advertising OOH Management Platform: Complete Functionality & Operational Solutions Guide.\nURL: ${window.location.origin}/guide\nIncludes Executive Dashboard, 50m GPS Geofenced Field Audits, Live Excel Sync, Daily Gemini AI Verification, and Client Proposals.`
+                `HIRA Advertising OOH Management Platform: Complete Functionality & Operational Solutions Guide.\nURL: ${window.location.origin}/guide\nIncludes Executive Dashboard, 50m GPS Geofenced Field Audits, Live Excel Sync, Daily Claude Vision AI Verification, and Client Proposals.`
             );
             alert('Guide summary link copied to clipboard!');
         }
@@ -220,7 +220,7 @@ const SystemGuide = () => {
                         </div>
                         <div>
                             <h2>5. Daily AI Updates (Batch Photo Automation)</h2>
-                            <span className="section-tag pink">Gemini Vision AI, Printed Watermark OCR & Auto Status Tagging</span>
+                            <span className="section-tag pink">Claude Vision AI, Printed Watermark OCR & Auto Status Tagging</span>
                         </div>
                     </div>
 
@@ -229,7 +229,7 @@ const SystemGuide = () => {
                             <h3>🖥️ What Is Happening on Screen:</h3>
                             <ul>
                                 <li><strong>Batch Drag & Drop:</strong> Admins can drop dozens of daily execution photos taken by third-party mounting agencies.</li>
-                                <li><strong>Gemini Vision OCR:</strong> AI inspects printed camera GPS watermarks, timestamps, road landmarks, and mounted brand creative flex.</li>
+                                <li><strong>Claude Vision OCR:</strong> AI inspects printed camera GPS watermarks, timestamps, road landmarks, and mounted brand creative flex.</li>
                                 <li><strong>Auto Status Tagging:</strong> Automatically detects whether a site is <em>Occupied</em> (brand creative mounted) or <em>Available</em> (torn/blank flex/to-let).</li>
                                 <li><strong>Instant Sync:</strong> 1-click "Confirm & Sync" updates the master database and refreshes photos on the live website.</li>
                             </ul>
@@ -285,7 +285,7 @@ const SystemGuide = () => {
                         </div>
                         <div className="summary-item">
                             <strong className="text-emerald">⚡ Zero Manual Data Entry</strong>
-                            <p>Gemini AI and direct Excel sync eliminate manual copy-pasting across disparate spreadsheets.</p>
+                            <p>Claude Vision AI and direct Excel sync eliminate manual copy-pasting across disparate spreadsheets.</p>
                         </div>
                         <div className="summary-item">
                             <strong className="text-amber">📈 Revenue Maximization</strong>
