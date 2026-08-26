@@ -3,6 +3,7 @@ import { Camera, CheckCircle2, MapPin, MapPinOff, RefreshCw, RotateCcw, WifiOff,
 import { uploadStaffPhoto, fetchHoardings, saveLocalStaffUpload } from '../services/dataService';
 import { matchGeofencedHoardingWithGemini } from '../services/aiService';
 import { HIRA_LOGO } from '../assets/hiraLogoData';
+import AppAutoUpdater from '../components/AppAutoUpdater';
 import {
     blobToDataUrl,
     countPendingStaffPhotos,
@@ -613,6 +614,7 @@ const StaffUpload = () => {
 
     return (
         <main className="staff-camera-page">
+            <AppAutoUpdater />
             <video
                 ref={videoRef}
                 className="staff-camera-video"

@@ -10,6 +10,7 @@ import AdminDashboard from './pages/AdminDashboard';
 import PublicAudit from './pages/PublicAudit';
 import ClientReport from './pages/ClientReport';
 import StaffUpload from './pages/StaffUpload';
+import AppAutoUpdater from './components/AppAutoUpdater';
 import { fetchHoardings } from './services/dataService';
 import { getChangeVersion } from './services/secureApi';
 import { HelmetProvider } from 'react-helmet-async';
@@ -185,6 +186,7 @@ function AppContent({ hoardings, setHoardings }) {
   if (isStaffMode && location.pathname === '/') {
     return (
       <div className="app-container staff-app-mode">
+        <AppAutoUpdater />
         <main>
           <StaffUpload />
         </main>
@@ -195,6 +197,7 @@ function AppContent({ hoardings, setHoardings }) {
   return (
     <div className="app-container">
       <AutoUpdateBar />
+      <AppAutoUpdater />
       {!hideNav && <Navbar />}
       <main>
         <Routes>
