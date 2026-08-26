@@ -2900,12 +2900,17 @@ const AdminDashboard = ({ hoardings, setHoardings }) => {
                                             <div className="qm-empty-text">
                                                 <h4>All billboard photos verified & linked</h4>
                                                 <p>
-                                                    When ground staff captures a billboard photo on mobile, Gemini AI will automatically match it within a 50m radius and save it straight into the site's History section without manual review.
+                                                    When ground staff captures a billboard photo on mobile, Claude AI will automatically match it within a 50m radius and save it straight into the site's History section without manual review.
                                                 </p>
                                             </div>
                                             <div className="qm-empty-capsules">
                                                 <span className="qm-status-capsule"><Check size={13} /> 50m Geofencing Ready</span>
-                                                <span className="qm-status-capsule"><Check size={13} /> Gemini Vision AI Active</span>
+                                                <span className="qm-status-capsule" style={{ color: '#d97757', display: 'inline-flex', alignItems: 'center', gap: '5px' }}>
+                                                    <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" style={{ color: '#d97757' }}>
+                                                        <path d="M4.5 12a1.5 1.5 0 0 1 1.5-1.5h12a1.5 1.5 0 0 1 0 3H6A1.5 1.5 0 0 1 4.5 12zm7.5-7.5a1.5 1.5 0 0 1 1.5 1.5v12a1.5 1.5 0 0 1-3 0V6A1.5 1.5 0 0 1 12 4.5zm-5.3 2.2a1.5 1.5 0 0 1 2.12 0l8.48 8.48a1.5 1.5 0 1 1-2.12 2.12L6.7 8.82a1.5 1.5 0 0 1 0-2.12zm10.6 0a1.5 1.5 0 0 1 0 2.12L8.82 17.3a1.5 1.5 0 1 1-2.12-2.12l8.48-8.48a1.5 1.5 0 0 1 2.12 0z"/>
+                                                    </svg>
+                                                    Claude Vision AI Active
+                                                </span>
                                                 <span className="qm-status-capsule"><Check size={13} /> Mobile Camera Ready</span>
                                             </div>
                                         </div>
