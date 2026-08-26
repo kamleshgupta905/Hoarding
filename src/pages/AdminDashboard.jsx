@@ -7,7 +7,7 @@ import {
     Bell, HelpCircle, Plus, Filter, Download,
     MessageSquare, Mail, User, Calendar, CheckSquare,
     MoreVertical, ExternalLink, ShieldCheck, Menu, X, UploadCloud, RefreshCw, Zap, XCircle, Share2, Trash2, Camera, Table2, Save, Undo2, Redo2, FileDown, Copy, Timer, Clock3, PanelLeftClose, PanelLeftOpen, Maximize2, Minimize2,
-    BarChart3, PieChart, Activity, Sparkles, ArrowUpRight, Layers, Compass, DollarSign, Award, Flame, Check, ChevronRight
+    BarChart3, PieChart, Activity, Sparkles, ArrowUpRight, Layers, Compass, DollarSign, Award, Flame, Check, ChevronRight, Monitor, QrCode
 } from 'lucide-react';
 import { analyzeHoardingImage } from '../services/aiService';
 import { fetchHoardings, compressImage, syncToGoogleSheet, exportProposalExcel, PROPOSAL_COLUMNS, getImageUrl, downloadHoardingImage, fetchStaffUploads, reviewStaffPhoto, detectStaffPhotoOrientation, fetchSheetGrid, saveSheetGrid, addDeletedSite } from '../services/dataService';
@@ -121,6 +121,7 @@ const AdminDashboard = ({ hoardings, setHoardings }) => {
     const [hoveredChartItem, setHoveredChartItem] = useState(null);
     const [fieldAuditTab, setFieldAuditTab] = useState('matched'); // 'matched' | 'unmatched'
     const [selectedPinpointUpload, setSelectedPinpointUpload] = useState(null);
+    const [isAppDownloadModalOpen, setIsAppDownloadModalOpen] = useState(false);
 
     // Protect Route
     useEffect(() => {
@@ -2448,6 +2449,20 @@ const AdminDashboard = ({ hoardings, setHoardings }) => {
                     </button>
                 </div>
 
+                <div className="menu-group">
+                    <div className="group-title">Native Applications</div>
+                    <button 
+                        type="button"
+                        className="nav-item download-apps-btn" 
+                        onClick={() => setIsAppDownloadModalOpen(true)}
+                        style={{ background: 'rgba(16, 185, 129, 0.12)', border: '1px solid rgba(16, 185, 129, 0.3)', color: '#34d399', width: '100%', cursor: 'pointer' }}
+                    >
+                        <Download size={19} />
+                        <span style={{ fontWeight: 700 }}>Download Apps</span>
+                        <span className="badge-new" style={{ background: '#10b981', color: '#ffffff', fontWeight: 800, marginLeft: 'auto' }}>APK & PC</span>
+                    </button>
+                </div>
+
                 <div className="sidebar-footer">
                     <button className="nav-item view-website-btn" onClick={() => navigate('/')}>
                         <ExternalLink size={18} />
@@ -2808,6 +2823,27 @@ const AdminDashboard = ({ hoardings, setHoardings }) => {
                                             </button>
                                         </div>
 
+                                        <button 
+                                            className="qm-btn-primary"
+                                            onClick={() => setIsAppDownloadModalOpen(true)}
+                                            style={{
+                                                background: 'linear-gradient(135deg, #10b981, #059669)',
+                                                color: '#ffffff',
+                                                border: 'none',
+                                                padding: '7px 14px',
+                                                borderRadius: '10px',
+                                                fontSize: '0.8rem',
+                                                fontWeight: 800,
+                                                display: 'inline-flex',
+                                                alignItems: 'center',
+                                                gap: '6px',
+                                                cursor: 'pointer',
+                                                boxShadow: '0 4px 12px rgba(16, 185, 129, 0.25)'
+                                            }}
+                                            title="Download Staff Mobile APK & Windows Desktop App"
+                                        >
+                                            <Download size={14} /> Download Apps (APK & PC)
+                                        </button>
                                         <button 
                                             className="qm-btn-secondary"
                                             onClick={() => {
@@ -4037,6 +4073,226 @@ const AdminDashboard = ({ hoardings, setHoardings }) => {
                         </div>
                     );
                 })()}
+
+                {/* 📥 Native Apps Download Modal (Staff Android APK & Windows Desktop App) */}
+                {isAppDownloadModalOpen && (
+                    <div 
+                        className="admin-modal-overlay" 
+                        onClick={() => setIsAppDownloadModalOpen(false)}
+                        style={{
+                            position: 'fixed',
+                            inset: 0,
+                            background: 'rgba(15, 23, 42, 0.75)',
+                            backdropFilter: 'blur(8px)',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            zIndex: 10000,
+                            padding: '20px'
+                        }}
+                    >
+                        <div 
+                            className="admin-modal-content"
+                            onClick={e => e.stopPropagation()}
+                            style={{
+                                background: '#ffffff',
+                                borderRadius: '24px',
+                                maxWidth: '820px',
+                                width: '100%',
+                                maxHeight: '90vh',
+                                overflowY: 'auto',
+                                boxShadow: '0 25px 60px -15px rgba(0, 0, 0, 0.3)',
+                                border: '1px solid rgba(226, 232, 240, 0.8)',
+                                padding: '32px'
+                            }}
+                        >
+                            {/* Modal Header */}
+                            <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: '24px', borderBottom: '1px solid #e2e8f0', paddingBottom: '18px' }}>
+                                <div>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '6px' }}>
+                                        <div style={{ background: 'linear-gradient(135deg, #10b981, #059669)', color: '#ffffff', width: '38px', height: '38px', borderRadius: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                            <Download size={20} />
+                                        </div>
+                                        <h2 style={{ margin: 0, fontSize: '1.45rem', fontWeight: 800, color: '#0f172a' }}>Download Official Applications</h2>
+                                    </div>
+                                    <p style={{ margin: 0, color: '#64748b', fontSize: '0.88rem' }}>
+                                        Install high-speed native apps for Ground Staff Mobile Audits and Executive Desktop Administration.
+                                    </p>
+                                </div>
+                                <button 
+                                    type="button" 
+                                    onClick={() => setIsAppDownloadModalOpen(false)}
+                                    style={{ background: '#f1f5f9', border: 'none', width: '36px', height: '36px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#64748b', cursor: 'pointer', transition: 'all 0.2s ease' }}
+                                >
+                                    <X size={20} />
+                                </button>
+                            </div>
+
+                            {/* Two App Cards Grid */}
+                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(330px, 1fr))', gap: '20px', marginBottom: '24px' }}>
+                                
+                                {/* 📱 Card 1: Staff Camera Android APK */}
+                                <div style={{ background: 'linear-gradient(180deg, #f0fdf4 0%, #ffffff 100%)', border: '1.5px solid #86efac', borderRadius: '20px', padding: '24px', display: 'flex', flexDirection: 'column', position: 'relative' }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px' }}>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                                            <div style={{ background: '#10b981', color: '#ffffff', padding: '10px', borderRadius: '14px', display: 'flex' }}>
+                                                <Smartphone size={24} />
+                                            </div>
+                                            <div>
+                                                <h3 style={{ margin: 0, fontSize: '1.15rem', fontWeight: 800, color: '#065f46' }}>Heera Staff Camera</h3>
+                                                <span style={{ fontSize: '0.74rem', color: '#047857', fontWeight: 700 }}>Android Mobile App</span>
+                                            </div>
+                                        </div>
+                                        <span style={{ background: '#10b981', color: '#ffffff', fontSize: '0.72rem', fontWeight: 800, padding: '4px 10px', borderRadius: '20px' }}>
+                                            Latest APK (~15MB)
+                                        </span>
+                                    </div>
+
+                                    <ul style={{ margin: '0 0 18px 0', padding: '0 0 0 16px', color: '#334155', fontSize: '0.82rem', lineHeight: '1.6' }}>
+                                        <li>⚡ <strong>0s Instant Camera Viewfinder:</strong> Direct launch without loading delays.</li>
+                                        <li>📍 <strong>50m Smart GPS Geofence:</strong> Auto-matches billboard location.</li>
+                                        <li>🔄 <strong>In-App Auto Update:</strong> Updates automatically on newer releases.</li>
+                                        <li>📶 <strong>Offline Storage Queue:</strong> Captures even without active internet.</li>
+                                    </ul>
+
+                                    {/* QR Code + Download Button */}
+                                    <div style={{ background: '#ffffff', border: '1px solid #dcfce7', borderRadius: '16px', padding: '14px', display: 'flex', alignItems: 'center', gap: '14px', marginBottom: '16px' }}>
+                                        <img 
+                                            src="https://api.qrserver.com/v1/create-qr-code/?size=120x120&data=https%3A%2F%2Fgithub.com%2Fkamleshgupta905%2FHoarding%2Freleases%2Fdownload%2Fstaff-apk-latest%2Fheera-staff-camera.apk" 
+                                            alt="Scan to Download APK" 
+                                            style={{ width: '85px', height: '85px', borderRadius: '10px', border: '1px solid #cbd5e1' }}
+                                        />
+                                        <div style={{ fontSize: '0.76rem', color: '#475569' }}>
+                                            <div style={{ fontWeight: 800, color: '#0f172a', marginBottom: '2px', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                                <QrCode size={14} color="#10b981" /> Scan from Phone Camera
+                                            </div>
+                                            Scan this QR code with any mobile camera to download APK directly onto your Android device.
+                                        </div>
+                                    </div>
+
+                                    <div style={{ marginTop: 'auto', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                                        <a 
+                                            href="https://github.com/kamleshgupta905/Hoarding/releases/download/staff-apk-latest/heera-staff-camera.apk" 
+                                            target="_blank" 
+                                            rel="noopener noreferrer"
+                                            style={{
+                                                background: '#10b981',
+                                                color: '#ffffff',
+                                                padding: '12px 18px',
+                                                borderRadius: '12px',
+                                                textAlign: 'center',
+                                                fontWeight: 800,
+                                                fontSize: '0.9rem',
+                                                textDecoration: 'none',
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                justifyContent: 'center',
+                                                gap: '8px',
+                                                boxShadow: '0 4px 14px rgba(16, 185, 129, 0.35)'
+                                            }}
+                                        >
+                                            <Download size={18} /> Download Android APK (Direct)
+                                        </a>
+                                        <button 
+                                            type="button"
+                                            onClick={() => {
+                                                if (navigator.clipboard) {
+                                                    navigator.clipboard.writeText('https://github.com/kamleshgupta905/Hoarding/releases/download/staff-apk-latest/heera-staff-camera.apk');
+                                                    alert('Direct APK download link copied to clipboard!');
+                                                }
+                                            }}
+                                            style={{ background: '#f8fafc', border: '1px solid #cbd5e1', color: '#475569', padding: '8px 12px', borderRadius: '10px', fontSize: '0.78rem', fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}
+                                        >
+                                            <Share2 size={13} /> Copy Direct APK Link
+                                        </button>
+                                    </div>
+                                </div>
+
+                                {/* 💻 Card 2: Windows Desktop App (.exe) */}
+                                <div style={{ background: 'linear-gradient(180deg, #eff6ff 0%, #ffffff 100%)', border: '1.5px solid #93c5fd', borderRadius: '20px', padding: '24px', display: 'flex', flexDirection: 'column', position: 'relative' }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px' }}>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                                            <div style={{ background: '#2563eb', color: '#ffffff', padding: '10px', borderRadius: '14px', display: 'flex' }}>
+                                                <Monitor size={24} />
+                                            </div>
+                                            <div>
+                                                <h3 style={{ margin: 0, fontSize: '1.15rem', fontWeight: 800, color: '#1e40af' }}>Heera Hoardings PC</h3>
+                                                <span style={{ fontSize: '0.74rem', color: '#1d4ed8', fontWeight: 700 }}>Windows Desktop App</span>
+                                            </div>
+                                        </div>
+                                        <span style={{ background: '#2563eb', color: '#ffffff', fontSize: '0.72rem', fontWeight: 800, padding: '4px 10px', borderRadius: '20px' }}>
+                                            Windows (.exe)
+                                        </span>
+                                    </div>
+
+                                    <ul style={{ margin: '0 0 18px 0', padding: '0 0 0 16px', color: '#334155', fontSize: '0.82rem', lineHeight: '1.6' }}>
+                                        <li>⚡ <strong>60 FPS Native Performance:</strong> Ultra-fast local SQLite and caching.</li>
+                                        <li>📊 <strong>Full Excel Sheet & Audit Sync:</strong> Work seamlessly offline or online.</li>
+                                        <li>🔔 <strong>Desktop System Notifications:</strong> Instant alert on field audit submissions.</li>
+                                        <li>🖥️ <strong>Standalone Executable:</strong> Dedicated window without browser tabs.</li>
+                                    </ul>
+
+                                    <div style={{ background: '#ffffff', border: '1px solid #dbeafe', borderRadius: '16px', padding: '14px', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '12px' }}>
+                                        <div style={{ background: '#dbeafe', color: '#2563eb', padding: '10px', borderRadius: '12px', display: 'flex' }}>
+                                            <Sparkles size={20} />
+                                        </div>
+                                        <div style={{ fontSize: '0.78rem', color: '#334155' }}>
+                                            <strong>Standalone Windows Setup:</strong>
+                                            <div style={{ color: '#64748b', fontSize: '0.73rem', marginTop: '2px' }}>
+                                                Compiled via GitHub CI/CD with automatic update hooks.
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <div style={{ marginTop: 'auto', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                                        <a 
+                                            href="https://github.com/kamleshgupta905/Hoarding/releases" 
+                                            target="_blank" 
+                                            rel="noopener noreferrer"
+                                            style={{
+                                                background: '#2563eb',
+                                                color: '#ffffff',
+                                                padding: '12px 18px',
+                                                borderRadius: '12px',
+                                                textAlign: 'center',
+                                                fontWeight: 800,
+                                                fontSize: '0.9rem',
+                                                textDecoration: 'none',
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                justifyContent: 'center',
+                                                gap: '8px',
+                                                boxShadow: '0 4px 14px rgba(37, 99, 235, 0.35)'
+                                            }}
+                                        >
+                                            <Download size={18} /> Download Desktop App Releases
+                                        </a>
+                                        <a 
+                                            href="https://github.com/kamleshgupta905/Hoarding/releases/latest" 
+                                            target="_blank" 
+                                            rel="noopener noreferrer"
+                                            style={{ background: '#f8fafc', border: '1px solid #cbd5e1', color: '#475569', padding: '8px 12px', borderRadius: '10px', fontSize: '0.78rem', fontWeight: 700, textDecoration: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}
+                                        >
+                                            <ExternalLink size={13} /> View Latest Release Notes
+                                        </a>
+                                    </div>
+                                </div>
+
+                            </div>
+
+                            {/* Modal Footer */}
+                            <div style={{ display: 'flex', justifyContent: 'flex-end', borderTop: '1px solid #e2e8f0', paddingTop: '16px' }}>
+                                <button 
+                                    type="button" 
+                                    onClick={() => setIsAppDownloadModalOpen(false)}
+                                    style={{ padding: '10px 22px', borderRadius: '12px', border: '1px solid #cbd5e1', background: '#f8fafc', color: '#475569', fontSize: '0.88rem', fontWeight: 800, cursor: 'pointer' }}
+                                >
+                                    Close
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                )}
 
                 {/* 🍞 Floating Glassmorphic Toast Notifications */}
                 {toast && (
