@@ -34,7 +34,7 @@ const getAudioContext = () => {
     return audioContextInstance;
 };
 
-export const unlockAudio = () => {
+const unlockAudio = () => {
     try {
         const ctx = getAudioContext();
         if (ctx && ctx.state === 'suspended') {
