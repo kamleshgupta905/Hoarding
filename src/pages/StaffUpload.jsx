@@ -439,7 +439,6 @@ const StaffUpload = () => {
             } else {
                 setGpsError(freshGps.error || 'Photo lene se pehle phone ki Location ON karein.');
                 setIsGpsPromptOpen(true);
-                playAlertTone('error');
                 speakOfflineVoice('Photo lene se pehle location on karein.');
                 return;
             }
@@ -496,7 +495,6 @@ const StaffUpload = () => {
                                 confidence: matchConfidence
                             });
 
-                            playAlertTone('success');
                             speakOfflineVoice('Site photo auto-match ho gayi hai.');
                         } else if (candidates.length === 1 && candidates[0].distanceM <= 35) {
                             matchedSite = candidates[0]["Location "] || candidates[0].siteName;
@@ -510,7 +508,6 @@ const StaffUpload = () => {
                                 confidence: 85
                             });
 
-                            playAlertTone('success');
                             speakOfflineVoice('Site photo auto-match ho gayi hai.');
                         } else {
                             // Unmatched candidates
@@ -518,11 +515,10 @@ const StaffUpload = () => {
                                 warning: true,
                                 message: 'Visual match not confirmed. Sent to admin review.'
                             });
-                            playAlertTone('error');
                             speakOfflineVoice('Photo kisi registered site se match nahi hui.');
                         }
                     } catch (aiErr) {
-                        console.warn('Gemini vision matching error:', aiErr);
+                        console.warn('AI vision matching error:', aiErr);
                         if (candidates.length === 1 && candidates[0].distanceM <= 30) {
                             matchedSite = candidates[0]["Location "] || candidates[0].siteName;
                             status = 'AUTO_APPROVED';
@@ -533,14 +529,12 @@ const StaffUpload = () => {
                                 distance: Math.round(candidates[0].distanceM),
                                 confidence: 80
                             });
-                            playAlertTone('success');
                             speakOfflineVoice('Site photo auto-match ho gayi hai.');
                         } else {
                             showMatchBanner({
                                 warning: true,
                                 message: 'Site match could not be confirmed.'
                             });
-                            playAlertTone('error');
                             speakOfflineVoice('Photo kisi registered site se match nahi hui.');
                         }
                     }
@@ -549,7 +543,6 @@ const StaffUpload = () => {
                         warning: true,
                         message: 'No registered hoarding within 75m GPS range.'
                     });
-                    playAlertTone('error');
                     speakOfflineVoice('50 meter ke range me koi hoarding nahi mili.');
                 }
             }
