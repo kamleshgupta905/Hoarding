@@ -202,8 +202,9 @@ function AppContent({ hoardings, setHoardings }) {
       <main>
         <Routes>
           {/* Admin Routes - Use Full List (including Disabled) */}
+          <Route path="/admin" element={<AdminDashboard hoardings={hoardings || []} setHoardings={setHoardings} />} />
           <Route path="/admin/login" element={<AdminLogin />} />
-          <Route path="/admin/dashboard" element={<AdminDashboard hoardings={hoardings} setHoardings={setHoardings} />} />
+          <Route path="/admin/dashboard" element={<AdminDashboard hoardings={hoardings || []} setHoardings={setHoardings} />} />
 
           {/* Public Routes - Use Filtered List for lists, but Original for detail to allow admin actions */}
           <Route path="/" element={<Home hoardings={publicHoardings} />} />

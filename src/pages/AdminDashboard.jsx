@@ -47,7 +47,7 @@ const estimateUploadDuration = (file, type) => {
     return sizeInMb <= 8 ? '1-2 minutes' : `about ${Math.min(8, Math.max(2, Math.ceil(sizeInMb / 4)))} minutes`;
 };
 
-const AdminDashboard = ({ hoardings, setHoardings }) => {
+const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
     const navigate = useNavigate();
     const [activeTab, setActiveTab] = useState('dashboard');
     const [searchTerm, setSearchTerm] = useState('');
@@ -1295,20 +1295,22 @@ const AdminDashboard = ({ hoardings, setHoardings }) => {
             return [...prev, label];
         });
     };
+    const safeHoardings = Array.isArray(hoardings) ? hoardings : [];
+    const safeStaffUploads = Array.isArray(staffUploads) ? staffUploads : [];
 
-    const inventoryCities = ['All', ...new Set(hoardings.map(h => {
+    const inventoryCities = ['All', ...new Set(safeHoardings.map(h => {
         const city = h.City?.trim();
         if (!city) return null;
         return city.charAt(0).toUpperCase() + city.slice(1).toLowerCase();
     }).filter(Boolean))];
     const inventoryStatuses = ['All', 'Available', 'Occupied', 'Offline'];
     const inventoryTargetHoardings = inventoryCityFilter === 'All'
-        ? hoardings
-        : hoardings.filter(h => (h.City || '').trim().toLowerCase() === inventoryCityFilter.toLowerCase());
+        ? safeHoardings
+        : safeHoardings.filter(h => (h.City || '').trim().toLowerCase() === inventoryCityFilter.toLowerCase());
     const inventoryLocalities = ['All', ...new Set(inventoryTargetHoardings.map(h => (h["Locality"] || h["Area"] || '').trim()).filter(Boolean))].sort((a, b) => a === 'All' ? -1 : b === 'All' ? 1 : a.localeCompare(b));
-    const inventoryMediaFormats = ['All', ...new Set(hoardings.map(h => h["Media Format (Front Lit / Back Lit / Non Lit)"]).filter(Boolean))];
-    const inventorySizes = ['All', ...new Set(hoardings.map(h => h["Size (Large/Medium/Small)"]).filter(Boolean))];
-    const inventoryCategories = ['All', ...new Set(hoardings.map(h => h["Site Category"]).filter(Boolean))];
+    const inventoryMediaFormats = ['All', ...new Set(safeHoardings.map(h => h["Media Format (Front Lit / Back Lit / Non Lit)"]).filter(Boolean))];
+    const inventorySizes = ['All', ...new Set(safeHoardings.map(h => h["Size (Large/Medium/Small)"]).filter(Boolean))];
+    const inventoryCategories = ['All', ...new Set(safeHoardings.map(h => h["Site Category"]).filter(Boolean))];
     const inventoryPriceRanges = [
         ['All', 'All Prices'],
         ['0-25k', 'Under ₹25k'],
@@ -1322,7 +1324,7 @@ const AdminDashboard = ({ hoardings, setHoardings }) => {
         setActiveTab('inventory');
     };
 
-    const reviewQueue = staffUploads.filter(upload => upload.Status === 'REVIEW_REQUIRED' && !pendingStaffReviewIds[upload.UploadId]);
+    const reviewQueue = safeStaffUploads.filter(upload => upload && upload.Status === 'REVIEW_REQUIRED' && !pendingStaffReviewIds[upload.UploadId]);
     
     // 📅 2-Day (48 Hours) Auto-Purge for Unmatched Photos
     const TWO_DAYS_MS = 48 * 3600 * 1000;
@@ -1333,7 +1335,8 @@ const AdminDashboard = ({ hoardings, setHoardings }) => {
     };
 
     // ✅ AI Auto-Matched Photos (50m Geofenced & Approved)
-    const matchedPhotoUpdates = staffUploads.filter(upload => {
+    const matchedPhotoUpdates = safeStaffUploads.filter(upload => {
+        if (!upload) return false;
         return upload.Status === 'AUTO_APPROVED' || 
                upload.Decision === 'GEMINI_GPS_AUTO_MATCH' || 
                upload.Decision === 'GPS_AUTO_MATCH' || 
@@ -1341,7 +1344,8 @@ const AdminDashboard = ({ hoardings, setHoardings }) => {
     });
 
     // ⚠️ Unmatched / Out-of-Range Photos (Active, not older than 2 days)
-    const unmatchedPhotoUpdates = staffUploads.filter(upload => {
+    const unmatchedPhotoUpdates = safeStaffUploads.filter(upload => {
+        if (!upload) return false;
         const isMatched = upload.Status === 'AUTO_APPROVED' || 
                           upload.Decision === 'GEMINI_GPS_AUTO_MATCH' || 
                           upload.Decision === 'GPS_AUTO_MATCH' || 
@@ -1351,7 +1355,8 @@ const AdminDashboard = ({ hoardings, setHoardings }) => {
         return !isOlderThan2Days(upload.CapturedAt || upload.ReviewedAt);
     });
 
-    const purgedUnmatchedCount = staffUploads.filter(upload => {
+    const purgedUnmatchedCount = safeStaffUploads.filter(upload => {
+        if (!upload) return false;
         const isMatched = upload.Status === 'AUTO_APPROVED' || 
                           upload.Decision === 'GEMINI_GPS_AUTO_MATCH' || 
                           upload.Decision === 'GPS_AUTO_MATCH' || 
@@ -1361,35 +1366,39 @@ const AdminDashboard = ({ hoardings, setHoardings }) => {
 
     // 📅 Today's Live Staff Uploads
     const todayDateString = new Date().toDateString();
-    const todayStaffUploads = staffUploads.filter(upload => {
+    const todayStaffUploads = safeStaffUploads.filter(upload => {
+        if (!upload) return false;
         const d = new Date(upload.CapturedAt || upload.ReviewedAt || 0);
         return d.toDateString() === todayDateString;
     });
-    const todayAutoApprovedCount = todayStaffUploads.filter(u => u.Status === 'AUTO_APPROVED' || u.Decision === 'GEMINI_GPS_AUTO_MATCH' || u.Decision === 'GPS_AUTO_MATCH').length;
+    const todayAutoApprovedCount = todayStaffUploads.filter(u => u && (u.Status === 'AUTO_APPROVED' || u.Decision === 'GEMINI_GPS_AUTO_MATCH' || u.Decision === 'GPS_AUTO_MATCH')).length;
 
     // Filter to only recent approved/active uploads from the last 24h
     const recentPhotoUpdates = matchedPhotoUpdates.slice(0, 16);
 
     // Dynamic Overview Analytics
-    const totalHoardingsCount = hoardings.length;
-    const occupiedCount = hoardings.filter(h => h.STATUS === 'Occupied').length;
-    const availableCount = hoardings.filter(h => h.STATUS === 'Available' || !h.STATUS).length;
-    const offlineCount = hoardings.filter(h => h.STATUS === 'Disabled').length;
+    const totalHoardingsCount = safeHoardings.length;
+    const occupiedCount = safeHoardings.filter(h => h && h.STATUS === 'Occupied').length;
+    const availableCount = safeHoardings.filter(h => h && (h.STATUS === 'Available' || !h.STATUS)).length;
+    const offlineCount = safeHoardings.filter(h => h && h.STATUS === 'Disabled').length;
     
-    const totalMonthlyRevenue = hoardings.reduce((sum, h) => {
+    const totalMonthlyRevenue = safeHoardings.reduce((sum, h) => {
+        if (!h) return sum;
         const v = parseFloat(String(h["Rental Per Month"] || h["Avg Monthly Cost (INR)"] || 0).replace(/[^0-9.]/g, '')) || 0;
         return sum + v;
     }, 0);
     const avgMonthlyRate = totalHoardingsCount > 0 ? Math.round(totalMonthlyRevenue / totalHoardingsCount) : 0;
     
-    const totalSqFt = hoardings.reduce((sum, h) => {
+    const totalSqFt = safeHoardings.reduce((sum, h) => {
+        if (!h) return sum;
         const sqft = parseFloat(h["Total Sq. Ft"]) || (parseFloat(h["Width"]) * parseFloat(h["Height"])) || 0;
         return sum + sqft;
     }, 0);
 
     // Prime Corridors / Localities Breakdown (Top 8 from real Meerut data)
     const zoneMap = {};
-    hoardings.forEach(h => {
+    safeHoardings.forEach(h => {
+        if (!h) return;
         const z = (h["Locality"] || h["Area"] || 'Meerut Central').trim();
         if (z) zoneMap[z] = (zoneMap[z] || 0) + 1;
     });
@@ -1410,14 +1419,16 @@ const AdminDashboard = ({ hoardings, setHoardings }) => {
         { label: '₹50,000 - ₹1,00,000 / mo', min: 50000, max: 100000, count: 0, color: '#8b5cf6' },
         { label: 'Above ₹1,00,000 / mo', min: 100000, max: Infinity, count: 0, color: '#059669' },
     ];
-    hoardings.forEach(h => {
+    safeHoardings.forEach(h => {
+        if (!h) return;
         const p = parseFloat(String(h["Rental Per Month"] || h["Avg Monthly Cost (INR)"] || 0).replace(/[^0-9.]/g, '')) || 0;
         const tier = overviewPriceTiers.find(t => p >= t.min && p < t.max);
         if (tier) tier.count++;
     });
 
     // Top Prime Highlight Sites
-    const primeHighlightSites = hoardings.slice(0, 4);
+    const primeHighlightSites = safeHoardings.slice(0, 4);
+
 
     useEffect(() => {
         let cancelled = false;
