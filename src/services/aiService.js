@@ -1,7 +1,7 @@
-import { normalizeText } from '../core/hoardingSchema';
-import { matchGeofencedHoardingWithGemini, matchDailyExecutionProofWithAI } from './geminiService';
+import { matchGeofencedHoardingWithGemini, matchDailyExecutionProofWithAI, extractSitesFromRawDataWithGemini } from './geminiService';
 
-export { matchGeofencedHoardingWithGemini, matchDailyExecutionProofWithAI };
+export { matchGeofencedHoardingWithGemini, matchDailyExecutionProofWithAI, extractSitesFromRawDataWithGemini };
+
 
 let workerPromise = null;
 

@@ -101,3 +101,93 @@ export const blobToDataUrl = (blob) => new Promise((resolve, reject) => {
     reader.onerror = () => reject(new Error('Could not prepare corrected image.'));
     reader.readAsDataURL(blob);
 });
+
+/**
+ * 🛡️ Bakes raw image pixels into physically Upright (0° Seedha) orientation
+ * Resolves all EXIF rotation issues before uploading to Google Drive so no rotation is ever needed.
+ */
+export const ensureUprightBlob = async (fileOrBlob, maxWidth = 1600, quality = 0.82) => {
+    if (!fileOrBlob) throw new Error('No file or blob provided');
+    let blob = fileOrBlob;
+    let exifRotation = 0;
+
+    try {
+        const buffer = await blob.arrayBuffer();
+        exifRotation = getJpegExifRotation(buffer);
+    } catch {}
+
+    let sourceWidth = 0;
+    let sourceHeight = 0;
+    let bitmapOrImg = null;
+    let needsManualExifRotate = false;
+
+    if (typeof createImageBitmap === 'function') {
+        try {
+            bitmapOrImg = await createImageBitmap(blob, { imageOrientation: 'from-image' });
+            sourceWidth = bitmapOrImg.width;
+            sourceHeight = bitmapOrImg.height;
+        } catch {
+            bitmapOrImg = null;
+        }
+    }
+
+    if (!bitmapOrImg) {
+        const url = URL.createObjectURL(blob);
+        try {
+            bitmapOrImg = await new Promise((resolve, reject) => {
+                const img = new Image();
+                img.onload = () => resolve(img);
+                img.onerror = () => reject(new Error('Image decode error'));
+                img.src = url;
+            });
+            sourceWidth = bitmapOrImg.naturalWidth || bitmapOrImg.width;
+            sourceHeight = bitmapOrImg.naturalHeight || bitmapOrImg.height;
+            needsManualExifRotate = exifRotation !== 0;
+        } finally {
+            URL.revokeObjectURL(url);
+        }
+    }
+
+    const sideways = needsManualExifRotate && (exifRotation === 90 || exifRotation === 270);
+    const effectiveWidth = sideways ? sourceHeight : sourceWidth;
+    const effectiveHeight = sideways ? sourceWidth : sourceHeight;
+
+    const maxDim = Math.max(effectiveWidth, effectiveHeight);
+    const scale = maxDim > maxWidth ? maxWidth / maxDim : 1;
+
+    const finalWidth = Math.round(effectiveWidth * scale);
+    const finalHeight = Math.round(effectiveHeight * scale);
+
+    const canvas = document.createElement('canvas');
+    canvas.width = finalWidth;
+    canvas.height = finalHeight;
+    const ctx = canvas.getContext('2d');
+
+    if (needsManualExifRotate) {
+        ctx.translate(canvas.width / 2, canvas.height / 2);
+        ctx.rotate((exifRotation * Math.PI) / 180);
+        const drawW = Math.round(sourceWidth * scale);
+        const drawH = Math.round(sourceHeight * scale);
+        ctx.drawImage(bitmapOrImg, -drawW / 2, -drawH / 2, drawW, drawH);
+    } else {
+        ctx.drawImage(bitmapOrImg, 0, 0, finalWidth, finalHeight);
+    }
+
+    bitmapOrImg.close?.();
+
+    return new Promise((resolve, reject) => {
+        canvas.toBlob((b) => {
+            if (b) resolve(b);
+            else reject(new Error('Failed to create upright blob'));
+        }, 'image/jpeg', quality);
+    });
+};
+
+/**
+ * ⚡ Converts any file to an Upright Compressed Base64 Data URL for Google Drive
+ */
+export const ensureUprightDataUrl = async (fileOrBlob, maxWidth = 1600, quality = 0.82) => {
+    const uprightBlob = await ensureUprightBlob(fileOrBlob, maxWidth, quality);
+    return blobToDataUrl(uprightBlob);
+};
+

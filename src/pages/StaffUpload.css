@@ -680,3 +680,121 @@
         opacity: 0.8;
     }
 }
+
+/* 📱 UNIVERSAL MOBILE RESPONSIVE ENGINE (All phone screen sizes & notches) */
+@media (max-width: 480px) {
+    .staff-camera-topbar {
+        top: max(8px, env(safe-area-inset-top));
+        left: 8px;
+        right: 8px;
+        gap: 4px;
+        padding-bottom: 2px;
+    }
+
+    .staff-camera-pill {
+        min-height: 32px;
+        padding: 0 8px;
+        font-size: 0.68rem;
+        gap: 4px;
+    }
+
+    .staff-camera-counts {
+        right: 8px;
+        top: calc(max(8px, env(safe-area-inset-top)) + 46px);
+        gap: 6px;
+    }
+
+    .staff-camera-counts div {
+        width: 78px;
+        min-height: 60px;
+        padding: 6px 4px;
+    }
+
+    .staff-camera-counts strong {
+        font-size: 1.05rem;
+    }
+
+    .staff-camera-counts span {
+        font-size: 0.62rem;
+    }
+
+    .staff-camera-bottom {
+        min-height: calc(105px + env(safe-area-inset-bottom));
+        padding: 12px 16px calc(14px + env(safe-area-inset-bottom));
+        grid-template-columns: 1fr 90px 1fr;
+    }
+
+    .staff-shutter {
+        width: 68px;
+        height: 68px;
+    }
+
+    .staff-shutter span {
+        width: 52px;
+        height: 52px;
+    }
+
+    .staff-latest-preview {
+        width: 48px;
+        height: 48px;
+    }
+
+    .staff-undo-button {
+        width: 48px;
+        height: 48px;
+    }
+
+    .staff-match-banner {
+        left: 8px;
+        right: 8px;
+        top: calc(max(8px, env(safe-area-inset-top)) + 46px);
+        padding: 10px 12px;
+    }
+}
+
+@media (max-width: 360px) {
+    .staff-camera-pill span {
+        font-size: 0.62rem;
+    }
+
+    .staff-camera-counts div {
+        width: 68px;
+        min-height: 54px;
+    }
+
+    .staff-camera-bottom {
+        padding: 8px 10px calc(10px + env(safe-area-inset-bottom));
+    }
+}
+
+/* 🔄 Landscape Mobile Adaptation */
+@media (max-height: 540px) and (orientation: landscape) {
+    .staff-camera-counts {
+        top: max(8px, env(safe-area-inset-top));
+        right: 8px;
+        display: flex;
+        flex-direction: row;
+    }
+
+    .staff-camera-counts div {
+        width: 64px;
+        min-height: 44px;
+        padding: 4px;
+    }
+
+    .staff-camera-bottom {
+        min-height: 80px;
+        padding: 6px 20px;
+    }
+
+    .staff-shutter {
+        width: 56px;
+        height: 56px;
+    }
+
+    .staff-shutter span {
+        width: 42px;
+        height: 42px;
+    }
+}
+

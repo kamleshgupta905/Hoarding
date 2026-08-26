@@ -1,5 +1,6 @@
 import Papa from 'papaparse';
 import { getAdminSession, postStaffPhoto, submitAdminOperation } from './secureApi';
+import { ensureUprightDataUrl } from '../core/imageOrientation';
 
 const fetchWithTimeout = async (url, options = {}, timeoutMs = 35000) => {
   const controller = new AbortController();
@@ -175,36 +176,39 @@ export const fetchHoardings = async () => {
 };
 
 /**
- * 🛠️ IMAGE COMPRESSION UTILITY
- * Reduces high-resolution photos to a optimized size (~1200px max) before upload.
- * This makes the 'Update Photo' action 5x-10x faster.
+ * ⚡ FAST UPRIGHT IMAGE COMPRESSION
+ * Ensures all images uploaded to Google Drive are 100% Upright (Seedha, 0° EXIF) and optimized.
  */
-export const compressImage = async (file, maxWidth = 1280, quality = 0.7) => {
-    return new Promise((resolve) => {
-        const reader = new FileReader();
-        reader.readAsDataURL(file);
-        reader.onload = (event) => {
-            const img = new Image();
-            img.src = event.target.result;
-            img.onload = () => {
-                const canvas = document.createElement('canvas');
-                let width = img.width;
-                let height = img.height;
+export const compressImage = async (file, maxWidth = 1440, quality = 0.78) => {
+    try {
+        return await ensureUprightDataUrl(file, maxWidth, quality);
+    } catch (err) {
+        console.warn('Advanced upright compression fallback:', err);
+        return new Promise((resolve) => {
+            const reader = new FileReader();
+            reader.readAsDataURL(file);
+            reader.onload = (event) => {
+                const img = new Image();
+                img.src = event.target.result;
+                img.onload = () => {
+                    const canvas = document.createElement('canvas');
+                    let width = img.width;
+                    let height = img.height;
 
-                if (width > maxWidth) {
-                    height = (maxWidth / width) * height;
-                    width = maxWidth;
-                }
+                    if (width > maxWidth) {
+                        height = (maxWidth / width) * height;
+                        width = maxWidth;
+                    }
 
-                canvas.width = width;
-                canvas.height = height;
-                const ctx = canvas.getContext('2d');
-                ctx.drawImage(img, 0, 0, width, height);
-                // ⚡ Compress with custom quality
-                resolve(canvas.toDataURL('image/jpeg', quality));
+                    canvas.width = width;
+                    canvas.height = height;
+                    const ctx = canvas.getContext('2d');
+                    ctx.drawImage(img, 0, 0, width, height);
+                    resolve(canvas.toDataURL('image/jpeg', quality));
+                };
             };
-        };
-    });
+        });
+    }
 };
 
 /**

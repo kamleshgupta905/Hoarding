@@ -300,3 +300,64 @@ If no reliable match is found, return "matchedIndex": -1.
     throw err;
   }
 };
+
+/**
+ * 📊 GEMINI DOCUMENT & PPT DATA EXTRACTOR
+ * Extracts structured outdoor media site entries from messy PPT slide texts or Excel tables.
+ */
+export const extractSitesFromRawDataWithGemini = async (rawText) => {
+  if (!rawText || typeof rawText !== 'string' || rawText.trim().length < 10) return [];
+  
+  const prompt = `
+You are an expert Outdoor Media Advertising (OOH) Data Assistant.
+Extract structured billboard/hoarding site records from the following raw document or slide text.
+
+RAW INPUT TEXT:
+${rawText.slice(0, 4000)}
+
+TASK:
+Extract all hoarding/billboard sites into a clean JSON array of objects.
+Each object must have these exact fields:
+- "Location ": string (Full descriptive landmark & road name, e.g. "Begum Bridge facing Delhi Road")
+- "City": string (e.g. "Meerut", "Noida", "Delhi")
+- "Area": string (Locality or neighborhood name)
+- "Width": number or string (Width in feet)
+- "Height": number or string (Height in feet)
+- "Media Format": string ("Front Lit", "Back Lit", or "Non Lit")
+- "Type": string ("Unipole", "Billboard", "Gantry", "BQS")
+- "Avg Monthly Cost (INR)": number (Rental price per month if mentioned, else 0)
+- "STATUS": string ("Available" or "Occupied")
+
+Return ONLY the raw JSON array (no markdown code blocks, no backticks, no commentary).
+`;
+
+  const payload = {
+    contents: [
+      {
+        parts: [
+          { text: prompt }
+        ]
+      }
+    ],
+    generationConfig: {
+      temperature: 0.1,
+      topP: 0.8,
+      maxOutputTokens: 1500
+    }
+  };
+
+  try {
+    const rawResponse = await callGeminiVision(payload);
+    const cleanJson = rawResponse.replace(/```json\s*/i, '').replace(/```\s*$/i, '').trim();
+    const jsonMatch = cleanJson.match(/\[[\s\S]*\]/);
+    if (jsonMatch) {
+      const parsed = JSON.parse(jsonMatch[0]);
+      if (Array.isArray(parsed)) return parsed;
+    }
+    return [];
+  } catch (e) {
+    console.warn('extractSitesFromRawDataWithGemini notice:', e);
+    return [];
+  }
+};
+

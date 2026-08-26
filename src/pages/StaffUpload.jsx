@@ -2,6 +2,7 @@ import React from 'react';
 import { Camera, CheckCircle2, MapPin, MapPinOff, RefreshCw, RotateCcw, WifiOff, XCircle, Sparkles, Check, AlertCircle, Navigation, ChevronRight, Compass, Volume2, VolumeX } from 'lucide-react';
 import { uploadStaffPhoto, fetchHoardings, saveLocalStaffUpload } from '../services/dataService';
 import { matchGeofencedHoardingWithGemini } from '../services/aiService';
+import { ensureUprightBlob } from '../core/imageOrientation';
 import { HIRA_LOGO } from '../assets/hiraLogoData';
 import AppAutoUpdater from '../components/AppAutoUpdater';
 import {
@@ -24,8 +25,10 @@ const getStoredUploadedCount = () => {
     return Number.isFinite(value) ? value : 0;
 };
 
-// 🔊 100% OFFLINE DEVICE-NATIVE SPEECH & AUDIO SYNTHESIS
+// 🔊 100% OFFLINE ROBUST MULTI-TIER AUDIO & VOICE ENGINE
+
 let audioContextInstance = null;
+let isAudioUnlocked = false;
 
 const getAudioContext = () => {
     if (typeof window === 'undefined') return null;
@@ -36,17 +39,131 @@ const getAudioContext = () => {
     return audioContextInstance;
 };
 
+// 🔓 Global Audio Unlocker for Mobile Chrome / Safari Autoplay Restrictions
 const unlockAudio = () => {
     try {
         const ctx = getAudioContext();
-        if (ctx && ctx.state === 'suspended') {
-            ctx.resume().catch(() => {});
+        if (ctx) {
+            if (ctx.state === 'suspended') {
+                ctx.resume().catch(() => {});
+            }
+            // Play a silent 1ms buffer to force hardware audio channel activation on iOS/Android
+            if (!isAudioUnlocked && ctx.state === 'running') {
+                const buffer = ctx.createBuffer(1, 1, 22050);
+                const source = ctx.createBufferSource();
+                source.buffer = buffer;
+                source.connect(ctx.destination);
+                source.start(0);
+                isAudioUnlocked = true;
+            }
         }
         if (typeof window !== 'undefined' && window.speechSynthesis) {
             window.speechSynthesis.resume();
         }
     } catch (e) {
         console.warn('Audio unlock notice:', e);
+    }
+};
+
+// 🎵 Offline Melodic Web Audio Chime Generator (Guaranteed to play on 100% of devices)
+export const playChime = (type = 'success') => {
+    try {
+        unlockAudio();
+        const ctx = getAudioContext();
+        if (!ctx) return;
+        if (ctx.state === 'suspended') {
+            ctx.resume().catch(() => {});
+        }
+
+        const now = ctx.currentTime;
+        
+        if (type === 'success') {
+            // 🎶 Sweet 3-tone ascending chord: C5 (523Hz) -> E5 (659Hz) -> G5 (784Hz)
+            [523.25, 659.25, 783.99].forEach((freq, i) => {
+                const osc = ctx.createOscillator();
+                const gain = ctx.createGain();
+                osc.type = 'sine';
+                osc.frequency.setValueAtTime(freq, now + i * 0.1);
+                
+                gain.gain.setValueAtTime(0, now + i * 0.1);
+                gain.gain.linearRampToValueAtTime(0.18, now + i * 0.1 + 0.02);
+                gain.gain.exponentialRampToValueAtTime(0.001, now + i * 0.1 + 0.35);
+                
+                osc.connect(gain);
+                gain.connect(ctx.destination);
+                osc.start(now + i * 0.1);
+                osc.stop(now + i * 0.1 + 0.36);
+            });
+            if (typeof navigator !== 'undefined' && navigator.vibrate) {
+                navigator.vibrate([60, 30, 80]);
+            }
+        } else if (type === 'warning' || type === 'review') {
+            // ⚠️ 2-tone gentle alert: E5 (659Hz) -> C5 (523Hz)
+            [659.25, 523.25].forEach((freq, i) => {
+                const osc = ctx.createOscillator();
+                const gain = ctx.createGain();
+                osc.type = 'triangle';
+                osc.frequency.setValueAtTime(freq, now + i * 0.14);
+                
+                gain.gain.setValueAtTime(0, now + i * 0.14);
+                gain.gain.linearRampToValueAtTime(0.2, now + i * 0.14 + 0.02);
+                gain.gain.exponentialRampToValueAtTime(0.001, now + i * 0.14 + 0.32);
+                
+                osc.connect(gain);
+                gain.connect(ctx.destination);
+                osc.start(now + i * 0.14);
+                osc.stop(now + i * 0.14 + 0.33);
+            });
+            if (typeof navigator !== 'undefined' && navigator.vibrate) {
+                navigator.vibrate([100, 50, 100]);
+            }
+        } else if (type === 'gps') {
+            // 📍 Double radar pulse ping
+            [440, 440].forEach((freq, i) => {
+                const osc = ctx.createOscillator();
+                const gain = ctx.createGain();
+                osc.type = 'sine';
+                osc.frequency.setValueAtTime(freq, now + i * 0.16);
+                
+                gain.gain.setValueAtTime(0, now + i * 0.16);
+                gain.gain.linearRampToValueAtTime(0.22, now + i * 0.16 + 0.02);
+                gain.gain.exponentialRampToValueAtTime(0.001, now + i * 0.16 + 0.22);
+                
+                osc.connect(gain);
+                gain.connect(ctx.destination);
+                osc.start(now + i * 0.16);
+                osc.stop(now + i * 0.16 + 0.23);
+            });
+        } else if (type === 'shutter') {
+            // 📸 Crisp mechanical shutter snap sound
+            const osc = ctx.createOscillator();
+            const gain = ctx.createGain();
+            osc.type = 'square';
+            osc.frequency.setValueAtTime(140, now);
+            osc.frequency.exponentialRampToValueAtTime(40, now + 0.08);
+
+            gain.gain.setValueAtTime(0.3, now);
+            gain.gain.exponentialRampToValueAtTime(0.01, now + 0.08);
+
+            osc.connect(gain);
+            gain.connect(ctx.destination);
+            osc.start(now);
+            osc.stop(now + 0.09);
+        } else if (type === 'active') {
+            // 🔔 High pleasant chime
+            const osc = ctx.createOscillator();
+            const gain = ctx.createGain();
+            osc.type = 'sine';
+            osc.frequency.setValueAtTime(880, now);
+            gain.gain.setValueAtTime(0.18, now);
+            gain.gain.exponentialRampToValueAtTime(0.001, now + 0.25);
+            osc.connect(gain);
+            gain.connect(ctx.destination);
+            osc.start(now);
+            osc.stop(now + 0.26);
+        }
+    } catch (e) {
+        console.warn('Chime generation notice:', e);
     }
 };
 
@@ -58,9 +175,23 @@ if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
     };
 }
 
-// 🗣️ Natural Spoken Hindi Voice Engine
-const speakOfflineVoice = (text, rate = 0.95, pitch = 1.0) => {
+// 🗣️ Natural Spoken Hindi Voice Engine with Android GC Protection & Fallback
+let speechTimeoutWatchdog = null;
+
+const speakOfflineVoice = (text, rate = 0.96, pitch = 1.0) => {
+    if (!text) return;
+    
+    // Always trigger subtle audio cue so sound is audible even if phone lacks Hindi voice pack
+    if (text.includes('match ho gayi') || text.includes('auto-match')) {
+        playChime('success');
+    } else if (text.includes('Location') || text.includes('GPS') || text.includes('location')) {
+        playChime('gps');
+    } else if (text.includes('Internet') || text.includes('offline') || text.includes('nahi hui')) {
+        playChime('warning');
+    }
+
     if (typeof window === 'undefined' || !('speechSynthesis' in window)) return;
+    
     try {
         unlockAudio();
         window.speechSynthesis.resume();
@@ -88,6 +219,28 @@ const speakOfflineVoice = (text, rate = 0.95, pitch = 1.0) => {
             utterance.lang = 'hi-IN';
         }
 
+        // 🛡️ Anchor utterance to window to prevent Android Chrome garbage collection bug
+        window.__activeStaffUtterance = utterance;
+
+        utterance.onend = () => {
+            window.__activeStaffUtterance = null;
+            if (speechTimeoutWatchdog) clearTimeout(speechTimeoutWatchdog);
+        };
+
+        utterance.onerror = (e) => {
+            window.__activeStaffUtterance = null;
+            if (speechTimeoutWatchdog) clearTimeout(speechTimeoutWatchdog);
+            console.warn('SpeechSynthesis error caught safely:', e);
+        };
+
+        // Safety Watchdog: Reset speech synthesis if frozen
+        if (speechTimeoutWatchdog) clearTimeout(speechTimeoutWatchdog);
+        speechTimeoutWatchdog = setTimeout(() => {
+            if (window.speechSynthesis && window.speechSynthesis.speaking) {
+                window.speechSynthesis.cancel();
+            }
+        }, 6000);
+
         window.speechSynthesis.speak(utterance);
     } catch (err) {
         console.warn('Speech synthesis notice:', err);
@@ -98,6 +251,7 @@ const stopOfflineVoice = () => {
     if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
         try {
             window.speechSynthesis.cancel();
+            if (speechTimeoutWatchdog) clearTimeout(speechTimeoutWatchdog);
         } catch {}
     }
 };
@@ -143,7 +297,7 @@ const canvasToJpeg = (canvas) => new Promise((resolve, reject) => {
     canvas.toBlob((blob) => blob ? resolve(blob) : reject(new Error('Photo capture failed.')), 'image/jpeg', 0.78);
 });
 
-// 📐 Normalizes Photo so captured billboard is ALWAYS Upright
+// 📐 Normalizes Photo so captured billboard is ALWAYS Upright (Seedha & Undistorted)
 const snapshotVideo = (video) => {
     const sourceWidth = video.videoWidth;
     const sourceHeight = video.videoHeight;
@@ -153,33 +307,62 @@ const snapshotVideo = (video) => {
 
     const isViewportPortrait = typeof window !== 'undefined' ? window.innerHeight > window.innerWidth : true;
     const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d');
 
-    // If mobile viewport is Portrait but camera stream is Landscape, normalize orientation upright
     if (isViewportPortrait && sourceWidth > sourceHeight) {
-        const targetHeight = Math.min(MAX_IMAGE_WIDTH, sourceWidth);
-        const scale = targetHeight / sourceWidth;
-        const targetWidth = Math.round(sourceHeight * scale);
+        // Mobile sensor is landscape (e.g. 1920x1080) but screen is portrait:
+        // Center-crop to 3:4 portrait aspect ratio matching what user sees on screen
+        const targetAspectRatio = 3 / 4;
+        const cropWidth = Math.round(sourceHeight * targetAspectRatio);
+        const cropHeight = sourceHeight;
+        const cropX = Math.round((sourceWidth - cropWidth) / 2);
+        const cropY = 0;
 
-        canvas.width = targetWidth;
-        canvas.height = targetHeight;
-        const ctx = canvas.getContext('2d');
-        ctx.drawImage(video, 0, 0, targetWidth, targetHeight);
+        const maxDim = Math.min(MAX_IMAGE_WIDTH, cropHeight);
+        const scale = maxDim / cropHeight;
+
+        canvas.width = Math.round(cropWidth * scale);
+        canvas.height = Math.round(cropHeight * scale);
+
+        ctx.drawImage(
+            video,
+            cropX, cropY, cropWidth, cropHeight,
+            0, 0, canvas.width, canvas.height
+        );
     } else {
-        const scale = sourceWidth > MAX_IMAGE_WIDTH ? MAX_IMAGE_WIDTH / sourceWidth : 1;
-        const width = Math.round(sourceWidth * scale);
-        const height = Math.round(sourceHeight * scale);
+        // Natural aspect ratio scaling
+        const maxDim = Math.max(sourceWidth, sourceHeight);
+        const scale = maxDim > MAX_IMAGE_WIDTH ? MAX_IMAGE_WIDTH / maxDim : 1;
+        canvas.width = Math.round(sourceWidth * scale);
+        canvas.height = Math.round(sourceHeight * scale);
 
-        canvas.width = width;
-        canvas.height = height;
-        const ctx = canvas.getContext('2d');
-        ctx.drawImage(video, 0, 0, width, height);
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
     }
 
     return canvasToJpeg(canvas);
 };
 
-const captureCameraPhoto = (video) => {
-    return snapshotVideo(video);
+const captureCameraPhoto = async (video, stream) => {
+    // 1. If ImageCapture hardware API is available on the video track, capture native photo with hardware orientation
+    if (stream && typeof ImageCapture === 'function') {
+        const tracks = stream.getVideoTracks();
+        const track = tracks && tracks[0];
+        if (track && track.readyState === 'live') {
+            try {
+                const imageCapture = new ImageCapture(track);
+                const rawBlob = await imageCapture.takePhoto();
+                if (rawBlob && rawBlob.size > 1000) {
+                    return await ensureUprightBlob(rawBlob, MAX_IMAGE_WIDTH, 0.82);
+                }
+            } catch (icErr) {
+                console.warn('ImageCapture takePhoto fallback to video canvas snapshot:', icErr);
+            }
+        }
+    }
+
+    // 2. Video Canvas snapshot fallback normalized to upright
+    const rawSnapshot = await snapshotVideo(video);
+    return await ensureUprightBlob(rawSnapshot, MAX_IMAGE_WIDTH, 0.82);
 };
 
 const StaffUpload = () => {
@@ -464,6 +647,9 @@ const StaffUpload = () => {
         unlockAudio();
         if (!videoRef.current || !cameraReady || isCapturing) return;
 
+        // Play crisp shutter snap sound immediately
+        playChime('shutter');
+
         // 🛡️ Ensure GPS is ON before taking photo for 50m auto-matching
         let currentGps = lastGps;
         if (!currentGps?.latitude) {
@@ -478,6 +664,7 @@ const StaffUpload = () => {
             } else {
                 setGpsError(freshGps.error || 'Photo lene se pehle phone ki Location ON karein.');
                 setIsGpsPromptOpen(true);
+                playChime('gps');
                 speakOfflineVoice('Photo lene se pehle location on karein.');
                 return;
             }
@@ -486,8 +673,9 @@ const StaffUpload = () => {
         setIsCapturing(true);
         setIsAiMatching(true);
 
+
         try {
-            const blob = await captureCameraPhoto(videoRef.current);
+            const blob = await captureCameraPhoto(videoRef.current, streamRef.current);
             const base64Data = await blobToDataUrl(blob);
 
             // 📍 50M GEOFENCED AI MATCHING
@@ -686,9 +874,16 @@ const StaffUpload = () => {
                     type="button"
                     className={`staff-camera-pill voice-pill ${!isVoiceMuted ? 'active' : 'muted'}`}
                     onClick={() => {
+                        unlockAudio();
                         setIsVoiceMuted(prev => {
-                            if (!prev) stopOfflineVoice();
-                            return !prev;
+                            const next = !prev;
+                            if (next) {
+                                stopOfflineVoice();
+                            } else {
+                                playChime('active');
+                                speakOfflineVoice('Voice Assistant active hai.');
+                            }
+                            return next;
                         });
                     }}
                     title={isVoiceMuted ? 'Unmute AI Voice Guide' : 'Mute AI Voice Guide'}
