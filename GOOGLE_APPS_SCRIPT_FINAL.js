@@ -1021,6 +1021,24 @@ function reviewStaffUpload(data) {
     if (!imageUrl) return res({ success: false, error: 'Rotated photo upload failed.' });
     values[rowIndex - 1][idxImage] = imageUrl;
   }
+  if (action === 'reject') {
+    // 🗑️ PERMANENTLY TRASH / DELETE FROM GOOGLE DRIVE
+    if (imageUrl) {
+      try {
+        var fileIdMatch = String(imageUrl).match(/[-\w]{25,}/);
+        if (fileIdMatch && fileIdMatch[0]) {
+          DriveApp.getFileById(fileIdMatch[0]).setTrashed(true);
+        }
+      } catch (err) {
+        logDebug('Could not trash rejected image file from Drive: ' + err);
+      }
+    }
+    // 🗑️ PERMANENTLY REMOVE FROM STAFF UPLOADS SHEET
+    sheet.deleteRow(rowIndex);
+    bumpChangeVersion_('staff:reject-photo', data.uploadId);
+    return res({ success: true, action: 'reject', deleted: true });
+  }
+
   if (action === 'approve' || action === 'historyOnly') {
     if (!siteName) return res({ success: false, error: 'Select a site first' });
     var result = updateSitePhotoFromStaff(siteName, imageUrl, action === 'historyOnly');
@@ -1029,8 +1047,8 @@ function reviewStaffUpload(data) {
   }
 
   var reviewedRow = values[rowIndex - 1].slice();
-  reviewedRow[idxStatus] = action === 'approve' ? 'APPROVED' : action === 'historyOnly' ? 'HISTORY_ONLY' : 'REJECTED';
-  reviewedRow[idxDecision] = action === 'approve' ? 'MANUAL_APPROVAL' : action === 'historyOnly' ? 'MANUAL_HISTORY_ONLY' : 'MANUAL_REJECT';
+  reviewedRow[idxStatus] = action === 'approve' ? 'APPROVED' : 'HISTORY_ONLY';
+  reviewedRow[idxDecision] = action === 'approve' ? 'MANUAL_APPROVAL' : 'MANUAL_HISTORY_ONLY';
   reviewedRow[idxApproved] = siteName;
   reviewedRow[idxReviewed] = new Date().toISOString();
   reviewedRow[idxPrevious] = previousImage;

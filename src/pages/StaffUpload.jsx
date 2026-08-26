@@ -49,61 +49,6 @@ const unlockAudio = () => {
     }
 };
 
-const playAlertTone = (type = 'warning') => {
-    try {
-        unlockAudio();
-        const ctx = getAudioContext();
-        if (!ctx) return;
-
-        const now = ctx.currentTime;
-        if (type === 'success') {
-            // 🎶 Triple-chord chime
-            [523.25, 659.25, 783.99].forEach((freq, i) => {
-                const osc = ctx.createOscillator();
-                const gain = ctx.createGain();
-                osc.connect(gain);
-                gain.connect(ctx.destination);
-                osc.frequency.setValueAtTime(freq, now + i * 0.08);
-                gain.gain.setValueAtTime(0.35, now + i * 0.08);
-                gain.gain.exponentialRampToValueAtTime(0.001, now + i * 0.08 + 0.3);
-                osc.start(now + i * 0.08);
-                osc.stop(now + i * 0.08 + 0.3);
-            });
-        } else if (type === 'offline' || type === 'error') {
-            // 🚨 Loud repeating warning buzzer
-            [0, 0.22].forEach((offset) => {
-                const osc = ctx.createOscillator();
-                const gain = ctx.createGain();
-                osc.type = 'sawtooth';
-                osc.connect(gain);
-                gain.connect(ctx.destination);
-                osc.frequency.setValueAtTime(480, now + offset);
-                osc.frequency.linearRampToValueAtTime(280, now + offset + 0.16);
-                gain.gain.setValueAtTime(0.45, now + offset);
-                gain.gain.exponentialRampToValueAtTime(0.001, now + offset + 0.18);
-                osc.start(now + offset);
-                osc.stop(now + offset + 0.18);
-            });
-        } else {
-            // ⚠️ Dual warning beep
-            [0, 0.18].forEach((offset) => {
-                const osc = ctx.createOscillator();
-                const gain = ctx.createGain();
-                osc.type = 'sine';
-                osc.connect(gain);
-                gain.connect(ctx.destination);
-                osc.frequency.setValueAtTime(650, now + offset);
-                gain.gain.setValueAtTime(0.4, now + offset);
-                gain.gain.exponentialRampToValueAtTime(0.001, now + offset + 0.14);
-                osc.start(now + offset);
-                osc.stop(now + offset + 0.14);
-            });
-        }
-    } catch (err) {
-        console.warn('Alert tone error:', err);
-    }
-};
-
 let cachedVoices = [];
 if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
     cachedVoices = window.speechSynthesis.getVoices();
@@ -112,12 +57,15 @@ if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
     };
 }
 
-const speakOfflineVoice = (text, rate = 1.0, pitch = 1.0) => {
+// 🗣️ Natural Spoken Hindi Voice Engine
+const speakOfflineVoice = (text, rate = 0.95, pitch = 1.0) => {
     if (typeof window === 'undefined' || !('speechSynthesis' in window)) return;
     try {
         unlockAudio();
         window.speechSynthesis.resume();
-        window.speechSynthesis.cancel(); // Clear backlog
+        if (window.speechSynthesis.speaking) {
+            window.speechSynthesis.cancel();
+        }
 
         const utterance = new SpeechSynthesisUtterance(text);
         utterance.rate = rate;
@@ -125,17 +73,23 @@ const speakOfflineVoice = (text, rate = 1.0, pitch = 1.0) => {
         utterance.volume = 1.0;
 
         const voices = cachedVoices.length ? cachedVoices : window.speechSynthesis.getVoices();
-        const hiVoice = voices.find(v => v.lang && (v.lang.startsWith('hi') || v.lang.includes('IN')));
-        if (hiVoice) {
-            utterance.voice = hiVoice;
-            utterance.lang = hiVoice.lang;
+        // Priority 1: Hindi voice (hi-IN / hi / Hindi)
+        let selectedVoice = voices.find(v => v.lang && (v.lang.toLowerCase().startsWith('hi') || v.lang.toLowerCase() === 'hi-in' || v.lang.toLowerCase().includes('hindi')));
+        // Priority 2: Indian English (en-IN)
+        if (!selectedVoice) {
+            selectedVoice = voices.find(v => v.lang && (v.lang.toLowerCase() === 'en-in' || v.lang.toLowerCase().includes('en_in') || v.lang.toLowerCase().includes('india')));
+        }
+
+        if (selectedVoice) {
+            utterance.voice = selectedVoice;
+            utterance.lang = selectedVoice.lang;
         } else {
             utterance.lang = 'hi-IN';
         }
 
         window.speechSynthesis.speak(utterance);
     } catch (err) {
-        console.warn('Offline speech synthesis notice:', err);
+        console.warn('Speech synthesis notice:', err);
     }
 };
 
@@ -360,14 +314,14 @@ const StaffUpload = () => {
             } else {
                 setGpsError(gps.error || 'Location access nahi mila. Phone GPS check karein.');
                 setIsGpsPromptOpen(true);
-                playAlertTone('error');
+                speakOfflineVoice('Kripya phone ki GPS location on karein.');
             }
         } finally {
             setIsGpsLoading(false);
         }
     };
 
-    // 📢 RECURRING OFFLINE AI VOICE & SOUND ALERTS
+    // 📢 RECURRING OFFLINE AI VOICE ALERTS (Clean spoken Hindi, no beeps)
     React.useEffect(() => {
         if (isVoiceMuted) {
             stopOfflineVoice();
@@ -376,19 +330,17 @@ const StaffUpload = () => {
 
         const runVoiceAlert = () => {
             if (!isOnline) {
-                playAlertTone('warning');
-                speakOfflineVoice('Kripya apna mobile data ya Wi-Fi chalu karein. Internet band hai.');
+                speakOfflineVoice('Internet band hai. Kripya Wi-Fi ya mobile data chalu karein.');
             } else if (!lastGps?.latitude) {
-                playAlertTone('warning');
-                speakOfflineVoice('Kripya phone ki GPS location on karein aur permission allow karein.');
+                speakOfflineVoice('Location band hai. Kripya phone ka GPS on karein.');
             } else {
                 stopOfflineVoice();
             }
         };
 
         // Run after component mount
-        const initialTimer = window.setTimeout(runVoiceAlert, 1400);
-        const loopTimer = window.setInterval(runVoiceAlert, 6500);
+        const initialTimer = window.setTimeout(runVoiceAlert, 1500);
+        const loopTimer = window.setInterval(runVoiceAlert, 8000);
 
         return () => {
             window.clearTimeout(initialTimer);

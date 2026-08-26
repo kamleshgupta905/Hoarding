@@ -58,6 +58,13 @@ jobs:
           npx cap add android || true
           npx cap sync android
 
+      - name: Apply HIRA Brand App Launcher Icons
+        run: |
+          if [ -d "resources/android/res" ]; then
+            cp -r resources/android/res/* android/app/src/main/res/
+            echo "✅ Successfully applied official HIRA launcher icons to Android project."
+          fi
+
       - name: Configure Android Permissions (Camera & GPS)
         run: |
           MANIFEST_PATH="android/app/src/main/AndroidManifest.xml"

@@ -279,14 +279,31 @@ export const saveLocalStaffUpload = (uploadItem) => {
   }
 };
 
+export const deleteLocalStaffUpload = (uploadId) => {
+  try {
+    const list = getLocalStaffUploads().filter(item => item.UploadId !== uploadId);
+    localStorage.setItem('adh_local_staff_uploads', JSON.stringify(list));
+    
+    // Store rejected ID list so it is filtered out permanently even if remote returns cached row
+    const rejectedList = JSON.parse(localStorage.getItem('adh_rejected_staff_uploads') || '[]');
+    if (!rejectedList.includes(uploadId)) {
+      rejectedList.push(uploadId);
+      localStorage.setItem('adh_rejected_staff_uploads', JSON.stringify(rejectedList.slice(-200)));
+    }
+  } catch (err) {
+    console.warn('deleteLocalStaffUpload notice:', err);
+  }
+};
+
 export const fetchStaffUploads = async () => {
-  const localList = getLocalStaffUploads();
+  const rejectedSet = new Set(JSON.parse(localStorage.getItem('adh_rejected_staff_uploads') || '[]'));
+  const localList = getLocalStaffUploads().filter(item => !rejectedSet.has(item.UploadId));
   try {
     const session = getAdminSession();
     const data = await requestJson(`${STAFF_SCRIPT_URL}?action=staffUploads&sessionToken=${encodeURIComponent(session || 'admin')}&t=${Date.now()}`, { cache: 'no-store' }, 15000);
     const remoteList = Array.isArray(data.uploads)
       ? data.uploads
-          .filter(item => item && item.UploadId)
+          .filter(item => item && item.UploadId && !rejectedSet.has(item.UploadId) && item.Status !== 'REJECTED')
           .map(item => ({
             ...item,
             Status: String(item.Status || 'REVIEW_REQUIRED'),
@@ -322,6 +339,9 @@ export const uploadStaffPhoto = async (payload) => {
 };
 
 export const reviewStaffPhoto = async (uploadId, reviewAction, siteName = '', replacementImage = {}) => {
+  if (reviewAction === 'reject') {
+    deleteLocalStaffUpload(uploadId);
+  }
   await syncToGoogleSheet({
     action: 'reviewStaffUpload',
     uploadId,
