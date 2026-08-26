@@ -119,6 +119,8 @@ const AdminDashboard = ({ hoardings, setHoardings }) => {
     const [sheetSelection, setSheetSelection] = useState({ type: 'cell', row: 0, col: 0 });
     const [overviewChartTab, setOverviewChartTab] = useState('zones'); // 'zones' | 'media' | 'pricing'
     const [hoveredChartItem, setHoveredChartItem] = useState(null);
+    const [fieldAuditTab, setFieldAuditTab] = useState('matched'); // 'matched' | 'unmatched'
+    const [selectedPinpointUpload, setSelectedPinpointUpload] = useState(null);
 
     // Protect Route
     useEffect(() => {
@@ -1296,7 +1298,42 @@ const AdminDashboard = ({ hoardings, setHoardings }) => {
 
     const reviewQueue = staffUploads.filter(upload => upload.Status === 'REVIEW_REQUIRED' && !pendingStaffReviewIds[upload.UploadId]);
     
-    // 📅 Today's Live Staff Uploads (Auto-approved by Gemini AI or approved)
+    // 📅 2-Day (48 Hours) Auto-Purge for Unmatched Photos
+    const TWO_DAYS_MS = 48 * 3600 * 1000;
+    const isOlderThan2Days = (time) => {
+        if (!time) return false;
+        const ts = new Date(time).getTime();
+        return !isNaN(ts) && (Date.now() - ts > TWO_DAYS_MS);
+    };
+
+    // ✅ AI Auto-Matched Photos (50m Geofenced & Approved)
+    const matchedPhotoUpdates = staffUploads.filter(upload => {
+        return upload.Status === 'AUTO_APPROVED' || 
+               upload.Decision === 'GEMINI_GPS_AUTO_MATCH' || 
+               upload.Decision === 'GPS_AUTO_MATCH' || 
+               upload.Status === 'APPROVED';
+    });
+
+    // ⚠️ Unmatched / Out-of-Range Photos (Active, not older than 2 days)
+    const unmatchedPhotoUpdates = staffUploads.filter(upload => {
+        const isMatched = upload.Status === 'AUTO_APPROVED' || 
+                          upload.Decision === 'GEMINI_GPS_AUTO_MATCH' || 
+                          upload.Decision === 'GPS_AUTO_MATCH' || 
+                          upload.Status === 'APPROVED';
+        if (isMatched) return false;
+        // Purge if older than 2 days
+        return !isOlderThan2Days(upload.CapturedAt || upload.ReviewedAt);
+    });
+
+    const purgedUnmatchedCount = staffUploads.filter(upload => {
+        const isMatched = upload.Status === 'AUTO_APPROVED' || 
+                          upload.Decision === 'GEMINI_GPS_AUTO_MATCH' || 
+                          upload.Decision === 'GPS_AUTO_MATCH' || 
+                          upload.Status === 'APPROVED';
+        return !isMatched && isOlderThan2Days(upload.CapturedAt || upload.ReviewedAt);
+    }).length;
+
+    // 📅 Today's Live Staff Uploads
     const todayDateString = new Date().toDateString();
     const todayStaffUploads = staffUploads.filter(upload => {
         const d = new Date(upload.CapturedAt || upload.ReviewedAt || 0);
@@ -1305,11 +1342,7 @@ const AdminDashboard = ({ hoardings, setHoardings }) => {
     const todayAutoApprovedCount = todayStaffUploads.filter(u => u.Status === 'AUTO_APPROVED' || u.Decision === 'GEMINI_GPS_AUTO_MATCH' || u.Decision === 'GPS_AUTO_MATCH').length;
 
     // Filter to only recent approved/active uploads from the last 24h
-    const recentPhotoUpdates = staffUploads.filter(upload => {
-        if (upload.Status === 'REVIEW_REQUIRED' || upload.Status === 'REJECTED') return false;
-        const uploadTime = new Date(upload.ReviewedAt || upload.CapturedAt || 0).getTime();
-        return uploadTime > 0 && (Date.now() - uploadTime < 86400000);
-    }).slice(0, 16);
+    const recentPhotoUpdates = matchedPhotoUpdates.slice(0, 16);
 
     // Dynamic Overview Analytics
     const totalHoardingsCount = hoardings.length;
@@ -2696,23 +2729,58 @@ const AdminDashboard = ({ hoardings, setHoardings }) => {
 
                             </div>
 
-                            {/* 📷 Field Audit Feed */}
+                            {/* 📷 Field Audit Feed (Matched & Unmatched Sections) */}
                             <div className="qm-card">
-                                <div className="qm-card-header">
+                                <div className="qm-card-header" style={{ flexWrap: 'wrap', gap: '14px' }}>
                                     <div>
                                         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
-                                            <h3 className="qm-card-title">📅 Today's Staff Live Uploads & Field Audit</h3>
+                                            <h3 className="qm-card-title">📅 Live Field Audit & Staff Uploads</h3>
                                             <span style={{ background: 'rgba(16, 185, 129, 0.15)', color: '#10b981', border: '1px solid rgba(16, 185, 129, 0.3)', padding: '2px 8px', borderRadius: '12px', fontSize: '0.72rem', fontWeight: 800 }}>
                                                 ✨ Gemini AI Active (50m)
                                             </span>
                                         </div>
                                         <p className="qm-card-desc">
-                                            {todayStaffUploads.length > 0
-                                                ? `${todayStaffUploads.length} photo(s) captured today (${todayAutoApprovedCount} auto-matched directly to History)`
-                                                : 'Real-time ground staff camera uploads and auto-matched billboard history'}
+                                            Auto-matched 50m geofenced billboard photos & ground staff camera activity
                                         </p>
                                     </div>
                                     <div className="qm-header-controls">
+                                        <div style={{ display: 'inline-flex', background: '#f1f5f9', padding: '3px', borderRadius: '10px', gap: '4px' }}>
+                                            <button 
+                                                className={`qm-subtab-btn ${fieldAuditTab === 'matched' ? 'active' : ''}`}
+                                                onClick={() => setFieldAuditTab('matched')}
+                                                style={{
+                                                    padding: '6px 14px',
+                                                    borderRadius: '8px',
+                                                    border: 'none',
+                                                    fontSize: '0.78rem',
+                                                    fontWeight: 800,
+                                                    cursor: 'pointer',
+                                                    background: fieldAuditTab === 'matched' ? '#10b981' : 'transparent',
+                                                    color: fieldAuditTab === 'matched' ? '#ffffff' : '#64748b',
+                                                    transition: 'all 0.2s ease'
+                                                }}
+                                            >
+                                                ✅ AI Auto-Matched ({matchedPhotoUpdates.length})
+                                            </button>
+                                            <button 
+                                                className={`qm-subtab-btn ${fieldAuditTab === 'unmatched' ? 'active' : ''}`}
+                                                onClick={() => setFieldAuditTab('unmatched')}
+                                                style={{
+                                                    padding: '6px 14px',
+                                                    borderRadius: '8px',
+                                                    border: 'none',
+                                                    fontSize: '0.78rem',
+                                                    fontWeight: 800,
+                                                    cursor: 'pointer',
+                                                    background: fieldAuditTab === 'unmatched' ? '#f59e0b' : 'transparent',
+                                                    color: fieldAuditTab === 'unmatched' ? '#ffffff' : '#64748b',
+                                                    transition: 'all 0.2s ease'
+                                                }}
+                                            >
+                                                ⚠️ Unmatched / Out-of-Range ({unmatchedPhotoUpdates.length})
+                                            </button>
+                                        </div>
+
                                         <button 
                                             className="qm-btn-secondary"
                                             onClick={() => {
@@ -2731,81 +2799,169 @@ const AdminDashboard = ({ hoardings, setHoardings }) => {
                                     </div>
                                 </div>
 
-                                {reviewQueue.length > 0 && (
-                                    <div className="dashboard-review-strip">
-                                        <div className="dashboard-review-strip-heading">
-                                            <span>Review Required</span>
-                                            <small>{reviewQueue.length} photo{reviewQueue.length === 1 ? '' : 's'} need a site decision</small>
+                                {fieldAuditTab === 'unmatched' && (
+                                    <div style={{ background: 'rgba(245, 158, 11, 0.08)', border: '1px solid rgba(245, 158, 11, 0.25)', borderRadius: '12px', padding: '10px 14px', margin: '0 0 16px 0', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px' }}>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.8rem', color: '#b45309', fontWeight: 700 }}>
+                                            <Clock3 size={16} />
+                                            <span>⏳ <strong>2-Day Auto-Purge Active:</strong> Unmatched photos not assigned to a site within 48 hours are automatically purged.</span>
                                         </div>
-                                        <div className="dashboard-review-list">
-                                            {reviewQueue.slice(0, 4).map(upload => {
-                                                const preview = staffImagePreviews[upload.UploadId];
-                                                const imageUrl = preview?.previewUrl || upload.ImageURL;
-                                                return (
-                                                    <button
-                                                        className="dashboard-review-item"
-                                                        key={upload.UploadId}
-                                                        onClick={() => setActiveTab('staff-review')}
-                                                        title="Open Staff Photo Review"
-                                                    >
-                                                        <img src={imageUrl} alt={upload.SuggestedSite || 'Staff photo needing review'} />
-                                                        <span>
-                                                            <strong>{upload.SuggestedSite || 'Site match required'}</strong>
-                                                            <small>{upload.DistanceM ? `${Math.round(Number(upload.DistanceM))}m away` : 'Manual review needed'}</small>
-                                                        </span>
-                                                    </button>
-                                                );
-                                            })}
-                                        </div>
+                                        {purgedUnmatchedCount > 0 && (
+                                            <span style={{ fontSize: '0.72rem', background: '#ffffff', padding: '3px 8px', borderRadius: '6px', color: '#78350f', border: '1px solid rgba(245, 158, 11, 0.3)', fontWeight: 800 }}>
+                                                {purgedUnmatchedCount} purged
+                                            </span>
+                                        )}
                                     </div>
                                 )}
 
-                                {recentPhotoUpdates.length > 0 ? (
-                                    <div className="recent-photo-grid">
-                                        {recentPhotoUpdates.map(upload => {
-                                            const isAuto = upload.Status === 'AUTO_APPROVED' || upload.Decision === 'GEMINI_GPS_AUTO_MATCH' || upload.Decision === 'GPS_AUTO_MATCH';
-                                            return (
-                                                <article className="recent-photo-card" key={upload.UploadId}>
+                                {fieldAuditTab === 'matched' ? (
+                                    matchedPhotoUpdates.length > 0 ? (
+                                        <div className="recent-photo-grid">
+                                            {matchedPhotoUpdates.slice(0, 16).map(upload => {
+                                                const isAuto = upload.Status === 'AUTO_APPROVED' || upload.Decision === 'GEMINI_GPS_AUTO_MATCH' || upload.Decision === 'GPS_AUTO_MATCH';
+                                                return (
+                                                    <article className="recent-photo-card" key={upload.UploadId}>
+                                                        <img 
+                                                            src={upload.ImageURL} 
+                                                            alt={upload.ApprovedSite || 'Staff upload'} 
+                                                            onClick={() => setPreviewHoarding({ ImageURL: upload.ImageURL, City: 'Staff', "Location ": upload.ApprovedSite || 'Staff upload' })} 
+                                                            style={{ cursor: 'pointer' }}
+                                                        />
+                                                        <div>
+                                                            <strong>{upload.ApprovedSite || upload.SuggestedSite || 'History upload'}</strong>
+                                                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', margin: '3px 0' }}>
+                                                                {isAuto ? (
+                                                                    <span style={{ color: '#10b981', fontWeight: 800, fontSize: '0.72rem' }}>
+                                                                        ✨ AI Auto-Approved (50m)
+                                                                    </span>
+                                                                ) : (
+                                                                    <span>{String(upload.Status || 'APPROVED').replaceAll('_', ' ')}</span>
+                                                                )}
+                                                            </div>
+                                                            <small>{upload.CapturedAt ? new Date(upload.CapturedAt).toLocaleString('en-IN') : ''}</small>
+                                                            
+                                                            <button 
+                                                                type="button"
+                                                                onClick={() => setSelectedPinpointUpload(upload)}
+                                                                style={{
+                                                                    display: 'inline-flex',
+                                                                    alignItems: 'center',
+                                                                    gap: '4px',
+                                                                    marginTop: '8px',
+                                                                    padding: '4px 10px',
+                                                                    borderRadius: '8px',
+                                                                    border: '1px solid #e2e8f0',
+                                                                    background: '#f8fafc',
+                                                                    color: '#3b82f6',
+                                                                    fontSize: '0.74rem',
+                                                                    fontWeight: 800,
+                                                                    cursor: 'pointer'
+                                                                }}
+                                                                title="View staff exact pinpoint location on map"
+                                                            >
+                                                                <MapPin size={12} /> Pinpoint Location
+                                                            </button>
+                                                        </div>
+                                                    </article>
+                                                );
+                                            })}
+                                        </div>
+                                    ) : (
+                                        <div className="qm-empty-state">
+                                            <div className="qm-empty-icon-box">
+                                                <Camera size={26} className="qm-camera-icon" />
+                                            </div>
+                                            <div className="qm-empty-text">
+                                                <h4>All billboard photos verified & linked</h4>
+                                                <p>
+                                                    When ground staff captures a billboard photo on mobile, Gemini AI will automatically match it within a 50m radius and save it straight into the site's History section without manual review.
+                                                </p>
+                                            </div>
+                                            <div className="qm-empty-capsules">
+                                                <span className="qm-status-capsule"><Check size={13} /> 50m Geofencing Ready</span>
+                                                <span className="qm-status-capsule"><Check size={13} /> Gemini Vision AI Active</span>
+                                                <span className="qm-status-capsule"><Check size={13} /> Mobile Camera Ready</span>
+                                            </div>
+                                        </div>
+                                    )
+                                ) : (
+                                    unmatchedPhotoUpdates.length > 0 ? (
+                                        <div className="recent-photo-grid">
+                                            {unmatchedPhotoUpdates.map(upload => (
+                                                <article className="recent-photo-card" key={upload.UploadId} style={{ borderColor: 'rgba(245, 158, 11, 0.4)' }}>
                                                     <img 
                                                         src={upload.ImageURL} 
-                                                        alt={upload.ApprovedSite || 'Staff upload'} 
-                                                        onClick={() => setPreviewHoarding({ ImageURL: upload.ImageURL, City: 'Staff', "Location ": upload.ApprovedSite || 'Staff upload' })} 
+                                                        alt={upload.SuggestedSite || 'Unmatched photo'} 
+                                                        onClick={() => setPreviewHoarding({ ImageURL: upload.ImageURL, City: 'Staff', "Location ": upload.SuggestedSite || 'Unmatched' })} 
                                                         style={{ cursor: 'pointer' }}
                                                     />
                                                     <div>
-                                                        <strong>{upload.ApprovedSite || upload.SuggestedSite || 'History upload'}</strong>
+                                                        <strong>{upload.SuggestedSite || 'No 50m Hoarding Match'}</strong>
                                                         <div style={{ display: 'flex', alignItems: 'center', gap: '6px', margin: '3px 0' }}>
-                                                            {isAuto ? (
-                                                                <span style={{ color: '#10b981', fontWeight: 800, fontSize: '0.72rem' }}>
-                                                                    ✨ AI Auto-Approved (50m)
-                                                                </span>
-                                                            ) : (
-                                                                <span>{String(upload.Status || 'APPROVED').replaceAll('_', ' ')}</span>
-                                                            )}
+                                                            <span style={{ color: '#f59e0b', fontWeight: 800, fontSize: '0.72rem' }}>
+                                                                ⚠️ {upload.DistanceM ? `${Math.round(Number(upload.DistanceM))}m away` : 'Out of 50m range'}
+                                                            </span>
                                                         </div>
                                                         <small>{upload.CapturedAt ? new Date(upload.CapturedAt).toLocaleString('en-IN') : ''}</small>
+                                                        
+                                                        <div style={{ display: 'flex', gap: '6px', marginTop: '8px' }}>
+                                                            <button 
+                                                                type="button"
+                                                                onClick={() => setSelectedPinpointUpload(upload)}
+                                                                style={{
+                                                                    display: 'inline-flex',
+                                                                    alignItems: 'center',
+                                                                    gap: '4px',
+                                                                    padding: '4px 8px',
+                                                                    borderRadius: '8px',
+                                                                    border: '1px solid #e2e8f0',
+                                                                    background: '#f8fafc',
+                                                                    color: '#3b82f6',
+                                                                    fontSize: '0.72rem',
+                                                                    fontWeight: 800,
+                                                                    cursor: 'pointer'
+                                                                }}
+                                                                title="View staff exact pinpoint location on map"
+                                                            >
+                                                                <MapPin size={11} /> Map
+                                                            </button>
+                                                            <button 
+                                                                type="button"
+                                                                onClick={() => setActiveTab('staff-review')}
+                                                                style={{
+                                                                    display: 'inline-flex',
+                                                                    alignItems: 'center',
+                                                                    gap: '4px',
+                                                                    padding: '4px 8px',
+                                                                    borderRadius: '8px',
+                                                                    border: 'none',
+                                                                    background: '#6c5dd3',
+                                                                    color: '#ffffff',
+                                                                    fontSize: '0.72rem',
+                                                                    fontWeight: 800,
+                                                                    cursor: 'pointer'
+                                                                }}
+                                                                title="Manually assign to a hoarding site"
+                                                            >
+                                                                Assign
+                                                            </button>
+                                                        </div>
                                                     </div>
                                                 </article>
-                                            );
-                                        })}
-                                    </div>
-                                ) : (
-                                    <div className="qm-empty-state">
-                                        <div className="qm-empty-icon-box">
-                                            <Camera size={26} className="qm-camera-icon" />
+                                            ))}
                                         </div>
-                                        <div className="qm-empty-text">
-                                            <h4>All billboard photos verified & linked</h4>
-                                            <p>
-                                                When ground staff captures a billboard photo on mobile, Gemini AI will automatically match it within a 50m radius and save it straight into the site's History section without manual review.
-                                            </p>
+                                    ) : (
+                                        <div className="qm-empty-state">
+                                            <div className="qm-empty-icon-box" style={{ background: 'rgba(16, 185, 129, 0.15)', color: '#10b981' }}>
+                                                <CheckCircle size={26} />
+                                            </div>
+                                            <div className="qm-empty-text">
+                                                <h4>Zero Unmatched Photos</h4>
+                                                <p>
+                                                    All staff camera photos are matching automatically within 50m geofencing. There are no pending unmatched photos in the 48-hour window.
+                                                </p>
+                                            </div>
                                         </div>
-                                        <div className="qm-empty-capsules">
-                                            <span className="qm-status-capsule"><Check size={13} /> 50m Geofencing Ready</span>
-                                            <span className="qm-status-capsule"><Check size={13} /> Gemini Vision AI Active</span>
-                                            <span className="qm-status-capsule"><Check size={13} /> Mobile Camera Ready</span>
-                                        </div>
-                                    </div>
+                                    )
                                 )}
                             </div>
 
@@ -3750,6 +3906,105 @@ const AdminDashboard = ({ hoardings, setHoardings }) => {
                         <button type="button" onClick={() => setReviewNotice(null)} title="Close notification" aria-label="Close notification"><X size={17} /></button>
                     </aside>
                 )}
+
+                {/* 📍 Staff Photo Pinpoint Location Map Modal */}
+                {selectedPinpointUpload && (() => {
+                    const lat = parseFloat(selectedPinpointUpload.Latitude || selectedPinpointUpload.Lat || selectedPinpointUpload.lat || 28.9845);
+                    const lng = parseFloat(selectedPinpointUpload.Longitude || selectedPinpointUpload.Long || selectedPinpointUpload.lng || 77.7064);
+                    const site = selectedPinpointUpload.ApprovedSite || selectedPinpointUpload.SuggestedSite || 'Field Capture Point';
+                    const distance = selectedPinpointUpload.DistanceM ? Math.round(Number(selectedPinpointUpload.DistanceM)) : null;
+                    const mapUrl = `https://www.openstreetmap.org/export/embed.html?bbox=${lng - 0.0035}%2C${lat - 0.0035}%2C${lng + 0.0035}%2C${lat + 0.0035}&layer=mapnik&marker=${lat}%2C${lng}`;
+
+                    return (
+                        <div className="admin-modal-overlay animate-in" style={{ zIndex: 1100 }} onClick={() => setSelectedPinpointUpload(null)}>
+                            <div className="admin-modal-content" style={{ maxWidth: '620px', padding: '0', overflow: 'hidden', borderRadius: '24px' }} onClick={e => e.stopPropagation()}>
+                                <div style={{ background: '#0f172a', color: 'white', padding: '20px 24px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                                        <div style={{ width: '40px', height: '40px', borderRadius: '12px', background: 'rgba(59, 130, 246, 0.2)', border: '1px solid rgba(59, 130, 246, 0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#60a5fa' }}>
+                                            <MapPin size={20} />
+                                        </div>
+                                        <div>
+                                            <h3 style={{ margin: 0, fontSize: '1.15rem', fontWeight: 900 }}>Staff Capture Pinpoint Location</h3>
+                                            <p style={{ margin: '2px 0 0', fontSize: '0.78rem', color: '#94a3b8' }}>
+                                                {selectedPinpointUpload.CapturedAt ? new Date(selectedPinpointUpload.CapturedAt).toLocaleString('en-IN') : 'Real-time GPS capture'}
+                                            </p>
+                                        </div>
+                                    </div>
+                                    <button 
+                                        type="button" 
+                                        onClick={() => setSelectedPinpointUpload(null)} 
+                                        style={{ background: 'rgba(255, 255, 255, 0.1)', border: 'none', color: '#ffffff', width: '32px', height: '32px', borderRadius: '50%', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                                    >
+                                        <X size={16} />
+                                    </button>
+                                </div>
+
+                                <div style={{ padding: '16px 20px', background: '#f8fafc', borderBottom: '1px solid #e2e8f0', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
+                                    <div>
+                                        <span style={{ fontSize: '0.7rem', color: '#64748b', fontWeight: 800, textTransform: 'uppercase' }}>Target Site</span>
+                                        <strong style={{ display: 'block', fontSize: '0.92rem', color: '#0f172a', marginTop: '2px' }}>{site}</strong>
+                                    </div>
+                                    <div>
+                                        <span style={{ fontSize: '0.7rem', color: '#64748b', fontWeight: 800, textTransform: 'uppercase' }}>GPS Proximity</span>
+                                        <strong style={{ display: 'block', fontSize: '0.92rem', color: distance && distance <= 50 ? '#10b981' : '#f59e0b', marginTop: '2px' }}>
+                                            {distance !== null ? `📍 ${distance}m from site (50m Geofence)` : '📍 GPS Point Recorded'}
+                                        </strong>
+                                    </div>
+                                </div>
+
+                                <div style={{ height: '320px', width: '100%', position: 'relative', background: '#e2e8f0' }}>
+                                    <iframe 
+                                        title="Staff GPS Pinpoint Map"
+                                        src={mapUrl}
+                                        style={{ width: '100%', height: '100%', border: 'none' }}
+                                    />
+                                    <div style={{ position: 'absolute', bottom: '12px', left: '12px', background: 'rgba(15, 23, 42, 0.88)', color: 'white', padding: '6px 12px', borderRadius: '10px', fontSize: '0.75rem', fontWeight: 700, backdropFilter: 'blur(8px)' }}>
+                                        Lat: {lat.toFixed(5)}, Lng: {lng.toFixed(5)}
+                                    </div>
+                                </div>
+
+                                <div style={{ padding: '18px 24px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: '#ffffff', gap: '12px' }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                        <img 
+                                            src={selectedPinpointUpload.ImageURL} 
+                                            alt="Captured thumbnail" 
+                                            style={{ width: '48px', height: '48px', borderRadius: '8px', objectFit: 'cover', border: '1px solid #cbd5e1' }} 
+                                        />
+                                        <span style={{ fontSize: '0.75rem', color: '#64748b' }}>Staff Photo</span>
+                                    </div>
+                                    <div style={{ display: 'flex', gap: '10px' }}>
+                                        <a 
+                                            href={`https://www.google.com/maps?q=${lat},${lng}`}
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            style={{
+                                                padding: '10px 16px',
+                                                borderRadius: '12px',
+                                                background: '#4f46e5',
+                                                color: 'white',
+                                                textDecoration: 'none',
+                                                fontSize: '0.85rem',
+                                                fontWeight: 800,
+                                                display: 'inline-flex',
+                                                alignItems: 'center',
+                                                gap: '6px'
+                                            }}
+                                        >
+                                            <ExternalLink size={14} /> Open in Google Maps
+                                        </a>
+                                        <button 
+                                            type="button" 
+                                            onClick={() => setSelectedPinpointUpload(null)}
+                                            style={{ padding: '10px 18px', borderRadius: '12px', border: '1px solid #cbd5e1', background: '#f8fafc', color: '#475569', fontSize: '0.85rem', fontWeight: 800, cursor: 'pointer' }}
+                                        >
+                                            Close
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    );
+                })()}
 
                 {/* 🍞 Floating Glassmorphic Toast Notifications */}
                 {toast && (

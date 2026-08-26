@@ -30,8 +30,17 @@ jobs:
         run: |
           npm install --legacy-peer-deps
 
-      - name: Build Web Application
-        run: npm run build
+      - name: Build Web Application (Lightweight Mobile Bundle)
+        run: |
+          # 🗜️ Exclude 200MB+ desktop demo images from APK bundle (QuickMart ~15MB optimization)
+          mkdir -p _temp_assets
+          if [ -d "public/images/hoardings" ]; then
+            mv public/images/hoardings _temp_assets/
+          fi
+          npm run build
+          if [ -d "_temp_assets/hoardings" ]; then
+            mv _temp_assets/hoardings public/images/
+          fi
         env:
           VITE_APP_MODE: staff
 

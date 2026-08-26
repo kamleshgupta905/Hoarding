@@ -22,10 +22,75 @@ const getStoredUploadedCount = () => {
     return Number.isFinite(value) ? value : 0;
 };
 
-// 🔊 100% OFFLINE DEVICE-NATIVE SPEECH SYNTHESIS (Zero Internet Required)
-const speakOfflineVoice = (text, rate = 1.02, pitch = 1.0) => {
+// 🔊 100% OFFLINE DEVICE-NATIVE SPEECH & AUDIO SYNTHESIS
+let audioContextInstance = null;
+
+const getAudioContext = () => {
+    if (typeof window === 'undefined') return null;
+    if (!audioContextInstance && (window.AudioContext || window.webkitAudioContext)) {
+        const AudioCtx = window.AudioContext || window.webkitAudioContext;
+        audioContextInstance = new AudioCtx();
+    }
+    return audioContextInstance;
+};
+
+export const unlockAudio = () => {
+    try {
+        const ctx = getAudioContext();
+        if (ctx && ctx.state === 'suspended') {
+            ctx.resume();
+        }
+        if (typeof window !== 'undefined' && window.speechSynthesis) {
+            if (window.speechSynthesis.paused) {
+                window.speechSynthesis.resume();
+            }
+        }
+    } catch (e) {
+        console.warn('Audio unlock notice:', e);
+    }
+};
+
+const playAlertTone = (type = 'warning') => {
+    try {
+        unlockAudio();
+        const ctx = getAudioContext();
+        if (!ctx) return;
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+
+        const now = ctx.currentTime;
+        if (type === 'success') {
+            osc.frequency.setValueAtTime(587.33, now); // D5
+            osc.frequency.exponentialRampToValueAtTime(880, now + 0.15); // A5
+            gain.gain.setValueAtTime(0.3, now);
+            gain.gain.exponentialRampToValueAtTime(0.001, now + 0.35);
+            osc.start(now);
+            osc.stop(now + 0.35);
+        } else if (type === 'error') {
+            osc.frequency.setValueAtTime(340, now);
+            osc.frequency.setValueAtTime(220, now + 0.15);
+            gain.gain.setValueAtTime(0.4, now);
+            gain.gain.exponentialRampToValueAtTime(0.001, now + 0.35);
+            osc.start(now);
+            osc.stop(now + 0.35);
+        } else {
+            osc.frequency.setValueAtTime(440, now);
+            gain.gain.setValueAtTime(0.25, now);
+            gain.gain.exponentialRampToValueAtTime(0.001, now + 0.25);
+            osc.start(now);
+            osc.stop(now + 0.25);
+        }
+    } catch (err) {
+        console.warn('Alert tone error:', err);
+    }
+};
+
+const speakOfflineVoice = (text, rate = 1.05, pitch = 1.0) => {
     if (typeof window === 'undefined' || !('speechSynthesis' in window)) return;
     try {
+        unlockAudio();
         window.speechSynthesis.cancel(); // Prevent audio overlapping
         const utterance = new SpeechSynthesisUtterance(text);
         utterance.lang = 'hi-IN'; // Hindi / Indian accent
@@ -89,9 +154,10 @@ const requestGps = () => new Promise((resolve) => {
 });
 
 const canvasToJpeg = (canvas) => new Promise((resolve, reject) => {
-    canvas.toBlob((blob) => blob ? resolve(blob) : reject(new Error('Photo capture failed.')), 'image/jpeg', 0.76);
+    canvas.toBlob((blob) => blob ? resolve(blob) : reject(new Error('Photo capture failed.')), 'image/jpeg', 0.78);
 });
 
+// 📐 Normalizes Photo so captured billboard is ALWAYS Upright
 const snapshotVideo = (video) => {
     const sourceWidth = video.videoWidth;
     const sourceHeight = video.videoHeight;
@@ -99,14 +165,30 @@ const snapshotVideo = (video) => {
         throw new Error('Camera preview is not ready yet.');
     }
 
-    const scale = sourceWidth > MAX_IMAGE_WIDTH ? MAX_IMAGE_WIDTH / sourceWidth : 1;
-    const width = Math.round(sourceWidth * scale);
-    const height = Math.round(sourceHeight * scale);
+    const isViewportPortrait = typeof window !== 'undefined' ? window.innerHeight > window.innerWidth : true;
     const canvas = document.createElement('canvas');
-    canvas.width = width;
-    canvas.height = height;
-    const ctx = canvas.getContext('2d');
-    ctx.drawImage(video, 0, 0, width, height);
+
+    // If mobile viewport is Portrait but camera stream is Landscape, normalize orientation upright
+    if (isViewportPortrait && sourceWidth > sourceHeight) {
+        const targetHeight = Math.min(MAX_IMAGE_WIDTH, sourceWidth);
+        const scale = targetHeight / sourceWidth;
+        const targetWidth = Math.round(sourceHeight * scale);
+
+        canvas.width = targetWidth;
+        canvas.height = targetHeight;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(video, 0, 0, targetWidth, targetHeight);
+    } else {
+        const scale = sourceWidth > MAX_IMAGE_WIDTH ? MAX_IMAGE_WIDTH / sourceWidth : 1;
+        const width = Math.round(sourceWidth * scale);
+        const height = Math.round(sourceHeight * scale);
+
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(video, 0, 0, width, height);
+    }
+
     return canvasToJpeg(canvas);
 };
 
@@ -235,6 +317,7 @@ const StaffUpload = () => {
 
     // 📍 Prompt and Enable GPS
     const handleEnableLocation = async () => {
+        unlockAudio();
         setIsGpsLoading(true);
         try {
             const gps = await requestGps();
@@ -246,13 +329,14 @@ const StaffUpload = () => {
             } else {
                 setGpsError(gps.error || 'Location access nahi mila. Phone GPS check karein.');
                 setIsGpsPromptOpen(true);
+                playAlertTone('error');
             }
         } finally {
             setIsGpsLoading(false);
         }
     };
 
-    // 📢 RECURRING OFFLINE AI VOICE ALERTS
+    // 📢 RECURRING OFFLINE AI VOICE & SOUND ALERTS
     React.useEffect(() => {
         if (isVoiceMuted) {
             stopOfflineVoice();
@@ -261,8 +345,10 @@ const StaffUpload = () => {
 
         const runVoiceAlert = () => {
             if (!isOnline) {
+                playAlertTone('warning');
                 speakOfflineVoice('Kripya apna mobile data ya Wi-Fi chalu karein. Internet band hai.');
             } else if (!lastGps?.latitude) {
+                playAlertTone('warning');
                 speakOfflineVoice('Kripya phone ki GPS location on karein aur permission allow karein.');
             } else {
                 stopOfflineVoice();
@@ -271,7 +357,7 @@ const StaffUpload = () => {
 
         // Run after component mount
         const initialTimer = window.setTimeout(runVoiceAlert, 1400);
-        const loopTimer = window.setInterval(runVoiceAlert, 6000);
+        const loopTimer = window.setInterval(runVoiceAlert, 6500);
 
         return () => {
             window.clearTimeout(initialTimer);
@@ -283,6 +369,15 @@ const StaffUpload = () => {
     React.useEffect(() => {
         migrateLegacyStaffQueue().then(refreshPendingCount);
         startCamera();
+
+        // 🔊 Global User Interaction Listener to Unlock Audio Context
+        const handleUserGesture = () => {
+            unlockAudio();
+        };
+        window.addEventListener('touchstart', handleUserGesture, { passive: true });
+        window.addEventListener('click', handleUserGesture, { passive: true });
+        window.addEventListener('pointerdown', handleUserGesture, { passive: true });
+
         const handleOnline = () => {
             setIsOnline(true);
             flushQueue();
@@ -322,6 +417,9 @@ const StaffUpload = () => {
 
         flushQueue();
         return () => {
+            window.removeEventListener('touchstart', handleUserGesture);
+            window.removeEventListener('click', handleUserGesture);
+            window.removeEventListener('pointerdown', handleUserGesture);
             window.removeEventListener('online', handleOnline);
             window.removeEventListener('offline', handleOffline);
             window.clearTimeout(flushTimerRef.current);
@@ -341,6 +439,7 @@ const StaffUpload = () => {
     };
 
     const capturePhoto = async () => {
+        unlockAudio();
         if (!videoRef.current || !cameraReady || isCapturing) return;
 
         // 🛡️ Ensure GPS is ON before taking photo for 50m auto-matching
@@ -357,6 +456,8 @@ const StaffUpload = () => {
             } else {
                 setGpsError(freshGps.error || 'Photo lene se pehle phone ki Location ON karein.');
                 setIsGpsPromptOpen(true);
+                playAlertTone('error');
+                speakOfflineVoice('Photo lene se pehle location on karein.');
                 return;
             }
         }
@@ -411,6 +512,9 @@ const StaffUpload = () => {
                                 distance: Math.round(candidates[0].distanceM),
                                 confidence: matchConfidence
                             });
+
+                            playAlertTone('success');
+                            speakOfflineVoice('Site photo auto-match ho gayi hai.');
                         } else if (candidates.length === 1 && candidates[0].distanceM <= 35) {
                             matchedSite = candidates[0]["Location "] || candidates[0].siteName;
                             siteStatus = 'Available';
@@ -422,6 +526,17 @@ const StaffUpload = () => {
                                 distance: Math.round(candidates[0].distanceM),
                                 confidence: 85
                             });
+
+                            playAlertTone('success');
+                            speakOfflineVoice('Site photo auto-match ho gayi hai.');
+                        } else {
+                            // Unmatched candidates
+                            showMatchBanner({
+                                warning: true,
+                                message: 'Visual match not confirmed. Sent to admin review.'
+                            });
+                            playAlertTone('error');
+                            speakOfflineVoice('Photo kisi registered site se match nahi hui.');
                         }
                     } catch (aiErr) {
                         console.warn('Gemini vision matching error:', aiErr);
@@ -435,6 +550,15 @@ const StaffUpload = () => {
                                 distance: Math.round(candidates[0].distanceM),
                                 confidence: 80
                             });
+                            playAlertTone('success');
+                            speakOfflineVoice('Site photo auto-match ho gayi hai.');
+                        } else {
+                            showMatchBanner({
+                                warning: true,
+                                message: 'Site match could not be confirmed.'
+                            });
+                            playAlertTone('error');
+                            speakOfflineVoice('Photo kisi registered site se match nahi hui.');
                         }
                     }
                 } else {
@@ -442,6 +566,8 @@ const StaffUpload = () => {
                         warning: true,
                         message: 'No registered hoarding within 75m GPS range.'
                     });
+                    playAlertTone('error');
+                    speakOfflineVoice('50 meter ke range me koi hoarding nahi mili.');
                 }
             }
 
