@@ -56,6 +56,8 @@ function doPost(e) {
     if (p.action === 'changeAdminPassword') return changeAdminPassword_(p);
     if (p.action === 'setGroqFallbackKey') return setGroqFallbackKey_(p);
     if (p.action === 'uploadPptAndProcess') return uploadPptAndProcess_(p);
+    if (p.action === 'getResumableUrl') return getResumableUrl_(p);
+    if (p.action === 'startPptProcessing') return startPptProcessing_(p);
     if (p.action === 'staffUploadPhoto') {
       if (!isValidStaffToken_(p.staffToken)) return res({ success: false, error: 'Invalid staff upload token.' });
       return submitStaffPhoto_(p);
@@ -161,6 +163,73 @@ function getFileJobStatus_(token) {
     return res(job);
   } catch (err) {
     return res({ success: false, error: 'Could not read the upload job status.' });
+  }
+}
+
+function getResumableUrl_(data) {
+  if (!isValidAdminSession_(data.sessionToken)) return res({ success: false, error: 'Authentication required.' });
+  if (!data.fileName) return res({ success: false, error: 'File name is required.' });
+
+  try {
+    var url = 'https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable';
+    var metadata = {
+      name: data.fileName,
+      parents: [CONFIG.INPUT_FOLDER_ID]
+    };
+    var response = UrlFetchApp.fetch(url, {
+      method: 'post',
+      contentType: 'application/json',
+      payload: JSON.stringify(metadata),
+      headers: { Authorization: 'Bearer ' + ScriptApp.getOAuthToken() },
+      muteHttpExceptions: true
+    });
+    
+    var headers = response.getHeaders();
+    var loc = headers['Location'] || headers['location'];
+    if (loc) {
+      return res({ success: true, uploadUrl: loc });
+    } else {
+      return res({ success: false, error: 'Could not generate upload URL: ' + response.getContentText() });
+    }
+  } catch (err) {
+    return res({ success: false, error: err.toString() });
+  }
+}
+
+function startPptProcessing_(data) {
+  if (!isValidAdminSession_(data.sessionToken)) return res({ success: false, error: 'Authentication required.' });
+  
+  var token = String(data.token || Utilities.getUuid());
+  var fileName = data.fileName || 'PPT';
+  
+  var lock = LockService.getScriptLock();
+  if (!lock.tryLock(30000)) return res({ success: false, token: token, error: 'Another upload is being processed. Please try again in a moment.' });
+  
+  try {
+    setFileJobStatus_(token, { status: 'PROCESSING', fileName: fileName, phase: 'PPT uploaded. Slide extraction starting in background...' });
+    
+    var triggers = ScriptApp.getProjectTriggers();
+    for (var t = 0; t < triggers.length; t++) {
+      if (triggers[t].getHandlerFunction() === 'processPPTsBackground_') {
+        ScriptApp.deleteTrigger(triggers[t]);
+      }
+    }
+    
+    PropertiesService.getScriptProperties().setProperty('ADH_PPT_BG_TOKEN', token);
+    PropertiesService.getScriptProperties().setProperty('ADH_PPT_BG_FILENAME', fileName);
+    PropertiesService.getScriptProperties().setProperty('ADH_PPT_BG_FILEID', 'unknown'); // File ID is managed by Drive since client uploaded directly
+    
+    ScriptApp.newTrigger('processPPTsBackground_')
+      .timeBased()
+      .after(2000)
+      .create();
+
+    return res({ success: true, token: token, status: 'PROCESSING', message: 'Slide matching is running in background.' });
+  } catch (err) {
+    setFileJobStatus_(token, { status: 'FAILED', fileName: fileName, phase: 'PPT processing trigger failed', error: err.toString(), completedAt: new Date().toISOString() });
+    return res({ success: false, error: err.toString() });
+  } finally {
+    lock.releaseLock();
   }
 }
 

@@ -353,22 +353,32 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
         setUploadNotice(current => current ? { ...current, status, message } : current);
     };
 
-    // Helper: POST to Apps Script with CORS + error reading
-    const postToScript = async (payload) => {
-        const response = await fetch(scriptUrl, {
-            method: 'POST',
-            headers: { 'Content-Type': 'text/plain' },
-            body: JSON.stringify(payload)
-        });
-        // Try reading JSON response (works if Apps Script returns CORS headers)
+    // Helper: POST to Apps Script with timeout to prevent infinite hanging
+    const postToScript = async (payload, timeoutMs = 120000) => {
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), timeoutMs);
         try {
-            const json = await response.json();
-            if (json && json.error) throw new Error(json.error);
-            return json;
-        } catch (parseErr) {
-            // If CORS blocks reading, the POST still went through
-            if (parseErr.message && !parseErr.message.includes('JSON')) throw parseErr;
-            return { success: true };
+            const response = await fetch(scriptUrl, {
+                method: 'POST',
+                headers: { 'Content-Type': 'text/plain' },
+                body: JSON.stringify(payload),
+                signal: controller.signal
+            });
+            try {
+                const json = await response.json();
+                if (json && json.error) throw new Error(json.error);
+                return json;
+            } catch (parseErr) {
+                if (parseErr.message && !parseErr.message.includes('JSON')) throw parseErr;
+                return { success: true };
+            }
+        } catch (err) {
+            if (err.name === 'AbortError') {
+                throw new Error('Upload timed out after ' + Math.round(timeoutMs / 1000) + ' seconds. The file may be too large. Try a smaller PPT file (under 8MB).');
+            }
+            throw err;
+        } finally {
+            clearTimeout(timer);
         }
     };
 
@@ -381,11 +391,13 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
             return;
         }
 
+        const fileSizeMB = file.size / (1024 * 1024);
+
         const estimate = estimateUploadDuration(file, type);
         setFileProcessing({
             type,
             fileName: file.name,
-            phase: 'Reading selected file',
+            phase: 'Starting...',
             progress: 0,
             startedAt: Date.now()
         });
@@ -400,10 +412,10 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
 
         void (async () => {
             try {
-                const fileData = await readFileAsDataUrl(file, (progress) => updateFileProcessing({ phase: 'Reading selected file', progress }));
-                updateFileProcessing({ phase: type === 'excel' ? 'Uploading for validation' : 'Uploading PPT and starting matching', progress: 100 });
-
                 if (type === 'excel') {
+                    // Excel files are usually small, we can keep the base64 approach
+                    const fileData = await readFileAsDataUrl(file, (progress) => updateFileProcessing({ phase: 'Reading Excel file', progress }));
+                    updateFileProcessing({ phase: 'Uploading for validation', progress: 100 });
                     const token = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
                     setExcelImportToken(token);
                     setExcelImportPreview({ status: 'PROCESSING', fileName: file.name, summary: null });
@@ -423,25 +435,69 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                     return;
                 }
 
+                // PPT Upload — Direct Resumable Upload to Google Drive (Bypasses Apps Script 50MB limit)
                 const token = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+                
+                // 1. Get Resumable Upload URL from Apps Script
+                updateFileProcessing({ phase: 'Securing upload channel...' });
+                const urlResponse = await postToScript({
+                    action: 'getResumableUrl',
+                    sessionToken: getAdminSession(),
+                    fileName: file.name
+                }, 30000);
+                
+                if (!urlResponse.uploadUrl) throw new Error('Could not get upload URL from server.');
+                
+                // 2. Upload raw file directly to Google's servers via XMLHttpRequest for progress
+                updateFileProcessing({ phase: `Uploading PPT (${fileSizeMB.toFixed(1)}MB)...`, progress: 0 });
+                
+                await new Promise((resolve, reject) => {
+                    const xhr = new XMLHttpRequest();
+                    xhr.open('PUT', urlResponse.uploadUrl, true);
+                    
+                    xhr.upload.onprogress = (event) => {
+                        if (event.lengthComputable) {
+                            const percent = Math.round((event.loaded / event.total) * 100);
+                            updateFileProcessing({ 
+                                phase: `Uploading PPT to Drive: ${percent}%`, 
+                                progress: percent 
+                            });
+                        }
+                    };
+                    
+                    xhr.onload = () => {
+                        if (xhr.status >= 200 && xhr.status < 300) {
+                            resolve(xhr.responseText);
+                        } else {
+                            reject(new Error(`Direct upload failed with status ${xhr.status}`));
+                        }
+                    };
+                    
+                    xhr.onerror = () => reject(new Error('Network error during direct upload.'));
+                    xhr.send(file);
+                });
+                
+                // 3. Trigger Background Processing in Apps Script
+                updateFileProcessing({ phase: 'Upload complete! Starting background processing...', progress: 100 });
                 await postToScript({
-                    action: 'uploadPptAndProcess',
+                    action: 'startPptProcessing',
                     sessionToken: getAdminSession(),
                     token,
-                    fileName: file.name,
-                    fileData,
-                    mimeType: file.type || 'application/vnd.openxmlformats-officedocument.presentationml.presentation'
-                });
-                updateFileProcessing({ phase: 'Extracting slides and matching site photos' });
-                const result = await waitForPptJob(token, (job) => updateFileProcessing({ phase: job.phase || 'Processing PPT' }));
+                    fileName: file.name
+                }, 30000);
+                
+                // 4. Poll for background processing status
+                updateFileProcessing({ phase: 'PPT saved to Drive! Matching slides to sites in background...' });
+                const result = await waitForPptJob(token, (job) => updateFileProcessing({ phase: job.phase || 'Processing PPT slides...' }));
                 if (result.status === 'FAILED') throw new Error(result.error || 'PPT processing failed.');
+                
                 window.dispatchEvent(new CustomEvent('hoardings:sync-requested', { detail: { action: 'pptUpload', fileName: file.name } }));
                 await wait(1200);
                 const freshData = await fetchHoardings();
                 if (freshData?.length) setHoardings(freshData);
                 completeBackgroundUpload('completed', 'PPT processing is complete. Matched site images have been refreshed.');
             } catch (error) {
-                completeBackgroundUpload('error', type === 'excel' ? `Excel preview failed: ${error.message}` : `PPT processing failed: ${error.message}`);
+                completeBackgroundUpload('error', type === 'excel' ? `Excel preview failed: ${error.message}` : `PPT failed: ${error.message}`);
             }
         })();
     };
