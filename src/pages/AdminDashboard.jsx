@@ -6,7 +6,7 @@ import {
     FileText, LogOut, Search, Eye, EyeOff,
     TrendingUp, MapPin, CheckCircle, Smartphone,
     Bell, HelpCircle, Plus, Filter, Download,
-    MessageSquare, Mail, User, Calendar, CheckSquare,
+    MessageSquare, Mail, User, Users, Package, ShoppingBag, BarChart2, FolderTree, Calendar, CheckSquare,
     MoreVertical, ExternalLink, ShieldCheck, Menu, X, UploadCloud, RefreshCw, Zap, XCircle, Share2, Trash2, Camera, Table2, Save, Undo2, Redo2, FileDown, Copy, Timer, Clock3, PanelLeftClose, PanelLeftOpen, Maximize2, Minimize2,
     BarChart3, PieChart, Activity, Sparkles, ArrowUpRight, Layers, Compass, DollarSign, Award, Flame, Check, ChevronRight, Monitor, QrCode, Printer, BookOpen
 } from 'lucide-react';
@@ -2488,87 +2488,59 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                 {isMobileMenuOpen ? <X size={24} /> : <Menu size={24} />}
             </button>
 
-            {/* Side Navigation */}
+            {/* Side Navigation (QuickMart Style) */}
             <aside className={`admin-sidebar ${isMobileMenuOpen ? 'mobile-open' : ''}`}>
-                <div className="sidebar-logo" style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                    <div style={{ background: '#ffffff', padding: '3px 8px', borderRadius: '8px', display: 'flex', alignItems: 'center', boxShadow: '0 2px 8px rgba(0,0,0,0.15)' }}>
-                        <img src={HIRA_LOGO} alt="HIRA Advertising" style={{ height: '32px', width: 'auto', display: 'block', objectFit: 'contain' }} />
+                <div className="sidebar-logo">
+                    <div className="logo-icon">
+                        <Layers size={20} color="#ffffff" />
                     </div>
-                    <span className="brand-badge" style={{ marginLeft: 'auto' }}>ADMIN</span>
+                    <div className="sidebar-brand-wrap">
+                        <span className="brand-title">QuickMart</span>
+                    </div>
                 </div>
 
-                <div className="menu-group">
-                    <div className="group-title">Analytics</div>
+                <div className="sidebar-nav-list">
                     <button className={`nav-item ${activeTab === 'dashboard' ? 'active' : ''}`} onClick={() => setActiveTab('dashboard')}>
-                        <LayoutDashboard size={19} />
-                        <span>Overview</span>
+                        <LayoutDashboard size={18} />
+                        <span>Dashboard</span>
                     </button>
                     <button className={`nav-item ${activeTab === 'inventory' ? 'active' : ''}`} onClick={() => setActiveTab('inventory')}>
-                        <Database size={19} />
-                        <span>Inventory</span>
+                        <Package size={18} />
+                        <span>Products</span>
                     </button>
-                    <button className={`nav-item ${activeTab === 'clients' ? 'active' : ''}`} onClick={() => setActiveTab('clients')}>
-                        <User size={19} />
-                        <span>Clients & Booking</span>
-                    </button>
-                </div>
-
-                <div className="menu-group">
-                    <div className="group-title">Automation & Field Operations</div>
                     <button className={`nav-item ${activeTab === 'staff-review' ? 'active' : ''}`} onClick={() => setActiveTab('staff-review')}>
-                        <Camera size={19} />
-                        <span>Live Field Audit & Staff Uploads</span>
+                        <ShoppingBag size={18} />
+                        <span>Orders</span>
                         {reviewQueue.length > 0 && <span className="badge-new badge-count">{reviewQueue.length}</span>}
                     </button>
+                    <button className={`nav-item ${activeTab === 'clients' ? 'active' : ''}`} onClick={() => setActiveTab('clients')}>
+                        <Users size={18} />
+                        <span>Customers</span>
+                    </button>
                     <button className={`nav-item ${activeTab === 'daily-update' ? 'active' : ''}`} onClick={() => setActiveTab('daily-update')}>
-                        <Zap size={19} />
+                        <Zap size={18} />
                         <span>Daily Updates</span>
                         <span className="badge-new badge-ai">AI</span>
                     </button>
-                </div>
-
-                <div className="menu-group">
-                    <div className="group-title">Documentation & Apps</div>
-                    <button 
-                        type="button"
-                        className="nav-item system-guide-btn" 
-                        onClick={() => window.open('/guide', '_blank')}
-                        style={{ background: 'rgba(99, 102, 241, 0.12)', border: '1px solid rgba(99, 102, 241, 0.3)', color: '#818cf8', width: '100%', cursor: 'pointer', marginBottom: '8px' }}
-                    >
-                        <BookOpen size={19} />
-                        <span style={{ fontWeight: 700 }}>System Guide (PDF)</span>
-                        <span className="badge-new" style={{ background: '#6366f1', color: '#ffffff', fontWeight: 800, marginLeft: 'auto' }}>GUIDE</span>
+                    <button className="nav-item" onClick={() => window.open('/guide', '_blank')}>
+                        <BookOpen size={18} />
+                        <span>System Guide</span>
                     </button>
-                    <button 
-                        type="button"
-                        className="nav-item download-apps-btn" 
-                        onClick={() => setIsAppDownloadModalOpen(true)}
-                        style={{ background: 'rgba(16, 185, 129, 0.12)', border: '1px solid rgba(16, 185, 129, 0.3)', color: '#34d399', width: '100%', cursor: 'pointer' }}
-                    >
-                        <Download size={19} />
-                        <span style={{ fontWeight: 700 }}>Download Apps</span>
-                        <span className="badge-new" style={{ background: '#10b981', color: '#ffffff', fontWeight: 800, marginLeft: 'auto' }}>APK & PC</span>
+                    <button className="nav-item" onClick={() => setIsAppDownloadModalOpen(true)}>
+                        <Download size={18} />
+                        <span>Download Apps</span>
+                    </button>
+                    <button className="nav-item" onClick={() => setIsSettingsOpen(true)}>
+                        <Settings size={18} />
+                        <span>Settings</span>
                     </button>
                 </div>
 
-                <div className="sidebar-footer">
-                    <button className="nav-item view-website-btn" onClick={() => navigate('/')}>
-                        <ExternalLink size={18} />
-                        <span>View Website</span>
+                <div className="sidebar-bottom">
+                    <button className="nav-item logout-nav-item" onClick={handleLogout}>
+                        <LogOut size={18} />
+                        <span>Logout</span>
                     </button>
-                    <div className="user-profile">
-                        <div className="user-avatar-wrap">
-                            <div className="user-avatar" style={{ backgroundImage: 'url(https://i.pravatar.cc/100?u=admin)', backgroundSize: 'cover' }}></div>
-                            <span className="online-indicator"></span>
-                        </div>
-                        <div className="user-info">
-                            <span className="name">Admin Manager</span>
-                            <span className="email">admin@heeraadvertising.com</span>
-                        </div>
-                        <button onClick={handleLogout} className="sidebar-logout-btn" title="Logout">
-                            <LogOut size={16} />
-                        </button>
-                    </div>
                 </div>
             </aside>
 
@@ -2579,20 +2551,22 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                         <button className="sidebar-collapse-toggle" onClick={toggleSidebar} title={isSidebarCollapsed ? 'Open navigation' : 'Close navigation'} aria-label={isSidebarCollapsed ? 'Open navigation' : 'Close navigation'}>
                             {isSidebarCollapsed ? <PanelLeftOpen size={19} /> : <PanelLeftClose size={19} />}
                         </button>
-                        <h2>
-                            {activeTab === 'dashboard' && 'Performance Insights'}
-                            {activeTab === 'inventory' && 'Asset Management'}
-                            {activeTab === 'sheet-editor' && 'Live Excel Sheet'}
-                            {activeTab === 'staff-review' && 'Live Field Audit & Staff Uploads'}
-                            {activeTab === 'daily-update' && 'Daily AI Updates'}
-                            {activeTab === 'clients' && 'Customers'}
-                        </h2>
+                        <button 
+                            onClick={() => navigate('/')}
+                            className="view-storefront-btn"
+                            title="Open public website storefront"
+                        >
+                            <span>View storefront</span>
+                            <div className="storefront-icon-box">
+                                <ExternalLink size={12} />
+                            </div>
+                        </button>
                     </div>
                     <div className="top-bar-right">
                         {(activeTab === 'inventory' || activeTab === 'dashboard') && (
                             <>
                                 <div className="admin-search-box">
-                                    <Search size={18} color="#808191" />
+                                    <Search size={17} color="#9ca3af" />
                                     <input
                                         placeholder="Search inventory..."
                                         value={searchTerm}
@@ -2600,31 +2574,50 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                     />
                                 </div>
                                 <div className="action-btns">
-                                    <button className="btn-secondary-admin" onClick={handleForceSync} disabled={isLoading} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 16px', background: '#f1f5f9', border: '1px solid #e2e8f0', color: '#334155', borderRadius: '10px', fontWeight: '700', fontSize: '0.84rem' }}>
-                                        <RefreshCw size={16} className={isLoading ? "animate-spin" : ""} /> Sync with Sheet
+                                    <button className="btn-secondary-admin" onClick={handleForceSync} disabled={isLoading} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '7px 14px', background: '#f3f4f6', border: '1px solid #e5e7eb', color: '#374151', borderRadius: '10px', fontWeight: '700', fontSize: '0.82rem' }}>
+                                        <RefreshCw size={15} className={isLoading ? "animate-spin" : ""} /> Sync with Sheet
                                     </button>
                                     {fileProcessing && (
                                         <div className="file-processing-timer" role="status" aria-live="polite" title={`${fileProcessing.fileName}: ${fileProcessing.phase}`}>
-                                            <Timer size={16} />
+                                            <Timer size={15} />
                                             <div className="file-processing-copy">
                                                 <strong>{formatProcessingTime(processingSeconds)}</strong>
                                                 <span>{fileProcessing.type === 'excel' ? 'Excel' : 'PPT'}: {fileProcessing.phase}</span>
                                             </div>
                                         </div>
                                     )}
-                                    <label className="btn-primary-admin" style={{ cursor: 'pointer' }}>
-                                        <Download size={18} />
+                                    <label className="btn-primary-admin" style={{ cursor: 'pointer', padding: '7px 14px', fontSize: '0.82rem' }}>
+                                        <Download size={16} />
                                         Excel Sync
                                         <input type="file" style={{ display: 'none' }} accept=".xlsx,.xls,.csv" disabled={Boolean(fileProcessing)} onChange={(e) => handleFileUpload(e, 'excel')} />
                                     </label>
-                                    <label className="btn-primary-admin" style={{ background: '#6c5dd3', borderColor: '#6c5dd3', color: 'white', cursor: 'pointer' }}>
-                                        <Plus size={18} />
+                                    <label className="btn-primary-admin" style={{ background: '#00c851', borderColor: '#00c851', color: 'white', cursor: 'pointer', padding: '7px 14px', fontSize: '0.82rem' }}>
+                                        <Plus size={16} />
                                         PPT Upload
                                         <input type="file" style={{ display: 'none' }} accept=".ppt,.pptx" disabled={Boolean(fileProcessing)} onChange={(e) => handleFileUpload(e, 'ppt')} />
                                     </label>
                                 </div>
                             </>
                         )}
+
+                        {/* 🔔 Notification Bell */}
+                        <button className="topbar-icon-btn" title="Notifications">
+                            <Bell size={20} />
+                        </button>
+
+                        {/* 👤 Admin Profile (QuickMart Illustrated Persona Style) */}
+                        <div className="topbar-user-profile">
+                            <div className="topbar-user-avatar">
+                                <img 
+                                    src="https://api.dicebear.com/7.x/personas/svg?seed=KamleshAdmin&backgroundColor=ffd5dc" 
+                                    alt="Kamlesh Admin" 
+                                    style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                                />
+                            </div>
+                            <span className="topbar-user-name">
+                                Kamlesh Admin
+                            </span>
+                        </div>
                     </div>
                 </header>
 

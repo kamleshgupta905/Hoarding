@@ -21,11 +21,11 @@
 }
 
 /* 🧊 Sidebar Styles */
-/* 🧊 Sleek QuickMart / Apple-Grade Executive Sidebar */
+/* 🧊 Sidebar Styles (QuickMart Executive Charcoal) */
 .admin-sidebar {
-    width: 268px;
-    background: #0f172a;
-    padding: 16px 12px;
+    width: 250px;
+    background: #111827;
+    padding: 24px 16px;
     display: flex;
     flex-direction: column;
     color: #f8fafc;
@@ -37,10 +37,9 @@
     overflow-x: hidden;
     scrollbar-width: thin;
     scrollbar-color: rgba(255, 255, 255, 0.15) transparent;
-    border-right: 1px solid rgba(226, 232, 240, 0.08);
+    border-right: 1px solid #1f2937;
     transition: all 0.22s cubic-bezier(0.16, 1, 0.3, 1);
     z-index: 100;
-    box-shadow: 4px 0 24px rgba(0, 0, 0, 0.15);
 }
 
 .admin-sidebar::-webkit-scrollbar {
@@ -62,10 +61,8 @@
 }
 
 .sidebar-collapsed .sidebar-brand-wrap,
-.sidebar-collapsed .group-title,
 .sidebar-collapsed .nav-item span,
-.sidebar-collapsed .user-info,
-.sidebar-collapsed .sidebar-logout-btn {
+.sidebar-collapsed .topbar-user-name {
     display: none !important;
 }
 
@@ -77,23 +74,8 @@
 
 .sidebar-collapsed .nav-item {
     justify-content: center;
-    padding: 10px 0;
+    padding: 12px 0;
     gap: 0;
-}
-
-.sidebar-collapsed .badge-new {
-    position: absolute;
-    top: 6px;
-    right: 6px;
-    font-size: 0.58rem;
-    padding: 1px 4px;
-}
-
-.sidebar-collapsed .user-profile {
-    justify-content: center;
-    padding: 8px 0;
-    background: transparent;
-    border: none;
 }
 
 /* 🌟 Sidebar Brand Logo */
@@ -101,16 +83,15 @@
     display: flex;
     align-items: center;
     gap: 12px;
-    padding: 4px 6px 16px;
-    margin-bottom: 6px;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+    padding: 4px 8px 24px;
+    border-bottom: 1px solid #1f2937;
 }
 
 .logo-icon {
-    width: 36px;
-    height: 36px;
+    width: 38px;
+    height: 38px;
     background: #00c851;
-    border-radius: 10px;
+    border-radius: 12px;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -126,48 +107,30 @@
 }
 
 .brand-title {
-    font-size: 1.1rem;
+    font-size: 1.25rem;
     font-weight: 800;
     color: #ffffff;
     letter-spacing: -0.02em;
 }
 
-.brand-badge {
-    font-size: 0.62rem;
-    font-weight: 800;
-    color: #00c851;
-    background: rgba(0, 200, 81, 0.15);
-    border: 1px solid rgba(0, 200, 81, 0.3);
-    padding: 2px 6px;
-    border-radius: 6px;
-    letter-spacing: 0.06em;
+/* 📂 Menu List */
+.sidebar-nav-list {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    margin-top: 12px;
 }
 
-/* 📂 Menu Groups & Titles */
-.menu-group {
-    margin-bottom: 12px;
-}
-
-.group-title {
-    font-size: 0.65rem;
-    text-transform: uppercase;
-    color: #64748b;
-    margin-bottom: 5px;
-    padding: 0 10px;
-    letter-spacing: 0.08em;
-    font-weight: 800;
-}
-
-/* 🔘 Navigation Items */
+/* 🔘 Navigation Items (QuickMart Dark Green Pill) */
 .nav-item {
     display: flex;
     align-items: center;
-    gap: 10px;
-    padding: 8px 12px;
-    border-radius: 9px;
-    color: #94a3b8;
+    gap: 14px;
+    padding: 12px 16px;
+    border-radius: 12px;
+    color: #9ca3af;
     font-weight: 600;
-    font-size: 0.84rem;
+    font-size: 0.95rem;
     transition: all 0.18s ease;
     width: 100%;
     margin-bottom: 2px;
@@ -179,20 +142,19 @@
 }
 
 .nav-item:hover {
-    background: rgba(255, 255, 255, 0.06);
+    background: rgba(255, 255, 255, 0.05);
     color: #ffffff;
-    transform: translateX(2px);
 }
 
 .nav-item.active {
-    background: rgba(0, 200, 81, 0.15);
-    color: #00e65c;
+    background: #142e20 !important;
+    color: #00c851 !important;
     font-weight: 700;
-    box-shadow: inset 0 0 0 1px rgba(0, 200, 81, 0.25);
+    border-radius: 12px;
 }
 
 .nav-item.active svg {
-    color: #00e65c;
+    color: #00c851 !important;
 }
 
 /* 🏷️ Sidebar Badges */
@@ -216,45 +178,92 @@
     border: 1px solid rgba(239, 68, 68, 0.35);
 }
 
-/* 📌 Sidebar Footer & User Profile */
-.sidebar-footer {
+/* 📌 Sidebar Bottom */
+.sidebar-bottom {
     margin-top: auto;
-    padding-top: 12px;
-    display: flex;
-    flex-direction: column;
+    padding-top: 16px;
+    border-top: 1px solid #1f2937;
+}
+
+.logout-nav-item {
+    color: #9ca3af;
+}
+
+.logout-nav-item:hover {
+    background: rgba(239, 68, 68, 0.12) !important;
+    color: #ef4444 !important;
+}
+
+/* 📊 Top Bar (QuickMart Header Style) */
+.view-storefront-btn {
+    display: inline-flex;
+    align-items: center;
     gap: 8px;
-    border-top: 1px solid rgba(255, 255, 255, 0.06);
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    color: #6b7280;
+    font-size: 0.92rem;
+    font-weight: 500;
+    padding: 0;
+    transition: color 0.15s ease;
 }
 
-.view-website-btn {
-    background: rgba(255, 255, 255, 0.04);
-    border: 1px solid rgba(255, 255, 255, 0.08);
-    color: #cbd5e1;
-    font-size: 0.8rem;
-    padding: 8px 10px;
+.view-storefront-btn:hover {
+    color: #111827;
 }
 
-.view-website-btn:hover {
-    background: rgba(255, 255, 255, 0.08);
+.storefront-icon-box {
+    width: 22px;
+    height: 22px;
+    border-radius: 5px;
+    background: #3b82f6;
     color: #ffffff;
-    border-color: rgba(255, 255, 255, 0.15);
+    display: flex;
+    align-items: center;
+    justify-content: center;
 }
 
-.user-profile {
+.topbar-icon-btn {
+    background: transparent;
+    border: none;
+    color: #4b5563;
+    cursor: pointer;
+    padding: 6px;
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.15s ease;
+}
+
+.topbar-icon-btn:hover {
+    background: #f3f4f6;
+    color: #111827;
+}
+
+.topbar-user-profile {
     display: flex;
     align-items: center;
     gap: 10px;
-    padding: 8px 10px;
-    background: rgba(255, 255, 255, 0.03);
-    border: 1px solid rgba(255, 255, 255, 0.06);
-    border-radius: 10px;
 }
 
-.user-avatar-wrap {
-    position: relative;
+.topbar-user-avatar {
     width: 36px;
     height: 36px;
+    border-radius: 50%;
+    background: #ffd5dc;
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
     flex-shrink: 0;
+}
+
+.topbar-user-name {
+    font-size: 0.92rem;
+    font-weight: 700;
+    color: #111827;
 }
 
 .user-avatar {
