@@ -2599,7 +2599,7 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                             />
                         </div>
                         <div className="action-btns">
-                            <button className="btn-secondary-admin" onClick={handleForceSync} disabled={isLoading} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 16px', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', color: 'white', borderRadius: '10px' }}>
+                            <button className="btn-secondary-admin" onClick={handleForceSync} disabled={isLoading} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 16px', background: '#f1f5f9', border: '1px solid #e2e8f0', color: '#334155', borderRadius: '10px', fontWeight: '700', fontSize: '0.84rem' }}>
                                 <RefreshCw size={16} className={isLoading ? "animate-spin" : ""} /> Sync with Sheet
                             </button>
                             {fileProcessing && (
