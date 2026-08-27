@@ -133,6 +133,9 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
     const [resizingCol, setResizingCol] = useState(null);
     const [resizingRow, setResizingRow] = useState(null);
     const resizeStartRef = useRef(null);
+    const [clientSearchTerm, setClientSearchTerm] = useState('');
+    const [clientStatusFilter, setClientStatusFilter] = useState('All');
+    const [clientViewMode, setClientViewMode] = useState('table'); // 'table' | 'summary'
     // 🖱️ Right-click Context Menu
     const [contextMenu, setContextMenu] = useState(null); // { x, y, row, col }
     // ↕️ Sort & Filter
@@ -3939,139 +3942,387 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                     </div>
                 )}
 
-                {activeTab === 'clients' && (
-                    <div className="tab-content clients-tab animate-in" style={{ padding: '40px 60px' }}>
-                        <header style={{ marginBottom: '40px' }}>
-                            <h2 style={{ fontSize: '2.2rem', fontWeight: 900, color: '#11142d', marginBottom: '8px', letterSpacing: '-0.02em' }}>Client Relationships</h2>
-                            <p style={{ color: '#808191', fontSize: '1rem', fontWeight: 500 }}>Manage advertiser accounts and campaign performance.</p>
-                        </header>
+                {activeTab === 'clients' && (() => {
+                    const allBookedSites = hoardings.filter(h => h && h.BookedBy && String(h.BookedBy).trim() !== '');
+                    const uniqueClients = [...new Set(allBookedSites.map(h => String(h.BookedBy).trim()))].filter(Boolean);
+                    const activeCampaigns = allBookedSites.filter(h => (h.STATUS || '').toLowerCase() === 'occupied');
+                    const totalMonthlyValue = allBookedSites.reduce((sum, h) => sum + (Number(h['Rental Per Month'] || h['Avg Monthly Cost (INR)'] || 0) || 0), 0);
 
-                        {/* 📊 Client CRM Stats */}
-                        <div className="client-stats-row">
-                            <div className="stat-box">
-                                <div className="stat-icon clients-c"><User size={22} /></div>
+                    // Filtered row list
+                    const filteredBookings = allBookedSites.filter(site => {
+                        const clientName = String(site.BookedBy || '').toLowerCase();
+                        const locName = String(site.Location || site['Locality Site Location'] || '').toLowerCase();
+                        const areaName = String(site.Area || site.Locality || '').toLowerCase();
+                        const cityName = String(site.City || '').toLowerCase();
+                        const search = clientSearchTerm.toLowerCase().trim();
+
+                        const matchesSearch = !search || clientName.includes(search) || locName.includes(search) || areaName.includes(search) || cityName.includes(search);
+                        const isOccupied = (site.STATUS || '').toLowerCase() === 'occupied';
+                        const matchesStatus = clientStatusFilter === 'All' || 
+                            (clientStatusFilter === 'Occupied' && isOccupied) || 
+                            (clientStatusFilter === 'Available' && !isOccupied);
+
+                        return matchesSearch && matchesStatus;
+                    });
+
+                    return (
+                        <div className="tab-content clients-tab animate-in" style={{ padding: '32px 40px', background: '#f8fafc', minHeight: 'calc(100vh - 72px)' }}>
+                            
+                            {/* 🌟 Header Section */}
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '28px', flexWrap: 'wrap', gap: '16px' }}>
                                 <div>
-                                    <span className="stat-val">{[...new Set(hoardings.filter(h => h.BookedBy).map(h => h.BookedBy))].length}</span>
-                                    <span className="stat-lbl">Managed Clients</span>
+                                    <h2 style={{ fontSize: '1.85rem', fontWeight: 800, color: '#0f172a', margin: '0 0 6px 0', letterSpacing: '-0.02em' }}>
+                                        Clients & Booking Ledger
+                                    </h2>
+                                    <p style={{ color: '#64748b', fontSize: '0.92rem', margin: 0, fontWeight: 500 }}>
+                                        Row-wise ledger of all advertiser accounts, booked billboard assets, and campaign timelines.
+                                    </p>
+                                </div>
+                                <div style={{ display: 'flex', gap: '10px' }}>
+                                    <button 
+                                        className="qm-btn-secondary"
+                                        onClick={() => {
+                                            const csvContent = "data:text/csv;charset=utf-8," + 
+                                                ["Client,Location,Area,City,Start Date,End Date,Monthly Rent,Status"].concat(
+                                                    filteredBookings.map(b => `"${b.BookedBy}","${b.Location || b['Locality Site Location']}","${b.Area || b.Locality}","${b.City}","${b.BookingStart || ''}","${b.BookingEnd || ''}","${b['Rental Per Month'] || ''}","${b.STATUS || ''}"`)
+                                                ).join("\n");
+                                            const encodedUri = encodeURI(csvContent);
+                                            const link = document.createElement("a");
+                                            link.setAttribute("href", encodedUri);
+                                            link.setAttribute("download", `client_bookings_${Date.now()}.csv`);
+                                            document.body.appendChild(link);
+                                            link.click();
+                                            link.remove();
+                                        }}
+                                        style={{ display: 'inline-flex', alignItems: 'center', gap: '8px' }}
+                                    >
+                                        <Download size={15} /> Export Ledger CSV
+                                    </button>
                                 </div>
                             </div>
-                            <div className="stat-box">
-                                <div className="stat-icon active-c"><Zap size={22} /></div>
-                                <div>
-                                    <span className="stat-val">{hoardings.filter(h => h.STATUS === 'Occupied').length}</span>
-                                    <span className="stat-lbl">Active Campaigns</span>
-                                </div>
-                            </div>
-                            <div className="stat-box">
-                                <div className="stat-icon market-c"><MapPin size={22} /></div>
-                                <div>
-                                    <span className="stat-val">{new Set(hoardings.filter(h => h.STATUS === 'Occupied').map(h => h.City)).size}</span>
-                                    <span className="stat-lbl">Market Cities</span>
-                                </div>
-                            </div>
-                        </div>
 
-                        <div className="clients-section-controls">
-                           <div className="search-pill">
-                               <Search size={18} color="#808191" />
-                               <input placeholder="Search client database..." />
-                           </div>
-                        </div>
-
-                        <div className="clients-list-grid">
-                            {[...new Set(hoardings.filter(h => h.BookedBy).map(h => h.BookedBy))].map((client, idx) => {
-                                const allSitesForClient = hoardings.filter(h => h.BookedBy === client);
-                                const activeSites = allSitesForClient.filter(h => h.STATUS === 'Occupied');
-                                
-                                if (allSitesForClient.length === 0) return null;
-
-                                return (
-                                    <div key={idx} className="client-data-card animate-in" style={{ animationDelay: `${idx * 0.1}s` }}>
-                                        <div className="client-card-header">
-                                            <div className="client-avatar">{client.charAt(0).toUpperCase()}</div>
-                                            <div className="client-main-info">
-                                                <h4>{client}</h4>
-                                                <div className="status-badge-row">
-                                                    <span className="status-dot"></span>
-                                                    <span>Verified Partner</span>
-                                                </div>
-                                            </div>
-                                        </div>
-                                        
-                                        <div className="client-card-stats">
-                                            <div className="mini-stat">
-                                                <span className="m-val">{activeSites.length}</span>
-                                                <span className="m-lbl">Live Sites</span>
-                                            </div>
-                                            <div className="mini-stat">
-                                                <span className="m-val">{allSitesForClient.length - activeSites.length}</span>
-                                                <span className="m-lbl">Completed</span>
-                                            </div>
-                                        </div>
-
-                                        <div className="client-card-actions">
-                                            <button 
-                                                className="btn-share-link"
-                                                onClick={() => {
-                                                    const link = `${window.location.origin}/client/${encodeURIComponent(client)}`;
-                                                    navigator.clipboard.writeText(link);
-                                                    alert(`✅ Link copied!`);
-                                                }}
-                                            >
-                                                <Share2 size={16} /> Share Link
-                                            </button>
-                                            <button 
-                                                className="btn-view-portal"
-                                                onClick={() => window.open(`/client/${encodeURIComponent(client)}`, '_blank')}
-                                            >
-                                                <ExternalLink size={16} /> Portal
-                                            </button>
-                                        </div>
+                            {/* 📊 4 Top Executive KPI Stats */}
+                            <div className="qm-kpi-grid" style={{ marginBottom: '28px' }}>
+                                <div className="qm-kpi-card">
+                                    <div className="qm-kpi-top">
+                                        <span className="qm-kpi-label">TOTAL CLIENTS</span>
+                                        <div className="qm-kpi-icon-box qm-purple"><User size={19} /></div>
                                     </div>
-                                );
-                            })}
+                                    <div className="qm-kpi-value-row">
+                                        <span className="qm-kpi-main-val">{uniqueClients.length}</span>
+                                        <span className="qm-kpi-unit">Accounts</span>
+                                    </div>
+                                    <div className="qm-kpi-meta-row">
+                                        <span className="qm-kpi-subtext">Verified Advertisers</span>
+                                        <span className="qm-badge qm-badge-purple">Active CRM</span>
+                                    </div>
+                                </div>
+
+                                <div className="qm-kpi-card">
+                                    <div className="qm-kpi-top">
+                                        <span className="qm-kpi-label">ACTIVE CAMPAIGNS</span>
+                                        <div className="qm-kpi-icon-box qm-green"><Zap size={19} /></div>
+                                    </div>
+                                    <div className="qm-kpi-value-row">
+                                        <span className="qm-kpi-main-val">{activeCampaigns.length}</span>
+                                        <span className="qm-kpi-unit">Live Sites</span>
+                                    </div>
+                                    <div className="qm-kpi-meta-row">
+                                        <span className="qm-kpi-subtext">Currently On Display</span>
+                                        <span className="qm-badge qm-badge-green">Occupied</span>
+                                    </div>
+                                </div>
+
+                                <div className="qm-kpi-card">
+                                    <div className="qm-kpi-top">
+                                        <span className="qm-kpi-label">TOTAL BOOKED SITES</span>
+                                        <div className="qm-kpi-icon-box qm-blue"><MapPin size={19} /></div>
+                                    </div>
+                                    <div className="qm-kpi-value-row">
+                                        <span className="qm-kpi-main-val">{allBookedSites.length}</span>
+                                        <span className="qm-kpi-unit">Contracts</span>
+                                    </div>
+                                    <div className="qm-kpi-meta-row">
+                                        <span className="qm-kpi-subtext">All-Time Booked Sites</span>
+                                        <span className="qm-badge qm-badge-blue">Total</span>
+                                    </div>
+                                </div>
+
+                                <div className="qm-kpi-card">
+                                    <div className="qm-kpi-top">
+                                        <span className="qm-kpi-label">MONTHLY REVENUE BOOKED</span>
+                                        <div className="qm-kpi-icon-box qm-sky"><Layers size={19} /></div>
+                                    </div>
+                                    <div className="qm-kpi-value-row">
+                                        <span className="qm-kpi-main-val">₹{(totalMonthlyValue / 100000).toFixed(2)}</span>
+                                        <span className="qm-kpi-unit">Lakhs / mo</span>
+                                    </div>
+                                    <div className="qm-kpi-meta-row">
+                                        <span className="qm-kpi-subtext">Total Contract Value</span>
+                                        <span className="qm-badge qm-badge-sky">Revenue</span>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* 🔍 Search & Filter Bar */}
+                            <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '14px', padding: '14px 20px', marginBottom: '20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '14px', boxShadow: '0 1px 3px rgba(0,0,0,0.03)' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flex: 1, minWidth: '260px', maxWidth: '440px', background: '#f8fafc', border: '1px solid #cbd5e1', borderRadius: '10px', padding: '8px 14px' }}>
+                                    <Search size={17} color="#64748b" />
+                                    <input 
+                                        type="text"
+                                        placeholder="Search by client name, location, city..."
+                                        value={clientSearchTerm}
+                                        onChange={(e) => setClientSearchTerm(e.target.value)}
+                                        style={{ border: 'none', background: 'transparent', outline: 'none', width: '100%', fontSize: '0.88rem', fontWeight: 600, color: '#0f172a' }}
+                                    />
+                                    {clientSearchTerm && (
+                                        <button onClick={() => setClientSearchTerm('')} style={{ color: '#94a3b8', fontSize: '0.8rem', fontWeight: 700 }}>✕</button>
+                                    )}
+                                </div>
+
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                    <span style={{ fontSize: '0.78rem', fontWeight: 800, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Filter:</span>
+                                    {['All', 'Occupied', 'Available'].map(statusOption => (
+                                        <button
+                                            key={statusOption}
+                                            onClick={() => setClientStatusFilter(statusOption)}
+                                            style={{
+                                                padding: '6px 14px',
+                                                borderRadius: '8px',
+                                                fontSize: '0.82rem',
+                                                fontWeight: 700,
+                                                border: clientStatusFilter === statusOption ? '1px solid #00c851' : '1px solid #e2e8f0',
+                                                background: clientStatusFilter === statusOption ? '#ecfdf5' : '#ffffff',
+                                                color: clientStatusFilter === statusOption ? '#047857' : '#475569',
+                                                cursor: 'pointer',
+                                                transition: 'all 0.15s ease'
+                                            }}
+                                        >
+                                            {statusOption === 'All' ? `All (${allBookedSites.length})` : statusOption === 'Occupied' ? `Active (${activeCampaigns.length})` : `Completed (${allBookedSites.length - activeCampaigns.length})`}
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+
+                            {/* 📋 Row-Wise Client & Bookings Table */}
+                            <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '16px', overflow: 'hidden', boxShadow: '0 2px 8px rgba(15, 23, 42, 0.04)' }}>
+                                <div style={{ overflowX: 'auto' }}>
+                                    <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', minWidth: '950px' }}>
+                                        <thead>
+                                            <tr style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
+                                                <th style={{ padding: '14px 18px', fontSize: '0.74rem', fontWeight: 800, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.06em', width: '50px' }}>#</th>
+                                                <th style={{ padding: '14px 18px', fontSize: '0.74rem', fontWeight: 800, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.06em', minWidth: '220px' }}>Client / Advertiser</th>
+                                                <th style={{ padding: '14px 18px', fontSize: '0.74rem', fontWeight: 800, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.06em', minWidth: '240px' }}>Booked Location</th>
+                                                <th style={{ padding: '14px 18px', fontSize: '0.74rem', fontWeight: 800, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.06em', minWidth: '150px' }}>Media & Size</th>
+                                                <th style={{ padding: '14px 18px', fontSize: '0.74rem', fontWeight: 800, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.06em', minWidth: '200px' }}>Booking Timeline</th>
+                                                <th style={{ padding: '14px 18px', fontSize: '0.74rem', fontWeight: 800, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.06em', minWidth: '130px' }}>Monthly Rent</th>
+                                                <th style={{ padding: '14px 18px', fontSize: '0.74rem', fontWeight: 800, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.06em', minWidth: '120px' }}>Status</th>
+                                                <th style={{ padding: '14px 18px', fontSize: '0.74rem', fontWeight: 800, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.06em', minWidth: '160px', textAlign: 'right' }}>Actions</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {filteredBookings.length === 0 ? (
+                                                <tr>
+                                                    <td colSpan={8} style={{ padding: '60px 20px', textAlign: 'center' }}>
+                                                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '12px' }}>
+                                                            <div style={{ width: '56px', height: '56px', borderRadius: '16px', background: '#f1f5f9', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#94a3b8' }}>
+                                                                <User size={28} />
+                                                            </div>
+                                                            <strong style={{ fontSize: '1.05rem', color: '#0f172a' }}>No Client Bookings Found</strong>
+                                                            <p style={{ color: '#64748b', fontSize: '0.86rem', margin: 0, maxWidth: '400px' }}>
+                                                                {clientSearchTerm ? 'No bookings match your search query. Try clearing the search filter.' : 'Assign a client name in the Inventory tab or edit a hoarding to track client campaigns here.'}
+                                                            </p>
+                                                        </div>
+                                                    </td>
+                                                </tr>
+                                            ) : (
+                                                filteredBookings.map((site, index) => {
+                                                    const clientName = site.BookedBy || 'Unknown Client';
+                                                    const isOccupied = (site.STATUS || '').toLowerCase() === 'occupied';
+                                                    const rent = Number(site['Rental Per Month'] || site['Avg Monthly Cost (INR)'] || 0);
+                                                    const loc = site.Location || site['Locality Site Location'] || 'Unnamed Site';
+                                                    const area = site.Area || site.Locality || '';
+                                                    const city = site.City || 'Meerut';
+                                                    const media = site.Media || 'Unipole';
+                                                    const size = site.Width && site.Height ? `${site.Width}x${site.Height} ft` : (site['Total SQ.ft'] ? `${site['Total SQ.ft']} sq.ft` : 'Standard');
+                                                    const initial = clientName.charAt(0).toUpperCase();
+
+                                                    // Calculate days if start and end dates exist
+                                                    let durationText = '';
+                                                    if (site.BookingStart && site.BookingEnd) {
+                                                        try {
+                                                            const start = new Date(site.BookingStart);
+                                                            const end = new Date(site.BookingEnd);
+                                                            const days = Math.round((end - start) / (1000 * 60 * 60 * 24));
+                                                            if (days > 0) durationText = `(${days} Days)`;
+                                                        } catch {}
+                                                    }
+
+                                                    return (
+                                                        <tr 
+                                                            key={site._SiteID || index}
+                                                            style={{ 
+                                                                borderBottom: '1px solid #f1f5f9', 
+                                                                transition: 'background 0.15s ease',
+                                                                background: index % 2 === 0 ? '#ffffff' : '#fafcff'
+                                                            }}
+                                                            onMouseEnter={(e) => e.currentTarget.style.background = '#f1f5f9'}
+                                                            onMouseLeave={(e) => e.currentTarget.style.background = index % 2 === 0 ? '#ffffff' : '#fafcff'}
+                                                        >
+                                                            {/* # Index */}
+                                                            <td style={{ padding: '16px 18px', fontSize: '0.82rem', fontWeight: 800, color: '#94a3b8', fontVariantNumeric: 'tabular-nums' }}>
+                                                                {index + 1}
+                                                            </td>
+
+                                                            {/* Client Info */}
+                                                            <td style={{ padding: '16px 18px' }}>
+                                                                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                                                                    <div style={{ 
+                                                                        width: '38px', 
+                                                                        height: '38px', 
+                                                                        borderRadius: '10px', 
+                                                                        background: 'linear-gradient(135deg, #6366f1 0%, #4f46e5 100%)', 
+                                                                        color: '#ffffff', 
+                                                                        display: 'flex', 
+                                                                        alignItems: 'center', 
+                                                                        justifyContent: 'center', 
+                                                                        fontWeight: 800, 
+                                                                        fontSize: '1rem',
+                                                                        flexShrink: 0,
+                                                                        boxShadow: '0 2px 6px rgba(99, 102, 241, 0.25)'
+                                                                    }}>
+                                                                        {initial}
+                                                                    </div>
+                                                                    <div>
+                                                                        <div style={{ fontSize: '0.92rem', fontWeight: 800, color: '#0f172a' }}>{clientName}</div>
+                                                                        <div style={{ fontSize: '0.72rem', fontWeight: 600, color: '#059669', display: 'flex', alignItems: 'center', gap: '4px', marginTop: '2px' }}>
+                                                                            <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#10b981' }}></span>
+                                                                            Verified Advertiser
+                                                                        </div>
+                                                                    </div>
+                                                                </div>
+                                                            </td>
+
+                                                            {/* Location */}
+                                                            <td style={{ padding: '16px 18px' }}>
+                                                                <div style={{ fontSize: '0.88rem', fontWeight: 700, color: '#0f172a', marginBottom: '3px' }}>{loc}</div>
+                                                                <div style={{ fontSize: '0.76rem', color: '#64748b', fontWeight: 500, display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                                                    <span>📍 {area || 'Main Road'}</span>
+                                                                    <span style={{ background: '#f1f5f9', color: '#475569', padding: '1px 6px', borderRadius: '4px', fontSize: '0.7rem', fontWeight: 700 }}>{city}</span>
+                                                                </div>
+                                                            </td>
+
+                                                            {/* Media & Size */}
+                                                            <td style={{ padding: '16px 18px' }}>
+                                                                <div style={{ fontSize: '0.84rem', fontWeight: 700, color: '#1e293b' }}>{media}</div>
+                                                                <div style={{ fontSize: '0.76rem', color: '#64748b', fontWeight: 500 }}>{size}</div>
+                                                            </td>
+
+                                                            {/* Booking Timeline */}
+                                                            <td style={{ padding: '16px 18px' }}>
+                                                                {site.BookingStart || site.BookingEnd ? (
+                                                                    <div>
+                                                                        <div style={{ fontSize: '0.84rem', fontWeight: 700, color: '#0f172a', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                                                            <Calendar size={13} color="#6366f1" />
+                                                                            <span>{site.BookingStart || 'Start'} ➔ {site.BookingEnd || 'End'}</span>
+                                                                        </div>
+                                                                        {durationText && (
+                                                                            <div style={{ fontSize: '0.72rem', fontWeight: 600, color: '#6366f1', marginTop: '2px' }}>
+                                                                                {durationText}
+                                                                            </div>
+                                                                        )}
+                                                                    </div>
+                                                                ) : (
+                                                                    <span style={{ fontSize: '0.78rem', color: '#94a3b8', fontStyle: 'italic' }}>Dates not specified</span>
+                                                                )}
+                                                            </td>
+
+                                                            {/* Rent */}
+                                                            <td style={{ padding: '16px 18px' }}>
+                                                                {rent > 0 ? (
+                                                                    <div>
+                                                                        <span style={{ fontSize: '0.96rem', fontWeight: 800, color: '#0f172a' }}>₹{rent.toLocaleString('en-IN')}</span>
+                                                                        <span style={{ fontSize: '0.7rem', color: '#64748b', display: 'block' }}>per month</span>
+                                                                    </div>
+                                                                ) : (
+                                                                    <span style={{ fontSize: '0.8rem', color: '#94a3b8' }}>On Request</span>
+                                                                )}
+                                                            </td>
+
+                                                            {/* Status */}
+                                                            <td style={{ padding: '16px 18px' }}>
+                                                                {isOccupied ? (
+                                                                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', background: '#ecfdf5', color: '#047857', padding: '4px 10px', borderRadius: '999px', fontSize: '0.74rem', fontWeight: 800 }}>
+                                                                        <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#10b981' }}></span> Live Campaign
+                                                                    </span>
+                                                                ) : (
+                                                                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', background: '#f1f5f9', color: '#64748b', padding: '4px 10px', borderRadius: '999px', fontSize: '0.74rem', fontWeight: 700 }}>
+                                                                        Completed
+                                                                    </span>
+                                                                )}
+                                                            </td>
+
+                                                            {/* Actions */}
+                                                            <td style={{ padding: '16px 18px', textAlign: 'right' }}>
+                                                                <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                                                                    <button
+                                                                        onClick={() => {
+                                                                            const link = `${window.location.origin}/client/${encodeURIComponent(clientName)}`;
+                                                                            navigator.clipboard.writeText(link);
+                                                                            showToast(`✅ Link copied for ${clientName}!`, 'success');
+                                                                        }}
+                                                                        title="Copy Live Client Portal Link"
+                                                                        style={{
+                                                                            display: 'inline-flex',
+                                                                            alignItems: 'center',
+                                                                            gap: '5px',
+                                                                            padding: '6px 11px',
+                                                                            borderRadius: '8px',
+                                                                            fontSize: '0.78rem',
+                                                                            fontWeight: 700,
+                                                                            background: '#f3f0ff',
+                                                                            color: '#6366f1',
+                                                                            border: '1px solid #e0d7ff',
+                                                                            cursor: 'pointer',
+                                                                            transition: 'all 0.15s ease'
+                                                                        }}
+                                                                    >
+                                                                        <Share2 size={13} /> Link
+                                                                    </button>
+
+                                                                    <button
+                                                                        onClick={() => window.open(`/client/${encodeURIComponent(clientName)}`, '_blank')}
+                                                                        title="Open Client Portal in New Tab"
+                                                                        style={{
+                                                                            display: 'inline-flex',
+                                                                            alignItems: 'center',
+                                                                            gap: '5px',
+                                                                            padding: '6px 11px',
+                                                                            borderRadius: '8px',
+                                                                            fontSize: '0.78rem',
+                                                                            fontWeight: 700,
+                                                                            background: '#0f172a',
+                                                                            color: '#ffffff',
+                                                                            border: 'none',
+                                                                            cursor: 'pointer',
+                                                                            transition: 'all 0.15s ease'
+                                                                        }}
+                                                                    >
+                                                                        <ExternalLink size={13} /> Portal
+                                                                    </button>
+                                                                </div>
+                                                            </td>
+                                                        </tr>
+                                                    );
+                                                })
+                                            )}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
                         </div>
-
-                        <style>{`
-                            .client-stats-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 30px; margin-bottom: 50px; }
-                            .stat-box { background: white; padding: 26px; border-radius: 24px; display: flex; align-items: center; gap: 20px; border: 1px solid #edf2f7; box-shadow: 0 4px 12px rgba(0,0,0,0.01); }
-                            .stat-icon { width: 54px; height: 54px; border-radius: 18px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
-                            .clients-c { background: #f3f0ff; color: #6c5dd3; }
-                            .active-c { background: #fff4e5; color: #ff9f43; }
-                            .market-c { background: #e5f9f2; color: #20c997; }
-                            .stat-val { display: block; font-size: 1.6rem; font-weight: 900; color: #11142d; line-height: 1.1; margin-bottom: 2px; }
-                            .stat-lbl { font-size: 0.8rem; color: #b1b1b1; font-weight: 700; text-transform: uppercase; letter-spacing: 0.02em; }
-
-                            .clients-section-controls { margin-bottom: 32px; display: flex; justify-content: space-between; align-items: center; }
-                            .search-pill { background: #f4f7fe; border: 1px solid transparent; display: flex; align-items: center; gap: 14px; padding: 14px 24px; border-radius: 16px; width: 400px; transition: all 0.2s; }
-                            .search-pill:focus-within { background: white; border-color: #6c5dd3; box-shadow: 0 10px 20px rgba(108, 93, 211, 0.05); }
-                            .search-pill input { border: none; outline: none; font-size: 0.95rem; font-weight: 600; color: #11142d; width: 100%; background: transparent; }
-
-                            .clients-list-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 30px; }
-                            .client-data-card { background: white; border: 1px solid #edf2f7; border-radius: 28px; padding: 30px; box-shadow: 0 15px 35px rgba(0,0,0,0.02); transition: all 0.3s ease; position: relative; }
-                            .client-data-card:hover { transform: translateY(-8px); border-color: #6c5dd3; box-shadow: 0 20px 40px rgba(108, 93, 211, 0.08); }
-                            
-                            .client-card-header { display: flex; align-items: center; gap: 20px; margin-bottom: 30px; }
-                            .client-avatar { width: 60px; height: 60px; background: #6c5dd3; color: white; border-radius: 20px; display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: 1.5rem; box-shadow: 0 10px 20px rgba(108, 93, 211, 0.15); }
-                            .client-main-info h4 { font-size: 1.35rem; font-weight: 900; color: #11142d; margin-bottom: 4px; }
-                            .status-badge-row { display: flex; align-items: center; gap: 8px; font-size: 0.75rem; color: #20c997; font-weight: 800; text-transform: uppercase; }
-                            .status-dot { width: 8px; height: 8px; background: #20c997; border-radius: 50%; animation: blink 2s infinite; }
-
-                            .client-card-stats { display: flex; gap: 40px; background: #fbfbfc; padding: 20px 24px; border-radius: 20px; margin-bottom: 30px; border: 1px solid #f1f5f9; }
-                            .mini-stat .m-val { display: block; font-size: 1.25rem; font-weight: 900; color: #11142d; }
-                            .mini-stat .m-lbl { font-size: 0.75rem; color: #808191; font-weight: 700; text-transform: uppercase; }
-
-                            .client-card-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
-                            .client-card-actions button { display: flex; align-items: center; justify-content: center; gap: 10px; padding: 15px; border-radius: 18px; font-weight: 800; font-size: 0.9rem; cursor: pointer; transition: 0.2s; border: none; }
-                            .btn-share-link { background: #f3f0ff; color: #6c5dd3; border: 1px solid #e0d7ff !important; }
-                            .btn-view-portal { background: #11142d; color: white; }
-                            
-                            @keyframes blink { 
-                                0% { opacity: 1; } 50% { opacity: 0.4; } 100% { opacity: 1; }
-                            }
-                        `}</style>
-                    </div>
-                )}
+                    );
+                })()}
                 {uploadNotice && (
                     <aside className={`upload-background-notice ${uploadNotice.status}`} role="status" aria-live="polite">
                         <div className="upload-notice-icon">
