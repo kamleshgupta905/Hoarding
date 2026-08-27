@@ -1,0 +1,27 @@
+{
+  "name": "HIRA Advertising - Premium Outdoor Hoardings",
+  "short_name": "HIRA Ads",
+  "description": "Discover, manage, and book premium outdoor advertising hoardings with AI-powered verification",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f8fafc",
+  "theme_color": "#00c851",
+  "orientation": "any",
+  "scope": "/",
+  "icons": [
+    {
+      "src": "/app-icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/app-icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ],
+  "categories": ["business", "productivity"],
+  "lang": "en"
+}

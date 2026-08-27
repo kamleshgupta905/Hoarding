@@ -83,6 +83,43 @@ ul {
     list-style: none;
 }
 
+/* Dark Mode CSS Variables */
+.dark, [data-theme="dark"] {
+    --bg-main: #0f172a;
+    --bg-surface: #1e293b;
+    --bg-overlay: rgba(255, 255, 255, 0.05);
+    --text-dark: #f1f5f9;
+    --text-muted: #94a3b8;
+    --text-light: #64748b;
+    --border-light: #334155;
+    --border-focus: rgba(234, 76, 137, 0.5);
+    --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.3);
+    --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.4);
+    --shadow-lg: 0 10px 40px rgba(0, 0, 0, 0.5);
+}
+.dark body, [data-theme="dark"] body {
+    background-color: #0f172a;
+    color: #f1f5f9;
+}
+.dark h1, .dark h2, .dark h3, .dark h4, .dark h5, .dark h6,
+[data-theme="dark"] h1, [data-theme="dark"] h2, [data-theme="dark"] h3,
+[data-theme="dark"] h4, [data-theme="dark"] h5, [data-theme="dark"] h6 {
+    color: #f1f5f9;
+}
+.dark .app-container, [data-theme="dark"] .app-container {
+    background: #0f172a;
+}
+.dark a, [data-theme="dark"] a { color: inherit; }
+.dark button, [data-theme="dark"] button { color: inherit; }
+.dark input, .dark textarea, .dark select,
+[data-theme="dark"] input, [data-theme="dark"] textarea, [data-theme="dark"] select {
+    background: #1e293b;
+    color: #f1f5f9;
+    border-color: #334155;
+}
+.dark ::-webkit-scrollbar-track, [data-theme="dark"] ::-webkit-scrollbar-track { background: #1e293b; }
+.dark ::-webkit-scrollbar-thumb, [data-theme="dark"] ::-webkit-scrollbar-thumb { background: #475569; border-color: #1e293b; }
+
 /* Custom Scrollbar - Dribbble Style */
 ::-webkit-scrollbar {
     width: 8px;
@@ -100,6 +137,21 @@ ul {
 
 ::-webkit-scrollbar-thumb:hover {
     background: var(--text-light);
+}
+
+/* Shimmer loading animation */
+@keyframes shimmer {
+    0% { background-position: -200% 0; }
+    100% { background-position: 200% 0; }
+}
+
+@keyframes spin {
+    to { transform: rotate(360deg); }
+}
+
+@keyframes toastSlideIn {
+    from { opacity: 0; transform: translateY(20px) scale(0.95); }
+    to { opacity: 1; transform: translateY(0) scale(1); }
 }
 
 /* Base Layout */
@@ -303,4 +355,18 @@ img:hover {
 /* Smooth page transitions */
 main {
     animation: fadeIn 0.4s ease-out;
+}
+
+/* Dark mode overrides for common elements */
+.dark .card-dribbble, [data-theme="dark"] .card-dribbble {
+    background: #1e293b;
+    border-color: #334155;
+    color: #f1f5f9;
+}
+.dark .admin-sidebar, [data-theme="dark"] .admin-sidebar {
+    background: #020617;
+}
+.dark input:focus, .dark textarea:focus, .dark select:focus,
+[data-theme="dark"] input:focus, [data-theme="dark"] textarea:focus, [data-theme="dark"] select:focus {
+    border-color: var(--border-focus);
 }
