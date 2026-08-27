@@ -91,7 +91,7 @@ function doPost(e) {
     if (p.fileData) {
       if (!isValidAdminSession_(p.sessionToken)) return res({ success: false, error: 'Authentication required.' });
       var folder = DriveApp.getFolderById(CONFIG.INPUT_FOLDER_ID);
-      var decoded = decodeBase64(p.fileData);
+      var decoded = Utilities.base64Decode(p.fileData);
       var blob = Utilities.newBlob(decoded, p.mimeType, p.fileName);
       var file = folder.createFile(blob);
       return res({ success: true, fileId: file.getId() });
@@ -168,7 +168,7 @@ function uploadPptAndProcess_(data) {
   try {
     setFileJobStatus_(token, { status: 'PROCESSING', fileName: data.fileName, phase: 'Saving PPT to Google Drive', startedAt: new Date().toISOString() });
     var folder = DriveApp.getFolderById(CONFIG.INPUT_FOLDER_ID);
-    var decoded = decodeBase64(data.fileData);
+    var decoded = Utilities.base64Decode(data.fileData);
     var blob = Utilities.newBlob(decoded, data.mimeType || 'application/vnd.openxmlformats-officedocument.presentationml.presentation', data.fileName);
     var file = folder.createFile(blob);
 
@@ -416,7 +416,7 @@ function analyzeImageOrientation_(data) {
 function uploadInputFile_(data) {
   if (!data.fileData || !data.fileName) return res({ success: false, error: 'File data and file name are required.' });
   var folder = DriveApp.getFolderById(CONFIG.INPUT_FOLDER_ID);
-  var decoded = decodeBase64(data.fileData);
+  var decoded = Utilities.base64Decode(data.fileData);
   var blob = Utilities.newBlob(decoded, data.mimeType || 'application/octet-stream', data.fileName);
   var file = folder.createFile(blob);
   return res({ success: true, fileId: file.getId(), fileName: file.getName() });
@@ -697,6 +697,20 @@ function pullChanges_(since, sessionToken) {
   var version = Number(PropertiesService.getScriptProperties().getProperty(CONFIG.CHANGE_VERSION_PROPERTY) || 0);
   if (Number(since || -1) === version) return res({ success: true, version: version, unchanged: true, rows: [] });
   var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(CONFIG.SHEET_NAME);
+  
+  // Auto-add missing booking columns
+  var maxCol = sheet.getLastColumn() || 1;
+  var headersRange = sheet.getRange(1, 1, 1, maxCol);
+  var rawHeaders = headersRange.getValues()[0];
+  var requiredColumns = ['BookedBy', 'BookingStart', 'BookingEnd', 'ImageURL', 'ExecutionHistory'];
+  var headersChanged = false;
+  requiredColumns.forEach(function(col) {
+    if (rawHeaders.indexOf(col) === -1) {
+      sheet.getRange(1, sheet.getLastColumn() + 1).setValue(col);
+      headersChanged = true;
+    }
+  });
+  
   var values = sheet.getDataRange().getValues();
   return res({ success: true, version: version, unchanged: false, headers: values[0] || [], rows: values.slice(1) });
 }
@@ -1103,7 +1117,7 @@ function processAllFiles() {
 function uploadImageToDrive(data) {
   if (!data.fileData) return null;
   try {
-    var decoded = decodeBase64(data.fileData);
+    var decoded = Utilities.base64Decode(data.fileData);
     if (!decoded) return null;
     
     var folder;
@@ -1759,7 +1773,7 @@ function previewExcelImport(data) {
     });
 
     var folder = DriveApp.getFolderById(CONFIG.INPUT_FOLDER_ID);
-    var decoded = decodeBase64(data.fileData);
+    var decoded = Utilities.base64Decode(data.fileData);
     var blob = Utilities.newBlob(decoded, data.mimeType || 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', CONFIG.PENDING_IMPORT_PREFIX + token + '__' + fileName);
     var file = folder.createFile(blob);
     fileId = file.getId();

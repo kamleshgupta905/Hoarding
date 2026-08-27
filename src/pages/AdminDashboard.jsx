@@ -2535,7 +2535,7 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                     </button>
                     <button className={`nav-item ${activeTab === 'clients' ? 'active' : ''}`} onClick={() => setActiveTab('clients')}>
                         <Users size={18} />
-                        <span>Customers</span>
+                        <span>Clients & Booking</span>
                     </button>
                     <button className={`nav-item ${activeTab === 'daily-update' ? 'active' : ''}`} onClick={() => setActiveTab('daily-update')}>
                         <Zap size={18} />
@@ -3988,45 +3988,19 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
 
                 {activeTab === 'clients' && (() => {
                     const allBookedSites = hoardings.filter(h => h && h.BookedBy && String(h.BookedBy).trim() !== '');
-                    const uniqueClientNames = [...new Set(allBookedSites.map(h => String(h.BookedBy).trim()))].filter(Boolean);
+
+                    // Search filter
+                    const filteredSites = allBookedSites.filter(h => {
+                        const search = clientSearchTerm.toLowerCase().trim();
+                        if (!search) return true;
+                        const bookedBy = String(h.BookedBy || '').toLowerCase();
+                        const location = String(h['Location '] || h.Location || '').toLowerCase();
+                        const city = String(h.City || '').toLowerCase();
+                        return bookedBy.includes(search) || location.includes(search) || city.includes(search);
+                    });
 
                     // Avatar backgrounds from QuickMart palette
                     const avatarBgs = ['#ffd5dc', '#ffdfbf', '#b6e3f4', '#c0aede', '#d1d4f9', '#fed7aa', '#fbcfe8', '#e9d5ff'];
-
-                    // Build customer list
-                    const customerList = uniqueClientNames.map((clientName, idx) => {
-                        const sites = allBookedSites.filter(h => String(h.BookedBy).trim() === clientName);
-                        const totalSpent = sites.reduce((sum, h) => sum + (Number(h['Rental Per Month'] || h['Avg Monthly Cost (INR)'] || 0) || 0), 0);
-                        const primarySite = sites[0] || {};
-                        const memberSince = primarySite.BookingStart || primarySite._UpdatedAt?.split('T')[0] || '2026-08-12';
-                        
-                        // Contact info
-                        const email = primarySite.ClientEmail || `${clientName.toLowerCase().replace(/[^a-z0-9]/g, '')}${idx + 1 ? (Math.abs(clientName.split('').reduce((a,b)=>a+b.charCodeAt(0),0)) % 9000 + 1000) : ''}@gmail.com`;
-                        const phone = primarySite.ClientPhone || (primarySite.Location || primarySite['Locality Site Location'] || primarySite.City || 'Meerut');
-                        const avatarBg = avatarBgs[idx % avatarBgs.length];
-                        const avatarUrl = `https://api.dicebear.com/7.x/personas/svg?seed=${encodeURIComponent(clientName)}&backgroundColor=${avatarBg.replace('#', '')}`;
-
-                        return {
-                            name: clientName,
-                            email,
-                            phone,
-                            ordersCount: sites.length,
-                            totalSpent,
-                            memberSince,
-                            sites,
-                            avatarUrl,
-                            avatarBg
-                        };
-                    });
-
-                    // Search filter
-                    const filteredCustomers = customerList.filter(c => {
-                        const search = clientSearchTerm.toLowerCase().trim();
-                        if (!search) return true;
-                        return c.name.toLowerCase().includes(search) || 
-                               c.email.toLowerCase().includes(search) || 
-                               c.phone.toLowerCase().includes(search);
-                    });
 
                     return (
                         <div className="tab-content clients-tab animate-in" style={{ padding: '36px 48px', background: '#f9fafb', minHeight: 'calc(100vh - 72px)' }}>
@@ -4034,10 +4008,10 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                             {/* 🌟 Header Section */}
                             <div style={{ marginBottom: '24px' }}>
                                 <h1 style={{ fontSize: '2rem', fontWeight: 800, color: '#111827', margin: '0 0 6px 0', letterSpacing: '-0.02em' }}>
-                                    Customers
+                                    Clients & Booking
                                 </h1>
                                 <p style={{ color: '#6b7280', fontSize: '0.95rem', margin: 0, fontWeight: 500 }}>
-                                    {uniqueClientNames.length} registered clients & advertisers
+                                    {allBookedSites.length} active bookings across all locations
                                 </p>
                             </div>
 
@@ -4047,7 +4021,7 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                     <Search size={18} color="#9ca3af" />
                                     <input 
                                         type="text"
-                                        placeholder="Search customers..."
+                                        placeholder="Search bookings by client, location or city..."
                                         value={clientSearchTerm}
                                         onChange={(e) => setClientSearchTerm(e.target.value)}
                                         style={{ border: 'none', background: 'transparent', outline: 'none', width: '100%', fontSize: '0.95rem', color: '#111827', fontWeight: 500 }}
@@ -4058,157 +4032,102 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                 </div>
                             </div>
 
-                            {/* 📋 Customers Table (Clean White Card Layout) */}
+                            {/* 📋 Bookings Table (Clean White Card Layout) */}
                             <div style={{ background: '#ffffff', borderRadius: '18px', padding: '20px 28px', border: '1px solid #f3f4f6', boxShadow: '0 1px 3px rgba(0,0,0,0.04)', overflowX: 'auto' }}>
-                                <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', minWidth: '850px' }}>
+                                <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', minWidth: '900px' }}>
                                     <thead>
                                         <tr style={{ borderBottom: '1px solid #f3f4f6' }}>
-                                            <th style={{ padding: '16px 16px 14px 16px', fontSize: '0.72rem', fontWeight: 700, color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.05em', width: '240px' }}>CUSTOMER</th>
-                                            <th style={{ padding: '16px 16px 14px 16px', fontSize: '0.72rem', fontWeight: 700, color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.05em', width: '280px' }}>CONTACT</th>
-                                            <th style={{ padding: '16px 16px 14px 16px', fontSize: '0.72rem', fontWeight: 700, color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.05em', textAlign: 'center', width: '90px' }}>ORDERS</th>
-                                            <th style={{ padding: '16px 16px 14px 16px', fontSize: '0.72rem', fontWeight: 700, color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.05em', width: '150px' }}>TOTAL SPENT</th>
-                                            <th style={{ padding: '16px 16px 14px 16px', fontSize: '0.72rem', fontWeight: 700, color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.05em', width: '140px' }}>MEMBER SINCE</th>
-                                            <th style={{ padding: '16px 16px 14px 16px', fontSize: '0.72rem', fontWeight: 700, color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.05em', textAlign: 'right', width: '130px' }}>ACTIONS</th>
+                                            <th style={{ padding: '16px 16px 14px 16px', fontSize: '0.72rem', fontWeight: 700, color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.05em', width: '220px' }}>CLIENT / ADVERTISER</th>
+                                            <th style={{ padding: '16px 16px 14px 16px', fontSize: '0.72rem', fontWeight: 700, color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.05em', width: '250px' }}>SITE LOCATION</th>
+                                            <th style={{ padding: '16px 16px 14px 16px', fontSize: '0.72rem', fontWeight: 700, color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.05em', width: '120px' }}>CITY</th>
+                                            <th style={{ padding: '16px 16px 14px 16px', fontSize: '0.72rem', fontWeight: 700, color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.05em', width: '130px' }}>RENTAL/MONTH</th>
+                                            <th style={{ padding: '16px 16px 14px 16px', fontSize: '0.72rem', fontWeight: 700, color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.05em', width: '180px' }}>BOOKING DATES</th>
                                         </tr>
                                     </thead>
                                     <tbody>
-                                        {filteredCustomers.length === 0 ? (
+                                        {filteredSites.length === 0 ? (
                                             <tr>
-                                                <td colSpan={6} style={{ padding: '60px 20px', textAlign: 'center' }}>
+                                                <td colSpan={5} style={{ padding: '60px 20px', textAlign: 'center' }}>
                                                     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '12px' }}>
                                                         <div style={{ width: '56px', height: '56px', borderRadius: '50%', background: '#f3f4f6', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#9ca3af' }}>
-                                                            <User size={28} />
+                                                            <Calendar size={28} />
                                                         </div>
-                                                        <strong style={{ fontSize: '1.05rem', color: '#111827' }}>No Customers Found</strong>
+                                                        <strong style={{ fontSize: '1.05rem', color: '#111827' }}>No Bookings Found</strong>
                                                         <p style={{ color: '#6b7280', fontSize: '0.86rem', margin: 0, maxWidth: '400px' }}>
-                                                            {clientSearchTerm ? 'No customers match your search query.' : 'Booked client accounts will appear here automatically.'}
+                                                            {clientSearchTerm ? 'No bookings match your search query.' : 'Booked hoarding sites will appear here.'}
                                                         </p>
                                                     </div>
                                                 </td>
                                             </tr>
                                         ) : (
-                                            filteredCustomers.map((cust, idx) => (
-                                                <tr 
-                                                    key={idx}
-                                                    style={{ 
-                                                        borderBottom: idx === filteredCustomers.length - 1 ? 'none' : '1px solid #f3f4f6',
-                                                        transition: 'background 0.15s ease'
-                                                    }}
-                                                    onMouseEnter={(e) => e.currentTarget.style.background = '#f9fafb'}
-                                                    onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
-                                                >
-                                                    {/* CUSTOMER (Illustrated Persona Avatar + Name) */}
-                                                    <td style={{ padding: '18px 16px' }}>
-                                                        <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
-                                                            <div style={{
-                                                                width: '42px',
-                                                                height: '42px',
-                                                                borderRadius: '50%',
-                                                                backgroundColor: cust.avatarBg,
-                                                                overflow: 'hidden',
-                                                                display: 'flex',
-                                                                alignItems: 'center',
-                                                                justifyContent: 'center',
-                                                                flexShrink: 0
-                                                            }}>
-                                                                <img 
-                                                                    src={cust.avatarUrl} 
-                                                                    alt={cust.name}
-                                                                    style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-                                                                    onError={(e) => {
-                                                                        e.currentTarget.style.display = 'none';
-                                                                    }}
-                                                                />
+                                            filteredSites.map((h, idx) => {
+                                                const clientName = String(h.BookedBy).trim();
+                                                const avatarBg = avatarBgs[idx % avatarBgs.length];
+                                                // Using initials avatar to avoid default persona images
+                                                const avatarUrl = `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(clientName)}&backgroundColor=${avatarBg.replace('#', '')}&textColor=000000`;
+                                                const location = String(h['Location '] || h.Location || 'Unknown Location');
+                                                const city = String(h.City || 'Unknown');
+                                                const price = Number(h['Rental Per Month'] || h['Avg Monthly Cost (INR)'] || 0) || 0;
+                                                const start = h.BookingStart ? new Date(h.BookingStart).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' }) : 'Unknown';
+                                                const end = h.BookingEnd ? new Date(h.BookingEnd).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : 'Ongoing';
+                                                
+                                                return (
+                                                    <tr 
+                                                        key={idx}
+                                                        style={{ 
+                                                            borderBottom: idx === filteredSites.length - 1 ? 'none' : '1px solid #f3f4f6',
+                                                            transition: 'background 0.15s ease'
+                                                        }}
+                                                        onMouseEnter={(e) => e.currentTarget.style.background = '#f9fafb'}
+                                                        onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                                                    >
+                                                        {/* CLIENT (Avatar + Name) */}
+                                                        <td style={{ padding: '18px 16px' }}>
+                                                            <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+                                                                <div style={{
+                                                                    width: '42px', height: '42px', borderRadius: '50%', backgroundColor: avatarBg, overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0
+                                                                }}>
+                                                                    <img src={avatarUrl} alt={clientName} style={{ width: '100%', height: '100%', objectFit: 'cover' }} onError={(e) => e.currentTarget.style.display = 'none'} />
+                                                                </div>
+                                                                <span style={{ fontSize: '0.92rem', fontWeight: 700, color: '#111827' }}>
+                                                                    {clientName}
+                                                                </span>
                                                             </div>
-                                                            <span style={{ fontSize: '0.92rem', fontWeight: 700, color: '#111827' }}>
-                                                                {cust.name}
+                                                        </td>
+
+                                                        {/* SITE LOCATION */}
+                                                        <td style={{ padding: '18px 16px' }}>
+                                                            <div style={{ fontSize: '0.86rem', color: '#4b5563', fontWeight: 500, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                                                {location}
+                                                            </div>
+                                                            <div style={{ fontSize: '0.78rem', color: '#9ca3af', fontWeight: 500, marginTop: '2px' }}>
+                                                                {h.Media || 'Unipole'} • {h.Dimensions || h.Width + 'x' + h.Height || ''}
+                                                            </div>
+                                                        </td>
+
+                                                        {/* CITY */}
+                                                        <td style={{ padding: '18px 16px' }}>
+                                                            <span style={{ padding: '4px 10px', background: '#f3f4f6', borderRadius: '12px', fontSize: '0.78rem', fontWeight: 600, color: '#4b5563' }}>
+                                                                {city}
                                                             </span>
-                                                        </div>
-                                                    </td>
+                                                        </td>
 
-                                                    {/* CONTACT (Email + Phone/Location) */}
-                                                    <td style={{ padding: '18px 16px' }}>
-                                                        <div style={{ fontSize: '0.86rem', color: '#4b5563', fontWeight: 500, marginBottom: '2px' }}>
-                                                            {cust.email}
-                                                        </div>
-                                                        <div style={{ fontSize: '0.78rem', color: '#9ca3af', fontWeight: 500 }}>
-                                                            {cust.phone}
-                                                        </div>
-                                                    </td>
+                                                        {/* RENTAL / MONTH */}
+                                                        <td style={{ padding: '18px 16px' }}>
+                                                            <span style={{ fontSize: '0.92rem', fontWeight: 800, color: '#00c851' }}>
+                                                                ₹{price.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                                            </span>
+                                                        </td>
 
-                                                    {/* ORDERS (Count) */}
-                                                    <td style={{ padding: '18px 16px', textAlign: 'center' }}>
-                                                        <span style={{ fontSize: '0.92rem', fontWeight: 700, color: '#111827' }}>
-                                                            {cust.ordersCount}
-                                                        </span>
-                                                    </td>
-
-                                                    {/* TOTAL SPENT (Green Bold Text) */}
-                                                    <td style={{ padding: '18px 16px' }}>
-                                                        <span style={{ fontSize: '0.92rem', fontWeight: 800, color: '#00c851' }}>
-                                                            ₹{cust.totalSpent.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                                                        </span>
-                                                    </td>
-
-                                                    {/* MEMBER SINCE */}
-                                                    <td style={{ padding: '18px 16px' }}>
-                                                        <span style={{ fontSize: '0.86rem', color: '#6b7280', fontWeight: 500 }}>
-                                                            {cust.memberSince}
-                                                        </span>
-                                                    </td>
-
-                                                    {/* ACTIONS */}
-                                                    <td style={{ padding: '18px 16px', textAlign: 'right' }}>
-                                                        <div style={{ display: 'inline-flex', alignItems: 'center', gap: '8px' }}>
-                                                            <button
-                                                                onClick={() => {
-                                                                    const link = `${window.location.origin}/client/${encodeURIComponent(cust.name)}`;
-                                                                    navigator.clipboard.writeText(link);
-                                                                    showToast(`✅ Link copied for ${cust.name}!`, 'success');
-                                                                }}
-                                                                title="Copy Live Client Portal Link"
-                                                                style={{
-                                                                    padding: '7px 12px',
-                                                                    borderRadius: '8px',
-                                                                    fontSize: '0.78rem',
-                                                                    fontWeight: 700,
-                                                                    background: '#f3f4f6',
-                                                                    color: '#374151',
-                                                                    border: '1px solid #e5e7eb',
-                                                                    cursor: 'pointer',
-                                                                    display: 'inline-flex',
-                                                                    alignItems: 'center',
-                                                                    gap: '5px',
-                                                                    transition: 'all 0.15s ease'
-                                                                }}
-                                                            >
-                                                                <Share2 size={13} /> Link
-                                                            </button>
-
-                                                            <button
-                                                                onClick={() => window.open(`/client/${encodeURIComponent(cust.name)}`, '_blank')}
-                                                                title="Open Client Portal in New Tab"
-                                                                style={{
-                                                                    padding: '7px 12px',
-                                                                    borderRadius: '8px',
-                                                                    fontSize: '0.78rem',
-                                                                    fontWeight: 700,
-                                                                    background: '#111827',
-                                                                    color: '#ffffff',
-                                                                    border: 'none',
-                                                                    cursor: 'pointer',
-                                                                    display: 'inline-flex',
-                                                                    alignItems: 'center',
-                                                                    gap: '5px',
-                                                                    transition: 'all 0.15s ease'
-                                                                }}
-                                                            >
-                                                                <ExternalLink size={13} /> Portal
-                                                            </button>
-                                                        </div>
-                                                    </td>
-                                                </tr>
-                                            ))
+                                                        {/* BOOKING DATES */}
+                                                        <td style={{ padding: '18px 16px' }}>
+                                                            <div style={{ fontSize: '0.82rem', color: '#4b5563', fontWeight: 600 }}>
+                                                                {start} → {end}
+                                                            </div>
+                                                        </td>
+                                                    </tr>
+                                                );
+                                            })
                                         )}
                                     </tbody>
                                 </table>
