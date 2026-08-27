@@ -1183,14 +1183,37 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
 
         return hoardings.filter(h => {
             if (!h) return false;
-            const siteTitle = String(h["Locality Site Location"] || h["Location "] || h["Location"] || "");
-            const siteLocality = String(h["Locality"] || h["Area"] || "");
-            const matchSearch = !cleanSearch ||
-                siteTitle.toLowerCase().includes(cleanSearch) ||
-                String(h.City || "").toLowerCase().includes(cleanSearch) ||
-                siteLocality.toLowerCase().includes(cleanSearch) ||
-                String(h["Traffic From"] || "").toLowerCase().includes(cleanSearch) ||
-                String(h["Traffic To"] || "").toLowerCase().includes(cleanSearch);
+
+            // 🔍 Universal multi-field search: Matches location, city, client name, facing, traffic, or ANY field
+            let matchSearch = true;
+            if (cleanSearch) {
+                const searchKeywords = cleanSearch.split(/\s+/).filter(Boolean);
+
+                const siteTitle = String(h["Locality Site Location"] || h["Location "] || h["Location"] || "").toLowerCase();
+                const siteLocality = String(h["Locality"] || h["Area"] || "").toLowerCase();
+                const city = String(h.City || "").toLowerCase();
+                const facing = String(h.Facing || h["Traffic View"] || "").toLowerCase();
+                const bookedBy = String(h.BookedBy || h.ClientName || h["Client Name"] || h.Customer || "").toLowerCase();
+                const trafficFrom = String(h["Traffic From"] || "").toLowerCase();
+                const trafficTo = String(h["Traffic To"] || "").toLowerCase();
+                const media = String(h.Media || h["Media Format"] || h.Type || "").toLowerCase();
+                const status = String(h.STATUS || h.Status || "").toLowerCase();
+                const sl = String(h.SL || h["S. No."] || h["SL NO"] || "").toLowerCase();
+                const dimensions = `${h.Width || ''} ${h.Height || ''} ${h["Total SQ.ft"] || ''} ${h.Size || ''}`.toLowerCase();
+                const price = String(h["Rental Per Month"] || h["Avg Monthly Cost (INR)"] || "").toLowerCase();
+
+                // Concatenate all searchable text for deep search
+                const allFieldValues = Object.entries(h)
+                    .filter(([k]) => !k.startsWith('_') && k !== 'ImageURL' && k !== 'driveUrl')
+                    .map(([, v]) => String(v || ''))
+                    .join(' ')
+                    .toLowerCase();
+
+                const combinedText = `${allFieldValues} ${siteTitle} ${siteLocality} ${city} ${facing} ${bookedBy} ${trafficFrom} ${trafficTo} ${media} ${status} ${sl} ${dimensions} ${price}`;
+
+                // All typed keywords must match somewhere in the hoarding info
+                matchSearch = searchKeywords.every(keyword => combinedText.includes(keyword));
+            }
             if (!matchSearch) return false;
 
             const hCity = (h.City || "").trim().toLowerCase();
@@ -2488,14 +2511,11 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                 {isMobileMenuOpen ? <X size={24} /> : <Menu size={24} />}
             </button>
 
-            {/* Side Navigation (QuickMart Style) */}
+            {/* Side Navigation (QuickMart Style with HIRA Logo) */}
             <aside className={`admin-sidebar ${isMobileMenuOpen ? 'mobile-open' : ''}`}>
-                <div className="sidebar-logo">
-                    <div className="logo-icon">
-                        <Layers size={20} color="#ffffff" />
-                    </div>
-                    <div className="sidebar-brand-wrap">
-                        <span className="brand-title">QuickMart</span>
+                <div className="sidebar-logo" style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '4px 8px 20px', borderBottom: '1px solid #1f2937' }}>
+                    <div style={{ background: '#ffffff', padding: '4px 10px', borderRadius: '10px', display: 'flex', alignItems: 'center', boxShadow: '0 2px 10px rgba(0,0,0,0.2)' }}>
+                        <img src={HIRA_LOGO} alt="HIRA Advertising" style={{ height: '34px', width: 'auto', display: 'block', objectFit: 'contain' }} />
                     </div>
                 </div>
 
@@ -2505,12 +2525,12 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                         <span>Dashboard</span>
                     </button>
                     <button className={`nav-item ${activeTab === 'inventory' ? 'active' : ''}`} onClick={() => setActiveTab('inventory')}>
-                        <Package size={18} />
-                        <span>Products</span>
+                        <Database size={18} />
+                        <span>Inventory</span>
                     </button>
                     <button className={`nav-item ${activeTab === 'staff-review' ? 'active' : ''}`} onClick={() => setActiveTab('staff-review')}>
-                        <ShoppingBag size={18} />
-                        <span>Orders</span>
+                        <Camera size={18} />
+                        <span>Review</span>
                         {reviewQueue.length > 0 && <span className="badge-new badge-count">{reviewQueue.length}</span>}
                     </button>
                     <button className={`nav-item ${activeTab === 'clients' ? 'active' : ''}`} onClick={() => setActiveTab('clients')}>
@@ -2564,40 +2584,27 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                     </div>
                     <div className="top-bar-right">
                         {(activeTab === 'inventory' || activeTab === 'dashboard') && (
-                            <>
-                                <div className="admin-search-box">
-                                    <Search size={17} color="#9ca3af" />
-                                    <input
-                                        placeholder="Search inventory..."
-                                        value={searchTerm}
-                                        onChange={(e) => setSearchTerm(e.target.value)}
-                                    />
-                                </div>
-                                <div className="action-btns">
-                                    <button className="btn-secondary-admin" onClick={handleForceSync} disabled={isLoading} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '7px 14px', background: '#f3f4f6', border: '1px solid #e5e7eb', color: '#374151', borderRadius: '10px', fontWeight: '700', fontSize: '0.82rem' }}>
-                                        <RefreshCw size={15} className={isLoading ? "animate-spin" : ""} /> Sync with Sheet
-                                    </button>
-                                    {fileProcessing && (
-                                        <div className="file-processing-timer" role="status" aria-live="polite" title={`${fileProcessing.fileName}: ${fileProcessing.phase}`}>
-                                            <Timer size={15} />
-                                            <div className="file-processing-copy">
-                                                <strong>{formatProcessingTime(processingSeconds)}</strong>
-                                                <span>{fileProcessing.type === 'excel' ? 'Excel' : 'PPT'}: {fileProcessing.phase}</span>
-                                            </div>
+                            <div className="action-btns">
+                                {fileProcessing && (
+                                    <div className="file-processing-timer" role="status" aria-live="polite" title={`${fileProcessing.fileName}: ${fileProcessing.phase}`}>
+                                        <Timer size={15} />
+                                        <div className="file-processing-copy">
+                                            <strong>{formatProcessingTime(processingSeconds)}</strong>
+                                            <span>{fileProcessing.type === 'excel' ? 'Excel' : 'PPT'}: {fileProcessing.phase}</span>
                                         </div>
-                                    )}
-                                    <label className="btn-primary-admin" style={{ cursor: 'pointer', padding: '7px 14px', fontSize: '0.82rem' }}>
-                                        <Download size={16} />
-                                        Excel Sync
-                                        <input type="file" style={{ display: 'none' }} accept=".xlsx,.xls,.csv" disabled={Boolean(fileProcessing)} onChange={(e) => handleFileUpload(e, 'excel')} />
-                                    </label>
-                                    <label className="btn-primary-admin" style={{ background: '#00c851', borderColor: '#00c851', color: 'white', cursor: 'pointer', padding: '7px 14px', fontSize: '0.82rem' }}>
-                                        <Plus size={16} />
-                                        PPT Upload
-                                        <input type="file" style={{ display: 'none' }} accept=".ppt,.pptx" disabled={Boolean(fileProcessing)} onChange={(e) => handleFileUpload(e, 'ppt')} />
-                                    </label>
-                                </div>
-                            </>
+                                    </div>
+                                )}
+                                <label className="btn-primary-admin" style={{ cursor: 'pointer', padding: '7px 14px', fontSize: '0.82rem' }}>
+                                    <Download size={16} />
+                                    Excel Sync
+                                    <input type="file" style={{ display: 'none' }} accept=".xlsx,.xls,.csv" disabled={Boolean(fileProcessing)} onChange={(e) => handleFileUpload(e, 'excel')} />
+                                </label>
+                                <label className="btn-primary-admin" style={{ background: '#00c851', borderColor: '#00c851', color: 'white', cursor: 'pointer', padding: '7px 14px', fontSize: '0.82rem' }}>
+                                    <Plus size={16} />
+                                    PPT Upload
+                                    <input type="file" style={{ display: 'none' }} accept=".ppt,.pptx" disabled={Boolean(fileProcessing)} onChange={(e) => handleFileUpload(e, 'ppt')} />
+                                </label>
+                            </div>
                         )}
 
                         {/* 🔔 Notification Bell */}
@@ -3605,49 +3612,90 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                 {activeTab === 'inventory' && (
                     <div className="inventory-view-container animate-in">
                         <div className="inventory-card">
-                            <div className="inventory-header">
-                                <div>
-                                    <h3>Master Asset List</h3>
-                                    <p>Comprehensive record of all outdoor media inventory</p>
+                            <div className="inventory-header" style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px', width: '100%' }}>
+                                    <div>
+                                        <h3 style={{ margin: 0, fontSize: '1.35rem', fontWeight: 800 }}>Master Asset Inventory</h3>
+                                        <p style={{ margin: '4px 0 0', color: '#6b7280', fontSize: '0.86rem' }}>{filteredInventory.length} active hoarding assets across operational regions</p>
+                                    </div>
+                                    <div className="inventory-actions">
+                                        <button
+                                            className="btn-danger-admin"
+                                            disabled={inventoryCityFilter === 'All'}
+                                            title={inventoryCityFilter === 'All' ? 'Choose a city filter first' : `Delete ${inventoryCityFilter} city data`}
+                                            onClick={() => setBulkDeleteTarget({ type: 'city', city: inventoryCityFilter })}
+                                        >
+                                            <Trash2 size={18} /> Delete City
+                                        </button>
+                                        <button
+                                            className="btn-danger-admin strong"
+                                            onClick={() => setBulkDeleteTarget({ type: 'all' })}
+                                        >
+                                            <Trash2 size={18} /> Delete All
+                                        </button>
+                                        <button className="btn-primary-admin" style={{ background: '#6c5dd3' }} onClick={() => { 
+                                            setFormData({}); 
+                                            setSelectedAssetFile(null); 
+                                            setIsAddModalOpen(true); 
+                                        }}>
+                                            <Plus size={18} /> Add New Asset
+                                        </button>
+                                        <button className="btn-icon" title="Export Inventory" onClick={() => exportProposalExcel(hoardings)}><Download size={18} /></button>
+                                        <button
+                                            className={`btn-icon ${isInventoryFilterOpen ? 'active-accent' : ''}`}
+                                            onClick={() => setIsInventoryFilterOpen(!isInventoryFilterOpen)}
+                                            title="Toggle Filters"
+                                        >
+                                            <Filter size={18} />
+                                        </button>
+                                        <button
+                                            className="btn-primary-admin proposal-download-btn"
+                                            disabled={selectedProposalSites.length === 0}
+                                            onClick={handleDownloadProposal}
+                                            title={selectedProposalSites.length === 0 ? 'Select sites first' : 'Download selected proposal'}
+                                        >
+                                            <Download size={18} /> Proposal ({selectedProposalSites.length})
+                                        </button>
+                                    </div>
                                 </div>
-                                <div className="inventory-actions">
-                                    <button
-                                        className="btn-danger-admin"
-                                        disabled={inventoryCityFilter === 'All'}
-                                        title={inventoryCityFilter === 'All' ? 'Choose a city filter first' : `Delete ${inventoryCityFilter} city data`}
-                                        onClick={() => setBulkDeleteTarget({ type: 'city', city: inventoryCityFilter })}
-                                    >
-                                        <Trash2 size={18} /> Delete City
-                                    </button>
-                                    <button
-                                        className="btn-danger-admin strong"
-                                        onClick={() => setBulkDeleteTarget({ type: 'all' })}
-                                    >
-                                        <Trash2 size={18} /> Delete All
-                                    </button>
-                                    <button className="btn-primary-admin" style={{ background: '#6c5dd3' }} onClick={() => { 
-                                        setFormData({}); 
-                                        setSelectedAssetFile(null); 
-                                        setIsAddModalOpen(true); 
-                                    }}>
-                                        <Plus size={18} /> Add New Asset
-                                    </button>
-                                    <button className="btn-icon" title="Export Inventory"><Download size={18} /></button>
-                                    <button
-                                        className={`btn-icon ${isInventoryFilterOpen ? 'active-accent' : ''}`}
-                                        onClick={() => setIsInventoryFilterOpen(!isInventoryFilterOpen)}
-                                        title="Toggle Filters"
-                                    >
-                                        <Filter size={18} />
-                                    </button>
-                                    <button
-                                        className="btn-primary-admin proposal-download-btn"
-                                        disabled={selectedProposalSites.length === 0}
-                                        onClick={handleDownloadProposal}
-                                        title={selectedProposalSites.length === 0 ? 'Select sites first' : 'Download selected proposal'}
-                                    >
-                                        <Download size={18} /> Proposal ({selectedProposalSites.length})
-                                    </button>
+
+                                {/* 🔍 Universal Multi-field Search Bar */}
+                                <div style={{
+                                    background: '#f3f4f6',
+                                    borderRadius: '9999px',
+                                    padding: '10px 20px',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: '12px',
+                                    width: '100%',
+                                    maxWidth: '680px',
+                                    marginTop: '4px',
+                                    border: '1px solid #e5e7eb'
+                                }}>
+                                    <Search size={18} color="#9ca3af" />
+                                    <input 
+                                        type="text"
+                                        placeholder="Search location, city, client name, facing, area, size or any keyword..."
+                                        value={searchTerm}
+                                        onChange={(e) => setSearchTerm(e.target.value)}
+                                        style={{
+                                            background: 'transparent',
+                                            border: 'none',
+                                            outline: 'none',
+                                            width: '100%',
+                                            fontSize: '0.92rem',
+                                            color: '#111827',
+                                            fontWeight: 500
+                                        }}
+                                    />
+                                    {searchTerm && (
+                                        <button 
+                                            onClick={() => setSearchTerm('')} 
+                                            style={{ color: '#9ca3af', fontSize: '0.85rem', fontWeight: 700, cursor: 'pointer', background: 'transparent', border: 'none' }}
+                                        >
+                                            ✕
+                                        </button>
+                                    )}
                                 </div>
                             </div>
 
