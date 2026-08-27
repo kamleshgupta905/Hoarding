@@ -38,7 +38,7 @@ const HoardingDetail = ({ hoardings, setHoardings }) => {
     const [copySuccess, setCopySuccess] = React.useState(false);
     const [previewImage, setPreviewImage] = React.useState('');
     
-    const scriptUrl = 'https://script.google.com/macros/s/AKfycbwBpAJ0e7kYoDusrtkvaSj0A2PErD4vcMsNzL60EkzMELGTj6dpT16BaM9htFyDVI9a-Q/exec';
+    const scriptUrl = 'https://script.google.com/macros/s/AKfycbwmtW7Y71md_XoIk8A0JWrsWKSN-YuFgCcdahe5R56mADlGtH-t9Pj98YhPt3-Z1DoI5g/exec';
 
 
 

@@ -78,7 +78,7 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
     const [isSheetFullscreen, setIsSheetFullscreen] = useState(false);
 
     // Script URL & API Configuration
-    const [scriptUrl] = useState('https://script.google.com/macros/s/AKfycbwBpAJ0e7kYoDusrtkvaSj0A2PErD4vcMsNzL60EkzMELGTj6dpT16BaM9htFyDVI9a-Q/exec');
+    const [scriptUrl] = useState('https://script.google.com/macros/s/AKfycbwmtW7Y71md_XoIk8A0JWrsWKSN-YuFgCcdahe5R56mADlGtH-t9Pj98YhPt3-Z1DoI5g/exec');
     // const API_KEY = '...'; // Removed hardcoded key in favor of VITE_OPENAI_API_KEY in .env
     const [isSettingsOpen, setIsSettingsOpen] = useState(false);
     const [isAddModalOpen, setIsAddModalOpen] = useState(false);

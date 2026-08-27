@@ -1,6 +1,6 @@
 import { createOperationId } from '../core/hoardingSchema';
 
-export const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwBpAJ0e7kYoDusrtkvaSj0A2PErD4vcMsNzL60EkzMELGTj6dpT16BaM9htFyDVI9a-Q/exec';
+export const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwmtW7Y71md_XoIk8A0JWrsWKSN-YuFgCcdahe5R56mADlGtH-t9Pj98YhPt3-Z1DoI5g/exec';
 
 const SESSION_KEY = 'adh_admin_session';
 const ADMIN_ID_KEY = 'adh_admin_id';
