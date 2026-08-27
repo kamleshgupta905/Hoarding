@@ -7,31 +7,21 @@ export function useDarkMode() {
 }
 
 export function DarkModeProvider({ children }) {
-  const [isDark, setIsDark] = useState(() => {
-    try {
-      const saved = localStorage.getItem('theme_mode');
-      if (saved) return saved === 'dark';
-      // Default to light mode for pristine, crystal-clear readability
-      return false;
-    } catch { return false; }
-  });
+  const [isDark, setIsDark] = useState(false);
 
   useEffect(() => {
     const root = document.documentElement;
-    if (isDark) {
-      root.classList.add('dark');
-      root.setAttribute('data-theme', 'dark');
-    } else {
-      root.classList.remove('dark');
-      root.setAttribute('data-theme', 'light');
-    }
-    try { localStorage.setItem('theme_mode', isDark ? 'dark' : 'light'); } catch {}
-  }, [isDark]);
+    root.classList.remove('dark');
+    root.setAttribute('data-theme', 'light');
+    try {
+      localStorage.setItem('theme_mode', 'light');
+    } catch {}
+  }, []);
 
-  const toggle = () => setIsDark(prev => !prev);
+  const toggle = () => {};
 
   return (
-    <DarkModeContext.Provider value={{ isDark, toggle }}>
+    <DarkModeContext.Provider value={{ isDark: false, toggle }}>
       {children}
     </DarkModeContext.Provider>
   );
