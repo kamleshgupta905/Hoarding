@@ -11,7 +11,8 @@ export function DarkModeProvider({ children }) {
     try {
       const saved = localStorage.getItem('theme_mode');
       if (saved) return saved === 'dark';
-      return window.matchMedia?.('(prefers-color-scheme: dark)').matches || false;
+      // Default to light mode for pristine, crystal-clear readability
+      return false;
     } catch { return false; }
   });
 

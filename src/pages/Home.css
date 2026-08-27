@@ -143,6 +143,7 @@
 .featured-header h2 {
     font-size: 1.8rem;
     font-weight: 800;
+    color: var(--text-dark);
 }
 
 .city-cards {

@@ -125,6 +125,7 @@
     font-size: 3rem;
     line-height: 1.1;
     margin-bottom: 24px;
+    color: var(--text-dark);
 }
 
 .detailed-desc {
@@ -179,6 +180,7 @@
 .traffic-story h3 {
     font-size: 1.4rem;
     margin-bottom: 32px;
+    color: var(--text-dark);
 }
 
 .story-container {
@@ -210,6 +212,7 @@
     word-break: break-all;
     font-family: 'Outfit', sans-serif;
     letter-spacing: -0.01em;
+    color: var(--text-dark);
 }
 
 .node-line {

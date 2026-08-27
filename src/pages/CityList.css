@@ -18,6 +18,7 @@
     margin-bottom: 12px;
     letter-spacing: -0.04em;
     line-height: 1.1;
+    color: var(--text-dark);
 }
 
 .title-area h1 span {
@@ -133,6 +134,7 @@
     display: flex;
     align-items: center;
     gap: 10px;
+    color: var(--text-dark);
 }
 
 .filter-group {
