@@ -2585,43 +2585,46 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                             {activeTab === 'sheet-editor' && 'Live Excel Sheet'}
                             {activeTab === 'staff-review' && 'Live Field Audit & Staff Uploads'}
                             {activeTab === 'daily-update' && 'Daily AI Updates'}
-                            {activeTab === 'clients' && 'Client Relationships'}
+                            {activeTab === 'clients' && 'Customers'}
                         </h2>
                     </div>
                     <div className="top-bar-right">
-                        <div className="admin-search-box">
-                            <Search size={18} color="#808191" />
-                            <input
-                                placeholder="Search inventory..."
-                                value={searchTerm}
-                                onChange={(e) => setSearchTerm(e.target.value)}
-                            />
-                        </div>
-                        <div className="action-btns">
-                            <button className="btn-secondary-admin" onClick={handleForceSync} disabled={isLoading} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 16px', background: '#f1f5f9', border: '1px solid #e2e8f0', color: '#334155', borderRadius: '10px', fontWeight: '700', fontSize: '0.84rem' }}>
-                                <RefreshCw size={16} className={isLoading ? "animate-spin" : ""} /> Sync with Sheet
-                            </button>
-                            {fileProcessing && (
-                                <div className="file-processing-timer" role="status" aria-live="polite" title={`${fileProcessing.fileName}: ${fileProcessing.phase}`}>
-                                    <Timer size={16} />
-                                    <div className="file-processing-copy">
-                                        <strong>{formatProcessingTime(processingSeconds)}</strong>
-                                        <span>{fileProcessing.type === 'excel' ? 'Excel' : 'PPT'}: {fileProcessing.phase}</span>
-                                    </div>
+                        {(activeTab === 'inventory' || activeTab === 'dashboard') && (
+                            <>
+                                <div className="admin-search-box">
+                                    <Search size={18} color="#808191" />
+                                    <input
+                                        placeholder="Search inventory..."
+                                        value={searchTerm}
+                                        onChange={(e) => setSearchTerm(e.target.value)}
+                                    />
                                 </div>
-                            )}
-                            <label className="btn-primary-admin" style={{ cursor: 'pointer' }}>
-                                <Download size={18} />
-                                Excel Sync
-                                <input type="file" style={{ display: 'none' }} accept=".xlsx,.xls,.csv" disabled={Boolean(fileProcessing)} onChange={(e) => handleFileUpload(e, 'excel')} />
-                            </label>
-                            <label className="btn-primary-admin" style={{ background: '#6c5dd3', borderColor: '#6c5dd3', color: 'white', cursor: 'pointer' }}>
-                                <Plus size={18} />
-                                PPT Upload
-                                <input type="file" style={{ display: 'none' }} accept=".ppt,.pptx" disabled={Boolean(fileProcessing)} onChange={(e) => handleFileUpload(e, 'ppt')} />
-                            </label>
-
-                        </div>
+                                <div className="action-btns">
+                                    <button className="btn-secondary-admin" onClick={handleForceSync} disabled={isLoading} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 16px', background: '#f1f5f9', border: '1px solid #e2e8f0', color: '#334155', borderRadius: '10px', fontWeight: '700', fontSize: '0.84rem' }}>
+                                        <RefreshCw size={16} className={isLoading ? "animate-spin" : ""} /> Sync with Sheet
+                                    </button>
+                                    {fileProcessing && (
+                                        <div className="file-processing-timer" role="status" aria-live="polite" title={`${fileProcessing.fileName}: ${fileProcessing.phase}`}>
+                                            <Timer size={16} />
+                                            <div className="file-processing-copy">
+                                                <strong>{formatProcessingTime(processingSeconds)}</strong>
+                                                <span>{fileProcessing.type === 'excel' ? 'Excel' : 'PPT'}: {fileProcessing.phase}</span>
+                                            </div>
+                                        </div>
+                                    )}
+                                    <label className="btn-primary-admin" style={{ cursor: 'pointer' }}>
+                                        <Download size={18} />
+                                        Excel Sync
+                                        <input type="file" style={{ display: 'none' }} accept=".xlsx,.xls,.csv" disabled={Boolean(fileProcessing)} onChange={(e) => handleFileUpload(e, 'excel')} />
+                                    </label>
+                                    <label className="btn-primary-admin" style={{ background: '#6c5dd3', borderColor: '#6c5dd3', color: 'white', cursor: 'pointer' }}>
+                                        <Plus size={18} />
+                                        PPT Upload
+                                        <input type="file" style={{ display: 'none' }} accept=".ppt,.pptx" disabled={Boolean(fileProcessing)} onChange={(e) => handleFileUpload(e, 'ppt')} />
+                                    </label>
+                                </div>
+                            </>
+                        )}
                     </div>
                 </header>
 
