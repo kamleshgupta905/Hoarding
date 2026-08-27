@@ -15,7 +15,7 @@ var CONFIG = {
   // ─── Images yahan save hongi — INPUT_FOLDER se ALAG folder banao! ────────
   // ⚠️  Google Drive → New Folder → ID copy karke yahan paste karo
   IMAGE_FOLDER_ID: '1gJmB53z4Ab7Jy-JTxU0v_05_A9Lq5BuE', // ✅ Dedicated images folder (alag!)
-  COL_SITE_NAME: 'Location ',
+  COL_SITE_NAME: 'Locality Site Location',
   COL_IMAGE_URL: 'ImageURL',
   STAFF_UPLOADS_SHEET: 'Staff_Uploads',
   EXCEL_IMPORTS_SHEET: 'Excel_Import_Previews',
@@ -629,7 +629,7 @@ function findSiteRowById_(siteId) {
 function resolveSiteNameById_(siteId) {
   var found = findSiteRowById_(siteId);
   if (!found) return '';
-  var index = found.headers.findIndex(function(header) { return cleanFull(header) === cleanFull(CONFIG.COL_SITE_NAME); });
+  var index = findSiteColumn(found.headers);
   return index === -1 ? '' : String(found.values[index] || '');
 }
 
@@ -649,9 +649,7 @@ function touchOperationMetadata_(operation, payload, operationId) {
   ensureSiteMetadata_();
   var found = findSiteRowById_(operation.siteId || payload.siteId);
   if (!found && payload.siteName) {
-    var nameIndex = getAllHeaders(SpreadsheetApp.getActiveSpreadsheet().getSheetByName(CONFIG.SHEET_NAME)).findIndex(function(header) {
-      return cleanFull(header) === cleanFull(CONFIG.COL_SITE_NAME);
-    });
+    var nameIndex = findSiteColumn(getAllHeaders(SpreadsheetApp.getActiveSpreadsheet().getSheetByName(CONFIG.SHEET_NAME)));
     var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(CONFIG.SHEET_NAME);
     var values = sheet.getDataRange().getValues();
     for (var i = 1; i < values.length; i++) {
@@ -877,7 +875,7 @@ function findNearbyHoardings(latitude, longitude) {
   var values = sheet.getDataRange().getValues();
   if (values.length <= 1) return [];
   var headers = values[0];
-  var idxSite = headers.findIndex(function(h) { return cleanFull(h) === cleanFull(CONFIG.COL_SITE_NAME); });
+  var idxSite = findSiteColumn(headers);
   var idxCity = headers.findIndex(function(h) { return cleanFull(h) === 'city'; });
   var idxLat = headers.findIndex(function(h) { return cleanFull(h).indexOf('lat') === 0 && cleanFull(h).indexOf('long') === -1; });
   var idxLng = headers.findIndex(function(h) { return cleanFull(h).indexOf('long') === 0; });
@@ -904,7 +902,7 @@ function findNearbyHoardings(latitude, longitude) {
 function updateSitePhotoFromStaff(siteName, imageUrl, historyOnly, siteStatus) {
   var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(CONFIG.SHEET_NAME);
   var headers = getAllHeaders(sheet);
-  var idxSite = headers.findIndex(function(h) { return cleanFull(h) === cleanFull(CONFIG.COL_SITE_NAME); });
+  var idxSite = findSiteColumn(headers);
   var idxImg = findImageColumn(headers);
   var idxHistory = findHistoryColumn(headers);
   var idxStatus = headers.findIndex(function(h) { return cleanFull(h) === 'status'; });
@@ -1159,7 +1157,8 @@ function getAllHeaders(sheet) {
 
 function updateHoardingDetails(data) {
   // ✅ Input Validation
-  if (!data || !data.siteName || typeof data.siteName !== 'string') {
+  var siteSearchTerm = (data.siteName || (data.fields ? (data.fields['Locality Site Location'] || data.fields['Location '] || data.fields.Location) : ''));
+  if (!siteSearchTerm || typeof siteSearchTerm !== 'string') {
     return res({ success: false, error: 'siteName is required and must be a string' });
   }
   
@@ -1174,20 +1173,38 @@ function updateHoardingDetails(data) {
   try {
     var ss = SpreadsheetApp.getActiveSpreadsheet();
     var sheet = ss.getSheetByName(CONFIG.SHEET_NAME);
+    if (!sheet) return res({ success: false, error: 'Sheet "' + CONFIG.SHEET_NAME + '" not found' });
     
     // Use getMaxColumns to get ALL headers including empty-data columns
     var headers = getAllHeaders(sheet);
     
-    var idxSite = headers.findIndex(h => cleanFull(h) === cleanFull(CONFIG.COL_SITE_NAME));
+    var idxSite = findSiteColumn(headers);
     if (idxSite === -1) return res({ success: false, error: 'Site Name column not found' });
 
     // Find the target row
     var rows = sheet.getDataRange().getValues();
     var rowIndex = -1;
-    if (data.rowNumber && Number(data.rowNumber) >= 2 && Number(data.rowNumber) <= rows.length) {
+    var idxSiteId = headers.indexOf('_SiteID');
+    
+    // 1. Match by _SiteID if present
+    var targetSiteId = String(data.siteId || (data.fields && (data.fields.UniqueID || data.fields['Unique ID'] || data.fields._SiteID)) || '').trim().toLowerCase();
+    if (targetSiteId && idxSiteId !== -1) {
+      for (var i = 1; i < rows.length; i++) {
+        if (String(rows[i][idxSiteId]).trim().toLowerCase() === targetSiteId) {
+          rowIndex = i + 1;
+          break;
+        }
+      }
+    }
+
+    // 2. Match by rowNumber
+    if (rowIndex === -1 && data.rowNumber && Number(data.rowNumber) >= 2 && Number(data.rowNumber) <= rows.length) {
       rowIndex = Number(data.rowNumber);
-    } else {
-      var searchName = cleanFull(data.siteName);
+    }
+
+    // 3. Match by exact siteName
+    if (rowIndex === -1) {
+      var searchName = cleanFull(siteSearchTerm);
       for (var i = 1; i < rows.length; i++) {
         if (cleanFull(rows[i][idxSite]) === searchName) {
           rowIndex = i + 1;
@@ -1196,12 +1213,24 @@ function updateHoardingDetails(data) {
       }
     }
 
-    if (rowIndex === -1) return res({ success: false, error: 'Site not found: ' + data.siteName });
+    // 4. Match by fuzzy siteName
+    if (rowIndex === -1) {
+      var searchName = cleanFull(siteSearchTerm);
+      for (var i = 1; i < rows.length; i++) {
+        var rowSiteName = cleanFull(rows[i][idxSite]);
+        if (rowSiteName && (rowSiteName.indexOf(searchName) !== -1 || searchName.indexOf(rowSiteName) !== -1)) {
+          rowIndex = i + 1;
+          break;
+        }
+      }
+    }
+
+    if (rowIndex === -1) return res({ success: false, error: 'Site not found: ' + siteSearchTerm });
 
     // 1. Identify Image & History Columns
     var idxImg = findImageColumn(headers);
     var idxHistory = findHistoryColumn(headers);
-    logDebug("UPDATE | Site: " + data.siteName + " | Row: " + rowIndex + " | idxImg: " + idxImg + " | idxHistory: " + idxHistory + " | hasFile: " + (!!data.fileData));
+    logDebug("UPDATE | Site: " + siteSearchTerm + " | Row: " + rowIndex + " | idxImg: " + idxImg + " | idxHistory: " + idxHistory + " | hasFile: " + (!!data.fileData));
 
     // 2. Update specified fields (General Edit)
     if (data.fields) {
@@ -1214,7 +1243,7 @@ function updateHoardingDetails(data) {
         // Always skip history from fields
         if (fieldKey === 'history' || fieldKey === 'executionhistory') continue;
 
-        var idx = headers.findIndex(h => {
+        var idx = headers.findIndex(function(h) {
           var sheetKey = cleanFull(h);
           if (sheetKey === fieldKey) return true;
           // Map common synonyms
@@ -1222,9 +1251,22 @@ function updateHoardingDetails(data) {
               (sheetKey.includes('cost') || sheetKey.includes('price'))) return true;
           if (fieldKey.startsWith('lat') && sheetKey.startsWith('lat')) return true;
           if (fieldKey.startsWith('long') && sheetKey.startsWith('long')) return true;
+          if (fieldKey === 'status' && sheetKey === 'status') return true;
+          if (fieldKey === 'bookedby' && sheetKey === 'bookedby') return true;
+          if (fieldKey === 'bookingstart' && sheetKey === 'bookingstart') return true;
+          if (fieldKey === 'bookingend' && sheetKey === 'bookingend') return true;
           return false;
         });
         
+        // Auto-add missing column if not found
+        if (idx === -1 && (fieldKey === 'status' || fieldKey === 'bookedby' || fieldKey === 'bookingstart' || fieldKey === 'bookingend')) {
+          var colName = fKey === 'STATUS' ? 'STATUS' : (fKey === 'BookedBy' ? 'BookedBy' : (fKey === 'BookingStart' ? 'BookingStart' : 'BookingEnd'));
+          var newColIndex = sheet.getLastColumn() + 1;
+          sheet.getRange(1, newColIndex).setValue(colName);
+          headers = getAllHeaders(sheet);
+          idx = newColIndex - 1;
+        }
+
         if (idx !== -1) {
           var newVal = data.fields[fKey];
           // 🛡️ SAFETY CHECK: DO NOT erase a Drive link with an empty update
@@ -1242,7 +1284,13 @@ function updateHoardingDetails(data) {
 
     // 3. Handle Status (Legacy/AI path)
     if (data.status) {
-      var idxStatus = headers.findIndex(h => cleanFull(h) === 'status');
+      var idxStatus = headers.findIndex(function(h) { return cleanFull(h) === 'status'; });
+      if (idxStatus === -1) {
+        var newColIndex = sheet.getLastColumn() + 1;
+        sheet.getRange(1, newColIndex).setValue('STATUS');
+        headers = getAllHeaders(sheet);
+        idxStatus = newColIndex - 1;
+      }
       if (idxStatus !== -1) sheet.getRange(rowIndex, idxStatus + 1).setValue(data.status);
     }
 
@@ -1258,6 +1306,13 @@ function updateHoardingDetails(data) {
         // 'archive_existing' = Current Master -> History, New file -> Master
         
         var historyUpdated = false;
+        if (idxHistory === -1 && (data.mode === 'archive' || data.mode === 'both' || data.mode === 'archive_existing' || (data.fields && data.fields.ExecutionHistory))) {
+          var newHistCol = sheet.getLastColumn() + 1;
+          sheet.getRange(1, newHistCol).setValue('ExecutionHistory');
+          headers = getAllHeaders(sheet);
+          idxHistory = newHistCol - 1;
+        }
+
         if (idxHistory !== -1) {
           var currentHistory = sheet.getRange(rowIndex, idxHistory + 1).getValue();
           var itemToArchive = null;
@@ -1317,7 +1372,7 @@ function deleteHistoryItem(data) {
     var ss = SpreadsheetApp.getActiveSpreadsheet();
     var sheet = ss.getSheetByName(CONFIG.SHEET_NAME);
     var headers = getAllHeaders(sheet);
-    var idxSite = headers.findIndex(h => cleanFull(h) === cleanFull(CONFIG.COL_SITE_NAME));
+    var idxSite = findSiteColumn(headers);
     var idxHistory = headers.findIndex(h => {
       var clean = h.toString().toLowerCase().replace(/[^a-z0-9]/g, '');
       return clean === 'executionhistory' || clean === 'history';
@@ -1476,7 +1531,7 @@ function deleteHoardingDetails(data) {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var sheet = ss.getSheetByName(CONFIG.SHEET_NAME);
   var rows = sheet.getDataRange().getValues();
-  var idxSite = rows[0].findIndex(h => cleanFull(h) === cleanFull(CONFIG.COL_SITE_NAME));
+  var idxSite = findSiteColumn(rows[0]);
   var idxDeleted = rows[0].indexOf('_DeletedAt');
 
   var searchName = cleanFull(data.siteName);
@@ -2078,7 +2133,7 @@ function analyzeExcelImport(incomingData, fileName) {
   var mapping = buildHeaderMapping(rawHeaders, targetHeaders);
   var cleanIncoming = rawHeaders.map(cleanFull);
   var twoWordIncoming = rawHeaders.map(function(h) { return cleanFull(getWords(h, 2)); });
-  var idxSiteTarget = targetHeaders.findIndex(function(h) { return cleanFull(h) === cleanFull(CONFIG.COL_SITE_NAME); });
+  var idxSiteTarget = findSiteColumn(targetHeaders);
   var existingRows = sheet.getDataRange().getValues();
   var existingBySite = {};
   for (var er = 1; er < existingRows.length; er++) {
@@ -2244,7 +2299,7 @@ function mapExistingImagesToSheet() {
   var data = sheet.getDataRange().getValues();
   var headers = data[0];
 
-  var idxSite = headers.findIndex(h => cleanFull(h) === cleanFull(CONFIG.COL_SITE_NAME));
+  var idxSite = findSiteColumn(headers);
   var idxImg = headers.findIndex(h => cleanFull(h) === cleanFull(CONFIG.COL_IMAGE_URL));
   if (idxSite === -1 || idxImg === -1) return;
 
@@ -2293,7 +2348,7 @@ function processPPTs() {
 
   var data = sheet.getDataRange().getValues();
   var headers = data[0];
-  var idxSite = headers.findIndex(h => cleanFull(h) === cleanFull(CONFIG.COL_SITE_NAME));
+  var idxSite = findSiteColumn(headers);
   var idxImg  = headers.findIndex(h => cleanFull(h) === cleanFull(CONFIG.COL_IMAGE_URL));
 
   if (idxSite === -1 || idxImg === -1) {
@@ -2762,6 +2817,27 @@ function decodeBase64(dataUrl) {
   if (!dataUrl) return null;
   var base64Data = dataUrl.indexOf(',') > -1 ? dataUrl.split(",")[1] : dataUrl;
   return Utilities.base64Decode(base64Data);
+}
+
+/**
+ * 📍 Helper to find the Site Name column index reliably across all variations
+ */
+function findSiteColumn(headers) {
+  if (!headers || !headers.length) return -1;
+  var target = cleanFull(CONFIG.COL_SITE_NAME);
+  var idx = headers.findIndex(function(h) {
+    var c = cleanFull(h);
+    return c === target || 
+           c === 'localitysitelocation' || 
+           c === 'location' || 
+           c === 'sitename' || 
+           c === 'locationname' || 
+           c === 'site' || 
+           c === 'hoardinglocation' ||
+           c === 'displaylocation' ||
+           c === 'sitedetails';
+  });
+  return idx;
 }
 
 /**

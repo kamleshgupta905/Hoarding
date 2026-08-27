@@ -544,10 +544,10 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                         reader.readAsDataURL(updatedImages[i].file);
                     });
 
-                    // 🧠 AI CALL
-                    const aiResult = await analyzeHoardingImage(base64Data, hoardings);
+                    // 🧠 AI CALL (with raw file for instant Hardware EXIF GPS detection)
+                    const aiResult = await analyzeHoardingImage(base64Data, hoardings, updatedImages[i].file);
 
-                    // 🎯 ROBUST INDEX MATCHING
+                    // 🎯 ROBUST INDEX & LOCATION RESOLUTION
                     let matchedData = null;
 
                     // 1. Check if AI returned a valid index (Highest Priority)
@@ -559,12 +559,15 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                     else if (aiResult.matchedLocation) {
                         const aiLoc = String(aiResult.matchedLocation).toLowerCase().trim();
                         matchedData = hoardings.find(h => {
-                            const listName = String(h["Location "]).toLowerCase();
-                            return listName === aiLoc || listName.includes(aiLoc) || aiLoc.includes(listName);
+                            const name1 = String(h["Locality Site Location"] || '').toLowerCase().trim();
+                            const name2 = String(h["Location "] || '').toLowerCase().trim();
+                            const name3 = String(h.Location || '').toLowerCase().trim();
+                            return name1 === aiLoc || name2 === aiLoc || name3 === aiLoc ||
+                                   (aiLoc.length > 5 && (name1.includes(aiLoc) || aiLoc.includes(name1)));
                         });
                     }
 
-                    const finalLocation = matchedData ? matchedData["Location "] : null;
+                    const finalLocation = matchedData ? (matchedData["Locality Site Location"] || matchedData["Location "] || matchedData.Location) : null;
 
                     if (!finalLocation) {
                         console.warn("AI Result did not produce a valid location match:", aiResult);
@@ -589,7 +592,7 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                         return next;
                     });
 
-                    // 🚀 AUTO-SYNC: If location is matched, upload immediately!
+                    // 🚀 AUTO-SYNC: If location is matched, upload and archive to history immediately!
                     if (finalLocation) {
                         await triggerAutoUpload(i, updatedImages[i]);
                     }
@@ -598,7 +601,7 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                     console.error("Processing failed", error);
                     setDailyImages(prev => {
                         const next = [...prev];
-                        next[i] = { ...next[i], aiLoading: false };
+                        if (next[i]) next[i] = { ...next[i], aiLoading: false };
                         return next;
                     });
                 }
@@ -609,20 +612,27 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
     const triggerAutoUpload = async (index, imageData) => {
         setDailyImages(prev => {
             const next = [...prev];
-            next[index].uploading = true;
+            if (next[index]) next[index].uploading = true;
             return next;
         });
 
         try {
             const base64 = await compressImage(imageData.file);
 
-            const targetHoarding = hoardings.find(h => h["Location "] === imageData.matchedLocation);
+            const targetHoarding = hoardings.find(h => {
+                const loc1 = String(h["Locality Site Location"] || '').trim().toLowerCase();
+                const loc2 = String(h["Location "] || '').trim().toLowerCase();
+                const loc3 = String(h.Location || '').trim().toLowerCase();
+                const target = String(imageData.matchedLocation || '').trim().toLowerCase();
+                return loc1 === target || loc2 === target || loc3 === target;
+            });
+
             const hasExistingImage = targetHoarding && targetHoarding.ImageURL &&
                 targetHoarding.ImageURL.trim() !== "" &&
                 !targetHoarding.ImageURL.includes("unsplash.com");
 
             // 🏰 Resolve updated History state locally
-            let updatedHistory = targetHoarding.History || [];
+            let updatedHistory = targetHoarding?.History || [];
             if (hasExistingImage) {
                 updatedHistory = [imageData.preview, ...updatedHistory];
             }
@@ -633,11 +643,18 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                 return `${url}|${time}`;
             }).join(',');
 
+            const siteNameResolved = targetHoarding ? (targetHoarding["Locality Site Location"] || targetHoarding["Location "] || targetHoarding.Location) : imageData.matchedLocation;
+            const siteIdResolved = targetHoarding ? (targetHoarding.UniqueID || targetHoarding["Unique ID"] || targetHoarding.ID || targetHoarding._SiteID || '') : '';
+
             await syncToGoogleSheet({
                 action: 'updateHoarding',
-                siteName: imageData.matchedLocation,
+                siteName: siteNameResolved,
+                siteId: siteIdResolved,
                 status: imageData.status,
-                fields: { "ExecutionHistory": historyString },
+                fields: { 
+                    "ExecutionHistory": historyString,
+                    STATUS: imageData.status
+                },
                 fileData: base64,
                 mimeType: 'image/jpeg',
                 mode: hasExistingImage ? 'archive' : 'replace'
@@ -645,13 +662,20 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
 
             setDailyImages(prev => {
                 const next = [...prev];
-                next[index].uploaded = true;
-                next[index].uploading = false;
+                if (next[index]) {
+                    next[index].uploaded = true;
+                    next[index].uploading = false;
+                }
                 return next;
             });
 
             setHoardings(prev => prev.map(h => {
-                if (h["Location "] === imageData.matchedLocation) {
+                const loc1 = String(h["Locality Site Location"] || '').trim().toLowerCase();
+                const loc2 = String(h["Location "] || '').trim().toLowerCase();
+                const loc3 = String(h.Location || '').trim().toLowerCase();
+                const target = String(imageData.matchedLocation || '').trim().toLowerCase();
+
+                if (loc1 === target || loc2 === target || loc3 === target) {
                     const hasValidOldImage = h.ImageURL && h.ImageURL.trim() !== "" && !h.ImageURL.includes("unsplash.com");
 
                     let updatedHistory = h.History || [];
@@ -669,7 +693,6 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                     } else {
                         // 🆕 No master image: The new image becomes the master ImageURL.
                         finalImageURL = imageData.preview;
-                        // Per your earlier rule: "missing old images ke case main ExecutionHistory main update mat karna"
                         updatedHistory = [];
                     }
 
@@ -688,7 +711,7 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
             alert("⚠️ Auto-Upload Error: " + error.message + ". Check console (F12) for details.");
             setDailyImages(prev => {
                 const next = [...prev];
-                next[index].uploading = false;
+                if (next[index]) next[index].uploading = false;
                 return next;
             });
         }
@@ -754,83 +777,8 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
         const img = dailyImages[index];
         if (!img.matchedLocation) return alert("Please select a location first.");
 
-        // Mark as uploading
-        const newImages = [...dailyImages];
-        newImages[index].uploading = true;
-        setDailyImages(newImages);
-
-        try {
-            const base64 = await compressImage(img.file);
-
-            // 🛡️ Logic to prevent replacing master images
-            const targetHoarding = hoardings.find(h => h["Location "] === img.matchedLocation);
-            const hasExistingImage = targetHoarding && targetHoarding.ImageURL &&
-                targetHoarding.ImageURL.trim() !== "" &&
-                !targetHoarding.ImageURL.includes("unsplash.com");
-
-            // 🏰 Resolve updated History state locally
-            let updatedHistory = targetHoarding.History || [];
-            if (hasExistingImage) {
-                updatedHistory = [img.preview, ...updatedHistory];
-            }
-
-            const historyString = updatedHistory.map(item => {
-                const url = typeof item === 'object' ? item.url : item;
-                const time = typeof item === 'object' ? item.timestamp || Date.now() : Date.now();
-                return `${url}|${time}`;
-            }).join(',');
-
-            await syncToGoogleSheet({
-                action: 'updateHoarding',
-                siteName: img.matchedLocation,
-                status: img.status,
-                fields: { "ExecutionHistory": historyString },
-                fileData: base64,
-                mimeType: 'image/jpeg',
-                mode: hasExistingImage ? 'archive' : 'replace'
-            });
-
-            // Update local state to reflect success (Optimistic UI)
-            newImages[index].uploaded = true;
-            newImages[index].uploading = false;
-            setDailyImages(newImages);
-
-            // Also update the main hoardings list locally
-            setHoardings(prev => prev.map(h => {
-                if (h["Location "] === img.matchedLocation) {
-                    let updatedHistory = h.History || [];
-                    let finalImageURL = h.ImageURL;
-
-                    if (hasExistingImage) {
-                        // 🏰 Keep master photo, add to History
-                        updatedHistory = [img.preview, ...updatedHistory];
-                        if (!updatedHistory.includes(h.ImageURL)) {
-                            updatedHistory.push(h.ImageURL);
-                        }
-                    } else {
-                        // 🆕 No master photo: New image becomes master, No history
-                        finalImageURL = img.preview;
-                        updatedHistory = [];
-                    }
-
-                    return {
-                        ...h,
-                        STATUS: img.status,
-                        ImageURL: finalImageURL,
-                        History: updatedHistory
-                    };
-                }
-                return h;
-            }));
-
-            alert(`🚀 Success! "${img.matchedLocation}" has been synced to ${hasExistingImage ? 'Execution History' : 'Site Photo'}.`);
-
-        } catch (error) {
-            console.error("Sync Error:", error);
-            alert("Upload failed. Please check your internet connection.");
-            newImages[index].uploading = false;
-            setDailyImages(newImages);
-        }
+        // Direct call to the unified triggerAutoUpload engine
+        await triggerAutoUpload(index, img);
     };
 
     // ------------------------------------------------------------------
@@ -1080,7 +1028,8 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
             // 2. Background sync to Google Sheet
             syncToGoogleSheet({
                 action: 'updateHoarding',
-                siteName: targetSite["Location "] || targetSite.Location || targetSite["Locality Site Location"],
+                siteName: targetSite["Locality Site Location"] || targetSite["Location "] || targetSite.Location,
+                siteId: targetSite.UniqueID || targetSite["Unique ID"] || targetSite.ID || targetSite._SiteID || '',
                 fields: fullUpdatedFields,
                 fileData: fileData,
                 mimeType: mimeType
@@ -3486,7 +3435,7 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
 
                                                 {img.matchedLocation && (
                                                     <div className="img-preview ref-image" title="Old Reference Image" style={{
-                                                        backgroundImage: `url(${hoardings.find(h => h["Location "] === img.matchedLocation)?.ImageURL})`,
+                                                        backgroundImage: `url(${hoardings.find(h => (h["Locality Site Location"] || h["Location "] || h.Location) === img.matchedLocation)?.ImageURL})`,
                                                         backgroundSize: 'cover',
                                                         backgroundPosition: 'center'
                                                     }}>
@@ -3508,9 +3457,12 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                                         disabled={img.uploaded}
                                                     >
                                                         <option value="">-- Select Location --</option>
-                                                        {hoardings.map((h, i) => (
-                                                            <option key={i} value={h["Location "]}>{h["Location "]}</option>
-                                                        ))}
+                                                        {hoardings.map((h, i) => {
+                                                            const siteName = h["Locality Site Location"] || h["Location "] || h.Location || `Site #${i + 1}`;
+                                                            return (
+                                                                <option key={i} value={siteName}>{siteName}</option>
+                                                            );
+                                                        })}
                                                     </select>
                                                 </div>
 
@@ -3547,7 +3499,7 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                                     {img.reasoning && <p className="ai-reasoning-text"><span>Logic:</span> {img.reasoning}</p>}
 
                                                     {img.matchedLocation && (() => {
-                                                        const site = hoardings.find(h => h["Location "] === img.matchedLocation);
+                                                        const site = hoardings.find(h => (h["Locality Site Location"] || h["Location "] || h.Location) === img.matchedLocation);
                                                         if (site && site.Latitude && site.Longitude) {
                                                             return (
                                                                 <a

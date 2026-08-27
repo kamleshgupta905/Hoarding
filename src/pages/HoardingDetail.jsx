@@ -104,6 +104,9 @@ const HoardingDetail = ({ hoardings, setHoardings }) => {
                 "Media Format": mediaFormat,
                 "Media Type": mediaFormat,
                 STATUS: formData.STATUS || 'Available',
+                BookedBy: formData.BookedBy || '',
+                BookingStart: formData.BookingStart || '',
+                BookingEnd: formData.BookingEnd || '',
                 Latitude: formData.Latitude || '',
                 Longitude: formData.Longitude || '',
                 ImageURL: updatedImageURL
@@ -111,7 +114,8 @@ const HoardingDetail = ({ hoardings, setHoardings }) => {
 
             await syncToGoogleSheet({
                 action: 'updateHoarding',
-                siteName: hoarding["Location "] || hoarding.Location || hoarding["Locality Site Location"],
+                siteName: hoarding["Locality Site Location"] || hoarding["Location "] || hoarding.Location,
+                siteId: hoarding.UniqueID || hoarding["Unique ID"] || hoarding.ID || hoarding._SiteID || '',
                 fields: fullUpdatedFields,
                 fileData: fileData,
                 mimeType: mimeType
