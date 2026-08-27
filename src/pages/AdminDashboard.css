@@ -5033,3 +5033,11 @@
 
 
 
+
+/* Sheet Editor Excel Features */
+.sheet-find-replace-panel { border-bottom: 1px solid #e2e8f0; }
+.sheet-context-menu { font-family: var(--font-main); }
+.sheet-context-menu button:hover { background: #f1f5f9; }
+.sheet-context-menu button:last-child:hover { background: #fef2f2; }
+.sheet-filter-dropdown button:hover { background: #eff6ff !important; }
+.sheet-filter-dropdown button:last-child { border-bottom: none; }

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Scissors, useNavigate } from 'react-router-dom';
 import {
     LayoutDashboard, Database, FileUp, Settings,
     FileText, LogOut, Search, Eye, EyeOff,
@@ -117,6 +117,27 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
     const [sheetFuture, setSheetFuture] = useState([]);
     const [selectedSheetCell, setSelectedSheetCell] = useState({ row: 0, col: 0 });
     const [sheetSelection, setSheetSelection] = useState({ type: 'cell', row: 0, col: 0 });
+    // ✂️ Cut support
+    const [cutBuffer, setCutBuffer] = useState(null); // { rows: [[...]], selection: {...} }
+    // 🔍 Find & Replace
+    const [findReplaceOpen, setFindReplaceOpen] = useState(false);
+    const [findQuery, setFindQuery] = useState('');
+    const [replaceQuery, setReplaceQuery] = useState('');
+    const [findMatchCase, setFindMatchCase] = useState(false);
+    const [findMatches, setFindMatches] = useState([]); // [{row, col}]
+    const [findMatchIndex, setFindMatchIndex] = useState(-1);
+    // 📐 Column & Row Resize
+    const [colWidths, setColWidths] = useState({}); // { colIndex: px }
+    const [rowHeights, setRowHeights] = useState({}); // { rowIndex: px }
+    const [resizingCol, setResizingCol] = useState(null);
+    const [resizingRow, setResizingRow] = useState(null);
+    const resizeStartRef = useRef(null);
+    // 🖱️ Right-click Context Menu
+    const [contextMenu, setContextMenu] = useState(null); // { x, y, row, col }
+    // ↕️ Sort & Filter
+    const [sortConfig, setSortConfig] = useState(null); // { col, direction: 'asc'|'desc' }
+    const [filterConfig, setFilterConfig] = useState({}); // { colIndex: 'value' }
+    const [filterDropdownCol, setFilterDropdownCol] = useState(null);
     const [overviewChartTab, setOverviewChartTab] = useState('zones'); // 'zones' | 'media' | 'pricing'
     const [hoveredChartItem, setHoveredChartItem] = useState(null);
     const [fieldAuditTab, setFieldAuditTab] = useState('matched'); // 'matched' | 'unmatched'
@@ -1715,6 +1736,67 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
         }
     };
 
+    // Cut: Copy + Clear
+    const cutSheetSelection = async () => {
+        const rowsToCopy = getSelectionRows();
+        const colsToCopy = getSelectionColumns();
+        const cutData = rowsToCopy.map(r => colsToCopy.map(c => sheetRows[r]?.[c] || ''));
+        setCutBuffer({ rows: cutData, selection: { ...sheetSelection }, selectedCell: { ...selectedSheetCell } });
+        await copySheetSelection();
+        clearSheetSelection();
+    };
+    const pasteCutBuffer = () => {
+        if (!cutBuffer) return; rememberSheetState();
+        const tR = selectedSheetCell.row, tC = selectedSheetCell.col;
+        setSheetRows(prev => {
+            const n = prev.map(row => [...row]);
+            while (n.length < tR + cutBuffer.rows.length) n.push(Array(sheetHeaders.length).fill(''));
+            cutBuffer.rows.forEach((cr, ro) => cr.forEach((cell, co) => {
+                const ti = tR + ro, tj = tC + co;
+                if (ti < n.length) { while (n[ti].length <= tj) n[ti].push(''); n[ti][tj] = cell; }
+            }));
+            return n;
+        });
+        setCutBuffer(null); markSheetChanged();
+    };
+
+    // Find & Replace
+    const runFindReplace = (query, mc) => {
+        if (!query) { setFindMatches([]); setFindMatchIndex(-1); return; }
+        const q = mc ? query : query.toLowerCase(); const m = [];
+        sheetRows.forEach((row, ri) => row.forEach((cell, ci) => {
+            const v = mc ? String(cell || '') : String(cell || '').toLowerCase();
+            if (v.includes(q)) m.push({ row: ri, col: ci });
+        }));
+        setFindMatches(m); setFindMatchIndex(m.length > 0 ? 0 : -1);
+        if (m.length > 0) selectSheetCell(m[0].row, m[0].col);
+    };
+    const findNext = () => { if (!findMatches.length) return; const n = (findMatchIndex + 1) % findMatches.length; setFindMatchIndex(n); selectSheetCell(findMatches[n].row, findMatches[n].col); };
+    const findPrev = () => { if (!findMatches.length) return; const p = (findMatchIndex - 1 + findMatches.length) % findMatches.length; setFindMatchIndex(p); selectSheetCell(findMatches[p].row, findMatches[p].col); };
+    const replaceCurrent = () => {
+        if (findMatchIndex < 0 || findMatchIndex >= findMatches.length) return; rememberSheetState();
+        const { row, col } = findMatches[findMatchIndex];
+        setSheetRows(prev => prev.map((r, ri) => { if (ri !== row) return r; const n = [...r]; while (n.length <= col) n.push('');
+            const q = findMatchCase ? findQuery : findQuery.toLowerCase(); const v = findMatchCase ? String(n[col]) : String(n[col]).toLowerCase();
+            if (v.includes(q)) n[col] = findMatchCase ? String(n[col]).replace(findQuery, replaceQuery) : String(n[col]).replace(new RegExp(findQuery.replace(/\/\\/\/g, '\\\\\textarea.remove();
+        }
+    };
+
+    const isSheetCellSelected'), 'gi'), replaceQuery);
+            return n; }));
+        markSheetChanged(); runFindReplace(findQuery, findMatchCase);
+    };
+    const replaceAllMatches = () => {
+        if (!findQuery) return; rememberSheetState(); let c = 0; const q = findMatchCase ? findQuery : findQuery.toLowerCase();
+        setSheetRows(prev => prev.map(row => row.map(cell => { const v = findMatchCase ? String(cell||'') : String(cell||'').toLowerCase();
+            if (v.includes(q)) { c++; return findMatchCase ? String(cell||'').replace(findQuery, replaceQuery) : String(cell||'').replace(new RegExp(findQuery.replace(/\/\\/\/g, '\\\\\textarea.remove();
+        }
+    };
+
+    const isSheetCellSelected'), 'gi'), replaceQuery); } return cell; })));
+        markSheetChanged(); runFindReplace(findQuery, findMatchCase); if (c > 0) showToast(`Replaced ${c} occurrence(s)`, 'success');
+    };
+
     const isSheetCellSelected = (rowIndex, colIndex) => {
         if (sheetSelection.type === 'sheet') return visibleSheetColumns.some(column => column.index === colIndex);
         if (sheetSelection.type === 'row') return sheetSelection.row === rowIndex;
@@ -1782,9 +1864,21 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
             event.preventDefault();
             selectVisibleSheet();
         }
+        if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'x') {
+            event.preventDefault(); cutSheetSelection();
+        }
+        if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'h') {
+            event.preventDefault(); setFindReplaceOpen(prev => !prev);
+        }
+        if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'f') {
+            event.preventDefault(); setFindReplaceOpen(true);
+        }
+        if (event.key === 'Escape') {
+            if (contextMenu) { closeContextMenu(); return; }
+            if (findReplaceOpen) { setFindReplaceOpen(false); return; }
+        }
         if (event.key === 'Delete' && document.activeElement?.tagName !== 'TEXTAREA' && document.activeElement?.tagName !== 'INPUT') {
-            event.preventDefault();
-            clearSheetSelection();
+            event.preventDefault(); clearSheetSelection();
         }
     };
 
@@ -1844,12 +1938,42 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
         }
     };
 
+    // Column Resize
+    const handleColResizeStart = (e, ci) => {
+        e.preventDefault(); e.stopPropagation(); const sx = e.clientX, sw = colWidths[ci] || 150;
+        document.body.style.cursor = 'col-resize'; document.body.style.userSelect = 'none';
+        const mv = me => setColWidths(p => ({ ...p, [ci]: Math.max(60, sw + me.clientX - sx) }));
+        const up = () => { document.body.style.cursor=''; document.body.style.userSelect=''; document.removeEventListener('mousemove',mv); document.removeEventListener('mouseup',up); };
+        document.addEventListener('mousemove', mv); document.addEventListener('mouseup', up);
+    };
+    const handleRowResizeStart = (e, ri) => {
+        e.preventDefault(); e.stopPropagation(); const sy = e.clientY, sh = rowHeights[ri] || 32;
+        document.body.style.cursor = 'row-resize'; document.body.style.userSelect = 'none';
+        const mv = me => setRowHeights(p => ({ ...p, [ri]: Math.max(24, sh + me.clientY - sy) }));
+        const up = () => { document.body.style.cursor=''; document.body.style.userSelect=''; document.removeEventListener('mousemove',mv); document.removeEventListener('mouseup',up); };
+        document.addEventListener('mousemove', mv); document.addEventListener('mouseup', up);
+    };
+
+    // Context Menu
+    const handleContextMenu = (e, ri, ci) => { e.preventDefault(); e.stopPropagation(); selectSheetCell(ri, ci); setContextMenu({ x: e.clientX, y: e.clientY, row: ri, col: ci }); };
+    const closeContextMenu = () => setContextMenu(null);
+    useEffect(() => { if (!contextMenu) return; const h = () => closeContextMenu(); document.addEventListener('click',h); document.addEventListener('scroll',h,true);
+        return () => { document.removeEventListener('click',h); document.removeEventListener('scroll',h,true); }; }, [contextMenu]);
+
+    // Sort & Filter
+    const toggleSort = ci => setSortConfig(p => p&&p.col===ci ? (p.direction==='asc'?{col:ci,direction:'desc'}:null) : {col:ci,direction:'asc'});
+    const applyFilter = (ci,v) => { setFilterConfig(p => { const n={...p}; if(!v||v==='__ALL__')delete n[ci];else n[ci]=v; return n; }); setFilterDropdownCol(null); };
+    const getFilterValues = ci => { const vals=new Set(); sheetRows.forEach(r=>{const v=String(r[ci]||'').trim();if(v)vals.add(v);}); return ['__ALL__',...Array.from(vals).sort()]; };
+
     const normalizedSheetSearch = sheetSearch.trim().toLowerCase();
-    const visibleSheetRows = normalizedSheetSearch
-        ? sheetRows
-            .map((row, index) => ({ row, index }))
-            .filter(({ row }) => row.some(cell => String(cell || '').toLowerCase().includes(normalizedSheetSearch)))
-        : sheetRows.map((row, index) => ({ row, index }));
+    const processedSheetRows = useMemo(() => {
+        let res = sheetRows.map((row, index) => ({ row, index }));
+        Object.entries(filterConfig).forEach(([ci, fv]) => { res = res.filter(({ row }) => String(row[Number(ci)] || '').trim() === fv); });
+        if (normalizedSheetSearch) res = res.filter(({ row }) => row.some(cell => String(cell || '').toLowerCase().includes(normalizedSheetSearch)));
+        if (sortConfig) { const { col, direction } = sortConfig; res.sort((a, b) => { const aV = String(a.row[col] || ''), bV = String(b.row[col] || ''); const aN = parseFloat(aV.replace(/[^\d.-]/g, '')), bN = parseFloat(bV.replace(/[^\d.-]/g, '')); if (!isNaN(aN) && !isNaN(bN)) return direction === 'asc' ? aN - bN : bN - aN; return direction === 'asc' ? aV.localeCompare(bV) : bV.localeCompare(aV); }); }
+        return res;
+    }, [sheetRows, filterConfig, normalizedSheetSearch, sortConfig]);
+    const visibleSheetRows = processedSheetRows;
     const visibleSheetColumns = sheetHeaders
         .map((header, index) => ({ header, index, label: getColumnLabel(index), isSite: isPrimarySiteColumn(header) }))
         .filter(column => !HIDDEN_SHEET_COLUMN_LETTERS.has(column.label) && !isInternalHeader(column.header, column.index));
@@ -3147,7 +3271,8 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                     <button onClick={() => addSheetColumn(selectedSheetCell.col, 'after')} disabled={sheetLoading || sheetSaving}><Plus size={16} /> Col Right</button>
                                 </div>
                                 <div className="sheet-ribbon-group">
-                                    <button onClick={copySheetSelection} disabled={!sheetRows.length || sheetLoading}><Copy size={16} /> Copy</button>
+                                    <button onClick={copySheetSelection} <button onClick={cutSheetSelection} disabled={!sheetRows.length || sheetLoading} title="Cut (Ctrl+X)"><Scissors size={16} /> Cut</button>
+                                    disabled={!sheetRows.length || sheetLoading}><Copy size={16} /> Copy</button>
                                     <button onClick={clearSheetSelection} disabled={sheetLoading || sheetSaving}><X size={16} /> Clear Selection</button>
                                     <button onClick={deleteSheetSelection} disabled={!sheetRows.length || sheetLoading || sheetSaving || (sheetSelection.type === 'column' && sheetHeaders.length <= 1)}><Trash2 size={16} /> Delete Selection</button>
                                     <button onClick={exportSheetCsv} disabled={!sheetHeaders.length}><FileDown size={16} /> CSV</button>
@@ -3206,7 +3331,24 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                                         >
                                                             {label}
                                                         </button>
-                                                        <div className="sheet-header-cell">
+                                                        <span style={{ display: "inline-flex", alignItems: "center", gap: "1px", marginLeft: "2px" }}>
+                                                            <button type="button" onClick={(e) => { e.stopPropagation(); toggleSort(colIndex); }} title="Sort" style={{ fontSize: "10px", padding: "0 2px", background: sortConfig && sortConfig.col === colIndex ? "#dbeafe" : "transparent", border: "none", cursor: "pointer", borderRadius: "2px", color: sortConfig && sortConfig.col === colIndex ? "#1d4ed8" : "#94a3b8", lineHeight: 1.5 }}>
+                                                                {sortConfig && sortConfig.col === colIndex ? (sortConfig.direction === "asc" ? "▲" : "▼") : "⇅"}
+                                                            </button>
+                                                            <button type="button" onClick={(e) => { e.stopPropagation(); setFilterDropdownCol(filterDropdownCol === colIndex ? null : colIndex); }} title="Filter" style={{ fontSize: "10px", padding: "0 2px", background: filterConfig[colIndex] ? "#fef3c7" : "transparent", border: "none", cursor: "pointer", borderRadius: "2px", color: filterConfig[colIndex] ? "#b45309" : "#94a3b8", lineHeight: 1.5 }}>
+                                                                ⏷
+                                                            </button>
+                                                        </span>
+                                                        <div className="sheet-header-cell" style={{ position: 'relative' }}>
+                                                            {filterDropdownCol === colIndex && (
+                                                                <div className="sheet-filter-dropdown" style={{ position: 'absolute', top: '100%', left: 0, zIndex: 100, background: '#fff', border: '1px solid #d1d5db', borderRadius: '6px', boxShadow: '0 4px 12px rgba(0,0,0,0.15)', maxHeight: '200px', overflowY: 'auto', minWidth: '140px' }}>
+                                                                    {getFilterValues(colIndex).map((v, i) => (
+                                                                        <button key={i} onClick={(e) => { e.stopPropagation(); applyFilter(colIndex, v); }} style={{ display: 'block', width: '100%', textAlign: 'left', padding: '4px 10px', fontSize: '11px', border: 'none', background: (v === '__ALL__' && !filterConfig[colIndex]) || filterConfig[colIndex] === v ? '#eff6ff' : '#fff', cursor: 'pointer', borderBottom: '1px solid #f1f5f9' }}>
+                                                                            {v === '__ALL__' ? '✦ Show All' : v}
+                                                                        </button>
+                                                                    ))}
+                                                                </div>
+                                                            )}
                                                             <input
                                                                 value={header}
                                                                 onChange={(e) => updateSheetHeader(colIndex, e.target.value)}
@@ -3228,7 +3370,7 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                         <tbody>
                                             {visibleSheetRows.map(({ row, index }) => (
                                                 <tr key={`sheet-row-${index}`}>
-                                                    <td className={`sheet-row-number ${isSheetRowSelected(index) ? 'selected-axis' : ''}`}>
+                                                    <td className={`sheet-row-number ${isSheetRowSelected(index) ? 'selected-axis' : ''}`} style={{ position: 'relative', ...(rowHeights[index] ? { height: rowHeights[index] } : {}) }}>
                                                         <div>
                                                             <button
                                                                 type="button"
@@ -3259,6 +3401,7 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                                                         rememberSheetState();
                                                                     }}
                                                                     onClick={() => selectSheetCell(index, colIndex)}
+                                                                    onContextMenu={(e) => handleContextMenu(e, index, colIndex)}
                                                                     onPaste={(e) => handleSheetPaste(e, index, colIndex)}
                                                                     onChange={(e) => updateSheetCellLive(index, colIndex, e.target.value)}
                                                                     rows={1}
@@ -3280,6 +3423,24 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                     </table>
                                 )}
                             </div>
+
+                            {contextMenu && (
+                                <div className="sheet-context-menu" style={{ position: 'fixed', left: contextMenu.x, top: contextMenu.y, zIndex: 10000, background: '#fff', border: '1px solid #d1d5db', borderRadius: '8px', boxShadow: '0 8px 24px rgba(0,0,0,0.18)', padding: '4px 0', minWidth: '180px', fontSize: '12px' }}>
+                                    <button onClick={() => { copySheetSelection(); closeContextMenu(); }} style={{ display: 'flex', alignItems: 'center', gap: '8px', width: '100%', padding: '6px 14px', border: 'none', background: 'none', cursor: 'pointer', textAlign: 'left' }}>📋 Copy <span style={{ marginLeft: 'auto', color: '#94a3b8', fontSize: '10px' }}>Ctrl+C</span></button>
+                                    <button onClick={() => { cutSheetSelection(); closeContextMenu(); }} style={{ display: 'flex', alignItems: 'center', gap: '8px', width: '100%', padding: '6px 14px', border: 'none', background: 'none', cursor: 'pointer', textAlign: 'left' }}>✂️ Cut <span style={{ marginLeft: 'auto', color: '#94a3b8', fontSize: '10px' }}>Ctrl+X</span></button>
+                                    <button onClick={() => { clearSheetSelection(); closeContextMenu(); }} style={{ display: 'flex', alignItems: 'center', gap: '8px', width: '100%', padding: '6px 14px', border: 'none', background: 'none', cursor: 'pointer', textAlign: 'left' }}>🗑️ Clear <span style={{ marginLeft: 'auto', color: '#94a3b8', fontSize: '10px' }}>Del</span></button>
+                                    <div style={{ height: '1px', background: '#e5e7eb', margin: '4px 0' }} />
+                                    <button onClick={() => { addSheetRow(contextMenu.row, 'before'); closeContextMenu(); }} style={{ display: 'flex', alignItems: 'center', gap: '8px', width: '100%', padding: '6px 14px', border: 'none', background: 'none', cursor: 'pointer', textAlign: 'left' }}>➕ Insert Row Above</button>
+                                    <button onClick={() => { addSheetRow(contextMenu.row, 'after'); closeContextMenu(); }} style={{ display: 'flex', alignItems: 'center', gap: '8px', width: '100%', padding: '6px 14px', border: 'none', background: 'none', cursor: 'pointer', textAlign: 'left' }}>➕ Insert Row Below</button>
+                                    <button onClick={() => { addSheetColumn(contextMenu.col, 'before'); closeContextMenu(); }} style={{ display: 'flex', alignItems: 'center', gap: '8px', width: '100%', padding: '6px 14px', border: 'none', background: 'none', cursor: 'pointer', textAlign: 'left' }}>➕ Insert Column Left</button>
+                                    <button onClick={() => { addSheetColumn(contextMenu.col, 'after'); closeContextMenu(); }} style={{ display: 'flex', alignItems: 'center', gap: '8px', width: '100%', padding: '6px 14px', border: 'none', background: 'none', cursor: 'pointer', textAlign: 'left' }}>➕ Insert Column Right</button>
+                                    <div style={{ height: '1px', background: '#e5e7eb', margin: '4px 0' }} />
+                                    <button onClick={() => { toggleSort(contextMenu.col); closeContextMenu(); }} style={{ display: 'flex', alignItems: 'center', gap: '8px', width: '100%', padding: '6px 14px', border: 'none', background: 'none', cursor: 'pointer', textAlign: 'left' }}>↕️ Sort Column</button>
+                                    <button onClick={() => { setFilterDropdownCol(contextMenu.col); closeContextMenu(); }} style={{ display: 'flex', alignItems: 'center', gap: '8px', width: '100%', padding: '6px 14px', border: 'none', background: 'none', cursor: 'pointer', textAlign: 'left' }}>🔽 Filter Column</button>
+                                    <button onClick={() => { deleteSheetRow(contextMenu.row); closeContextMenu(); }} style={{ display: 'flex', alignItems: 'center', gap: '8px', width: '100%', padding: '6px 14px', border: 'none', background: 'none', cursor: 'pointer', textAlign: 'left', color: '#ef4444' }}>🗑️ Delete Row</button>
+                                    <button onClick={() => { deleteSheetColumn(contextMenu.col); closeContextMenu(); }} style={{ display: 'flex', alignItems: 'center', gap: '8px', width: '100%', padding: '6px 14px', border: 'none', background: 'none', cursor: 'pointer', textAlign: 'left', color: '#ef4444' }}>🗑️ Delete Column</button>
+                                </div>
+                            )}
                         </div>
                     </div>
                 )}
