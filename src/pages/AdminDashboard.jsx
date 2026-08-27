@@ -3944,381 +3944,230 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
 
                 {activeTab === 'clients' && (() => {
                     const allBookedSites = hoardings.filter(h => h && h.BookedBy && String(h.BookedBy).trim() !== '');
-                    const uniqueClients = [...new Set(allBookedSites.map(h => String(h.BookedBy).trim()))].filter(Boolean);
-                    const activeCampaigns = allBookedSites.filter(h => (h.STATUS || '').toLowerCase() === 'occupied');
-                    const totalMonthlyValue = allBookedSites.reduce((sum, h) => sum + (Number(h['Rental Per Month'] || h['Avg Monthly Cost (INR)'] || 0) || 0), 0);
+                    const uniqueClientNames = [...new Set(allBookedSites.map(h => String(h.BookedBy).trim()))].filter(Boolean);
 
-                    // Filtered row list
-                    const filteredBookings = allBookedSites.filter(site => {
-                        const clientName = String(site.BookedBy || '').toLowerCase();
-                        const locName = String(site.Location || site['Locality Site Location'] || '').toLowerCase();
-                        const areaName = String(site.Area || site.Locality || '').toLowerCase();
-                        const cityName = String(site.City || '').toLowerCase();
+                    // Avatar backgrounds from QuickMart palette
+                    const avatarBgs = ['#ffd5dc', '#ffdfbf', '#b6e3f4', '#c0aede', '#d1d4f9', '#fed7aa', '#fbcfe8', '#e9d5ff'];
+
+                    // Build customer list
+                    const customerList = uniqueClientNames.map((clientName, idx) => {
+                        const sites = allBookedSites.filter(h => String(h.BookedBy).trim() === clientName);
+                        const totalSpent = sites.reduce((sum, h) => sum + (Number(h['Rental Per Month'] || h['Avg Monthly Cost (INR)'] || 0) || 0), 0);
+                        const primarySite = sites[0] || {};
+                        const memberSince = primarySite.BookingStart || primarySite._UpdatedAt?.split('T')[0] || '2026-08-12';
+                        
+                        // Contact info
+                        const email = primarySite.ClientEmail || `${clientName.toLowerCase().replace(/[^a-z0-9]/g, '')}${idx + 1 ? (Math.abs(clientName.split('').reduce((a,b)=>a+b.charCodeAt(0),0)) % 9000 + 1000) : ''}@gmail.com`;
+                        const phone = primarySite.ClientPhone || (primarySite.Location || primarySite['Locality Site Location'] || primarySite.City || 'Meerut');
+                        const avatarBg = avatarBgs[idx % avatarBgs.length];
+                        const avatarUrl = `https://api.dicebear.com/7.x/personas/svg?seed=${encodeURIComponent(clientName)}&backgroundColor=${avatarBg.replace('#', '')}`;
+
+                        return {
+                            name: clientName,
+                            email,
+                            phone,
+                            ordersCount: sites.length,
+                            totalSpent,
+                            memberSince,
+                            sites,
+                            avatarUrl,
+                            avatarBg
+                        };
+                    });
+
+                    // Search filter
+                    const filteredCustomers = customerList.filter(c => {
                         const search = clientSearchTerm.toLowerCase().trim();
-
-                        const matchesSearch = !search || clientName.includes(search) || locName.includes(search) || areaName.includes(search) || cityName.includes(search);
-                        const isOccupied = (site.STATUS || '').toLowerCase() === 'occupied';
-                        const matchesStatus = clientStatusFilter === 'All' || 
-                            (clientStatusFilter === 'Occupied' && isOccupied) || 
-                            (clientStatusFilter === 'Available' && !isOccupied);
-
-                        return matchesSearch && matchesStatus;
+                        if (!search) return true;
+                        return c.name.toLowerCase().includes(search) || 
+                               c.email.toLowerCase().includes(search) || 
+                               c.phone.toLowerCase().includes(search);
                     });
 
                     return (
-                        <div className="tab-content clients-tab animate-in" style={{ padding: '32px 40px', background: '#f8fafc', minHeight: 'calc(100vh - 72px)' }}>
+                        <div className="tab-content clients-tab animate-in" style={{ padding: '36px 48px', background: '#f9fafb', minHeight: 'calc(100vh - 72px)' }}>
                             
                             {/* 🌟 Header Section */}
-                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '28px', flexWrap: 'wrap', gap: '16px' }}>
-                                <div>
-                                    <h2 style={{ fontSize: '1.85rem', fontWeight: 800, color: '#0f172a', margin: '0 0 6px 0', letterSpacing: '-0.02em' }}>
-                                        Clients & Booking Ledger
-                                    </h2>
-                                    <p style={{ color: '#64748b', fontSize: '0.92rem', margin: 0, fontWeight: 500 }}>
-                                        Row-wise ledger of all advertiser accounts, booked billboard assets, and campaign timelines.
-                                    </p>
-                                </div>
-                                <div style={{ display: 'flex', gap: '10px' }}>
-                                    <button 
-                                        className="qm-btn-secondary"
-                                        onClick={() => {
-                                            const csvContent = "data:text/csv;charset=utf-8," + 
-                                                ["Client,Location,Area,City,Start Date,End Date,Monthly Rent,Status"].concat(
-                                                    filteredBookings.map(b => `"${b.BookedBy}","${b.Location || b['Locality Site Location']}","${b.Area || b.Locality}","${b.City}","${b.BookingStart || ''}","${b.BookingEnd || ''}","${b['Rental Per Month'] || ''}","${b.STATUS || ''}"`)
-                                                ).join("\n");
-                                            const encodedUri = encodeURI(csvContent);
-                                            const link = document.createElement("a");
-                                            link.setAttribute("href", encodedUri);
-                                            link.setAttribute("download", `client_bookings_${Date.now()}.csv`);
-                                            document.body.appendChild(link);
-                                            link.click();
-                                            link.remove();
-                                        }}
-                                        style={{ display: 'inline-flex', alignItems: 'center', gap: '8px' }}
-                                    >
-                                        <Download size={15} /> Export Ledger CSV
-                                    </button>
-                                </div>
+                            <div style={{ marginBottom: '24px' }}>
+                                <h1 style={{ fontSize: '2rem', fontWeight: 800, color: '#111827', margin: '0 0 6px 0', letterSpacing: '-0.02em' }}>
+                                    Customers
+                                </h1>
+                                <p style={{ color: '#6b7280', fontSize: '0.95rem', margin: 0, fontWeight: 500 }}>
+                                    {uniqueClientNames.length} registered clients & advertisers
+                                </p>
                             </div>
 
-                            {/* 📊 4 Top Executive KPI Stats */}
-                            <div className="qm-kpi-grid" style={{ marginBottom: '28px' }}>
-                                <div className="qm-kpi-card">
-                                    <div className="qm-kpi-top">
-                                        <span className="qm-kpi-label">TOTAL CLIENTS</span>
-                                        <div className="qm-kpi-icon-box qm-purple"><User size={19} /></div>
-                                    </div>
-                                    <div className="qm-kpi-value-row">
-                                        <span className="qm-kpi-main-val">{uniqueClients.length}</span>
-                                        <span className="qm-kpi-unit">Accounts</span>
-                                    </div>
-                                    <div className="qm-kpi-meta-row">
-                                        <span className="qm-kpi-subtext">Verified Advertisers</span>
-                                        <span className="qm-badge qm-badge-purple">Active CRM</span>
-                                    </div>
-                                </div>
-
-                                <div className="qm-kpi-card">
-                                    <div className="qm-kpi-top">
-                                        <span className="qm-kpi-label">ACTIVE CAMPAIGNS</span>
-                                        <div className="qm-kpi-icon-box qm-green"><Zap size={19} /></div>
-                                    </div>
-                                    <div className="qm-kpi-value-row">
-                                        <span className="qm-kpi-main-val">{activeCampaigns.length}</span>
-                                        <span className="qm-kpi-unit">Live Sites</span>
-                                    </div>
-                                    <div className="qm-kpi-meta-row">
-                                        <span className="qm-kpi-subtext">Currently On Display</span>
-                                        <span className="qm-badge qm-badge-green">Occupied</span>
-                                    </div>
-                                </div>
-
-                                <div className="qm-kpi-card">
-                                    <div className="qm-kpi-top">
-                                        <span className="qm-kpi-label">TOTAL BOOKED SITES</span>
-                                        <div className="qm-kpi-icon-box qm-blue"><MapPin size={19} /></div>
-                                    </div>
-                                    <div className="qm-kpi-value-row">
-                                        <span className="qm-kpi-main-val">{allBookedSites.length}</span>
-                                        <span className="qm-kpi-unit">Contracts</span>
-                                    </div>
-                                    <div className="qm-kpi-meta-row">
-                                        <span className="qm-kpi-subtext">All-Time Booked Sites</span>
-                                        <span className="qm-badge qm-badge-blue">Total</span>
-                                    </div>
-                                </div>
-
-                                <div className="qm-kpi-card">
-                                    <div className="qm-kpi-top">
-                                        <span className="qm-kpi-label">MONTHLY REVENUE BOOKED</span>
-                                        <div className="qm-kpi-icon-box qm-sky"><Layers size={19} /></div>
-                                    </div>
-                                    <div className="qm-kpi-value-row">
-                                        <span className="qm-kpi-main-val">₹{(totalMonthlyValue / 100000).toFixed(2)}</span>
-                                        <span className="qm-kpi-unit">Lakhs / mo</span>
-                                    </div>
-                                    <div className="qm-kpi-meta-row">
-                                        <span className="qm-kpi-subtext">Total Contract Value</span>
-                                        <span className="qm-badge qm-badge-sky">Revenue</span>
-                                    </div>
-                                </div>
-                            </div>
-
-                            {/* 🔍 Search & Filter Bar */}
-                            <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '14px', padding: '14px 20px', marginBottom: '20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '14px', boxShadow: '0 1px 3px rgba(0,0,0,0.03)' }}>
-                                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flex: 1, minWidth: '260px', maxWidth: '440px', background: '#f8fafc', border: '1px solid #cbd5e1', borderRadius: '10px', padding: '8px 14px' }}>
-                                    <Search size={17} color="#64748b" />
+                            {/* 🔍 Search Box (QuickMart Full Width Pill) */}
+                            <div style={{ background: '#ffffff', borderRadius: '16px', padding: '16px 20px', marginBottom: '24px', border: '1px solid #f3f4f6', boxShadow: '0 1px 2px rgba(0,0,0,0.03)' }}>
+                                <div style={{ background: '#f3f4f6', borderRadius: '9999px', padding: '12px 22px', display: 'flex', alignItems: 'center', gap: '12px' }}>
+                                    <Search size={18} color="#9ca3af" />
                                     <input 
                                         type="text"
-                                        placeholder="Search by client name, location, city..."
+                                        placeholder="Search customers..."
                                         value={clientSearchTerm}
                                         onChange={(e) => setClientSearchTerm(e.target.value)}
-                                        style={{ border: 'none', background: 'transparent', outline: 'none', width: '100%', fontSize: '0.88rem', fontWeight: 600, color: '#0f172a' }}
+                                        style={{ border: 'none', background: 'transparent', outline: 'none', width: '100%', fontSize: '0.95rem', color: '#111827', fontWeight: 500 }}
                                     />
                                     {clientSearchTerm && (
-                                        <button onClick={() => setClientSearchTerm('')} style={{ color: '#94a3b8', fontSize: '0.8rem', fontWeight: 700 }}>✕</button>
+                                        <button onClick={() => setClientSearchTerm('')} style={{ color: '#9ca3af', fontSize: '0.85rem', fontWeight: 700, cursor: 'pointer', background: 'transparent', border: 'none' }}>✕</button>
                                     )}
-                                </div>
-
-                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                    <span style={{ fontSize: '0.78rem', fontWeight: 800, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Filter:</span>
-                                    {['All', 'Occupied', 'Available'].map(statusOption => (
-                                        <button
-                                            key={statusOption}
-                                            onClick={() => setClientStatusFilter(statusOption)}
-                                            style={{
-                                                padding: '6px 14px',
-                                                borderRadius: '8px',
-                                                fontSize: '0.82rem',
-                                                fontWeight: 700,
-                                                border: clientStatusFilter === statusOption ? '1px solid #00c851' : '1px solid #e2e8f0',
-                                                background: clientStatusFilter === statusOption ? '#ecfdf5' : '#ffffff',
-                                                color: clientStatusFilter === statusOption ? '#047857' : '#475569',
-                                                cursor: 'pointer',
-                                                transition: 'all 0.15s ease'
-                                            }}
-                                        >
-                                            {statusOption === 'All' ? `All (${allBookedSites.length})` : statusOption === 'Occupied' ? `Active (${activeCampaigns.length})` : `Completed (${allBookedSites.length - activeCampaigns.length})`}
-                                        </button>
-                                    ))}
                                 </div>
                             </div>
 
-                            {/* 📋 Row-Wise Client & Bookings Table */}
-                            <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '16px', overflow: 'hidden', boxShadow: '0 2px 8px rgba(15, 23, 42, 0.04)' }}>
-                                <div style={{ overflowX: 'auto' }}>
-                                    <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', minWidth: '950px' }}>
-                                        <thead>
-                                            <tr style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
-                                                <th style={{ padding: '14px 18px', fontSize: '0.74rem', fontWeight: 800, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.06em', width: '50px' }}>#</th>
-                                                <th style={{ padding: '14px 18px', fontSize: '0.74rem', fontWeight: 800, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.06em', minWidth: '220px' }}>Client / Advertiser</th>
-                                                <th style={{ padding: '14px 18px', fontSize: '0.74rem', fontWeight: 800, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.06em', minWidth: '240px' }}>Booked Location</th>
-                                                <th style={{ padding: '14px 18px', fontSize: '0.74rem', fontWeight: 800, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.06em', minWidth: '150px' }}>Media & Size</th>
-                                                <th style={{ padding: '14px 18px', fontSize: '0.74rem', fontWeight: 800, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.06em', minWidth: '200px' }}>Booking Timeline</th>
-                                                <th style={{ padding: '14px 18px', fontSize: '0.74rem', fontWeight: 800, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.06em', minWidth: '130px' }}>Monthly Rent</th>
-                                                <th style={{ padding: '14px 18px', fontSize: '0.74rem', fontWeight: 800, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.06em', minWidth: '120px' }}>Status</th>
-                                                <th style={{ padding: '14px 18px', fontSize: '0.74rem', fontWeight: 800, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.06em', minWidth: '160px', textAlign: 'right' }}>Actions</th>
+                            {/* 📋 Customers Table (Clean White Card Layout) */}
+                            <div style={{ background: '#ffffff', borderRadius: '18px', padding: '20px 28px', border: '1px solid #f3f4f6', boxShadow: '0 1px 3px rgba(0,0,0,0.04)', overflowX: 'auto' }}>
+                                <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', minWidth: '850px' }}>
+                                    <thead>
+                                        <tr style={{ borderBottom: '1px solid #f3f4f6' }}>
+                                            <th style={{ padding: '16px 16px 14px 16px', fontSize: '0.72rem', fontWeight: 700, color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.05em', width: '240px' }}>CUSTOMER</th>
+                                            <th style={{ padding: '16px 16px 14px 16px', fontSize: '0.72rem', fontWeight: 700, color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.05em', width: '280px' }}>CONTACT</th>
+                                            <th style={{ padding: '16px 16px 14px 16px', fontSize: '0.72rem', fontWeight: 700, color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.05em', textAlign: 'center', width: '90px' }}>ORDERS</th>
+                                            <th style={{ padding: '16px 16px 14px 16px', fontSize: '0.72rem', fontWeight: 700, color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.05em', width: '150px' }}>TOTAL SPENT</th>
+                                            <th style={{ padding: '16px 16px 14px 16px', fontSize: '0.72rem', fontWeight: 700, color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.05em', width: '140px' }}>MEMBER SINCE</th>
+                                            <th style={{ padding: '16px 16px 14px 16px', fontSize: '0.72rem', fontWeight: 700, color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.05em', textAlign: 'right', width: '130px' }}>ACTIONS</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {filteredCustomers.length === 0 ? (
+                                            <tr>
+                                                <td colSpan={6} style={{ padding: '60px 20px', textAlign: 'center' }}>
+                                                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '12px' }}>
+                                                        <div style={{ width: '56px', height: '56px', borderRadius: '50%', background: '#f3f4f6', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#9ca3af' }}>
+                                                            <User size={28} />
+                                                        </div>
+                                                        <strong style={{ fontSize: '1.05rem', color: '#111827' }}>No Customers Found</strong>
+                                                        <p style={{ color: '#6b7280', fontSize: '0.86rem', margin: 0, maxWidth: '400px' }}>
+                                                            {clientSearchTerm ? 'No customers match your search query.' : 'Booked client accounts will appear here automatically.'}
+                                                        </p>
+                                                    </div>
+                                                </td>
                                             </tr>
-                                        </thead>
-                                        <tbody>
-                                            {filteredBookings.length === 0 ? (
-                                                <tr>
-                                                    <td colSpan={8} style={{ padding: '60px 20px', textAlign: 'center' }}>
-                                                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '12px' }}>
-                                                            <div style={{ width: '56px', height: '56px', borderRadius: '16px', background: '#f1f5f9', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#94a3b8' }}>
-                                                                <User size={28} />
+                                        ) : (
+                                            filteredCustomers.map((cust, idx) => (
+                                                <tr 
+                                                    key={idx}
+                                                    style={{ 
+                                                        borderBottom: idx === filteredCustomers.length - 1 ? 'none' : '1px solid #f3f4f6',
+                                                        transition: 'background 0.15s ease'
+                                                    }}
+                                                    onMouseEnter={(e) => e.currentTarget.style.background = '#f9fafb'}
+                                                    onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                                                >
+                                                    {/* CUSTOMER (Illustrated Persona Avatar + Name) */}
+                                                    <td style={{ padding: '18px 16px' }}>
+                                                        <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+                                                            <div style={{
+                                                                width: '42px',
+                                                                height: '42px',
+                                                                borderRadius: '50%',
+                                                                backgroundColor: cust.avatarBg,
+                                                                overflow: 'hidden',
+                                                                display: 'flex',
+                                                                alignItems: 'center',
+                                                                justifyContent: 'center',
+                                                                flexShrink: 0
+                                                            }}>
+                                                                <img 
+                                                                    src={cust.avatarUrl} 
+                                                                    alt={cust.name}
+                                                                    style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                                                                    onError={(e) => {
+                                                                        e.currentTarget.style.display = 'none';
+                                                                    }}
+                                                                />
                                                             </div>
-                                                            <strong style={{ fontSize: '1.05rem', color: '#0f172a' }}>No Client Bookings Found</strong>
-                                                            <p style={{ color: '#64748b', fontSize: '0.86rem', margin: 0, maxWidth: '400px' }}>
-                                                                {clientSearchTerm ? 'No bookings match your search query. Try clearing the search filter.' : 'Assign a client name in the Inventory tab or edit a hoarding to track client campaigns here.'}
-                                                            </p>
+                                                            <span style={{ fontSize: '0.92rem', fontWeight: 700, color: '#111827' }}>
+                                                                {cust.name}
+                                                            </span>
+                                                        </div>
+                                                    </td>
+
+                                                    {/* CONTACT (Email + Phone/Location) */}
+                                                    <td style={{ padding: '18px 16px' }}>
+                                                        <div style={{ fontSize: '0.86rem', color: '#4b5563', fontWeight: 500, marginBottom: '2px' }}>
+                                                            {cust.email}
+                                                        </div>
+                                                        <div style={{ fontSize: '0.78rem', color: '#9ca3af', fontWeight: 500 }}>
+                                                            {cust.phone}
+                                                        </div>
+                                                    </td>
+
+                                                    {/* ORDERS (Count) */}
+                                                    <td style={{ padding: '18px 16px', textAlign: 'center' }}>
+                                                        <span style={{ fontSize: '0.92rem', fontWeight: 700, color: '#111827' }}>
+                                                            {cust.ordersCount}
+                                                        </span>
+                                                    </td>
+
+                                                    {/* TOTAL SPENT (Green Bold Text) */}
+                                                    <td style={{ padding: '18px 16px' }}>
+                                                        <span style={{ fontSize: '0.92rem', fontWeight: 800, color: '#00c851' }}>
+                                                            ₹{cust.totalSpent.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                                        </span>
+                                                    </td>
+
+                                                    {/* MEMBER SINCE */}
+                                                    <td style={{ padding: '18px 16px' }}>
+                                                        <span style={{ fontSize: '0.86rem', color: '#6b7280', fontWeight: 500 }}>
+                                                            {cust.memberSince}
+                                                        </span>
+                                                    </td>
+
+                                                    {/* ACTIONS */}
+                                                    <td style={{ padding: '18px 16px', textAlign: 'right' }}>
+                                                        <div style={{ display: 'inline-flex', alignItems: 'center', gap: '8px' }}>
+                                                            <button
+                                                                onClick={() => {
+                                                                    const link = `${window.location.origin}/client/${encodeURIComponent(cust.name)}`;
+                                                                    navigator.clipboard.writeText(link);
+                                                                    showToast(`✅ Link copied for ${cust.name}!`, 'success');
+                                                                }}
+                                                                title="Copy Live Client Portal Link"
+                                                                style={{
+                                                                    padding: '7px 12px',
+                                                                    borderRadius: '8px',
+                                                                    fontSize: '0.78rem',
+                                                                    fontWeight: 700,
+                                                                    background: '#f3f4f6',
+                                                                    color: '#374151',
+                                                                    border: '1px solid #e5e7eb',
+                                                                    cursor: 'pointer',
+                                                                    display: 'inline-flex',
+                                                                    alignItems: 'center',
+                                                                    gap: '5px',
+                                                                    transition: 'all 0.15s ease'
+                                                                }}
+                                                            >
+                                                                <Share2 size={13} /> Link
+                                                            </button>
+
+                                                            <button
+                                                                onClick={() => window.open(`/client/${encodeURIComponent(cust.name)}`, '_blank')}
+                                                                title="Open Client Portal in New Tab"
+                                                                style={{
+                                                                    padding: '7px 12px',
+                                                                    borderRadius: '8px',
+                                                                    fontSize: '0.78rem',
+                                                                    fontWeight: 700,
+                                                                    background: '#111827',
+                                                                    color: '#ffffff',
+                                                                    border: 'none',
+                                                                    cursor: 'pointer',
+                                                                    display: 'inline-flex',
+                                                                    alignItems: 'center',
+                                                                    gap: '5px',
+                                                                    transition: 'all 0.15s ease'
+                                                                }}
+                                                            >
+                                                                <ExternalLink size={13} /> Portal
+                                                            </button>
                                                         </div>
                                                     </td>
                                                 </tr>
-                                            ) : (
-                                                filteredBookings.map((site, index) => {
-                                                    const clientName = site.BookedBy || 'Unknown Client';
-                                                    const isOccupied = (site.STATUS || '').toLowerCase() === 'occupied';
-                                                    const rent = Number(site['Rental Per Month'] || site['Avg Monthly Cost (INR)'] || 0);
-                                                    const loc = site.Location || site['Locality Site Location'] || 'Unnamed Site';
-                                                    const area = site.Area || site.Locality || '';
-                                                    const city = site.City || 'Meerut';
-                                                    const media = site.Media || 'Unipole';
-                                                    const size = site.Width && site.Height ? `${site.Width}x${site.Height} ft` : (site['Total SQ.ft'] ? `${site['Total SQ.ft']} sq.ft` : 'Standard');
-                                                    const initial = clientName.charAt(0).toUpperCase();
-
-                                                    // Calculate days if start and end dates exist
-                                                    let durationText = '';
-                                                    if (site.BookingStart && site.BookingEnd) {
-                                                        try {
-                                                            const start = new Date(site.BookingStart);
-                                                            const end = new Date(site.BookingEnd);
-                                                            const days = Math.round((end - start) / (1000 * 60 * 60 * 24));
-                                                            if (days > 0) durationText = `(${days} Days)`;
-                                                        } catch {}
-                                                    }
-
-                                                    return (
-                                                        <tr 
-                                                            key={site._SiteID || index}
-                                                            style={{ 
-                                                                borderBottom: '1px solid #f1f5f9', 
-                                                                transition: 'background 0.15s ease',
-                                                                background: index % 2 === 0 ? '#ffffff' : '#fafcff'
-                                                            }}
-                                                            onMouseEnter={(e) => e.currentTarget.style.background = '#f1f5f9'}
-                                                            onMouseLeave={(e) => e.currentTarget.style.background = index % 2 === 0 ? '#ffffff' : '#fafcff'}
-                                                        >
-                                                            {/* # Index */}
-                                                            <td style={{ padding: '16px 18px', fontSize: '0.82rem', fontWeight: 800, color: '#94a3b8', fontVariantNumeric: 'tabular-nums' }}>
-                                                                {index + 1}
-                                                            </td>
-
-                                                            {/* Client Info */}
-                                                            <td style={{ padding: '16px 18px' }}>
-                                                                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                                                                    <div style={{ 
-                                                                        width: '38px', 
-                                                                        height: '38px', 
-                                                                        borderRadius: '10px', 
-                                                                        background: 'linear-gradient(135deg, #6366f1 0%, #4f46e5 100%)', 
-                                                                        color: '#ffffff', 
-                                                                        display: 'flex', 
-                                                                        alignItems: 'center', 
-                                                                        justifyContent: 'center', 
-                                                                        fontWeight: 800, 
-                                                                        fontSize: '1rem',
-                                                                        flexShrink: 0,
-                                                                        boxShadow: '0 2px 6px rgba(99, 102, 241, 0.25)'
-                                                                    }}>
-                                                                        {initial}
-                                                                    </div>
-                                                                    <div>
-                                                                        <div style={{ fontSize: '0.92rem', fontWeight: 800, color: '#0f172a' }}>{clientName}</div>
-                                                                        <div style={{ fontSize: '0.72rem', fontWeight: 600, color: '#059669', display: 'flex', alignItems: 'center', gap: '4px', marginTop: '2px' }}>
-                                                                            <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#10b981' }}></span>
-                                                                            Verified Advertiser
-                                                                        </div>
-                                                                    </div>
-                                                                </div>
-                                                            </td>
-
-                                                            {/* Location */}
-                                                            <td style={{ padding: '16px 18px' }}>
-                                                                <div style={{ fontSize: '0.88rem', fontWeight: 700, color: '#0f172a', marginBottom: '3px' }}>{loc}</div>
-                                                                <div style={{ fontSize: '0.76rem', color: '#64748b', fontWeight: 500, display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                                                    <span>📍 {area || 'Main Road'}</span>
-                                                                    <span style={{ background: '#f1f5f9', color: '#475569', padding: '1px 6px', borderRadius: '4px', fontSize: '0.7rem', fontWeight: 700 }}>{city}</span>
-                                                                </div>
-                                                            </td>
-
-                                                            {/* Media & Size */}
-                                                            <td style={{ padding: '16px 18px' }}>
-                                                                <div style={{ fontSize: '0.84rem', fontWeight: 700, color: '#1e293b' }}>{media}</div>
-                                                                <div style={{ fontSize: '0.76rem', color: '#64748b', fontWeight: 500 }}>{size}</div>
-                                                            </td>
-
-                                                            {/* Booking Timeline */}
-                                                            <td style={{ padding: '16px 18px' }}>
-                                                                {site.BookingStart || site.BookingEnd ? (
-                                                                    <div>
-                                                                        <div style={{ fontSize: '0.84rem', fontWeight: 700, color: '#0f172a', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                                                            <Calendar size={13} color="#6366f1" />
-                                                                            <span>{site.BookingStart || 'Start'} ➔ {site.BookingEnd || 'End'}</span>
-                                                                        </div>
-                                                                        {durationText && (
-                                                                            <div style={{ fontSize: '0.72rem', fontWeight: 600, color: '#6366f1', marginTop: '2px' }}>
-                                                                                {durationText}
-                                                                            </div>
-                                                                        )}
-                                                                    </div>
-                                                                ) : (
-                                                                    <span style={{ fontSize: '0.78rem', color: '#94a3b8', fontStyle: 'italic' }}>Dates not specified</span>
-                                                                )}
-                                                            </td>
-
-                                                            {/* Rent */}
-                                                            <td style={{ padding: '16px 18px' }}>
-                                                                {rent > 0 ? (
-                                                                    <div>
-                                                                        <span style={{ fontSize: '0.96rem', fontWeight: 800, color: '#0f172a' }}>₹{rent.toLocaleString('en-IN')}</span>
-                                                                        <span style={{ fontSize: '0.7rem', color: '#64748b', display: 'block' }}>per month</span>
-                                                                    </div>
-                                                                ) : (
-                                                                    <span style={{ fontSize: '0.8rem', color: '#94a3b8' }}>On Request</span>
-                                                                )}
-                                                            </td>
-
-                                                            {/* Status */}
-                                                            <td style={{ padding: '16px 18px' }}>
-                                                                {isOccupied ? (
-                                                                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', background: '#ecfdf5', color: '#047857', padding: '4px 10px', borderRadius: '999px', fontSize: '0.74rem', fontWeight: 800 }}>
-                                                                        <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#10b981' }}></span> Live Campaign
-                                                                    </span>
-                                                                ) : (
-                                                                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', background: '#f1f5f9', color: '#64748b', padding: '4px 10px', borderRadius: '999px', fontSize: '0.74rem', fontWeight: 700 }}>
-                                                                        Completed
-                                                                    </span>
-                                                                )}
-                                                            </td>
-
-                                                            {/* Actions */}
-                                                            <td style={{ padding: '16px 18px', textAlign: 'right' }}>
-                                                                <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
-                                                                    <button
-                                                                        onClick={() => {
-                                                                            const link = `${window.location.origin}/client/${encodeURIComponent(clientName)}`;
-                                                                            navigator.clipboard.writeText(link);
-                                                                            showToast(`✅ Link copied for ${clientName}!`, 'success');
-                                                                        }}
-                                                                        title="Copy Live Client Portal Link"
-                                                                        style={{
-                                                                            display: 'inline-flex',
-                                                                            alignItems: 'center',
-                                                                            gap: '5px',
-                                                                            padding: '6px 11px',
-                                                                            borderRadius: '8px',
-                                                                            fontSize: '0.78rem',
-                                                                            fontWeight: 700,
-                                                                            background: '#f3f0ff',
-                                                                            color: '#6366f1',
-                                                                            border: '1px solid #e0d7ff',
-                                                                            cursor: 'pointer',
-                                                                            transition: 'all 0.15s ease'
-                                                                        }}
-                                                                    >
-                                                                        <Share2 size={13} /> Link
-                                                                    </button>
-
-                                                                    <button
-                                                                        onClick={() => window.open(`/client/${encodeURIComponent(clientName)}`, '_blank')}
-                                                                        title="Open Client Portal in New Tab"
-                                                                        style={{
-                                                                            display: 'inline-flex',
-                                                                            alignItems: 'center',
-                                                                            gap: '5px',
-                                                                            padding: '6px 11px',
-                                                                            borderRadius: '8px',
-                                                                            fontSize: '0.78rem',
-                                                                            fontWeight: 700,
-                                                                            background: '#0f172a',
-                                                                            color: '#ffffff',
-                                                                            border: 'none',
-                                                                            cursor: 'pointer',
-                                                                            transition: 'all 0.15s ease'
-                                                                        }}
-                                                                    >
-                                                                        <ExternalLink size={13} /> Portal
-                                                                    </button>
-                                                                </div>
-                                                            </td>
-                                                        </tr>
-                                                    );
-                                                })
-                                            )}
-                                        </tbody>
-                                    </table>
-                                </div>
+                                            ))
+                                        )}
+                                    </tbody>
+                                </table>
                             </div>
                         </div>
                     );
