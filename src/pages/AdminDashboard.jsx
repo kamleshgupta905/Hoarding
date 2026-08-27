@@ -353,6 +353,25 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
         setUploadNotice(current => current ? { ...current, status, message } : current);
     };
 
+    // Helper: POST to Apps Script with CORS + error reading
+    const postToScript = async (payload) => {
+        const response = await fetch(scriptUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'text/plain' },
+            body: JSON.stringify(payload)
+        });
+        // Try reading JSON response (works if Apps Script returns CORS headers)
+        try {
+            const json = await response.json();
+            if (json && json.error) throw new Error(json.error);
+            return json;
+        } catch (parseErr) {
+            // If CORS blocks reading, the POST still went through
+            if (parseErr.message && !parseErr.message.includes('JSON')) throw parseErr;
+            return { success: true };
+        }
+    };
+
     const handleFileUpload = (e, type) => {
         const file = e.target.files[0];
         if (!file) return;
@@ -388,18 +407,13 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                     const token = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
                     setExcelImportToken(token);
                     setExcelImportPreview({ status: 'PROCESSING', fileName: file.name, summary: null });
-                    await fetch(scriptUrl, {
-                        method: 'POST',
-                        mode: 'no-cors',
-                        headers: { 'Content-Type': 'text/plain' },
-                        body: JSON.stringify({
-                            action: 'previewExcelImport',
-                            sessionToken: getAdminSession(),
-                            token,
-                            fileName: file.name,
-                            fileData,
-                            mimeType: file.type || 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-                        })
+                    await postToScript({
+                        action: 'previewExcelImport',
+                        sessionToken: getAdminSession(),
+                        token,
+                        fileName: file.name,
+                        fileData,
+                        mimeType: file.type || 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
                     });
                     updateFileProcessing({ phase: 'Validating rows and matching headers' });
                     const preview = await waitForExcelPreview(token);
@@ -410,18 +424,13 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                 }
 
                 const token = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
-                await fetch(scriptUrl, {
-                    method: 'POST',
-                    mode: 'no-cors',
-                    headers: { 'Content-Type': 'text/plain' },
-                    body: JSON.stringify({
-                        action: 'uploadPptAndProcess',
-                        sessionToken: getAdminSession(),
-                        token,
-                        fileName: file.name,
-                        fileData,
-                        mimeType: file.type || 'application/vnd.openxmlformats-officedocument.presentationml.presentation'
-                    })
+                await postToScript({
+                    action: 'uploadPptAndProcess',
+                    sessionToken: getAdminSession(),
+                    token,
+                    fileName: file.name,
+                    fileData,
+                    mimeType: file.type || 'application/vnd.openxmlformats-officedocument.presentationml.presentation'
                 });
                 updateFileProcessing({ phase: 'Extracting slides and matching site photos' });
                 const result = await waitForPptJob(token, (job) => updateFileProcessing({ phase: job.phase || 'Processing PPT' }));
@@ -445,12 +454,7 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
         setUploadNotice({ status: 'processing', type: 'excel', fileName: excelImportPreview?.fileName || 'Excel import', estimate: '30-90 seconds', message: 'Estimated time: 30-90 seconds. Your Google Sheet import is running in the background.' });
         void (async () => {
             try {
-                await fetch(scriptUrl, {
-                    method: 'POST',
-                    mode: 'no-cors',
-                    headers: { 'Content-Type': 'text/plain' },
-                    body: JSON.stringify({ action: 'approveExcelImport', sessionToken: getAdminSession(), token: excelImportToken })
-                });
+                await postToScript({ action: 'approveExcelImport', sessionToken: getAdminSession(), token: excelImportToken });
                 const result = await waitForExcelPreview(excelImportToken, ['IMPORTED', 'FAILED']);
                 setExcelImportPreview(result);
                 if (result.status !== 'IMPORTED') throw new Error(result.error || 'Import failed.');
@@ -747,17 +751,12 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                         reader.readAsDataURL(imgData.file);
                     });
 
-                    await fetch(scriptUrl, {
-                        method: 'POST',
-                        mode: 'no-cors',
-                        headers: { 'Content-Type': 'text/plain' },
-                        body: JSON.stringify({
-                            action: 'dumpImage',
-                            siteName: 'UNIDENTIFIED',
-                            fileData: base64,
-                            mimeType: imgData.file.type,
-                            reasoning: imgData.reasoning || "AI could not match location"
-                        })
+                    await postToScript({
+                        action: 'dumpImage',
+                        siteName: 'UNIDENTIFIED',
+                        fileData: base64,
+                        mimeType: imgData.file.type,
+                        reasoning: imgData.reasoning || "AI could not match location"
                     });
 
                     // Remove from list after success

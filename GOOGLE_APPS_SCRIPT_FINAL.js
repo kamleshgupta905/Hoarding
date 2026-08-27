@@ -86,18 +86,25 @@ function doPost(e) {
     if (p.action === 'saveSheetGrid') return saveSheetGrid(p);
     if (p.action === 'previewExcelImport') return previewExcelImport(p);
     if (p.action === 'approveExcelImport') return approveExcelImport(p);
+    if (p.action === 'dumpImage') return dumpImageToDrive_(p);
 
-    // Legacy: File Upload to Input Folder
+    // Legacy: File Upload to Input Folder (fallback for unknown actions with fileData)
     if (p.fileData) {
       if (!isValidAdminSession_(p.sessionToken)) return res({ success: false, error: 'Authentication required.' });
-      var folder = DriveApp.getFolderById(CONFIG.INPUT_FOLDER_ID);
-      var decoded = decodeBase64(p.fileData);
-      var blob = Utilities.newBlob(decoded, p.mimeType, p.fileName);
-      var file = folder.createFile(blob);
-      return res({ success: true, fileId: file.getId() });
+      try {
+        var folder = DriveApp.getFolderById(CONFIG.INPUT_FOLDER_ID);
+        var decoded = decodeBase64(p.fileData);
+        var blob = Utilities.newBlob(decoded, p.mimeType, p.fileName || 'upload-' + new Date().toISOString().slice(0,10));
+        var file = folder.createFile(blob);
+        logDebug('LEGACY FILE UPLOAD | Name: ' + (p.fileName || 'unknown') + ' | ID: ' + file.getId());
+        return res({ success: true, fileId: file.getId() });
+      } catch (fileErr) {
+        logDebug('LEGACY FILE UPLOAD FAILED | ' + fileErr.toString());
+        return res({ success: false, error: 'File upload failed: ' + fileErr.toString() });
+      }
     }
 
-    return res({ success: false, error: "Unknown action" });
+    return res({ success: false, error: 'Unknown action: ' + String(p.action || 'none') });
 
   } catch (err) {
     return res({ success: false, error: err.toString() });
@@ -1135,6 +1142,30 @@ function uploadImageToDrive(data) {
   } catch (err) {
     logDebug("uploadImageToDrive FAILED: " + err.toString());
     return null;
+  }
+}
+
+/**
+ * 🗑️ Dump unmatched images to a dedicated Drive folder for review
+ */
+function dumpImageToDrive_(data) {
+  try {
+    if (!data.fileData) return res({ success: false, error: 'No image data provided.' });
+    var decoded = decodeBase64(data.fileData);
+    if (!decoded) return res({ success: false, error: 'Could not decode image data.' });
+
+    // Use INPUT_FOLDER_ID for dump images (same folder as PPT uploads)
+    var folder = DriveApp.getFolderById(CONFIG.INPUT_FOLDER_ID);
+    var timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+    var fileName = 'DUMP_' + timestamp + '_' + (data.siteName || 'UNIDENTIFIED') + '.jpg';
+    var blob = Utilities.newBlob(decoded, data.mimeType || 'image/jpeg', fileName);
+    var file = folder.createFile(blob);
+    file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+    logDebug('DUMP IMAGE | File: ' + fileName + ' | Drive ID: ' + file.getId() + ' | Reason: ' + (data.reasoning || 'N/A'));
+    return res({ success: true, fileId: file.getId(), fileName: fileName });
+  } catch (err) {
+    logDebug('DUMP IMAGE FAILED | ' + err.toString());
+    return res({ success: false, error: 'Dump failed: ' + err.toString() });
   }
 }
 
