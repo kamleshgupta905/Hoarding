@@ -91,7 +91,7 @@ function doPost(e) {
     if (p.fileData) {
       if (!isValidAdminSession_(p.sessionToken)) return res({ success: false, error: 'Authentication required.' });
       var folder = DriveApp.getFolderById(CONFIG.INPUT_FOLDER_ID);
-      var decoded = Utilities.base64Decode(p.fileData);
+      var decoded = decodeBase64(p.fileData);
       var blob = Utilities.newBlob(decoded, p.mimeType, p.fileName);
       var file = folder.createFile(blob);
       return res({ success: true, fileId: file.getId() });
@@ -168,7 +168,7 @@ function uploadPptAndProcess_(data) {
   try {
     setFileJobStatus_(token, { status: 'PROCESSING', fileName: data.fileName, phase: 'Saving PPT to Google Drive', startedAt: new Date().toISOString() });
     var folder = DriveApp.getFolderById(CONFIG.INPUT_FOLDER_ID);
-    var decoded = Utilities.base64Decode(data.fileData);
+    var decoded = decodeBase64(data.fileData);
     var blob = Utilities.newBlob(decoded, data.mimeType || 'application/vnd.openxmlformats-officedocument.presentationml.presentation', data.fileName);
     var file = folder.createFile(blob);
 
@@ -179,7 +179,7 @@ function uploadPptAndProcess_(data) {
   } catch (err) {
     setFileJobStatus_(token, { status: 'FAILED', fileName: data.fileName, phase: 'PPT processing failed', error: err.toString(), completedAt: new Date().toISOString() });
     logDebug('PPT UPLOAD FAILED | File: ' + data.fileName + ' | ' + err.toString());
-    return res({ success: false, token: token, error: err.toString() });
+    return res({ success: false, error: err.toString() });
   } finally {
     lock.releaseLock();
   }
@@ -416,7 +416,7 @@ function analyzeImageOrientation_(data) {
 function uploadInputFile_(data) {
   if (!data.fileData || !data.fileName) return res({ success: false, error: 'File data and file name are required.' });
   var folder = DriveApp.getFolderById(CONFIG.INPUT_FOLDER_ID);
-  var decoded = Utilities.base64Decode(data.fileData);
+  var decoded = decodeBase64(data.fileData);
   var blob = Utilities.newBlob(decoded, data.mimeType || 'application/octet-stream', data.fileName);
   var file = folder.createFile(blob);
   return res({ success: true, fileId: file.getId(), fileName: file.getName() });
@@ -1117,7 +1117,7 @@ function processAllFiles() {
 function uploadImageToDrive(data) {
   if (!data.fileData) return null;
   try {
-    var decoded = Utilities.base64Decode(data.fileData);
+    var decoded = decodeBase64(data.fileData);
     if (!decoded) return null;
     
     var folder;
@@ -1773,7 +1773,7 @@ function previewExcelImport(data) {
     });
 
     var folder = DriveApp.getFolderById(CONFIG.INPUT_FOLDER_ID);
-    var decoded = Utilities.base64Decode(data.fileData);
+    var decoded = decodeBase64(data.fileData);
     var blob = Utilities.newBlob(decoded, data.mimeType || 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', CONFIG.PENDING_IMPORT_PREFIX + token + '__' + fileName);
     var file = folder.createFile(blob);
     fileId = file.getId();
