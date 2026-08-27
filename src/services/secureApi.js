@@ -165,7 +165,11 @@ export const submitAdminOperation = async ({ type, payload = {}, siteId = '', ba
 
   await postPromise;
 
-  const attempts = options.attempts ?? 3;
+  // Image uploads need more time — base64 decode + Drive save + Sheet update is slow
+  const hasFileData = !!(payload.fileData || combinedPayload.fileData);
+  const attempts = options.attempts ?? (hasFileData ? 15 : 3);
+  const baseDelay = hasFileData ? 1200 : POLL_DELAY_MS;
+  
   for (let attempt = 0; attempt < attempts; attempt += 1) {
     try {
       const status = await getOperationStatus(operationId);
@@ -180,7 +184,7 @@ export const submitAdminOperation = async ({ type, payload = {}, siteId = '', ba
     } catch (err) {
       if (err.code === 'CONFLICT' || (err.message && err.message.includes('failed'))) throw err;
     }
-    await sleep(Math.min(1500, POLL_DELAY_MS + attempt * 120));
+    await sleep(Math.min(3000, baseDelay + attempt * 200));
   }
 
   return { status: 'QUEUED', operationId };

@@ -173,23 +173,78 @@ function uploadPptAndProcess_(data) {
   if (!lock.tryLock(30000)) return res({ success: false, token: token, error: 'Another upload is being processed. Please try again in a moment.' });
 
   try {
+    // Phase 1: Save PPT to Google Drive immediately (fast, ~2-5 seconds)
     setFileJobStatus_(token, { status: 'PROCESSING', fileName: data.fileName, phase: 'Saving PPT to Google Drive', startedAt: new Date().toISOString() });
     var folder = DriveApp.getFolderById(CONFIG.INPUT_FOLDER_ID);
     var decoded = decodeBase64(data.fileData);
     var blob = Utilities.newBlob(decoded, data.mimeType || 'application/vnd.openxmlformats-officedocument.presentationml.presentation', data.fileName);
     var file = folder.createFile(blob);
+    logDebug('PPT UPLOAD OK | File: ' + data.fileName + ' | DriveID: ' + file.getId());
 
-    setFileJobStatus_(token, { status: 'PROCESSING', fileName: data.fileName, fileId: file.getId(), phase: 'Converting slides and matching site photos' });
-    processPPTs();
-    setFileJobStatus_(token, { status: 'COMPLETED', fileName: data.fileName, fileId: file.getId(), phase: 'PPT processing completed', completedAt: new Date().toISOString() });
-    return res({ success: true, token: token, status: 'COMPLETED' });
+    // Phase 2: Schedule slide extraction + matching in background (separate 6-min execution window)
+    setFileJobStatus_(token, { status: 'PROCESSING', fileName: data.fileName, fileId: file.getId(), phase: 'PPT saved to Drive. Slide extraction starting in background...' });
+    
+    // Delete any stale triggers first to avoid duplicates
+    var triggers = ScriptApp.getProjectTriggers();
+    for (var t = 0; t < triggers.length; t++) {
+      if (triggers[t].getHandlerFunction() === 'processPPTsBackground_') {
+        ScriptApp.deleteTrigger(triggers[t]);
+      }
+    }
+    
+    // Store token so background function can update job status
+    PropertiesService.getScriptProperties().setProperty('ADH_PPT_BG_TOKEN', token);
+    PropertiesService.getScriptProperties().setProperty('ADH_PPT_BG_FILENAME', data.fileName);
+    PropertiesService.getScriptProperties().setProperty('ADH_PPT_BG_FILEID', file.getId());
+    
+    // Schedule background processing (runs in a new execution with fresh 6-min limit)
+    ScriptApp.newTrigger('processPPTsBackground_')
+      .timeBased()
+      .after(2000)
+      .create();
+
+    return res({ success: true, token: token, status: 'PROCESSING', fileId: file.getId(), message: 'PPT saved to Drive. Slide matching is running in background.' });
   } catch (err) {
-    setFileJobStatus_(token, { status: 'FAILED', fileName: data.fileName, phase: 'PPT processing failed', error: err.toString(), completedAt: new Date().toISOString() });
+    setFileJobStatus_(token, { status: 'FAILED', fileName: data.fileName, phase: 'PPT upload failed', error: err.toString(), completedAt: new Date().toISOString() });
     logDebug('PPT UPLOAD FAILED | File: ' + data.fileName + ' | ' + err.toString());
-    return res({ success: false, error: err.toString() });
+    return res({ success: false, token: token, error: err.toString() });
   } finally {
     lock.releaseLock();
   }
+}
+
+/**
+ * Background trigger handler for PPT processing.
+ * Runs in its own execution context with a fresh 6-minute time limit.
+ */
+function processPPTsBackground_() {
+  var props = PropertiesService.getScriptProperties();
+  var token = props.getProperty('ADH_PPT_BG_TOKEN') || '';
+  var fileName = props.getProperty('ADH_PPT_BG_FILENAME') || 'unknown';
+  var fileId = props.getProperty('ADH_PPT_BG_FILEID') || '';
+  
+  // Clean up the trigger so it doesn't fire again
+  var triggers = ScriptApp.getProjectTriggers();
+  for (var t = 0; t < triggers.length; t++) {
+    if (triggers[t].getHandlerFunction() === 'processPPTsBackground_') {
+      ScriptApp.deleteTrigger(triggers[t]);
+    }
+  }
+  
+  try {
+    setFileJobStatus_(token, { status: 'PROCESSING', fileName: fileName, fileId: fileId, phase: 'Converting slides and matching site photos' });
+    processPPTs();
+    setFileJobStatus_(token, { status: 'COMPLETED', fileName: fileName, fileId: fileId, phase: 'PPT processing completed', completedAt: new Date().toISOString() });
+    logDebug('PPT BG COMPLETE | File: ' + fileName);
+  } catch (err) {
+    setFileJobStatus_(token, { status: 'FAILED', fileName: fileName, fileId: fileId, phase: 'PPT processing failed', error: err.toString(), completedAt: new Date().toISOString() });
+    logDebug('PPT BG FAILED | File: ' + fileName + ' | ' + err.toString());
+  }
+  
+  // Clean up properties
+  props.deleteProperty('ADH_PPT_BG_TOKEN');
+  props.deleteProperty('ADH_PPT_BG_FILENAME');
+  props.deleteProperty('ADH_PPT_BG_FILEID');
 }
 
 /* ================= AUTH, VERSIONING & ACKNOWLEDGED SYNC ================= */
