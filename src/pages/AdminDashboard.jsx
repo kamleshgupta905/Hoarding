@@ -2504,10 +2504,6 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                         <Database size={19} />
                         <span>Inventory</span>
                     </button>
-                    <button className={`nav-item ${activeTab === 'sheet-editor' ? 'active' : ''}`} onClick={() => setActiveTab('sheet-editor')}>
-                        <Table2 size={19} />
-                        <span>Excel Sheet</span>
-                    </button>
                     <button className={`nav-item ${activeTab === 'clients' ? 'active' : ''}`} onClick={() => setActiveTab('clients')}>
                         <User size={19} />
                         <span>Clients & Booking</span>
@@ -2641,9 +2637,6 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                 <div className="qm-header-controls">
                                     <button className="qm-btn-secondary" onClick={() => exportProposalExcel(hoardings)} title="Export clean proposal deck for clients">
                                         <FileDown size={15} /> Export Proposal
-                                    </button>
-                                    <button className="qm-btn-secondary" onClick={() => setActiveTab('sheet-editor')} title="Open Master Sheet Editor">
-                                        <Table2 size={15} /> Sheet Editor
                                     </button>
                                     <button className="qm-btn-primary" onClick={() => setIsAddModalOpen(true)}>
                                         <Plus size={16} /> Add Asset
