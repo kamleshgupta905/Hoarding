@@ -87,31 +87,72 @@ export const getHoardingImageCandidates = (hoarding = {}) => {
 
 export const normalizeHoarding = (item) => {
   if (!item || typeof item !== 'object') return item;
-  const siteLocation = (item['Locality Site Location'] || item['Location '] || item['Location'] || item['Site Name'] || item['site_name'] || '').trim();
-  const locality = (item['Locality'] || item['Area'] || item['locality'] || '').trim();
-  const rawPrice = item['Avg Monthly Cost (INR)'] ?? item['Rental Per Month'] ?? item['Price'] ?? item['price'] ?? 0;
+  const sl = item['SL'] || item['S. No.'] || item['S.No'] || item['S.No.'] || item['sl'] || '';
+  const city = (item['City'] || item['city'] || 'Meerut').trim();
+  const siteLocation = (item['Location'] || item['Locality Site Location'] || item['Location '] || item['Site Name'] || item['site_name'] || '').trim();
+  const area = (item['Area'] || item['Locality'] || item['locality'] || '').trim();
+  const media = (item['Media'] || item['Type of Site (Unipole/Billboard)'] || item['Type of Site (Unipole/ Billboard)'] || item['Type'] || item['site_type'] || 'Unipole').trim();
+  const facing = (item['Facing'] || item['Traffic View'] || item['facing'] || '').trim();
+  const trafficFrom = (item['Traffic From'] || item['traffic_from'] || '').trim();
+  const trafficTo = (item['Traffic To'] || item['traffic_to'] || '').trim();
+  const width = item['Width'] || item['width'] || '';
+  const height = item['Height'] || item['height'] || '';
+  const qty = item['Qty'] || item['Units'] || item['units'] || 1;
+  const areaSqFt = item['Total SQ.ft'] || item['Total Sq. Ft'] || item['Total Sq Ft'] || item['Area Sq Ft'] || item['SqFt'] || '';
+  const illuminationType = (item['Type'] || item['Media Format (Front Lit / Back Lit / Non Lit)'] || item['Media Format (Front Lit/ Back Lit/Non Lit)'] || item['Illumination'] || 'NL').trim();
+  const rawPrice = item['Rental Per Month'] ?? item['Avg Monthly Cost (INR)'] ?? item['Avg. monthly Cost'] ?? item['Price'] ?? item['price'] ?? 0;
   const price = typeof rawPrice === 'string' ? parseFloat(rawPrice.replace(/[^0-9.]/g, '')) || 0 : (Number(rawPrice) || 0);
-  const areaSqFt = item['Total Sq. Ft'] || item['Total Sq Ft'] || item['Area Sq Ft'] || item['SqFt'] || '';
-  const mediaFormat = item['Media Format (Front Lit / Back Lit / Non Lit)'] || item['Media Format'] || item['Media Type'] || item['Media'] || '';
-  const siteType = item['Type of Site (Unipole/Billboard)'] || item['Type'] || item['site_type'] || '';
-  const siteCategory = item['Site Category'] || item['Category'] || '';
+
+  let lat = item['Latitude'] || item['Lat.'] || item['Lat'] || item['lat'] || '';
+  let lng = item['Longitude'] || item['Long.'] || item['Long'] || item['lng'] || '';
+  const combinedCoord = item['Lat-Long'] || item['Lat Long (Concatenated)'] || item['Coordinates'] || '';
+  if ((!lat || !lng) && combinedCoord && typeof combinedCoord === 'string') {
+    const parts = combinedCoord.split(',').map(s => s.trim());
+    if (parts.length === 2) {
+      lat = lat || parts[0];
+      lng = lng || parts[1];
+    }
+  }
+
+  const siteCategory = item['Site Category'] || item['Category'] || 'Commercial';
 
   return {
     ...item,
-    'Location ': siteLocation,
+    'SL': sl,
+    'S. No.': sl,
+    'City': city,
+    'Media': media,
+    'Type of Site (Unipole/Billboard)': media,
+    'Type of Site (Unipole/ Billboard)': media,
+    'Area': area,
+    'Locality': area,
     'Location': siteLocation,
+    'Location ': siteLocation,
     'Locality Site Location': siteLocation,
-    'Locality': locality,
-    'Area': locality,
-    'Rental Per Month': price,
-    'Avg Monthly Cost (INR)': price,
+    'Facing': facing,
+    'Traffic From': trafficFrom,
+    'Traffic To': trafficTo,
+    'Width': width,
+    'Height': height,
+    'Qty': qty,
+    'Units': qty,
+    'Total SQ.ft': areaSqFt,
     'Total Sq. Ft': areaSqFt,
     'Total Sq Ft': areaSqFt,
-    'Media Format (Front Lit / Back Lit / Non Lit)': mediaFormat,
-    'Media Format': mediaFormat,
-    'Type of Site (Unipole/Billboard)': siteType,
-    'Type': siteType,
-    'Site Category': siteCategory
+    'Type': illuminationType,
+    'Media Format (Front Lit / Back Lit / Non Lit)': illuminationType,
+    'Media Format (Front Lit/ Back Lit/Non Lit)': illuminationType,
+    'Rental Per Month': price,
+    'Avg Monthly Cost (INR)': price,
+    'Avg. monthly Cost': price,
+    'Lat-Long': lat && lng ? `${lat}, ${lng}` : combinedCoord,
+    'Lat Long (Concatenated)': lat && lng ? `${lat}, ${lng}` : combinedCoord,
+    'Latitude': lat ? Number(lat) || lat : '',
+    'Longitude': lng ? Number(lng) || lng : '',
+    'Lat.': lat ? Number(lat) || lat : '',
+    'Long.': lng ? Number(lng) || lng : '',
+    'Site Category': siteCategory,
+    'STATUS': item.STATUS || item.status || 'Available'
   };
 };
 
@@ -451,34 +492,28 @@ const escapeHtml = (value) => String(value ?? '')
   .replace(/"/g, '&quot;');
 
 export const PROPOSAL_COLUMNS = [
+  ['SL', (site, index) => site.SL || index + 1],
+  ['City', site => site.City || 'Meerut'],
+  ['Media', site => site.Media || site['Type of Site (Unipole/Billboard)'] || 'Unipole'],
+  ['Area', site => site.Area || site.Locality || ''],
+  ['Location', site => site.Location || site['Location '] || site['Locality Site Location'] || ''],
+  ['Facing', site => site.Facing || ''],
+  ['Traffic From', site => site['Traffic From'] || ''],
+  ['Traffic To', site => site['Traffic To'] || ''],
+  ['Width', site => site.Width || ''],
+  ['Height', site => site.Height || ''],
+  ['Qty', site => site.Qty || site.Units || 1],
+  ['Total SQ.ft', site => site['Total SQ.ft'] || site['Total Sq. Ft'] || ''],
+  ['Type', site => site.Type || site['Media Format (Front Lit / Back Lit / Non Lit)'] || 'NL'],
+  ['Rental Per Month', site => site['Rental Per Month'] || site['Avg Monthly Cost (INR)'] || ''],
+  ['Lat-Long', site => site['Lat-Long'] || [site.Latitude, site.Longitude].filter(Boolean).join(', ')],
+  ['Latitude', site => site.Latitude || ''],
+  ['Longitude', site => site.Longitude || ''],
   ['Image Link', site => getImageUrl(site), { type: 'imageLink' }],
-  ['S. No.', (_site, index) => index + 1],
-  ['State', site => site.State],
-  ['City', site => site.City],
-  ['Locality', site => site["Area"]],
-  ['Location ', site => site["Location "]],
-  ['Pin Code', site => site["Pin Code"]],
-  ['Traffic From', site => site["Traffic From"]],
-  ['Traffic To', site => site["Traffic To"]],
-  ['Lat.', site => site.Latitude],
-  ['Long.', site => site.Longitude],
-  ['Lat Long (Concatenated)', site => [site.Latitude, site.Longitude].filter(Boolean).join(', ')],
-  ['Size (Large/ Medium/ Small)', site => site["Size (Large/Medium/Small)"]],
-  ['Width', site => site.Width],
-  ['Height', site => site.Height],
-  ['Units', site => site.Units],
-  ['Total SQ.ft', site => site["Total SQ.ft"]],
-  ['Type of Site (Unipole/ Billboard)', site => site["Media"]],
-  ['Media Format (Front Lit/ Back Lit/Non Lit)', site => site["Media Format (Front Lit / Back Lit / Non Lit)"]],
-  ['LHS/ Non LHS', site => site["LHS / Non LHS"]],
-  ['Digital/ Non Digital', site => site["Digital / Non Digital"]],
-  ['Solus (Y/N)', site => site["Solus (Y/N)"]],
-  ['Site Category', site => site["Site Category"]],
-  ['Avg. monthly Cost', site => site["Rental Per Month"]],
   ['STATUS', site => site.STATUS || 'Available'],
-  ['BookedBy', site => site.BookedBy],
-  ['BookingStart', site => site.BookingStart],
-  ['BookingEnd', site => site.BookingEnd]
+  ['BookedBy', site => site.BookedBy || ''],
+  ['BookingStart', site => site.BookingStart || ''],
+  ['BookingEnd', site => site.BookingEnd || '']
 ];
 
 export const exportProposalExcel = (sites, fileName = 'hoarding-proposal.xls', selectedHeaders = null) => {
