@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
-import { Scissors, useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import {
     LayoutDashboard, Database, FileUp, Settings,
+    Scissors,
     FileText, LogOut, Search, Eye, EyeOff,
     TrendingUp, MapPin, CheckCircle, Smartphone,
     Bell, HelpCircle, Plus, Filter, Download,
@@ -1777,24 +1778,16 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
         if (findMatchIndex < 0 || findMatchIndex >= findMatches.length) return; rememberSheetState();
         const { row, col } = findMatches[findMatchIndex];
         setSheetRows(prev => prev.map((r, ri) => { if (ri !== row) return r; const n = [...r]; while (n.length <= col) n.push('');
-            const q = findMatchCase ? findQuery : findQuery.toLowerCase(); const v = findMatchCase ? String(n[col]) : String(n[col]).toLowerCase();
-            if (v.includes(q)) n[col] = findMatchCase ? String(n[col]).replace(findQuery, replaceQuery) : String(n[col]).replace(new RegExp(findQuery.replace(/\/\\/\/g, '\\\\\textarea.remove();
-        }
-    };
-
-    const isSheetCellSelected'), 'gi'), replaceQuery);
+            const src = String(n[col]); if (findMatchCase) { n[col] = src.split(findQuery).join(replaceQuery); } else { n[col] = src.toLowerCase().split(findQuery.toLowerCase()).join(replaceQuery); }
             return n; }));
         markSheetChanged(); runFindReplace(findQuery, findMatchCase);
     };
     const replaceAllMatches = () => {
-        if (!findQuery) return; rememberSheetState(); let c = 0; const q = findMatchCase ? findQuery : findQuery.toLowerCase();
-        setSheetRows(prev => prev.map(row => row.map(cell => { const v = findMatchCase ? String(cell||'') : String(cell||'').toLowerCase();
-            if (v.includes(q)) { c++; return findMatchCase ? String(cell||'').replace(findQuery, replaceQuery) : String(cell||'').replace(new RegExp(findQuery.replace(/\/\\/\/g, '\\\\\textarea.remove();
-        }
-    };
-
-    const isSheetCellSelected'), 'gi'), replaceQuery); } return cell; })));
-        markSheetChanged(); runFindReplace(findQuery, findMatchCase); if (c > 0) showToast(`Replaced ${c} occurrence(s)`, 'success');
+        if (!findQuery) return; rememberSheetState(); let c = 0;
+        setSheetRows(prev => prev.map(row => row.map(cell => {
+            const src = String(cell || ''); const v = findMatchCase ? src : src.toLowerCase(); const q = findMatchCase ? findQuery : findQuery.toLowerCase();
+            if (v.includes(q)) { c++; return findMatchCase ? src.split(findQuery).join(replaceQuery) : src.toLowerCase().split(q).join(replaceQuery); } return cell; })));
+        markSheetChanged(); runFindReplace(findQuery, findMatchCase); if (c > 0) showToast('Replaced ' + c + ' occurrence(s)', 'success');
     };
 
     const isSheetCellSelected = (rowIndex, colIndex) => {
@@ -3271,8 +3264,8 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                     <button onClick={() => addSheetColumn(selectedSheetCell.col, 'after')} disabled={sheetLoading || sheetSaving}><Plus size={16} /> Col Right</button>
                                 </div>
                                 <div className="sheet-ribbon-group">
-                                    <button onClick={copySheetSelection} <button onClick={cutSheetSelection} disabled={!sheetRows.length || sheetLoading} title="Cut (Ctrl+X)"><Scissors size={16} /> Cut</button>
-                                    disabled={!sheetRows.length || sheetLoading}><Copy size={16} /> Copy</button>
+                                    <button onClick={cutSheetSelection} disabled={!sheetRows.length || sheetLoading} title="Cut (Ctrl+X)"><Scissors size={16} /> Cut</button>
+                                    <button onClick={copySheetSelection} disabled={!sheetRows.length || sheetLoading}><Copy size={16} /> Copy</button>
                                     <button onClick={clearSheetSelection} disabled={sheetLoading || sheetSaving}><X size={16} /> Clear Selection</button>
                                     <button onClick={deleteSheetSelection} disabled={!sheetRows.length || sheetLoading || sheetSaving || (sheetSelection.type === 'column' && sheetHeaders.length <= 1)}><Trash2 size={16} /> Delete Selection</button>
                                     <button onClick={exportSheetCsv} disabled={!sheetHeaders.length}><FileDown size={16} /> CSV</button>
