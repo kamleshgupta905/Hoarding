@@ -5041,3 +5041,178 @@
 .sheet-context-menu button:last-child:hover { background: #fef2f2; }
 .sheet-filter-dropdown button:hover { background: #eff6ff !important; }
 .sheet-filter-dropdown button:last-child { border-bottom: none; }
+
+/* ═══════════════════════════════════════════════════
+   📐 COMPACT UI OVERRIDE — Smaller buttons & spacing
+   ═══════════════════════════════════════════════════ */
+
+/* Top bar */
+.admin-top-bar { height: 52px; padding: 0 20px; }
+.top-bar-left h2 { font-size: 0.95rem; }
+
+/* Sidebar nav items */
+.nav-item { padding: 7px 12px; font-size: 0.82rem; gap: 10px; margin-bottom: 2px; }
+.sidebar-logo { padding: 4px 6px 16px; margin-bottom: 6px; }
+.group-title { font-size: 0.62rem; margin-bottom: 5px; padding: 0 10px; }
+.menu-group { margin-bottom: 12px; }
+.brand-title { font-size: 1.05rem; }
+.sidebar-logo .logo-icon { width: 32px; height: 32px; border-radius: 9px; }
+
+/* Primary / Danger buttons */
+.btn-primary-admin { height: 32px; padding: 0 14px; font-size: 0.8rem; gap: 6px; border-radius: 7px; }
+.btn-danger-admin { height: 32px; padding: 0 12px; font-size: 0.78rem; gap: 6px; border-radius: 8px; }
+.btn-icon { width: 32px; height: 32px; border-radius: 8px; }
+.btn-reset-filters { padding: 8px 16px; height: 34px; font-size: 0.8rem; border-radius: 8px; }
+
+/* Apple-style buttons */
+.apple-btn-primary { padding: 7px 14px; font-size: 0.8rem; border-radius: 999px; }
+.apple-btn-secondary { padding: 7px 12px; font-size: 0.8rem; border-radius: 999px; }
+
+/* QuickMart buttons */
+.qm-btn-primary { padding: 7px 14px; font-size: 0.8rem; border-radius: 8px; }
+.qm-btn-secondary { padding: 6px 12px; font-size: 0.78rem; border-radius: 8px; }
+
+/* Header sections */
+.apple-header-section { padding-bottom: 14px; gap: 14px; }
+.apple-page-title { font-size: 1.5rem; }
+.qm-header-section { gap: 12px; padding-bottom: 4px; }
+.qm-page-title { font-size: 1.4rem; margin-bottom: 3px; }
+.qm-header-controls { gap: 7px; }
+.apple-header-controls { gap: 8px; }
+
+/* KPI cards */
+.apple-kpi-card { padding: 16px 18px; min-height: 130px; border-radius: 18px; }
+.apple-kpi-grid { gap: 14px; }
+.apple-kpi-val { font-size: 1.8rem; }
+.qm-kpi-card { padding: 16px 18px; border-radius: 14px; gap: 8px; }
+.qm-kpi-grid { gap: 14px; }
+.qm-kpi-main-val { font-size: 1.65rem; }
+
+/* Bento / Card grids */
+.apple-bento-grid { gap: 16px; }
+.apple-card { padding: 20px; border-radius: 20px; }
+.apple-card-header { margin-bottom: 16px; }
+.qm-bento-grid { gap: 16px; }
+.qm-card { padding: 20px; border-radius: 14px; }
+.qm-card-header { margin-bottom: 16px; }
+
+/* Showcase cards */
+.apple-showcase-grid { gap: 14px; }
+.qm-showcase-grid { gap: 12px; }
+.qm-showcase-body { padding: 10px; gap: 6px; }
+.qm-showcase-heading { font-size: 0.8rem; }
+
+/* Inventory / Table */
+.inventory-view-container { padding: 20px 24px; }
+.inventory-header { padding: 18px 24px; }
+.inventory-header h3 { font-size: 1.1rem; margin-bottom: 2px; }
+.inventory-header p { font-size: 0.78rem; }
+.inventory-actions { gap: 8px; }
+.admin-table th { padding: 12px 20px; font-size: 0.65rem; }
+.admin-table td { padding: 14px 20px; }
+
+/* Inventory filters */
+.inventory-filters { padding: 14px 24px; gap: 14px; }
+.inventory-filter-group { min-width: 140px; gap: 4px; }
+.inventory-filter-group select { padding: 8px 12px; font-size: 0.82rem; border-radius: 8px; }
+
+/* Status pills */
+.status-pill { padding: 4px 10px; font-size: 0.7rem; }
+
+/* Forms */
+.crud-form { padding: 20px 24px; gap: 14px; }
+.form-row { gap: 16px; }
+.form-group { gap: 5px; }
+.form-group label { font-size: 0.74rem; }
+.form-group input, .form-group select { padding: 8px 12px; border-radius: 8px; font-size: 0.88rem; }
+.modal-footer { padding: 14px 24px; gap: 10px; }
+.btn-secondary { padding: 8px 16px; border-radius: 8px; font-size: 0.82rem; }
+.modal-card { border-radius: 14px; }
+.modal-header { padding: 14px 18px; }
+.modal-header h3 { font-size: 1rem; }
+.modal-body { padding: 18px; }
+.modal-input { padding: 9px 12px; font-size: 0.9rem; border-radius: 8px; }
+
+/* Upload zone */
+.upload-zone-container { padding: 20px; border-radius: 18px; }
+.upload-header h3 { font-size: 1.2rem; }
+.upload-trigger-btn { padding: 8px 18px; font-size: 0.82rem; border-radius: 9px; }
+.ai-process-btn { padding: 8px 18px; font-size: 0.82rem; border-radius: 9px; }
+.upload-actions-bar { gap: 10px; margin-bottom: 20px; }
+
+/* Daily cards */
+.daily-images-grid { gap: 14px; }
+.daily-card { border-radius: 12px; }
+.img-preview { height: 140px; }
+.card-controls { padding: 10px; gap: 8px; }
+.upload-single-btn { padding: 8px; font-size: 0.8rem; border-radius: 6px; }
+
+/* Staff review */
+.staff-review-view { margin: 16px 20px; }
+.staff-review-card { border-radius: 14px; }
+.staff-review-image { height: 180px; }
+.staff-review-body { padding: 12px 14px; gap: 8px; }
+.staff-review-actions { gap: 6px; }
+.staff-review-actions button { min-height: 34px; font-size: 0.7rem; border-radius: 6px; }
+
+/* Recent photo grid */
+.recent-photo-grid { gap: 12px; margin-top: 10px; }
+.recent-photo-card { border-radius: 12px; }
+.recent-photo-card > div { padding: 10px 12px; }
+
+/* Proposal panel */
+.proposal-panel { padding: 14px 24px 20px; }
+.proposal-panel-header { gap: 14px; margin-bottom: 12px; }
+.proposal-panel-header h4 { font-size: 0.9rem; }
+
+/* KPI main container */
+.apple-main-container, .qm-main-container { gap: 18px; }
+
+/* Dashboard view padding */
+.apple-dashboard-view { padding: 20px 28px; }
+.qm-dashboard-view { padding: 20px 28px 40px; }
+
+/* Spec boxes */
+.apple-spec-box { padding: 12px; border-radius: 14px; }
+.qm-spec-box { padding: 10px 12px; }
+
+/* Tier rows */
+.apple-tier-row { padding: 7px 10px; font-size: 0.78rem; border-radius: 10px; }
+.qm-tier-row { padding: 5px 8px; }
+
+/* Corridor rows */
+.apple-corridor-row { padding: 7px 10px; gap: 10px; }
+.qm-corridor-row { padding: 7px 10px; gap: 10px; }
+
+/* Search box */
+.admin-search-box { padding: 6px 12px; width: 240px; }
+.admin-search-box input { font-size: 0.82rem; }
+
+/* Sidebar toggle */
+.sidebar-collapse-toggle { width: 30px; height: 30px; }
+
+/* Action buttons gap in top bar */
+.action-btns { gap: 8px; }
+.top-bar-right { gap: 14px; }
+
+/* Proposal header picker */
+.proposal-header-picker { padding: 10px; border-radius: 10px; }
+.proposal-header-picker-top { margin-bottom: 8px; }
+
+/* Client cards */
+.clients-tab .client-stats-row { gap: 12px !important; margin-bottom: 20px !important; }
+.clients-tab .stat-box { min-height: 80px !important; border-radius: 12px !important; }
+.clients-tab .clients-list-grid { gap: 14px !important; }
+.clients-tab .client-data-card { border-radius: 14px !important; padding: 16px !important; }
+.clients-tab .client-card-header { margin-bottom: 12px !important; }
+.clients-tab .client-avatar { width: 42px !important; height: 42px !important; border-radius: 12px !important; }
+.clients-tab .client-card-stats { gap: 6px !important; padding: 8px !important; border-radius: 10px !important; margin-bottom: 12px !important; }
+.clients-tab .client-card-actions { gap: 6px !important; }
+.clients-tab .client-card-actions button { min-height: 36px !important; border-radius: 8px !important; }
+
+/* Modal footer buttons */
+.modal-footer .btn-primary-admin { height: 32px; font-size: 0.8rem; }
+.modal-footer .btn-danger-admin { height: 32px; font-size: 0.8rem; }
+
+/* Empty upload state */
+.empty-upload-state { padding: 40px; border-radius: 14px; }
