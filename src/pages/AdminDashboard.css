@@ -5043,365 +5043,608 @@
 .sheet-filter-dropdown button:last-child { border-bottom: none; }
 
 /* ═══════════════════════════════════════════════════
-   📐 COMPACT UI OVERRIDE — Smaller buttons & spacing
+   📐 COMPACT UI — Minimal, targeted overrides
    ═══════════════════════════════════════════════════ */
 
-/* Top bar */
-.admin-top-bar { height: 52px; padding: 0 20px; }
-.top-bar-left h2 { font-size: 0.95rem; }
+/* Top bar - slightly shorter */
+.admin-top-bar {
+    height: 56px;
+    padding: 0 24px;
+}
 
-/* Sidebar nav items */
-.nav-item { padding: 7px 12px; font-size: 0.82rem; gap: 10px; margin-bottom: 2px; }
-.sidebar-logo { padding: 4px 6px 16px; margin-bottom: 6px; }
-.group-title { font-size: 0.62rem; margin-bottom: 5px; padding: 0 10px; }
-.menu-group { margin-bottom: 12px; }
-.brand-title { font-size: 1.05rem; }
-.sidebar-logo .logo-icon { width: 32px; height: 32px; border-radius: 9px; }
+.top-bar-left h2 {
+    font-size: 1rem;
+}
 
-/* Primary / Danger buttons */
-.btn-primary-admin { height: 32px; padding: 0 14px; font-size: 0.8rem; gap: 6px; border-radius: 7px; }
-.btn-danger-admin { height: 32px; padding: 0 12px; font-size: 0.78rem; gap: 6px; border-radius: 8px; }
-.btn-icon { width: 32px; height: 32px; border-radius: 8px; }
-.btn-reset-filters { padding: 8px 16px; height: 34px; font-size: 0.8rem; border-radius: 8px; }
+/* Sidebar nav items - slightly tighter */
+.nav-item {
+    padding: 8px 12px;
+    font-size: 0.83rem;
+    gap: 10px;
+    margin-bottom: 2px;
+}
 
-/* Apple-style buttons */
-.apple-btn-primary { padding: 7px 14px; font-size: 0.8rem; border-radius: 999px; }
-.apple-btn-secondary { padding: 7px 12px; font-size: 0.8rem; border-radius: 999px; }
+.sidebar-logo {
+    padding: 4px 6px 14px;
+    margin-bottom: 6px;
+}
+
+.group-title {
+    font-size: 0.65rem;
+    margin-bottom: 5px;
+}
+
+.menu-group {
+    margin-bottom: 12px;
+}
+
+.sidebar-logo .logo-icon {
+    width: 34px;
+    height: 34px;
+}
+
+/* Buttons - slightly more compact, but still readable */
+.btn-primary-admin {
+    height: 34px;
+    padding: 0 16px;
+    font-size: 0.82rem;
+    gap: 6px;
+}
+
+.btn-danger-admin {
+    height: 34px;
+    padding: 0 14px;
+    font-size: 0.8rem;
+    gap: 6px;
+}
+
+.btn-icon {
+    width: 34px;
+    height: 34px;
+}
+
+/* Apple buttons */
+.apple-btn-primary {
+    padding: 8px 16px;
+    font-size: 0.82rem;
+}
+
+.apple-btn-secondary {
+    padding: 8px 14px;
+    font-size: 0.82rem;
+}
 
 /* QuickMart buttons */
-.qm-btn-primary { padding: 7px 14px; font-size: 0.8rem; border-radius: 8px; }
-.qm-btn-secondary { padding: 6px 12px; font-size: 0.78rem; border-radius: 8px; }
+.qm-btn-primary {
+    padding: 8px 16px;
+    font-size: 0.82rem;
+}
+
+.qm-btn-secondary {
+    padding: 7px 14px;
+    font-size: 0.8rem;
+}
 
 /* Header sections */
-.apple-header-section { padding-bottom: 14px; gap: 14px; }
-.apple-page-title { font-size: 1.5rem; }
-.qm-header-section { gap: 12px; padding-bottom: 4px; }
-.qm-page-title { font-size: 1.4rem; margin-bottom: 3px; }
-.qm-header-controls { gap: 7px; }
-.apple-header-controls { gap: 8px; }
+.apple-header-section {
+    padding-bottom: 16px;
+    gap: 16px;
+}
+
+.qm-header-section {
+    gap: 12px;
+    padding-bottom: 4px;
+}
+
+.qm-header-controls {
+    gap: 8px;
+}
+
+.apple-header-controls {
+    gap: 10px;
+}
 
 /* KPI cards */
-.apple-kpi-card { padding: 16px 18px; min-height: 130px; border-radius: 18px; }
-.apple-kpi-grid { gap: 14px; }
-.apple-kpi-val { font-size: 1.8rem; }
-.qm-kpi-card { padding: 16px 18px; border-radius: 14px; gap: 8px; }
-.qm-kpi-grid { gap: 14px; }
-.qm-kpi-main-val { font-size: 1.65rem; }
+.apple-kpi-card {
+    padding: 18px 20px;
+    min-height: 140px;
+    border-radius: 18px;
+}
+
+.apple-kpi-grid {
+    gap: 16px;
+}
+
+.qm-kpi-card {
+    padding: 18px 20px;
+    border-radius: 14px;
+    gap: 10px;
+}
+
+.qm-kpi-grid {
+    gap: 16px;
+}
 
 /* Bento / Card grids */
-.apple-bento-grid { gap: 16px; }
-.apple-card { padding: 20px; border-radius: 20px; }
-.apple-card-header { margin-bottom: 16px; }
-.qm-bento-grid { gap: 16px; }
-.qm-card { padding: 20px; border-radius: 14px; }
-.qm-card-header { margin-bottom: 16px; }
+.apple-bento-grid {
+    gap: 18px;
+}
 
-/* Showcase cards */
-.apple-showcase-grid { gap: 14px; }
-.qm-showcase-grid { gap: 12px; }
-.qm-showcase-body { padding: 10px; gap: 6px; }
-.qm-showcase-heading { font-size: 0.8rem; }
+.apple-card {
+    padding: 22px;
+    border-radius: 20px;
+}
 
-/* Inventory / Table */
-.inventory-view-container { padding: 20px 24px; }
-.inventory-header { padding: 18px 24px; }
-.inventory-header h3 { font-size: 1.1rem; margin-bottom: 2px; }
-.inventory-header p { font-size: 0.78rem; }
-.inventory-actions { gap: 8px; }
-.admin-table th { padding: 12px 20px; font-size: 0.65rem; }
-.admin-table td { padding: 14px 20px; }
+.qm-card {
+    padding: 22px;
+    border-radius: 14px;
+}
+
+/* Inventory / Table - KEEP FULL SIZE for readability */
+.inventory-view-container {
+    padding: 24px 28px;
+}
+
+.inventory-header {
+    padding: 20px 28px;
+}
+
+.inventory-actions {
+    gap: 10px;
+}
+
+/* Table cells - KEEP readable sizes */
+.admin-table th {
+    padding: 14px 24px;
+    font-size: 0.7rem;
+}
+
+.admin-table td {
+    padding: 16px 24px;
+}
 
 /* Inventory filters */
-.inventory-filters { padding: 14px 24px; gap: 14px; }
-.inventory-filter-group { min-width: 140px; gap: 4px; }
-.inventory-filter-group select { padding: 8px 12px; font-size: 0.82rem; border-radius: 8px; }
+.inventory-filters {
+    padding: 16px 28px;
+    gap: 16px;
+}
 
-/* Status pills */
-.status-pill { padding: 4px 10px; font-size: 0.7rem; }
+.inventory-filter-group {
+    min-width: 150px;
+}
 
-/* Forms */
-.crud-form { padding: 20px 24px; gap: 14px; }
-.form-row { gap: 16px; }
-.form-group { gap: 5px; }
-.form-group label { font-size: 0.74rem; }
-.form-group input, .form-group select { padding: 8px 12px; border-radius: 8px; font-size: 0.88rem; }
-.modal-footer { padding: 14px 24px; gap: 10px; }
-.btn-secondary { padding: 8px 16px; border-radius: 8px; font-size: 0.82rem; }
-.modal-card { border-radius: 14px; }
-.modal-header { padding: 14px 18px; }
-.modal-header h3 { font-size: 1rem; }
-.modal-body { padding: 18px; }
-.modal-input { padding: 9px 12px; font-size: 0.9rem; border-radius: 8px; }
+.inventory-filter-group select {
+    padding: 9px 14px;
+    font-size: 0.85rem;
+}
 
-/* Upload zone */
-.upload-zone-container { padding: 20px; border-radius: 18px; }
-.upload-header h3 { font-size: 1.2rem; }
-.upload-trigger-btn { padding: 8px 18px; font-size: 0.82rem; border-radius: 9px; }
-.ai-process-btn { padding: 8px 18px; font-size: 0.82rem; border-radius: 9px; }
-.upload-actions-bar { gap: 10px; margin-bottom: 20px; }
+/* Forms - readable */
+.crud-form {
+    padding: 24px 28px;
+    gap: 16px;
+}
+
+.form-row {
+    gap: 18px;
+}
+
+.form-group {
+    gap: 6px;
+}
+
+.form-group label {
+    font-size: 0.78rem;
+}
+
+.form-group input,
+.form-group select {
+    padding: 9px 14px;
+    font-size: 0.9rem;
+}
+
+.modal-header {
+    padding: 16px 20px;
+}
+
+.modal-body {
+    padding: 20px;
+}
+
+.modal-input {
+    padding: 10px 14px;
+    font-size: 0.92rem;
+}
+
+/* Upload */
+.upload-trigger-btn {
+    padding: 9px 20px;
+    font-size: 0.85rem;
+}
+
+.ai-process-btn {
+    padding: 9px 20px;
+    font-size: 0.85rem;
+}
 
 /* Daily cards */
-.daily-images-grid { gap: 14px; }
-.daily-card { border-radius: 12px; }
-.img-preview { height: 140px; }
-.card-controls { padding: 10px; gap: 8px; }
-.upload-single-btn { padding: 8px; font-size: 0.8rem; border-radius: 6px; }
+.daily-images-grid {
+    gap: 16px;
+}
+
+.img-preview {
+    height: 150px;
+}
 
 /* Staff review */
-.staff-review-view { margin: 16px 20px; }
-.staff-review-card { border-radius: 14px; }
-.staff-review-image { height: 180px; }
-.staff-review-body { padding: 12px 14px; gap: 8px; }
-.staff-review-actions { gap: 6px; }
-.staff-review-actions button { min-height: 34px; font-size: 0.7rem; border-radius: 6px; }
+.staff-review-view {
+    margin: 18px 24px;
+}
 
-/* Recent photo grid */
-.recent-photo-grid { gap: 12px; margin-top: 10px; }
-.recent-photo-card { border-radius: 12px; }
-.recent-photo-card > div { padding: 10px 12px; }
+.staff-review-image {
+    height: 190px;
+}
 
-/* Proposal panel */
-.proposal-panel { padding: 14px 24px 20px; }
-.proposal-panel-header { gap: 14px; margin-bottom: 12px; }
-.proposal-panel-header h4 { font-size: 0.9rem; }
+.staff-review-body {
+    padding: 14px 16px;
+    gap: 10px;
+}
 
-/* KPI main container */
-.apple-main-container, .qm-main-container { gap: 18px; }
-
-/* Dashboard view padding */
-.apple-dashboard-view { padding: 20px 28px; }
-.qm-dashboard-view { padding: 20px 28px 40px; }
-
-/* Spec boxes */
-.apple-spec-box { padding: 12px; border-radius: 14px; }
-.qm-spec-box { padding: 10px 12px; }
-
-/* Tier rows */
-.apple-tier-row { padding: 7px 10px; font-size: 0.78rem; border-radius: 10px; }
-.qm-tier-row { padding: 5px 8px; }
-
-/* Corridor rows */
-.apple-corridor-row { padding: 7px 10px; gap: 10px; }
-.qm-corridor-row { padding: 7px 10px; gap: 10px; }
+.staff-review-actions button {
+    min-height: 36px;
+    font-size: 0.74rem;
+}
 
 /* Search box */
-.admin-search-box { padding: 6px 12px; width: 240px; }
-.admin-search-box input { font-size: 0.82rem; }
+.admin-search-box {
+    padding: 7px 14px;
+    width: 260px;
+}
+
+.admin-search-box input {
+    font-size: 0.85rem;
+}
 
 /* Sidebar toggle */
-.sidebar-collapse-toggle { width: 30px; height: 30px; }
+.sidebar-collapse-toggle {
+    width: 32px;
+    height: 32px;
+}
 
-/* Action buttons gap in top bar */
-.action-btns { gap: 8px; }
-.top-bar-right { gap: 14px; }
+/* Action buttons gap */
+.action-btns {
+    gap: 10px;
+}
 
-/* Proposal header picker */
-.proposal-header-picker { padding: 10px; border-radius: 10px; }
-.proposal-header-picker-top { margin-bottom: 8px; }
+.top-bar-right {
+    gap: 16px;
+}
 
 /* Client cards */
-.clients-tab .client-stats-row { gap: 12px !important; margin-bottom: 20px !important; }
-.clients-tab .stat-box { min-height: 80px !important; border-radius: 12px !important; }
-.clients-tab .clients-list-grid { gap: 14px !important; }
-.clients-tab .client-data-card { border-radius: 14px !important; padding: 16px !important; }
-.clients-tab .client-card-header { margin-bottom: 12px !important; }
-.clients-tab .client-avatar { width: 42px !important; height: 42px !important; border-radius: 12px !important; }
-.clients-tab .client-card-stats { gap: 6px !important; padding: 8px !important; border-radius: 10px !important; margin-bottom: 12px !important; }
-.clients-tab .client-card-actions { gap: 6px !important; }
-.clients-tab .client-card-actions button { min-height: 36px !important; border-radius: 8px !important; }
+.clients-tab .client-stats-row {
+    gap: 14px !important;
+    margin-bottom: 24px !important;
+}
 
-/* Modal footer buttons */
-.modal-footer .btn-primary-admin { height: 32px; font-size: 0.8rem; }
-.modal-footer .btn-danger-admin { height: 32px; font-size: 0.8rem; }
+.clients-tab .stat-box {
+    min-height: 90px !important;
+    border-radius: 14px !important;
+}
 
-/* Empty upload state */
-.empty-upload-state { padding: 40px; border-radius: 14px; }
+.clients-tab .clients-list-grid {
+    gap: 18px !important;
+}
+
+.clients-tab .client-data-card {
+    border-radius: 16px !important;
+    padding: 20px !important;
+}
+
+.clients-tab .client-avatar {
+    width: 44px !important;
+    height: 44px !important;
+}
+
+.clients-tab .client-card-stats {
+    gap: 8px !important;
+    padding: 10px !important;
+}
+
+.clients-tab .client-card-actions button {
+    min-height: 38px !important;
+}
+
+/* Modal footer */
+.modal-footer {
+    padding: 16px 28px;
+    gap: 12px;
+}
+
+.modal-footer .btn-primary-admin {
+    height: 36px;
+    font-size: 0.84rem;
+}
+
+.modal-footer .btn-danger-admin {
+    height: 36px;
+    font-size: 0.84rem;
+}
+
+/* Dashboard view padding - slightly tighter */
+.apple-dashboard-view {
+    padding: 24px 30px;
+}
+
+.qm-dashboard-view {
+    padding: 24px 30px 40px;
+}
 
 /* ═══════════════════════════════════════════════════
-   🔧 SHEET EDITOR FIX — Restore full-size sheet styles
+   🔧 SHEET EDITOR — Full-size styles (never compact)
    ═══════════════════════════════════════════════════ */
 
-/* Restore sheet editor dimensions */
+/* Sheet editor always takes full available space */
 .dashboard-view:has(.sheet-editor-panel) {
-    min-height: calc(100vh - 52px);
-    height: calc(100vh - 52px);
+    display: block;
+    grid-template-columns: none;
+    padding: 0;
+    gap: 0;
+    width: 100%;
+    min-width: 0;
+    overflow: hidden;
+    min-height: calc(100vh - 56px);
+    height: calc(100vh - 56px);
+    background: #eef2f7;
 }
 
 .dashboard-view:has(.sheet-editor-panel) .sheet-editor-panel {
-    min-height: calc(100vh - 52px);
-    height: calc(100vh - 52px);
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    min-height: calc(100vh - 56px);
+    height: calc(100vh - 56px);
+    border: 0;
+    border-radius: 0;
+    box-shadow: none;
 }
 
-/* Sheet grid cell sizes - restore full size */
+/* Sheet grid shell fills remaining space */
+.sheet-grid-shell {
+    height: calc(100vh - 260px) !important;
+    min-height: 300px !important;
+    overflow: auto;
+}
+
+/* Sheet grid cells - full readable size */
 .sheet-grid-table td,
 .sheet-grid-table th {
     width: 150px !important;
     min-width: 150px !important;
     max-width: 150px !important;
-    font-size: 12px;
+    font-size: 13px;
 }
 
 .sheet-grid-table td textarea {
-    min-height: 30px !important;
-    height: 30px !important;
-    font-size: 12px !important;
-    padding: 6px 7px !important;
-}
-
-.sheet-grid-table thead th {
-    height: 48px !important;
-}
-
-/* Sheet header cell restore */
-.sheet-header-cell {
-    height: 38px !important;
-    padding: 4px !important;
-}
-
-.sheet-header-cell input {
-    height: 28px !important;
-    font-size: 0.73rem !important;
-    text-align: center;
-}
-
-/* Sheet row number restore */
-.sheet-row-number {
-    width: 54px !important;
-    min-width: 54px !important;
-    max-width: 54px !important;
-}
-
-.sheet-row-number div {
-    min-height: 30px !important;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-}
-
-/* Sheet ribbon buttons restore */
-.sheet-ribbon-group button {
     min-height: 32px !important;
-    padding: 0 9px !important;
-    font-size: 0.74rem !important;
-    font-weight: 800;
-}
-
-/* Sheet formula bar restore */
-.sheet-formula-bar {
-    height: auto;
-    padding: 7px 12px;
-}
-
-.sheet-name-box,
-.sheet-formula-input,
-.sheet-formula-bar .sheet-search-box {
-    height: 34px !important;
-}
-
-/* Sheet grid shell restore */
-.sheet-grid-shell {
-    height: calc(100vh - 234px) !important;
-    min-height: 400px !important;
-    overflow: auto;
-}
-
-/* Sheet editor header restore */
-.sheet-editor-header {
-    min-height: 56px !important;
-    padding: 12px 18px !important;
-}
-
-.sheet-editor-header h3 {
-    font-size: 1rem !important;
-}
-
-.sheet-editor-header p {
-    font-size: 0.78rem !important;
-}
-
-/* Sheet fullscreen restore */
-.sheet-editor-panel:fullscreen {
-    width: 100vw !important;
-    height: 100vh !important;
-    min-height: 100vh !important;
-}
-
-.sheet-editor-panel:fullscreen .sheet-grid-shell {
-    height: calc(100vh - 200px) !important;
-}
-
-/* Sheet search box restore */
-.sheet-search-box {
-    height: 34px !important;
-    width: 100% !important;
-}
-
-/* Sheet save state restore */
-.sheet-save-state {
-    min-height: 28px !important;
-    padding: 0 10px !important;
-    font-size: 0.72rem !important;
-}
-
-/* Sheet column letters restore */
-.sheet-column-letter,
-.sheet-corner-select {
-    height: 24px !important;
-    font-size: 0.72rem !important;
-}
-
-/* Sheet link data cells restore */
-.sheet-link-data-cell a {
-    min-height: 20px !important;
-    margin: 4px 6px 0 !important;
-    padding: 0 7px !important;
-    font-size: 0.72rem !important;
-}
-
-/* Sheet row select buttons restore */
-.sheet-row-select-button {
-    min-width: 28px !important;
-    height: 24px !important;
-    font-size: 0.76rem !important;
-}
-
-/* Sheet grid table text visibility fix */
-.sheet-grid-table textarea {
+    height: 32px !important;
+    font-size: 13px !important;
+    padding: 6px 8px !important;
+    line-height: 1.4;
     overflow: visible !important;
     white-space: pre-wrap;
     word-wrap: break-word;
-    line-height: 1.35;
 }
 
-/* Sheet column header text fix */
+.sheet-grid-table thead th {
+    height: 44px !important;
+    background: #f8fafc;
+    border-bottom: 2px solid #e2e8f0;
+}
+
+/* Sheet header cells */
+.sheet-header-cell {
+    height: 36px !important;
+    padding: 4px 6px !important;
+}
+
 .sheet-header-cell input {
+    height: 26px !important;
+    font-size: 0.78rem !important;
+    text-align: center;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
 }
 
-/* Sheet find/replace panel restore */
-.sheet-find-replace-panel {
-    padding: 8px 12px !important;
+/* Sheet row numbers */
+.sheet-row-number {
+    width: 48px !important;
+    min-width: 48px !important;
+    max-width: 48px !important;
+}
+
+.sheet-row-number div {
+    min-height: 32px !important;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+/* Sheet ribbon - full size */
+.sheet-ribbon {
+    display: flex;
+    align-items: stretch;
+    gap: 8px;
+    padding: 8px 12px;
+    flex-wrap: wrap;
+    background: #fff;
     border-bottom: 1px solid #e2e8f0;
 }
 
-/* Sheet context menu restore */
-.sheet-context-menu {
-    min-width: 180px !important;
-    padding: 4px !important;
+.sheet-ribbon-group {
+    display: flex;
+    gap: 2px;
+    padding: 0 4px;
+    border-right: 1px solid #e2e8f0;
 }
 
-/* Sheet filter dropdown restore */
-.sheet-filter-dropdown {
-    min-width: 160px !important;
-    max-height: 240px !important;
+.sheet-ribbon-group:last-child {
+    border-right: none;
 }
 
-/* Sheet site column (wide) restore */
+.sheet-ribbon-group button {
+    min-height: 34px !important;
+    padding: 0 10px !important;
+    font-size: 0.76rem !important;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    border: none;
+    background: transparent;
+    border-radius: 6px;
+    cursor: pointer;
+    white-space: nowrap;
+}
+
+.sheet-ribbon-group button:hover:not(:disabled) {
+    background: #f1f5f9;
+}
+
+.sheet-ribbon-group button:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+}
+
+/* Sheet formula bar - full size */
+.sheet-formula-bar {
+    display: grid;
+    grid-template-columns: 80px 1fr 260px;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 12px;
+    background: #fff;
+    border-bottom: 1px solid #e2e8f0;
+}
+
+.sheet-name-box,
+.sheet-formula-input,
+.sheet-formula-bar .sheet-search-box {
+    height: 32px !important;
+    border: 1px solid #e2e8f0;
+    border-radius: 6px;
+    padding: 0 8px;
+    font-size: 0.82rem;
+}
+
+.sheet-formula-input input {
+    width: 100%;
+    height: 100%;
+    border: none;
+    outline: none;
+    font-size: 0.85rem;
+}
+
+/* Sheet header row (column letters) */
+.sheet-grid-table .sheet-corner-select {
+    height: 28px !important;
+    width: 48px !important;
+}
+
+.sheet-grid-table .sheet-column-letter {
+    height: 28px !important;
+    font-size: 0.74rem !important;
+    font-weight: 700;
+    background: #f8fafc;
+}
+
+/* Sheet editor header */
+.sheet-editor-header {
+    min-height: 60px !important;
+    padding: 14px 20px !important;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background: #fff;
+    border-bottom: 1px solid #e2e8f0;
+}
+
+.sheet-editor-header h3 {
+    font-size: 1.05rem !important;
+    margin: 0;
+}
+
+.sheet-editor-header p {
+    font-size: 0.8rem !important;
+    display: inline;
+}
+
+/* Sheet fullscreen - MUST work */
+.sheet-editor-panel:fullscreen {
+    width: 100vw !important;
+    height: 100vh !important;
+    min-height: 100vh !important;
+    max-width: none !important;
+    border: 0 !important;
+    border-radius: 0 !important;
+    background: #eef2f7;
+}
+
+.sheet-editor-panel:fullscreen .sheet-grid-shell {
+    height: calc(100vh - 210px) !important;
+}
+
+/* Sheet site column (wide) */
 .sheet-grid-table th.sheet-site-column,
 .sheet-grid-table td.sheet-site-column {
-    width: 300px !important;
-    min-width: 300px !important;
-    max-width: 300px !important;
+    width: 280px !important;
+    min-width: 280px !important;
+    max-width: 280px !important;
+}
+
+.sheet-grid-table td.sheet-site-column textarea {
+    height: 34px !important;
+    min-height: 34px !important;
+    white-space: pre-wrap;
+    font-weight: 600;
+}
+
+/* Sheet save state */
+.sheet-save-state {
+    min-height: 28px !important;
+    padding: 0 12px !important;
+    font-size: 0.76rem !important;
+}
+
+/* Sheet link data cells */
+.sheet-link-data-cell a {
+    min-height: 22px !important;
+    margin: 4px 6px 0 !important;
+    padding: 0 8px !important;
+    font-size: 0.76rem !important;
+}
+
+/* Sheet row select buttons */
+.sheet-row-select-button {
+    min-width: 28px !important;
+    height: 26px !important;
+    font-size: 0.78rem !important;
+}
+
+/* Sheet find/replace panel */
+.sheet-find-replace-panel {
+    padding: 8px 14px !important;
+    border-bottom: 1px solid #e2e8f0;
+    background: #fff;
+}
+
+/* Sheet context menu */
+.sheet-context-menu {
+    min-width: 200px !important;
+    padding: 6px !important;
+}
+
+/* Sheet filter dropdown */
+.sheet-filter-dropdown {
+    min-width: 180px !important;
+    max-height: 280px !important;
 }
