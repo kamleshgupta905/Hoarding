@@ -1081,10 +1081,37 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
     // 🖥️ UI COMPONENTS
     // ------------------------------------------------------------------
 
-    const toggleStatus = (siteName) => {
+    const toggleStatus = (targetHoarding) => {
+        if (!targetHoarding) return;
+
+        const targetSL = targetHoarding.SL || targetHoarding["S. No."] || targetHoarding["SL NO"];
+        const targetId = targetHoarding.UniqueID || targetHoarding["Unique ID"] || targetHoarding.ID || targetHoarding._SiteID;
+        const targetLoc = String(targetHoarding["Locality Site Location"] || targetHoarding["Location "] || targetHoarding.Location || '').trim().toLowerCase();
+        const targetFacing = String(targetHoarding.Facing || targetHoarding["Traffic View"] || '').trim().toLowerCase();
+        const targetLat = String(targetHoarding.Latitude || '').trim();
+        const targetLng = String(targetHoarding.Longitude || '').trim();
+
         const updated = hoardings.map(h => {
-            const hName = h["Locality Site Location"] || h["Location "] || h.Location;
-            if (hName === siteName) {
+            let isMatch = (h === targetHoarding);
+            if (!isMatch && targetId && (h.UniqueID || h["Unique ID"] || h.ID || h._SiteID)) {
+                isMatch = String(h.UniqueID || h["Unique ID"] || h.ID || h._SiteID).trim().toLowerCase() === String(targetId).trim().toLowerCase();
+            }
+            if (!isMatch && targetSL && (h.SL || h["S. No."] || h["SL NO"])) {
+                isMatch = String(h.SL || h["S. No."] || h["SL NO"]).trim() === String(targetSL).trim();
+            }
+            if (!isMatch && targetLoc) {
+                const hLoc = String(h["Locality Site Location"] || h["Location "] || h.Location || '').trim().toLowerCase();
+                const hFacing = String(h.Facing || h["Traffic View"] || '').trim().toLowerCase();
+                const hLat = String(h.Latitude || '').trim();
+                const hLng = String(h.Longitude || '').trim();
+                
+                isMatch = (hLoc === targetLoc) && 
+                          (!targetFacing || hFacing === targetFacing) && 
+                          (!targetLat || hLat === targetLat) && 
+                          (!targetLng || hLng === targetLng);
+            }
+
+            if (isMatch) {
                 const isCurrentlyBooked = (h.STATUS || '').toLowerCase() === 'booked' || (h.STATUS || '').toLowerCase() === 'occupied';
                 const newStatus = isCurrentlyBooked ? 'Available' : 'Booked';
                 return { ...h, STATUS: newStatus };
@@ -1092,6 +1119,10 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
             return h;
         });
         setHoardings(updated);
+        try {
+            localStorage.setItem('hoardings_cache', JSON.stringify(updated));
+            localStorage.setItem('last_hoardings_update', Date.now().toString());
+        } catch {}
     };
 
     const handleAddAsset = async (e) => {
@@ -1303,12 +1334,23 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
             const targetKey = String(targetSite["Location "] || targetSite.Location || targetSite["Locality Site Location"] || '').trim().toLowerCase();
             const targetId = String(targetSite.UniqueID || targetSite["Unique ID"] || targetSite.ID || targetSite._SiteID || '').trim().toLowerCase();
 
-            // 1. Instantly update UI state & cache
+            // 1. Instantly update UI state & cache with precision targeting (matching SL, Facing, Lat-Long)
+            const targetSL = targetSite.SL || targetSite["S. No."] || targetSite["SL NO"];
+            const targetFacing = String(targetSite.Facing || targetSite["Traffic View"] || '').trim().toLowerCase();
+            const targetLat = String(targetSite.Latitude || '').trim();
+            const targetLng = String(targetSite.Longitude || '').trim();
+
             setHoardings(prev => {
                 const next = prev.map(h => {
-                    const isTarget = h === targetSite || 
+                    const isTarget = (h === targetSite) ||
                         (targetId && String(h.UniqueID || h["Unique ID"] || h.ID || h._SiteID || '').trim().toLowerCase() === targetId) ||
-                        (targetKey && String(h["Location "] || h.Location || h["Locality Site Location"] || '').trim().toLowerCase() === targetKey);
+                        (targetSL && String(h.SL || h["S. No."] || h["SL NO"]).trim() === String(targetSL).trim()) ||
+                        (
+                            targetKey && String(h["Location "] || h.Location || h["Locality Site Location"] || '').trim().toLowerCase() === targetKey &&
+                            (!targetFacing || String(h.Facing || h["Traffic View"] || '').trim().toLowerCase() === targetFacing) &&
+                            (!targetLat || String(h.Latitude || '').trim() === targetLat) &&
+                            (!targetLng || String(h.Longitude || '').trim() === targetLng)
+                        );
                     return isTarget ? { ...h, ...fullUpdatedFields } : h;
                 });
                 try {
@@ -4341,7 +4383,7 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                                         </button>
                                                         <button
                                                             className={`btn-icon-small ${(h.STATUS === 'Booked' || h.STATUS === 'Occupied') ? 'occupied-btn' : 'available-btn'}`}
-                                                            onClick={() => toggleStatus(h["Locality Site Location"] || h["Location "] || h.Location)}
+                                                            onClick={() => toggleStatus(h)}
                                                             title={(h.STATUS === 'Booked' || h.STATUS === 'Occupied') ? 'Mark as Available' : 'Mark as Booked'}
                                                         >
                                                             {(h.STATUS === 'Booked' || h.STATUS === 'Occupied') ? <CheckCircle size={16} /> : <Calendar size={16} />}
