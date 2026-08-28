@@ -1249,8 +1249,13 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
         const siteLocation = h["Locality Site Location"] || h["Location "] || h["Location"] || '';
         const price = h["Avg Monthly Cost (INR)"] ?? h["Rental Per Month"] ?? h["Avg. monthly Cost"] ?? h.Price ?? '';
         const locality = h.Locality || h.Area || h["Area"] || '';
-        const size = h["Size (Large/Medium/Small)"] || h["Size (Large/ Medium/ Small)"] || h.Size || '';
-        const media = h["Media Format (Front Lit / Back Lit / Non Lit)"] || h["Media Format"] || h["Media Type"] || '';
+        const size = h["Size (Large/Medium/Small)"] || h["Size (Large/ Medium/ Small)"] || (h.Width && h.Height ? `${h.Width}x${h.Height}` : h.Size) || '';
+        const media = h["Media Format (Front Lit / Back Lit / Non Lit)"] || h["Media Format"] || h["Media Type"] || h.Media || h.Type || '';
+        const facing = h.Facing || h["Traffic View"] || '';
+        const trafficFrom = h["Traffic From"] || '';
+        const trafficTo = h["Traffic To"] || '';
+        const lat = h.Latitude || h.Lat || (h["Lat-Long"] ? h["Lat-Long"].split(',')[0]?.trim() : '');
+        const lng = h.Longitude || h.Long || (h["Lat-Long"] ? h["Lat-Long"].split(',')[1]?.trim() : '');
 
         setSelectedHoarding(h);
         setFormData({
@@ -1262,6 +1267,13 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
             city: h.City || h.city || '',
             Locality: locality,
             Area: locality,
+            Facing: facing,
+            "Traffic View": facing,
+            "Traffic From": trafficFrom,
+            "Traffic To": trafficTo,
+            Latitude: lat,
+            Longitude: lng,
+            "Lat-Long": h["Lat-Long"] || (lat && lng ? `${lat}, ${lng}` : ''),
             "Rental Per Month": price,
             "Avg Monthly Cost (INR)": price,
             "Avg. monthly Cost": price,
@@ -1272,6 +1284,7 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
             "Media Format (Front Lit / Back Lit / Non Lit)": media,
             "Media Format": media,
             "Media Type": media,
+            Media: media,
             STATUS: h.STATUS || 'Available'
         });
         setSelectedAssetFile(null);
@@ -2224,7 +2237,7 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                 </div>
                                 <div className="form-row three-cols">
                                     <div className="form-group">
-                                        <label>Locality</label>
+                                        <label>Locality / Area</label>
                                         <input 
                                             value={formData.Locality ?? formData.Area ?? ''} 
                                             onChange={e => setFormData({
@@ -2232,18 +2245,31 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                                 Locality: e.target.value, 
                                                 Area: e.target.value
                                             })}
-                                            placeholder="e.g. Partapur"
+                                            placeholder="e.g. Partapur / Begum Bridge"
+                                        />
+                                    </div>
+                                    <div className="form-group">
+                                        <label>Facing / Traffic View*</label>
+                                        <input 
+                                            value={formData.Facing ?? formData["Traffic View"] ?? ''} 
+                                            onChange={e => setFormData({
+                                                ...formData, 
+                                                Facing: e.target.value,
+                                                "Traffic View": e.target.value
+                                            })}
+                                            placeholder="e.g. Modipuram / Delhi Road"
                                         />
                                     </div>
                                     <div className="form-group">
                                         <label>Media Format</label>
                                         <select 
-                                            value={formData["Media Format (Front Lit / Back Lit / Non Lit)"] ?? formData["Media Format"] ?? formData["Media Type"] ?? ''} 
+                                            value={formData["Media Format (Front Lit / Back Lit / Non Lit)"] ?? formData["Media Format"] ?? formData["Media Type"] ?? formData.Media ?? ''} 
                                             onChange={e => setFormData({
                                                 ...formData, 
                                                 "Media Format (Front Lit / Back Lit / Non Lit)": e.target.value,
                                                 "Media Format": e.target.value,
-                                                "Media Type": e.target.value
+                                                "Media Type": e.target.value,
+                                                Media: e.target.value
                                             })}
                                         >
                                             <option value="">Select Format</option>
@@ -2252,8 +2278,32 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                             <option value="Non Lit">Non Lit</option>
                                         </select>
                                     </div>
+                                </div>
+                                <div className="form-row three-cols">
                                     <div className="form-group">
-                                        <label>Size</label>
+                                        <label>Traffic From</label>
+                                        <input 
+                                            value={formData["Traffic From"] ?? ''} 
+                                            onChange={e => setFormData({
+                                                ...formData, 
+                                                "Traffic From": e.target.value
+                                            })}
+                                            placeholder="e.g. Delhi"
+                                        />
+                                    </div>
+                                    <div className="form-group">
+                                        <label>Traffic To</label>
+                                        <input 
+                                            value={formData["Traffic To"] ?? ''} 
+                                            onChange={e => setFormData({
+                                                ...formData, 
+                                                "Traffic To": e.target.value
+                                            })}
+                                            placeholder="e.g. Dehradun / Modipuram"
+                                        />
+                                    </div>
+                                    <div className="form-group">
+                                        <label>Size (Dimensions)</label>
                                         <input 
                                             value={formData["Size (Large/Medium/Small)"] ?? formData["Size (Large/ Medium/ Small)"] ?? formData.Size ?? ''} 
                                             onChange={e => setFormData({
@@ -2262,13 +2312,13 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                                 "Size (Large/ Medium/ Small)": e.target.value,
                                                 Size: e.target.value
                                             })}
-                                            placeholder="e.g. 20x10"
+                                            placeholder="e.g. 40x10 ft"
                                         />
                                     </div>
                                 </div>
                                 <div className="form-row three-cols">
                                     <div className="form-group">
-                                        <label>Monthly Cost (INR)</label>
+                                        <label>Monthly Cost / Commercials (INR)</label>
                                         <input 
                                             type="number"
                                             value={formData["Avg Monthly Cost (INR)"] ?? formData["Rental Per Month"] ?? formData["Avg. monthly Cost"] ?? formData.Price ?? ''} 
@@ -2279,23 +2329,25 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                                 "Avg. monthly Cost": e.target.value,
                                                 Price: e.target.value
                                             })}
-                                            placeholder="e.g. 50000"
+                                            placeholder="e.g. 60000"
                                         />
                                     </div>
                                     <div className="form-group">
-                                        <label>Latitude (Optional)</label>
+                                        <label>Latitude*</label>
                                         <input 
+                                            required
                                             value={formData.Latitude ?? ''} 
                                             onChange={e => setFormData({...formData, Latitude: e.target.value})}
-                                            placeholder="e.g. 28.9845"
+                                            placeholder="e.g. 28.9981"
                                         />
                                     </div>
                                     <div className="form-group">
-                                        <label>Longitude (Optional)</label>
+                                        <label>Longitude*</label>
                                         <input 
+                                            required
                                             value={formData.Longitude ?? ''} 
                                             onChange={e => setFormData({...formData, Longitude: e.target.value})}
-                                            placeholder="e.g. 77.7064"
+                                            placeholder="e.g. 77.7058"
                                         />
                                     </div>
                                 </div>
@@ -3952,24 +4004,36 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                                 <td>
                                                     <div 
                                                         className="asset-title" 
-                                                        style={{ cursor: 'pointer', transition: 'color 0.2s' }}
+                                                        style={{ cursor: 'pointer', transition: 'color 0.2s', fontWeight: '700', fontSize: '14px' }}
                                                         onClick={() => navigate(`/${encodeURIComponent(h.City || 'city')}/${encodeURIComponent(h["Location "] || h.Location || h["Locality Site Location"] || '')}`)}
                                                         title="Open site detail page"
                                                     >
                                                         {h["Locality Site Location"] || h["Location "] || h["Location"] || "Hoarding Site"}
                                                     </div>
-                                                    <div className="asset-meta">
-                                                        {h["Locality"] || h["Area"] || h.City}
-                                                        {h.Width && h.Height ? ` • ${h.Width}x${h.Height} ft` : ''}
-                                                        {h["Type of Site (Unipole/Billboard)"] || h["Type"] ? ` • ${h["Type of Site (Unipole/Billboard)"] || h["Type"]}` : ''}
+                                                    <div className="asset-meta" style={{ marginTop: '3px', fontSize: '12px', color: '#6366f1' }}>
+                                                        {h.Facing && <span style={{ fontWeight: '600' }}>Facing: {h.Facing}</span>}
+                                                        {h["Traffic From"] && <span style={{ color: '#64748b' }}> • {h["Traffic From"]} ➔ {h["Traffic To"] || ''}</span>}
+                                                        {(h.Latitude && h.Longitude) && <span style={{ color: '#94a3b8', fontSize: '11px' }}> • 📍 {h.Latitude}, {h.Longitude}</span>}
                                                     </div>
                                                 </td>
                                                 <td>
-                                                    <div className="asset-region">{h.City}</div>
+                                                    <div className="asset-region" style={{ fontWeight: '700', color: '#1e293b', fontSize: '13px' }}>
+                                                        {h.City || 'Meerut'}
+                                                    </div>
+                                                    <div className="asset-meta" style={{ marginTop: '2px', fontSize: '12px', color: '#475569' }}>
+                                                        <span style={{ fontWeight: '600', color: '#334155' }}>{h["Locality"] || h["Area"] || h.City}</span>
+                                                        {(h.Width && h.Height) ? ` • ${h.Width}x${h.Height} ft` : (h.Size ? ` • ${h.Size}` : '')}
+                                                        {(h["Type of Site (Unipole/Billboard)"] || h["Type"] || h.Media) ? ` • ${h["Type of Site (Unipole/Billboard)"] || h["Type"] || h.Media}` : ''}
+                                                    </div>
                                                 </td>
                                                 <td className="asset-price">
                                                     ₹{Number(h["Avg Monthly Cost (INR)"] || h["Rental Per Month"] || 0).toLocaleString('en-IN')}
                                                     <span style={{ fontSize: '11px', color: '#94a3b8', display: 'block', fontWeight: '500' }}>/ month</span>
+                                                    {h.Facing && (
+                                                        <span style={{ fontSize: '10px', color: '#4338ca', background: '#e0e7ff', padding: '1px 6px', borderRadius: '4px', display: 'inline-block', marginTop: '3px', fontWeight: '600' }}>
+                                                            {h.Facing}
+                                                        </span>
+                                                    )}
                                                 </td>
                                                 <td>
                                                     <span className={`status-pill ${h.STATUS === 'Disabled' ? 'disabled' :
