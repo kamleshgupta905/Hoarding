@@ -2152,11 +2152,9 @@ function smartImport(incomingData) {
   }
   var rawHeaders = incomingData[0];
   var headerLookup = buildIncomingHeaderLookup(rawHeaders);
-  var idxSiteTarget = targetHeaders.findIndex(function(h) {
-    return cleanFull(h) === cleanFull(CONFIG.COL_SITE_NAME);
-  });
+  var idxSiteTarget = findSiteColumn(targetHeaders);
   if (idxSiteTarget === -1) {
-    logDebug("EXCEL | ERROR: Site column not found.");
+    logDebug("EXCEL | ERROR: Site column not found in target sheet.");
     return { added: 0, updated: 0, skipped: Math.max(0, incomingData.length - 1) };
   }
 
@@ -2418,18 +2416,25 @@ function buildRowIdentity(row, headers, idxSite) {
     for (var a = 0; a < arguments.length; a++) {
       var wanted = cleanFull(arguments[a]);
       for (var h = 0; h < headers.length; h++) {
-        if (cleanFull(headers[h]) === wanted) return row[h];
+        var cleanH = cleanFull(headers[h]);
+        if (cleanH === wanted) return row[h];
+        if (wanted === 'latlong' && (cleanH.indexOf('lat') !== -1 && cleanH.indexOf('long') !== -1)) return row[h];
       }
     }
     return "";
   }
 
-  var width = parseDimensionNumber(valueForHeader('Width'));
+  var sl = cleanFull(valueForHeader('SL', 'S.No', 'S. No.', 'S.No.', 'UniqueID', '_SiteID'));
+  var facing = cleanFull(valueForHeader('Facing', 'Traffic View', 'Traffic To', 'Traffic From'));
+  var width = parseDimensionNumber(valueForHeader('Width', 'Size'));
   var height = parseDimensionNumber(valueForHeader('Height'));
-  var type = cleanFull(valueForHeader('Type of Site (Unipole/ Billboard)', 'Type of Site'));
-  var latLong = cleanFull(valueForHeader('Lat Long (Concatenated)', 'Lat Long'));
+  var latLong = cleanFull(valueForHeader('Lat-Long', 'Lat Long', 'Coordinates', 'Latitude', 'Lat.'));
+  var lng = cleanFull(valueForHeader('Longitude', 'Long.', 'Long'));
 
-  return [siteKey, width || "", height || "", type || "", latLong || ""].join('|');
+  // If SL is available, it is the primary unique identifier
+  if (sl) return siteKey + '|' + sl;
+
+  return [siteKey, facing || "", width || "", height || "", latLong || "", lng || ""].join('|');
 }
 
 function buildIncomingHeaderLookup(rawHeaders) {
@@ -2450,30 +2455,28 @@ function getSpecialImportValue(cleanTargetHeader, row, headerLookup) {
     return null;
   }
 
-  if (cleanTargetHeader === 'sno' || cleanTargetHeader === 'srno' || cleanTargetHeader === 'serialno') {
-    return valByCleanHeader('sno', 'sl', 'serial', 'serialno');
+  if (cleanTargetHeader === 'sno' || cleanTargetHeader === 'srno' || cleanTargetHeader === 'serialno' || cleanTargetHeader === 'sl') {
+    return valByCleanHeader('sno', 'sl', 'serial', 'serialno', 's.no', 's.no.');
   }
 
-  if (cleanTargetHeader === cleanFull(CONFIG.COL_SITE_NAME) || cleanTargetHeader === 'localitysitelocation') {
-    var existingSite = valByCleanHeader('locality site location', 'site location', 'site name', 'location name', 'site address', 'site details', 'location details', 'site description', 'hoarding location', 'hoarding name', 'display location', 'media location');
+  if (cleanTargetHeader === cleanFull(CONFIG.COL_SITE_NAME) || cleanTargetHeader === 'localitysitelocation' || cleanTargetHeader === 'location' || cleanTargetHeader === 'sitename') {
+    var existingSite = valByCleanHeader('location', 'locality site location', 'site location', 'site name', 'location name', 'site address', 'site details', 'location details', 'site description', 'hoarding location', 'hoarding name', 'display location', 'media location');
     if (existingSite) return existingSite;
-
     var location = valByCleanHeader('location', 'location name', 'site', 'address');
-    var facing = valByCleanHeader('facing', 'traffic facing');
-    if (location && facing) return String(location).trim() + ' Fcng ' + String(facing).trim();
     if (location) return location;
     return null;
   }
 
-  if (cleanTargetHeader === 'locality') return valByCleanHeader('locality', 'area', 'market');
-  if (cleanTargetHeader === 'typeofsiteunipolebillboard' || cleanTargetHeader === 'typeofsite') return valByCleanHeader('type of site', 'media', 'media type');
-  if (cleanTargetHeader === 'mediaformatfrontlitbacklitnonlit' || cleanTargetHeader === 'mediaformat') return normalizeMediaFormat(valByCleanHeader('media format', 'type', 'lighting'));
-  if (cleanTargetHeader === 'units') return valByCleanHeader('units', 'qty', 'quantity');
-  if (cleanTargetHeader === 'totalsqft') return valByCleanHeader('total sq ft', 'total sqft', 'total sq.ft', 'total sq ft.');
-  if (cleanTargetHeader === 'avgmonthlycost' || cleanTargetHeader === 'avgmonthlycostinr') return valByCleanHeader('avg monthly cost', 'avg. monthly cost', 'rental per month', 'rent per month', 'monthly rental');
-  if (cleanTargetHeader === 'latlongconcatenated' || cleanTargetHeader === 'latlong') return valByCleanHeader('lat long', 'lat-long', 'lat long concatenated');
-  if (cleanTargetHeader === 'lat' || cleanTargetHeader === 'latitude') return valByCleanHeader('latitude', 'lat');
-  if (cleanTargetHeader === 'long' || cleanTargetHeader === 'longitude') return valByCleanHeader('longitude', 'long', 'lng');
+  if (cleanTargetHeader === 'facing' || cleanTargetHeader === 'trafficview') return valByCleanHeader('facing', 'traffic view', 'traffic to', 'traffic from', 'view');
+  if (cleanTargetHeader === 'locality' || cleanTargetHeader === 'area') return valByCleanHeader('locality', 'area', 'market', 'location area');
+  if (cleanTargetHeader === 'typeofsiteunipolebillboard' || cleanTargetHeader === 'typeofsite' || cleanTargetHeader === 'media' || cleanTargetHeader === 'mediatype') return valByCleanHeader('media', 'type of site', 'media type', 'display type');
+  if (cleanTargetHeader === 'mediaformatfrontlitbacklitnonlit' || cleanTargetHeader === 'mediaformat' || cleanTargetHeader === 'type' || cleanTargetHeader === 'lighting') return normalizeMediaFormat(valByCleanHeader('type', 'media format', 'lighting', 'illumination'));
+  if (cleanTargetHeader === 'units' || cleanTargetHeader === 'qty' || cleanTargetHeader === 'quantity') return valByCleanHeader('qty', 'units', 'quantity', 'total units');
+  if (cleanTargetHeader === 'totalsqft' || cleanTargetHeader === 'totalsq.ft') return valByCleanHeader('total sq.ft', 'total sq ft', 'total sqft', 'total sq ft.', 'sqft', 'sq.ft');
+  if (cleanTargetHeader === 'rentalpermonth' || cleanTargetHeader === 'avgmonthlycost' || cleanTargetHeader === 'avgmonthlycostinr' || cleanTargetHeader === 'rentpermonth') return valByCleanHeader('rental per month', 'avg monthly cost', 'avg. monthly cost', 'rent per month', 'monthly rental', 'rate', 'cost');
+  if (cleanTargetHeader === 'latlongconcatenated' || cleanTargetHeader === 'latlong' || cleanTargetHeader === 'coordinates') return valByCleanHeader('lat-long', 'lat long', 'coordinates', 'lat long concatenated');
+  if (cleanTargetHeader === 'lat' || cleanTargetHeader === 'latitude') return valByCleanHeader('latitude', 'lat', 'lat.');
+  if (cleanTargetHeader === 'long' || cleanTargetHeader === 'longitude') return valByCleanHeader('longitude', 'long', 'lng', 'long.');
 
   return null;
 }
