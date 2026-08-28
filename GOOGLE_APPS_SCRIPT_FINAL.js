@@ -1842,16 +1842,7 @@ var EXCEL_IMPORT_HEADERS = [
 ];
 
 var REQUIRED_IMPORT_HEADERS = [
-  'City',
-  'Locality',
-  'Locality Site Location',
-  'Traffic From',
-  'Traffic To',
-  'Lat.',
-  'Long.',
-  'Size (Large/ Medium/ Small)',
-  'Avg. monthly Cost',
-  'STATUS'
+  'Location'
 ];
 
 var HEADER_ALIASES = {
@@ -2467,6 +2458,18 @@ function getSpecialImportValue(cleanTargetHeader, row, headerLookup) {
     return null;
   }
 
+  if (cleanTargetHeader === 'status') {
+    var rawStatus = valByCleanHeader('status', 'site status', 'availability', 'state');
+    return rawStatus ? String(rawStatus).trim() : 'Available';
+  }
+  if (cleanTargetHeader === 'city') {
+    var rawCity = valByCleanHeader('city', 'market city', 'town');
+    return rawCity ? String(rawCity).trim() : 'Meerut';
+  }
+  if (cleanTargetHeader === 'units' || cleanTargetHeader === 'qty' || cleanTargetHeader === 'quantity') {
+    var rawQty = valByCleanHeader('qty', 'units', 'quantity', 'total units');
+    return rawQty !== null && rawQty !== undefined && rawQty !== '' ? rawQty : 1;
+  }
   if (cleanTargetHeader === 'facing' || cleanTargetHeader === 'trafficview') return valByCleanHeader('facing', 'traffic view', 'traffic to', 'traffic from', 'view');
   if (cleanTargetHeader === 'locality' || cleanTargetHeader === 'area') return valByCleanHeader('locality', 'area', 'market', 'location area');
   if (cleanTargetHeader === 'typeofsiteunipolebillboard' || cleanTargetHeader === 'typeofsite' || cleanTargetHeader === 'media' || cleanTargetHeader === 'mediatype') return valByCleanHeader('media', 'type of site', 'media type', 'display type');
