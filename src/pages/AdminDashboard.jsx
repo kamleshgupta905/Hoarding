@@ -459,7 +459,7 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
 
                 let completed = 0;
                 let syncedCount = 0;
-                const CONCURRENCY = 5; // Reduced from 50 to 5 to avoid Google Apps Script "Too Many Concurrent Executions" rate limiting.
+                const CONCURRENCY = 2;
 
                 const queue = [...processableSlides];
                 const workers = Array.from({ length: CONCURRENCY }, async () => {
@@ -480,13 +480,18 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                         }
                         const siteName = matchedSite ? (matchedSite['Locality Site Location'] || matchedSite['Location '] || matchedSite.Location || matchedSite._SiteID) : fallbackName;
 
-                        let success = false;
-                        for (let attempt = 1; attempt <= 3 && !success; attempt++) {
-                            try {
-                                const compressedDataUrl = await compressImage(photoCandidate.blob, 1280, 960, 0.78);
-                                const pureBase64 = compressedDataUrl.replace(/^data:image\/[a-z]+;base64,/, '');
+                        let pureBase64 = '';
+                        try {
+                            const compressedDataUrl = await compressImage(photoCandidate.blob, 1280, 960, 0.78);
+                            pureBase64 = compressedDataUrl.replace(/^data:image\/[a-z]+;base64,/, '');
+                        } catch (compErr) {
+                            console.warn(`[Compression Fallback] Slide ${slide.number}:`, compErr);
+                        }
 
-                                await syncToGoogleSheet({
+                        let success = false;
+                        for (let attempt = 1; attempt <= 5 && !success; attempt++) {
+                            try {
+                                const res = await syncToGoogleSheet({
                                     action: 'updateHoarding',
                                     sessionToken: getAdminSession(),
                                     siteName: siteName,
@@ -494,13 +499,17 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                     fileData: pureBase64,
                                     mimeType: 'image/jpeg'
                                 });
-                                syncedCount++;
-                                success = true;
-                            } catch (uploadErr) {
-                                if (attempt < 3) {
-                                    await wait(300 * attempt);
+                                if (res && res.success !== false) {
+                                    syncedCount++;
+                                    success = true;
                                 } else {
-                                    console.warn(`[PPT Upload] Failed for slide ${slide.number}:`, uploadErr);
+                                    throw new Error(res?.error || 'Sync rejected');
+                                }
+                            } catch (uploadErr) {
+                                if (attempt < 5) {
+                                    await wait(1200 * attempt);
+                                } else {
+                                    console.warn(`[PPT Upload] Failed for slide ${slide.number} after 5 attempts:`, uploadErr);
                                 }
                             }
                         }
@@ -508,7 +517,7 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                         completed++;
                         const percent = Math.round(45 + (completed / processableSlides.length) * 50);
                         updateFileProcessing({
-                            phase: `⚡ Smart AI Sync: ${completed}/${processableSlides.length} slides (${syncedCount} photos synced)...`,
+                            phase: `⚡ AI Smart Sync: ${completed}/${processableSlides.length} slides (${syncedCount} photos saved)...`,
                             progress: percent
                         });
                     }

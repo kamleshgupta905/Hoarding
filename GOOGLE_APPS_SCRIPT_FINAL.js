@@ -1407,7 +1407,7 @@ function updateHoardingDetails(data) {
     if (rowIndex === -1) {
       if (data.fileData) {
         var appendLock = LockService.getScriptLock();
-        appendLock.waitLock(15000);
+        appendLock.waitLock(30000);
         try {
           var newRow = new Array(headers.length);
           for (var c = 0; c < headers.length; c++) newRow[c] = "";
