@@ -187,10 +187,17 @@ export const parsePptx = async (arrayBuffer, sites) => {
     slide.images = slide.images.map((image) => {
       const repeated = (hashUsage.get(image.hash) || 0) > 1;
       const relativeArea = (image.width * image.height) / maxArea;
-      const tooSmall = image.size < 18000 || image.width < 240 || image.height < 120 || relativeArea < 0.08;
+      const tooSmall = image.size < 5000 || image.width < 100 || image.height < 60 || relativeArea < 0.05;
       return { ...image, repeated, logoCandidate: repeated && tooSmall };
     });
     slide.photoCandidates = slide.images.filter((image) => !image.logoCandidate);
+
+    // 🛡️ Fallback: If all images were marked as logoCandidate, pick the largest image so NO slide photo is lost!
+    if (slide.photoCandidates.length === 0 && slide.images.length > 0) {
+      const sorted = [...slide.images].sort((a, b) => (b.width * b.height) - (a.width * a.height));
+      slide.photoCandidates = [sorted[0]];
+    }
+
     slide.suggestedSiteId = slide.candidates[0]?.site?._SiteID || '';
     slide.confidence = slide.candidates[0]?.score >= 4000 ? 'HIGH' : slide.candidates[0]?.score >= 900 ? 'MEDIUM' : 'LOW';
     slide.status = slide.suggestedSiteId && slide.photoCandidates.length ? (slide.confidence === 'HIGH' ? 'MATCHED' : 'REVIEW') : 'SKIPPED';

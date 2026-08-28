@@ -658,7 +658,7 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
 
                 let completed = 0;
                 let syncedCount = 0;
-                const CONCURRENCY = 5;
+                const CONCURRENCY = 30;
 
                 const queue = [...processableSlides];
                 const workers = Array.from({ length: CONCURRENCY }, async () => {
