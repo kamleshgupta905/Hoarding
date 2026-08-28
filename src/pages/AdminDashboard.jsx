@@ -474,7 +474,11 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                         }
 
                         const matchedSite = hoardings.find(h => h._SiteID === slide.suggestedSiteId) || slide.candidates?.[0]?.site;
-                        const siteName = matchedSite ? (matchedSite['Locality Site Location'] || matchedSite['Location '] || matchedSite.Location || matchedSite._SiteID) : `Slide_${slide.number}`;
+                        let fallbackName = `Slide_${slide.number}`;
+                        if (slide.text && slide.text.trim().length > 0) {
+                            fallbackName = slide.text.trim().replace(/\s+/g, ' ').substring(0, 100);
+                        }
+                        const siteName = matchedSite ? (matchedSite['Locality Site Location'] || matchedSite['Location '] || matchedSite.Location || matchedSite._SiteID) : fallbackName;
 
                         let success = false;
                         for (let attempt = 1; attempt <= 3 && !success; attempt++) {

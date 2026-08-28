@@ -1404,7 +1404,18 @@ function updateHoardingDetails(data) {
       }
     }
 
-    if (rowIndex === -1) return res({ success: false, error: 'Site not found: ' + siteSearchTerm });
+    if (rowIndex === -1) {
+      if (data.fileData) {
+        var newRow = new Array(headers.length);
+        for (var c = 0; c < headers.length; c++) newRow[c] = "";
+        newRow[idxSite] = siteSearchTerm;
+        sheet.appendRow(newRow);
+        rowIndex = sheet.getLastRow();
+        logDebug("UPDATE | Appended new row for unmatched site: " + siteSearchTerm);
+      } else {
+        return res({ success: false, error: 'Site not found: ' + siteSearchTerm });
+      }
+    }
 
     // 1. Identify Image & History Columns
     var idxImg = findImageColumn(headers);
