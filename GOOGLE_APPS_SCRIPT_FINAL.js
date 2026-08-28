@@ -2495,7 +2495,36 @@ function normalizeMediaFormat(value) {
 
 /* ================= IMAGE MAP ================= */
 
+function cleanEmptySheetRows() {
+  var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(CONFIG.SHEET_NAME);
+  if (!sheet) return 0;
+  var data = sheet.getDataRange().getValues();
+  if (data.length <= 1) return 0;
+  var headers = data[0];
+  var idxSite = findSiteColumn(headers);
+  var idxCity = headers.findIndex(function(h) { return cleanFull(h) === 'city'; });
+  
+  var deletedCount = 0;
+  for (var i = data.length - 1; i >= 1; i--) {
+    var site = idxSite !== -1 ? String(data[i][idxSite] || '').trim() : '';
+    var city = idxCity !== -1 ? String(data[i][idxCity] || '').trim() : '';
+    if (!site && !city) {
+      sheet.deleteRow(i + 1);
+      deletedCount++;
+    }
+  }
+  SpreadsheetApp.flush();
+  logDebug("CLEANUP | Removed " + deletedCount + " empty blank rows from sheet.");
+  return deletedCount;
+}
+
+function cleanEmptyRowsAndNotify() {
+  var count = cleanEmptySheetRows();
+  SpreadsheetApp.getActiveSpreadsheet().toast('✅ ' + count + ' empty blank rows removed!', 'Clean Complete', 5);
+}
+
 function mapExistingImagesToSheet() {
+  cleanEmptySheetRows();
   var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(CONFIG.SHEET_NAME);
   if (!sheet) return;
   var data = sheet.getDataRange().getValues();
@@ -2503,6 +2532,7 @@ function mapExistingImagesToSheet() {
 
   var idxSite = findSiteColumn(headers);
   var idxImg = findImageColumn(headers);
+  var idxFacing = headers.findIndex(function(h) { return cleanFull(h) === 'facing' || cleanFull(h) === 'trafficview'; });
   
   if (idxImg === -1) {
     var newColIndex = sheet.getLastColumn() + 1;
@@ -2549,14 +2579,27 @@ function mapExistingImagesToSheet() {
 
   var updates = [];
   var mappedCount = 0;
+  var usedFileIds = {};
 
   for (var i = 1; i < data.length; i++) {
     var site = cleanFull(data[i][idxSite]);
     if (!site) continue;
 
-    var matchedImage = imageMap[site] || findBestImageFileForSite(site, imageList);
+    var facing = idxFacing !== -1 ? cleanFull(data[i][idxFacing]) : '';
+    var specificKey = facing ? (site + facing) : '';
+
+    var matchedImage = null;
+    if (specificKey && imageMap[specificKey] && !usedFileIds[imageMap[specificKey].getId()]) {
+      matchedImage = imageMap[specificKey];
+    } else if (imageMap[site] && !usedFileIds[imageMap[site].getId()]) {
+      matchedImage = imageMap[site];
+    } else {
+      matchedImage = findBestImageFileForSite(specificKey || site, imageList);
+    }
+
     if (matchedImage) {
       var img = matchedImage;
+      usedFileIds[img.getId()] = true;
       try { img.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW); } catch(e) {}
       var url = "https://lh3.googleusercontent.com/d/" + img.getId();
       updates.push([i + 1, idxImg + 1, url]);
@@ -2568,7 +2611,7 @@ function mapExistingImagesToSheet() {
     sheet.getRange(u[0], u[1]).setValue(u[2]);
   });
   SpreadsheetApp.flush();
-  SpreadsheetApp.getActiveSpreadsheet().toast('✅ ' + mappedCount + ' images mapped to Google Sheet!', 'Image Mapping Complete', 6);
+  SpreadsheetApp.getActiveSpreadsheet().toast('✅ ' + mappedCount + ' unique images mapped to Google Sheet!', 'Image Mapping Complete', 6);
 }
 
 /* ================= PPT ================= */
@@ -3178,6 +3221,7 @@ function onOpen() {
   ui.createMenu('⚡ Hoarding Automation')
     .addItem('▶ Process All PPT Files Now', 'processPPTs')
     .addItem('🖼 Map Existing Images to Sheet', 'mapExistingImagesToSheet')
+    .addItem('🧹 Clean Empty / Blank Rows', 'cleanEmptyRowsAndNotify')
     .addItem('🔓 Make All Drive Images Publicly Visible', 'makeAllDriveImagesPublic')
     .addItem('➕ Auto-Add Missing Columns (History, Booking, Status)', 'ensureAllColumnsInSheet')
     .addSeparator()
