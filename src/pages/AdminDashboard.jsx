@@ -658,7 +658,7 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
 
                 let completed = 0;
                 let syncedCount = 0;
-                const CONCURRENCY = 2;
+                const CONCURRENCY = 5;
 
                 const queue = [...processableSlides];
                 const workers = Array.from({ length: CONCURRENCY }, async () => {
@@ -690,14 +690,14 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
 
                         let pureBase64 = '';
                         try {
-                            const compressedDataUrl = await compressImage(photoCandidate.blob, 1280, 960, 0.78);
+                            const compressedDataUrl = await compressImage(photoCandidate.blob, 1024, 768, 0.72);
                             pureBase64 = compressedDataUrl.replace(/^data:image\/[a-z]+;base64,/, '');
                         } catch (compErr) {
                             console.warn(`[Compression Fallback] Slide ${slide.number}:`, compErr);
                         }
 
                         let success = false;
-                        for (let attempt = 1; attempt <= 5 && !success; attempt++) {
+                        for (let attempt = 1; attempt <= 2 && !success; attempt++) {
                             try {
                                 const res = await syncToGoogleSheet({
                                     action: 'updateHoarding',
@@ -717,10 +717,10 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                     throw new Error(res?.error || 'Sync rejected');
                                 }
                             } catch (uploadErr) {
-                                if (attempt < 5) {
-                                    await wait(1200 * attempt);
+                                if (attempt < 2) {
+                                    await wait(800);
                                 } else {
-                                    console.warn(`[PPT Upload] Failed for slide ${slide.number} after 5 attempts:`, uploadErr);
+                                    console.warn(`[PPT Upload] Failed for slide ${slide.number}:`, uploadErr);
                                 }
                             }
                         }

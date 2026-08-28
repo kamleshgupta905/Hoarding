@@ -46,7 +46,9 @@ const scoreSite = (text, site) => {
   const normalized = normalizeText(text);
   const siteId = normalizeText(site._SiteID);
   const siteLoc = normalizeText(site.Location || site['Location '] || site['Locality Site Location']);
-  const siteFacing = normalizeText(site.Facing);
+  const siteFacing = normalizeText(site.Facing || site['Traffic View']);
+  const siteFrom = normalizeText(site['Traffic From']);
+  const siteTo = normalizeText(site['Traffic To']);
   const siteLatLong = normalizeText(site['Lat-Long'] || (site.Latitude && site.Longitude ? (site.Latitude + ' ' + site.Longitude) : ''));
 
   let score = 0;
@@ -54,46 +56,70 @@ const scoreSite = (text, site) => {
   // 1. Unique ID Match
   if (siteId && normalized.includes(siteId)) score += 10000;
 
-  // 2. Lat-Long Match (Highest confidence spatial match)
+  // 2. Lat-Long Match (Exact or 4-5 digit prefix match)
   const latMatch = String(site.Latitude || '').trim();
   const lngMatch = String(site.Longitude || '').trim();
-  if (latMatch && lngMatch && text.includes(latMatch) && text.includes(lngMatch)) {
-    score += 8000;
+  if (latMatch && lngMatch) {
+    const latPrefix = latMatch.length >= 6 ? latMatch.slice(0, 6) : latMatch;
+    const lngPrefix = lngMatch.length >= 6 ? lngMatch.slice(0, 6) : lngMatch;
+    if (text.includes(latMatch) && text.includes(lngMatch)) {
+      score += 9000;
+    } else if (text.includes(latPrefix) && text.includes(lngPrefix)) {
+      score += 8500;
+    }
   } else if (siteLatLong && normalized.includes(siteLatLong)) {
     score += 8000;
   }
 
   // 3. Exact Location Name Match
   if (siteLoc && normalized.includes(siteLoc)) {
-    score += 4000 + siteLoc.length;
+    score += 5000 + siteLoc.length * 10;
   }
 
-  // 4. Facing Match (Essential for distinguishing sites at the same junction)
-  if (siteFacing && siteFacing.length > 2 && normalized.includes(siteFacing)) {
-    score += 2500;
+  // 4. Facing & Traffic Flow Match (Essential for distinguishing sites at the same junction)
+  if (siteFacing && siteFacing.length >= 3 && normalized.includes(siteFacing)) {
+    score += 3500;
+  }
+  if (siteFrom && siteFrom.length >= 3 && normalized.includes(siteFrom)) {
+    score += 1500;
+  }
+  if (siteTo && siteTo.length >= 3 && normalized.includes(siteTo)) {
+    score += 1500;
   }
 
-  // 5. Token Overlap for Locations
+  // 5. Intelligent Token Overlap for Locations (with synonym/phonetic tolerance)
   if (siteLoc) {
-    const ignored = new Set(['road', 'near', 'site', 'main', 'facing', 'opposite', 'towards']);
+    const ignored = new Set(['road', 'near', 'site', 'main', 'facing', 'opposite', 'towards', 'the', 'and', 'for']);
     const tokens = siteLoc.split(' ').filter((token) => token.length >= 3 && !ignored.has(token));
-    const hits = tokens.filter((token) => normalized.includes(token)).length;
-    if (tokens.length && hits >= 1) {
-      score += Math.round((hits / tokens.length) * 1500);
+    let tokenHits = 0;
+    for (const token of tokens) {
+      if (normalized.includes(token)) {
+        tokenHits++;
+      } else {
+        // Tolerant matching (e.g. bacha vs bachha, eves vs evez, mulchand vs moolchand)
+        const simplified = token.replace(/hh/g, 'h').replace(/z/g, 's').replace(/oo/g, 'u');
+        const normSimp = normalized.replace(/hh/g, 'h').replace(/z/g, 's').replace(/oo/g, 'u');
+        if (normSimp.includes(simplified)) {
+          tokenHits += 0.85;
+        }
+      }
+    }
+    if (tokens.length && tokenHits > 0) {
+      score += Math.round((tokenHits / tokens.length) * 3000);
     }
   }
 
-  // 6. City & Area Boost
+  // 6. City & Locality/Area Boost
   const city = normalizeText(site.City);
   const locality = normalizeText(site.Area || site.Locality);
-  if (city && normalized.includes(city)) score += 100;
-  if (locality && normalized.includes(locality)) score += 200;
+  if (city && normalized.includes(city)) score += 200;
+  if (locality && locality.length >= 3 && normalized.includes(locality)) score += 1200;
 
   // 7. Dimension Match
   const width = Math.round(Number(site.Width || 0));
   const height = Math.round(Number(site.Height || 0));
-  if (width && height && (normalized.includes(`${width}x${height}`) || normalized.includes(`${height}x${width}`))) {
-    score += 500;
+  if (width && height && (normalized.includes(`${width}x${height}`) || normalized.includes(`${height}x${width}`) || normalized.includes(`${width} x ${height}`))) {
+    score += 600;
   }
 
   return score;
