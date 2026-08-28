@@ -55,6 +55,8 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
     const [searchTerm, setSearchTerm] = useState('');
     const [inventoryCityFilter, setInventoryCityFilter] = useState('All');
     const [inventoryStatusFilter, setInventoryStatusFilter] = useState('All');
+    const [filterStartDate, setFilterStartDate] = useState('');
+    const [filterEndDate, setFilterEndDate] = useState('');
     const [inventoryLocalityFilter, setInventoryLocalityFilter] = useState('All');
     const [inventoryMediaFilter, setInventoryMediaFilter] = useState('All');
     const [inventorySizeFilter, setInventorySizeFilter] = useState('All');
@@ -891,8 +893,11 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
 
     const toggleStatus = (siteName) => {
         const updated = hoardings.map(h => {
-            if (h["Location "] === siteName) {
-                return { ...h, STATUS: h.STATUS === 'Disabled' ? 'Available' : 'Disabled' };
+            const hName = h["Locality Site Location"] || h["Location "] || h.Location;
+            if (hName === siteName) {
+                const isCurrentlyBooked = (h.STATUS || '').toLowerCase() === 'booked' || (h.STATUS || '').toLowerCase() === 'occupied';
+                const newStatus = isCurrentlyBooked ? 'Available' : 'Booked';
+                return { ...h, STATUS: newStatus };
             }
             return h;
         });
@@ -1291,6 +1296,37 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
         setIsEditModalOpen(true);
     };
 
+    const isSiteAvailableForDateRange = (h, startDateStr, endDateStr) => {
+        const isBooked = (h.STATUS || '').toLowerCase() === 'booked' || (h.STATUS || '').toLowerCase() === 'occupied';
+        if (!isBooked) return true;
+
+        if (!h.BookingStart && !h.BookingEnd) return false;
+        if (!startDateStr && !endDateStr) return false;
+
+        const parseD = (dStr) => {
+            if (!dStr) return null;
+            const d = new Date(dStr);
+            return isNaN(d.getTime()) ? null : new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+        };
+
+        const reqStart = parseD(startDateStr);
+        const reqEnd = parseD(endDateStr);
+        const bStart = parseD(h.BookingStart);
+        const bEnd = parseD(h.BookingEnd);
+
+        if (bStart && bEnd) {
+            const overlaps = (!reqStart || bEnd >= reqStart) && (!reqEnd || bStart <= reqEnd);
+            return !overlaps;
+        } else if (bStart) {
+            if (reqEnd && reqEnd < bStart) return true;
+            return false;
+        } else if (bEnd) {
+            if (reqStart && reqStart > bEnd) return true;
+            return false;
+        }
+        return false;
+    };
+
     const filteredInventory = useMemo(() => {
         const cleanSearch = searchTerm.trim().toLowerCase();
         const selectedCity = inventoryCityFilter.toLowerCase();
@@ -1334,14 +1370,26 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
             const matchCity = inventoryCityFilter === 'All' || hCity === selectedCity;
             if (!matchCity) return false;
 
-            const matchStatus = inventoryStatusFilter === 'All' ||
-                (inventoryStatusFilter === 'Offline' ? h.STATUS === 'Disabled' : h.STATUS === inventoryStatusFilter);
+            // Status & Date Range Availability Filter
+            let matchStatus = true;
+            const isBooked = (h.STATUS || '').toLowerCase() === 'booked' || (h.STATUS || '').toLowerCase() === 'occupied';
+            const isAvailable = !isBooked;
+
+            if (filterStartDate || filterEndDate) {
+                const isAvailInDates = isSiteAvailableForDateRange(h, filterStartDate, filterEndDate);
+                if (inventoryStatusFilter === 'Available') matchStatus = isAvailInDates;
+                else if (inventoryStatusFilter === 'Booked') matchStatus = !isAvailInDates;
+            } else {
+                if (inventoryStatusFilter === 'Available') matchStatus = isAvailable;
+                else if (inventoryStatusFilter === 'Booked') matchStatus = isBooked;
+            }
             if (!matchStatus) return false;
 
-            const matchLocality = inventoryLocalityFilter === 'All' || siteLocality === inventoryLocalityFilter;
+            const siteLocality = (h["Locality"] || h["Area"] || "").trim().toLowerCase();
+            const matchLocality = inventoryLocalityFilter === 'All' || siteLocality === inventoryLocalityFilter.toLowerCase();
             if (!matchLocality) return false;
 
-            const matchMedia = inventoryMediaFilter === 'All' || (h["Media Format (Front Lit / Back Lit / Non Lit)"] || h["Media Format"] || h["Media Type"]) === inventoryMediaFilter;
+            const matchMedia = inventoryMediaFilter === 'All' || (h["Media Format (Front Lit / Back Lit / Non Lit)"] || h["Media Format"] || h["Media Type"] || h.Media) === inventoryMediaFilter;
             if (!matchMedia) return false;
 
             const matchSize = inventorySizeFilter === 'All' || (h["Size (Large/Medium/Small)"] || h["Size"]) === inventorySizeFilter;
@@ -1359,7 +1407,7 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
 
             return matchPrice;
         });
-    }, [hoardings, searchTerm, inventoryCityFilter, inventoryStatusFilter, inventoryLocalityFilter, inventoryMediaFilter, inventorySizeFilter, inventoryCategoryFilter, inventoryPriceFilter]);
+    }, [hoardings, searchTerm, inventoryCityFilter, inventoryStatusFilter, filterStartDate, filterEndDate, inventoryLocalityFilter, inventoryMediaFilter, inventorySizeFilter, inventoryCategoryFilter, inventoryPriceFilter]);
 
     const getProposalKey = (h, index = 0) => [
         h["Location "],
@@ -1415,7 +1463,7 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
         if (!city) return null;
         return city.charAt(0).toUpperCase() + city.slice(1).toLowerCase();
     }).filter(Boolean))];
-    const inventoryStatuses = ['All', 'Available', 'Occupied', 'Offline'];
+    const inventoryStatuses = ['All', 'Available', 'Booked'];
     const inventoryTargetHoardings = inventoryCityFilter === 'All'
         ? safeHoardings
         : safeHoardings.filter(h => (h.City || '').trim().toLowerCase() === inventoryCityFilter.toLowerCase());
@@ -1490,9 +1538,8 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
 
     // Dynamic Overview Analytics
     const totalHoardingsCount = safeHoardings.length;
-    const occupiedCount = safeHoardings.filter(h => h && h.STATUS === 'Occupied').length;
-    const availableCount = safeHoardings.filter(h => h && (h.STATUS === 'Available' || !h.STATUS)).length;
-    const offlineCount = safeHoardings.filter(h => h && h.STATUS === 'Disabled').length;
+    const bookedCount = safeHoardings.filter(h => h && ((h.STATUS || '').toLowerCase() === 'booked' || (h.STATUS || '').toLowerCase() === 'occupied')).length;
+    const availableCount = safeHoardings.filter(h => h && !((h.STATUS || '').toLowerCase() === 'booked' || (h.STATUS || '').toLowerCase() === 'occupied')).length;
     
     const totalMonthlyRevenue = safeHoardings.reduce((sum, h) => {
         if (!h) return sum;
@@ -2362,17 +2409,16 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                     <div className="form-group">
                                         <label>STATUS</label>
                                         <select 
-                                            value={formData.STATUS || 'Available'} 
+                                            value={(formData.STATUS === 'Booked' || formData.STATUS === 'Occupied') ? 'Booked' : 'Available'} 
                                             onChange={e => setFormData({...formData, STATUS: e.target.value})}
-                                            style={{ borderColor: formData.STATUS === 'Occupied' ? '#f87171' : '#4ade80' }}
+                                            style={{ borderColor: (formData.STATUS === 'Booked' || formData.STATUS === 'Occupied') ? '#f87171' : '#4ade80' }}
                                         >
                                             <option value="Available">Available</option>
-                                            <option value="Occupied">Occupied</option>
-                                            <option value="Disabled">Disabled (Offline)</option>
+                                            <option value="Booked">Booked</option>
                                         </select>
                                     </div>
                                     
-                                    {formData.STATUS === 'Occupied' && (
+                                    {(formData.STATUS === 'Booked' || formData.STATUS === 'Occupied') && (
                                         <>
                                             <div className="form-group">
                                                 <label>Client Name (BookedBy)</label>
@@ -3866,6 +3912,24 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                         </select>
                                     </div>
                                     <div className="inventory-filter-group">
+                                        <label>Campaign Start Date</label>
+                                        <input 
+                                            type="date" 
+                                            value={filterStartDate} 
+                                            onChange={(e) => setFilterStartDate(e.target.value)}
+                                            style={{ padding: '7px 10px', borderRadius: '8px', border: '1px solid #d1d5db', fontSize: '0.84rem', outline: 'none' }}
+                                        />
+                                    </div>
+                                    <div className="inventory-filter-group">
+                                        <label>Campaign End Date</label>
+                                        <input 
+                                            type="date" 
+                                            value={filterEndDate} 
+                                            onChange={(e) => setFilterEndDate(e.target.value)}
+                                            style={{ padding: '7px 10px', borderRadius: '8px', border: '1px solid #d1d5db', fontSize: '0.84rem', outline: 'none' }}
+                                        />
+                                    </div>
+                                    <div className="inventory-filter-group">
                                         <label>Locality</label>
                                         <select value={inventoryLocalityFilter} onChange={(e) => setInventoryLocalityFilter(e.target.value)}>
                                             {inventoryLocalities.map(locality => (
@@ -3905,13 +3969,14 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                             ))}
                                         </select>
                                     </div>
-                                    
                                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
                                         <button
                                             className="btn-reset-filters"
                                             onClick={() => {
                                                 setInventoryCityFilter('All');
                                                 setInventoryStatusFilter('All');
+                                                setFilterStartDate('');
+                                                setFilterEndDate('');
                                                 setInventoryLocalityFilter('All');
                                                 setInventoryMediaFilter('All');
                                                 setInventorySizeFilter('All');
@@ -4044,13 +4109,10 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                                     )}
                                                 </td>
                                                 <td>
-                                                    <span className={`status-pill ${h.STATUS === 'Disabled' ? 'disabled' :
-                                                        h.STATUS === 'Occupied' ? 'occupied' : 'available'
-                                                        }`}>
-                                                        {h.STATUS === 'Disabled' ? 'Offline' :
-                                                            h.STATUS === 'Occupied' ? 'Occupied' : 'Available'}
+                                                    <span className={`status-pill ${(h.STATUS === 'Booked' || h.STATUS === 'Occupied') ? 'occupied' : 'available'}`}>
+                                                        {(h.STATUS === 'Booked' || h.STATUS === 'Occupied') ? 'Booked' : 'Available'}
                                                     </span>
-                                                    {h.STATUS === 'Occupied' && (
+                                                    {(h.STATUS === 'Booked' || h.STATUS === 'Occupied') && (
                                                         <div className="table-booking-info" style={{ fontSize: '10px', marginTop: '4px', color: '#808191' }}>
                                                             {h.BookedBy && <div title="Client Name">👤 {h.BookedBy}</div>}
                                                             {h.BookingStart && <div title="Start Date">Start: {new Date(h.BookingStart).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}</div>}
@@ -4076,11 +4138,11 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                                             <Settings size={16} />
                                                         </button>
                                                         <button
-                                                            className={`btn-icon-small ${h.STATUS === 'Disabled' ? 'hidden' : 'visible'}`}
-                                                            onClick={() => toggleStatus(h["Location "] || h.Location)}
-                                                            title={h.STATUS === 'Disabled' ? 'Enable Site' : 'Disable Site'}
+                                                            className={`btn-icon-small ${(h.STATUS === 'Booked' || h.STATUS === 'Occupied') ? 'occupied-btn' : 'available-btn'}`}
+                                                            onClick={() => toggleStatus(h["Locality Site Location"] || h["Location "] || h.Location)}
+                                                            title={(h.STATUS === 'Booked' || h.STATUS === 'Occupied') ? 'Mark as Available' : 'Mark as Booked'}
                                                         >
-                                                            {h.STATUS === 'Disabled' ? <EyeOff size={16} /> : <Eye size={16} />}
+                                                            {(h.STATUS === 'Booked' || h.STATUS === 'Occupied') ? <CheckCircle size={16} /> : <Calendar size={16} />}
                                                         </button>
                                                         <button 
                                                             className="btn-icon-small delete" 

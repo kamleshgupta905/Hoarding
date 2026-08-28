@@ -122,7 +122,8 @@ const CityList = ({ hoardings }) => {
                 const queryEnd = new Date(campaignEnd);
                 
                 if (!isNaN(queryStart.getTime()) && !isNaN(queryEnd.getTime()) && queryStart <= queryEnd) {
-                    if (h.STATUS?.toLowerCase() === 'occupied') {
+                    const isBooked = h.STATUS?.toLowerCase() === 'occupied' || h.STATUS?.toLowerCase() === 'booked';
+                    if (isBooked) {
                         const bStart = parseDate(h.BookingStart);
                         const bEnd = parseDate(h.BookingEnd);
                         
