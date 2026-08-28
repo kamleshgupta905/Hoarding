@@ -508,7 +508,7 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                         completed++;
                         const percent = Math.round(45 + (completed / processableSlides.length) * 50);
                         updateFileProcessing({
-                            phase: `🔥 50x Ultra-Speed Sync: ${completed}/${processableSlides.length} slides (${syncedCount} photos saved)...`,
+                            phase: `⚡ Smart AI Sync: ${completed}/${processableSlides.length} slides (${syncedCount} photos synced)...`,
                             progress: percent
                         });
                     }

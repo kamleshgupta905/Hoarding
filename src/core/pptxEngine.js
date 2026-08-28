@@ -45,21 +45,57 @@ const slideNumber = (path) => Number(path.match(/slide(\d+)\.xml$/)?.[1] || 0);
 const scoreSite = (text, site) => {
   const normalized = normalizeText(text);
   const siteId = normalizeText(site._SiteID);
-  const siteName = normalizeText(site['Location ']);
-  if (siteId && normalized.includes(siteId)) return 10000;
-  if (siteName && normalized.includes(siteName)) return 4000 + siteName.length;
+  const siteLoc = normalizeText(site.Location || site['Location '] || site['Locality Site Location']);
+  const siteFacing = normalizeText(site.Facing);
+  const siteLatLong = normalizeText(site['Lat-Long'] || (site.Latitude && site.Longitude ? (site.Latitude + ' ' + site.Longitude) : ''));
 
-  const ignored = new Set(['road', 'near', 'site', 'main', 'facing', 'opposite', 'towards']);
-  const tokens = siteName.split(' ').filter((token) => token.length >= 4 && !ignored.has(token));
-  const hits = tokens.filter((token) => normalized.includes(token)).length;
-  let score = tokens.length && hits >= 2 ? Math.round((hits / tokens.length) * 1200) : 0;
+  let score = 0;
+
+  // 1. Unique ID Match
+  if (siteId && normalized.includes(siteId)) score += 10000;
+
+  // 2. Lat-Long Match (Highest confidence spatial match)
+  const latMatch = String(site.Latitude || '').trim();
+  const lngMatch = String(site.Longitude || '').trim();
+  if (latMatch && lngMatch && text.includes(latMatch) && text.includes(lngMatch)) {
+    score += 8000;
+  } else if (siteLatLong && normalized.includes(siteLatLong)) {
+    score += 8000;
+  }
+
+  // 3. Exact Location Name Match
+  if (siteLoc && normalized.includes(siteLoc)) {
+    score += 4000 + siteLoc.length;
+  }
+
+  // 4. Facing Match (Essential for distinguishing sites at the same junction)
+  if (siteFacing && siteFacing.length > 2 && normalized.includes(siteFacing)) {
+    score += 2500;
+  }
+
+  // 5. Token Overlap for Locations
+  if (siteLoc) {
+    const ignored = new Set(['road', 'near', 'site', 'main', 'facing', 'opposite', 'towards']);
+    const tokens = siteLoc.split(' ').filter((token) => token.length >= 3 && !ignored.has(token));
+    const hits = tokens.filter((token) => normalized.includes(token)).length;
+    if (tokens.length && hits >= 1) {
+      score += Math.round((hits / tokens.length) * 1500);
+    }
+  }
+
+  // 6. City & Area Boost
   const city = normalizeText(site.City);
-  const locality = normalizeText(site["Area"]);
-  if (city && normalized.includes(city)) score += 180;
-  if (locality && normalized.includes(locality)) score += 260;
+  const locality = normalizeText(site.Area || site.Locality);
+  if (city && normalized.includes(city)) score += 100;
+  if (locality && normalized.includes(locality)) score += 200;
+
+  // 7. Dimension Match
   const width = Math.round(Number(site.Width || 0));
   const height = Math.round(Number(site.Height || 0));
-  if (width && height && (normalized.includes(`${width}x${height}`) || normalized.includes(`${height}x${width}`))) score += 500;
+  if (width && height && (normalized.includes(`${width}x${height}`) || normalized.includes(`${height}x${width}`))) {
+    score += 500;
+  }
+
   return score;
 };
 
