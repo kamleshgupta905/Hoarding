@@ -2556,6 +2556,9 @@ function mapExistingImagesToSheet() {
   var idxSite = findSiteColumn(headers);
   var idxImg = findImageColumn(headers);
   var idxFacing = headers.findIndex(function(h) { return cleanFull(h) === 'facing' || cleanFull(h) === 'trafficview'; });
+  var idxLat = headers.findIndex(function(h) { return cleanFull(h) === 'latitude' || cleanFull(h) === 'lat' || cleanFull(h) === 'lat.'; });
+  var idxLng = headers.findIndex(function(h) { return cleanFull(h) === 'longitude' || cleanFull(h) === 'long' || cleanFull(h) === 'long.' || cleanFull(h) === 'lng'; });
+  var idxLatLong = headers.findIndex(function(h) { return cleanFull(h).indexOf('lat') !== -1 && cleanFull(h).indexOf('long') !== -1; });
   
   if (idxImg === -1) {
     var newColIndex = sheet.getLastColumn() + 1;
@@ -2565,40 +2568,61 @@ function mapExistingImagesToSheet() {
   }
   if (idxSite === -1) return;
 
-  var folderIds = [
-    CONFIG.IMAGE_FOLDER_ID,
-    "1gJmB53z4Ab7Jy-JTxU0v_05_A9Lq5BuE",
-    "1zlCavCgAa98MLZicTZrM0FTqqcG3h60l"
-  ];
-
-  var imageMap = {};
   var imageList = [];
   var seenIds = {};
 
+  function addFile(f) {
+    var id = f.getId();
+    if (seenIds[id]) return;
+    seenIds[id] = true;
+    
+    var rawName = f.getName().replace(/\.(png|jpg|jpeg|webp)$/i, "");
+    var cleanWithoutTimestamp = rawName.replace(/_\d{10,}$/, "").replace(/^\d+[\s._-]+/, "").trim();
+    var key = cleanFull(cleanWithoutTimestamp);
+    var rawKey = cleanFull(rawName);
+    imageList.push({ key: key, rawKey: rawKey, name: rawName, file: f, id: id });
+  }
+
+  // 1. Check known folders
+  var folderIds = [
+    CONFIG.IMAGE_FOLDER_ID,
+    CONFIG.INPUT_FOLDER_ID,
+    "1gJmB53z4Ab7Jy-JTxU0v_05_A9Lq5BuE",
+    "1zlCavCgAa98MLZicTZrM0FTqqcG3h60l"
+  ];
   folderIds.forEach(function(fId) {
     if (!fId) return;
     try {
       var folder = DriveApp.getFolderById(fId);
       var files = folder.getFiles();
-      while (files.hasNext()) {
-        var f = files.next();
-        var id = f.getId();
-        if (seenIds[id]) continue;
-        seenIds[id] = true;
-        
-        var rawName = f.getName().replace(/\.(png|jpg|jpeg|webp)$/i, "");
-        var cleanWithoutTimestamp = rawName.replace(/_\d{10,}$/, "").trim();
-        var key = cleanFull(cleanWithoutTimestamp);
-        var rawKey = cleanFull(rawName);
-
-        imageMap[key] = f;
-        imageMap[rawKey] = f;
-        imageList.push({ key: key, rawKey: rawKey, name: rawName, file: f });
-      }
-    } catch (e) {
-      logDebug("mapExistingImages error reading folder " + fId + ": " + e.toString());
-    }
+      while (files.hasNext()) addFile(files.next());
+    } catch (e) {}
   });
+
+  // 2. Search named folders
+  var namedFolders = ["Hoarding2", "Hoarding_Project_Images", "Hoarding", "Hoardings"];
+  namedFolders.forEach(function(name) {
+    try {
+      var folders = DriveApp.getFoldersByName(name);
+      while (folders.hasNext()) {
+        var fld = folders.next();
+        var files = fld.getFiles();
+        while (files.hasNext()) addFile(files.next());
+      }
+    } catch (e) {}
+  });
+
+  // 3. Fallback: Search all recent images in Drive
+  if (imageList.length === 0) {
+    try {
+      var searchFiles = DriveApp.searchFiles("mimeType contains 'image/' and trashed = false");
+      var count = 0;
+      while (searchFiles.hasNext() && count < 200) {
+        addFile(searchFiles.next());
+        count++;
+      }
+    } catch (e) {}
+  }
 
   var updates = [];
   var mappedCount = 0;
@@ -2609,22 +2633,45 @@ function mapExistingImagesToSheet() {
     if (!site) continue;
 
     var facing = idxFacing !== -1 ? cleanFull(data[i][idxFacing]) : '';
-    var specificKey = facing ? (site + facing) : '';
+    var latStr = idxLat !== -1 ? String(data[i][idxLat] || '').replace(/[^0-9.]/g, '') : '';
+    var lngStr = idxLng !== -1 ? String(data[i][idxLng] || '').replace(/[^0-9.]/g, '') : '';
+    var latPrefix = latStr.length >= 5 ? latStr.substring(0, 5) : '';
+    var lngPrefix = lngStr.length >= 5 ? lngStr.substring(0, 5) : '';
 
-    var matchedImage = null;
-    if (specificKey && imageMap[specificKey] && !usedFileIds[imageMap[specificKey].getId()]) {
-      matchedImage = imageMap[specificKey];
-    } else if (imageMap[site] && !usedFileIds[imageMap[site].getId()]) {
-      matchedImage = imageMap[site];
-    } else {
-      matchedImage = findBestImageFileForSite(specificKey || site, imageList);
+    var bestFile = null;
+    var bestScore = 0;
+
+    for (var j = 0; j < imageList.length; j++) {
+      var item = imageList[j];
+      if (usedFileIds[item.id]) continue;
+
+      var score = 0;
+
+      // Coordinate boost
+      if (latPrefix && lngPrefix && item.rawKey.indexOf(latPrefix) !== -1 && item.rawKey.indexOf(lngPrefix) !== -1) {
+        score += 5000;
+      }
+
+      // Location match score
+      var nameScore = siteMatchScore(item.key, site);
+      if (nameScore === 0) nameScore = siteMatchScore(item.rawKey, site);
+      score += nameScore;
+
+      // Facing boost
+      if (facing && item.rawKey.indexOf(facing) !== -1) {
+        score += 800;
+      }
+
+      if (score > bestScore && score >= 200) {
+        bestScore = score;
+        bestFile = item.file;
+      }
     }
 
-    if (matchedImage) {
-      var img = matchedImage;
-      usedFileIds[img.getId()] = true;
-      try { img.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW); } catch(e) {}
-      var url = "https://lh3.googleusercontent.com/d/" + img.getId();
+    if (bestFile) {
+      usedFileIds[bestFile.getId()] = true;
+      try { bestFile.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW); } catch(e) {}
+      var url = "https://lh3.googleusercontent.com/d/" + bestFile.getId();
       updates.push([i + 1, idxImg + 1, url]);
       mappedCount++;
     }
@@ -2634,7 +2681,7 @@ function mapExistingImagesToSheet() {
     sheet.getRange(u[0], u[1]).setValue(u[2]);
   });
   SpreadsheetApp.flush();
-  SpreadsheetApp.getActiveSpreadsheet().toast('✅ ' + mappedCount + ' unique images mapped to Google Sheet!', 'Image Mapping Complete', 6);
+  SpreadsheetApp.getActiveSpreadsheet().toast('✅ ' + mappedCount + ' images mapped to Google Sheet!', 'Image Mapping Complete', 6);
 }
 
 /* ================= PPT ================= */
