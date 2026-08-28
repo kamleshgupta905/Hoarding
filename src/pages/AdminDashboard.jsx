@@ -459,7 +459,7 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
 
                 let completed = 0;
                 let syncedCount = 0;
-                const CONCURRENCY = 4;
+                const CONCURRENCY = 10;
 
                 const queue = [...processableSlides];
                 const workers = Array.from({ length: CONCURRENCY }, async () => {
@@ -476,27 +476,35 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                         const matchedSite = hoardings.find(h => h._SiteID === slide.suggestedSiteId) || slide.candidates?.[0]?.site;
                         const siteName = matchedSite ? (matchedSite['Locality Site Location'] || matchedSite['Location '] || matchedSite.Location || matchedSite._SiteID) : `Slide_${slide.number}`;
 
-                        try {
-                            const compressedDataUrl = await compressImage(photoCandidate.blob, 1280, 960, 0.78);
-                            const pureBase64 = compressedDataUrl.replace(/^data:image\/[a-z]+;base64,/, '');
+                        let success = false;
+                        for (let attempt = 1; attempt <= 3 && !success; attempt++) {
+                            try {
+                                const compressedDataUrl = await compressImage(photoCandidate.blob, 1280, 960, 0.78);
+                                const pureBase64 = compressedDataUrl.replace(/^data:image\/[a-z]+;base64,/, '');
 
-                            await syncToGoogleSheet({
-                                action: 'updateHoarding',
-                                sessionToken: getAdminSession(),
-                                siteName: siteName,
-                                siteId: matchedSite?._SiteID || '',
-                                fileData: pureBase64,
-                                mimeType: 'image/jpeg'
-                            });
-                            syncedCount++;
-                        } catch (uploadErr) {
-                            console.warn(`[PPT Upload] Failed for slide ${slide.number}:`, uploadErr);
+                                await syncToGoogleSheet({
+                                    action: 'updateHoarding',
+                                    sessionToken: getAdminSession(),
+                                    siteName: siteName,
+                                    siteId: matchedSite?._SiteID || '',
+                                    fileData: pureBase64,
+                                    mimeType: 'image/jpeg'
+                                });
+                                syncedCount++;
+                                success = true;
+                            } catch (uploadErr) {
+                                if (attempt < 3) {
+                                    await wait(500 * attempt);
+                                } else {
+                                    console.warn(`[PPT Upload] Failed for slide ${slide.number}:`, uploadErr);
+                                }
+                            }
                         }
 
                         completed++;
                         const percent = Math.round(45 + (completed / processableSlides.length) * 50);
                         updateFileProcessing({
-                            phase: `⚡ Fast Syncing: ${completed}/${processableSlides.length} slides (${syncedCount} photos saved)...`,
+                            phase: `🚀 10x Turbo Sync: ${completed}/${processableSlides.length} slides (${syncedCount} photos saved)...`,
                             progress: percent
                         });
                     }
