@@ -457,39 +457,52 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                     progress: 45 
                 });
 
+                let completed = 0;
                 let syncedCount = 0;
-                for (let i = 0; i < processableSlides.length; i++) {
-                    const slide = processableSlides[i];
-                    const photoCandidate = slide.photoCandidates[0];
-                    if (!photoCandidate || !photoCandidate.blob) continue;
+                const CONCURRENCY = 4;
 
-                    const percent = Math.round(45 + ((i + 1) / processableSlides.length) * 50);
-                    const matchedSite = hoardings.find(h => h._SiteID === slide.suggestedSiteId) || slide.candidates?.[0]?.site;
-                    const siteName = matchedSite ? (matchedSite['Locality Site Location'] || matchedSite['Location '] || matchedSite.Location || matchedSite._SiteID) : `Slide_${slide.number}`;
+                const queue = [...processableSlides];
+                const workers = Array.from({ length: CONCURRENCY }, async () => {
+                    while (queue.length > 0) {
+                        const slide = queue.shift();
+                        if (!slide) break;
 
-                    updateFileProcessing({
-                        phase: `Syncing slide ${i + 1}/${processableSlides.length}: ${String(siteName).substring(0, 24)}...`,
-                        progress: percent
-                    });
+                        const photoCandidate = slide.photoCandidates?.[0];
+                        if (!photoCandidate || !photoCandidate.blob) {
+                            completed++;
+                            continue;
+                        }
 
-                    try {
-                        const compressedDataUrl = await compressImage(photoCandidate.blob, 1600, 1200, 0.85);
-                        const pureBase64 = compressedDataUrl.replace(/^data:image\/[a-z]+;base64,/, '');
+                        const matchedSite = hoardings.find(h => h._SiteID === slide.suggestedSiteId) || slide.candidates?.[0]?.site;
+                        const siteName = matchedSite ? (matchedSite['Locality Site Location'] || matchedSite['Location '] || matchedSite.Location || matchedSite._SiteID) : `Slide_${slide.number}`;
 
-                        await syncToGoogleSheet({
-                            action: 'updateHoarding',
-                            sessionToken: getAdminSession(),
-                            siteName: siteName,
-                            siteId: matchedSite?._SiteID || '',
-                            fileData: pureBase64,
-                            mimeType: 'image/jpeg'
+                        try {
+                            const compressedDataUrl = await compressImage(photoCandidate.blob, 1280, 960, 0.78);
+                            const pureBase64 = compressedDataUrl.replace(/^data:image\/[a-z]+;base64,/, '');
+
+                            await syncToGoogleSheet({
+                                action: 'updateHoarding',
+                                sessionToken: getAdminSession(),
+                                siteName: siteName,
+                                siteId: matchedSite?._SiteID || '',
+                                fileData: pureBase64,
+                                mimeType: 'image/jpeg'
+                            });
+                            syncedCount++;
+                        } catch (uploadErr) {
+                            console.warn(`[PPT Upload] Failed for slide ${slide.number}:`, uploadErr);
+                        }
+
+                        completed++;
+                        const percent = Math.round(45 + (completed / processableSlides.length) * 50);
+                        updateFileProcessing({
+                            phase: `⚡ Fast Syncing: ${completed}/${processableSlides.length} slides (${syncedCount} photos saved)...`,
+                            progress: percent
                         });
-                        syncedCount++;
-                    } catch (uploadErr) {
-                        console.warn(`[PPT Upload] Failed for slide ${slide.number}:`, uploadErr);
                     }
-                }
+                });
 
+                await Promise.all(workers);
                 releasePptxPreviews(slides);
                 window.dispatchEvent(new CustomEvent('hoardings:sync-requested', { detail: { action: 'pptUpload', fileName: file.name } }));
                 await wait(1200);
