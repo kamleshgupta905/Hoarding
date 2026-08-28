@@ -1341,13 +1341,12 @@ function updateHoardingDetails(data) {
     return res({ success: false, error: 'siteName is required and must be a string' });
   }
   
-  // ✅ STEP 1: LockService to prevent race conditions (especially for History appends)
+  // Safe Lock handling (never crash or deadlock if lock is already held)
   var lock = LockService.getScriptLock();
+  var hasLock = false;
   try {
-    lock.waitLock(10000); // Max 10 seconds wait
-  } catch (e) {
-    return res({ success: false, error: 'Could not obtain lock on spreadsheet. Please try again.' });
-  }
+    if (lock.tryLock(8000)) hasLock = true;
+  } catch (e) {}
 
   try {
     var ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -1406,18 +1405,12 @@ function updateHoardingDetails(data) {
 
     if (rowIndex === -1) {
       if (data.fileData) {
-        var appendLock = LockService.getScriptLock();
-        appendLock.waitLock(30000);
-        try {
-          var newRow = new Array(headers.length);
-          for (var c = 0; c < headers.length; c++) newRow[c] = "";
-          newRow[idxSite] = siteSearchTerm;
-          sheet.appendRow(newRow);
-          SpreadsheetApp.flush();
-          rowIndex = sheet.getLastRow();
-        } finally {
-          appendLock.releaseLock();
-        }
+        var newRow = new Array(headers.length);
+        for (var c = 0; c < headers.length; c++) newRow[c] = "";
+        newRow[idxSite] = siteSearchTerm;
+        sheet.appendRow(newRow);
+        SpreadsheetApp.flush();
+        rowIndex = sheet.getLastRow();
         logDebug("UPDATE | Appended new row for unmatched site: " + siteSearchTerm);
       } else {
         return res({ success: false, error: 'Site not found: ' + siteSearchTerm });
@@ -1544,12 +1537,14 @@ function updateHoardingDetails(data) {
     }
 
     SpreadsheetApp.flush(); // ✅ Ensure all field updates are persisted
-    return res({ success: true, message: 'Updated successfully' });
+    return res({ success: true, message: 'Updated successfully', imageUrl: fileUrl || '' });
   } catch (err) {
     logDebug("UPDATE CRITICAL ERROR: " + err.toString());
     return res({ success: false, error: err.toString() });
   } finally {
-    lock.releaseLock();
+    if (hasLock) {
+      try { lock.releaseLock(); } catch(e) {}
+    }
   }
 }
 
@@ -2493,40 +2488,78 @@ function normalizeMediaFormat(value) {
 
 function mapExistingImagesToSheet() {
   var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(CONFIG.SHEET_NAME);
+  if (!sheet) return;
   var data = sheet.getDataRange().getValues();
   var headers = data[0];
 
   var idxSite = findSiteColumn(headers);
-  var idxImg = headers.findIndex(h => cleanFull(h) === cleanFull(CONFIG.COL_IMAGE_URL));
-  if (idxSite === -1 || idxImg === -1) return;
+  var idxImg = findImageColumn(headers);
+  
+  if (idxImg === -1) {
+    var newColIndex = sheet.getLastColumn() + 1;
+    sheet.getRange(1, newColIndex).setValue('ImageURL');
+    headers = getAllHeaders(sheet);
+    idxImg = newColIndex - 1;
+  }
+  if (idxSite === -1) return;
 
-  var imgFolder = DriveApp.getFolderById(CONFIG.IMAGE_FOLDER_ID);
-  var files = imgFolder.getFiles();
+  var folderIds = [
+    CONFIG.IMAGE_FOLDER_ID,
+    "1gJmB53z4Ab7Jy-JTxU0v_05_A9Lq5BuE",
+    "1zlCavCgAa98MLZicTZrM0FTqqcG3h60l"
+  ];
 
   var imageMap = {};
   var imageList = [];
-  while (files.hasNext()) {
-    var f = files.next();
-    var key = cleanFull(f.getName().replace(/\.(png|jpg|jpeg|webp)$/i, ""));
-    imageMap[key] = f;
-    imageList.push({ key: key, file: f });
-  }
+  var seenIds = {};
+
+  folderIds.forEach(function(fId) {
+    if (!fId) return;
+    try {
+      var folder = DriveApp.getFolderById(fId);
+      var files = folder.getFiles();
+      while (files.hasNext()) {
+        var f = files.next();
+        var id = f.getId();
+        if (seenIds[id]) continue;
+        seenIds[id] = true;
+        
+        var rawName = f.getName().replace(/\.(png|jpg|jpeg|webp)$/i, "");
+        var cleanWithoutTimestamp = rawName.replace(/_\d{10,}$/, "").trim();
+        var key = cleanFull(cleanWithoutTimestamp);
+        var rawKey = cleanFull(rawName);
+
+        imageMap[key] = f;
+        imageMap[rawKey] = f;
+        imageList.push({ key: key, rawKey: rawKey, name: rawName, file: f });
+      }
+    } catch (e) {
+      logDebug("mapExistingImages error reading folder " + fId + ": " + e.toString());
+    }
+  });
 
   var updates = [];
+  var mappedCount = 0;
 
   for (var i = 1; i < data.length; i++) {
     var site = cleanFull(data[i][idxSite]);
-    if (!site || data[i][idxImg]) continue;
+    if (!site) continue;
 
     var matchedImage = imageMap[site] || findBestImageFileForSite(site, imageList);
     if (matchedImage) {
       var img = matchedImage;
-      img.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+      try { img.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW); } catch(e) {}
       var url = "https://lh3.googleusercontent.com/d/" + img.getId();
       updates.push([i + 1, idxImg + 1, url]);
+      mappedCount++;
     }
   }
-  updates.forEach(u => sheet.getRange(u[0], u[1]).setValue(u[2]));
+
+  updates.forEach(function(u) {
+    sheet.getRange(u[0], u[1]).setValue(u[2]);
+  });
+  SpreadsheetApp.flush();
+  SpreadsheetApp.getActiveSpreadsheet().toast('✅ ' + mappedCount + ' images mapped to Google Sheet!', 'Image Mapping Complete', 6);
 }
 
 /* ================= PPT ================= */
