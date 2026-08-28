@@ -2632,6 +2632,9 @@ function mapExistingImagesToSheet() {
     var site = cleanFull(data[i][idxSite]);
     if (!site) continue;
 
+    var rowNum = i + 1; // 1-indexed row in sheet (Row 2 = Slide 1)
+    var expectedSlideNum = i; // Slide 1 corresponds to Row 2
+
     var facing = idxFacing !== -1 ? cleanFull(data[i][idxFacing]) : '';
     var latStr = idxLat !== -1 ? String(data[i][idxLat] || '').replace(/[^0-9.]/g, '') : '';
     var lngStr = idxLng !== -1 ? String(data[i][idxLng] || '').replace(/[^0-9.]/g, '') : '';
@@ -2647,22 +2650,36 @@ function mapExistingImagesToSheet() {
 
       var score = 0;
 
-      // Coordinate boost
-      if (latPrefix && lngPrefix && item.rawKey.indexOf(latPrefix) !== -1 && item.rawKey.indexOf(lngPrefix) !== -1) {
-        score += 5000;
+      // 1. Slide Number matching (e.g. Slide_1.jpg, Slide 1, 1_Begum Bridge, etc.)
+      var slideMatch = item.name.match(/(?:slide|slide_|\b)(\d+)\b/i);
+      if (slideMatch) {
+        var num = parseInt(slideMatch[1], 10);
+        if (num === expectedSlideNum) {
+          score += 10000;
+        }
       }
 
-      // Location match score
+      // 2. Coordinate matching
+      if (latPrefix && lngPrefix && item.rawKey.indexOf(latPrefix) !== -1 && item.rawKey.indexOf(lngPrefix) !== -1) {
+        score += 8000;
+      }
+
+      // 3. Location matching
       var nameScore = siteMatchScore(item.key, site);
       if (nameScore === 0) nameScore = siteMatchScore(item.rawKey, site);
-      score += nameScore;
+      if (nameScore > 0) score += nameScore;
 
-      // Facing boost
-      if (facing && item.rawKey.indexOf(facing) !== -1) {
-        score += 800;
+      // Substring check
+      if (item.rawKey.indexOf(site) !== -1 || site.indexOf(item.key) !== -1) {
+        score += 3000;
       }
 
-      if (score > bestScore && score >= 200) {
+      // 4. Facing boost
+      if (facing && item.rawKey.indexOf(facing) !== -1) {
+        score += 1200;
+      }
+
+      if (score > bestScore && score >= 100) {
         bestScore = score;
         bestFile = item.file;
       }
@@ -2672,7 +2689,7 @@ function mapExistingImagesToSheet() {
       usedFileIds[bestFile.getId()] = true;
       try { bestFile.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW); } catch(e) {}
       var url = "https://lh3.googleusercontent.com/d/" + bestFile.getId();
-      updates.push([i + 1, idxImg + 1, url]);
+      updates.push([rowNum, idxImg + 1, url]);
       mappedCount++;
     }
   }
@@ -2681,7 +2698,7 @@ function mapExistingImagesToSheet() {
     sheet.getRange(u[0], u[1]).setValue(u[2]);
   });
   SpreadsheetApp.flush();
-  SpreadsheetApp.getActiveSpreadsheet().toast('✅ ' + mappedCount + ' images mapped to Google Sheet!', 'Image Mapping Complete', 6);
+  SpreadsheetApp.getActiveSpreadsheet().toast('✅ ' + mappedCount + ' images mapped from Hoarding2 to Google Sheet!', 'Image Mapping Complete', 6);
 }
 
 /* ================= PPT ================= */
