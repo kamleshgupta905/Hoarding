@@ -505,6 +505,8 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                     sessionToken: getAdminSession(),
                                     siteName: siteName,
                                     siteId: matchedSite?._SiteID || '',
+                                    facing: matchedSite?.Facing || '',
+                                    latLong: matchedSite?.['Lat-Long'] || '',
                                     fileName: descriptiveFileName,
                                     fileData: pureBase64,
                                     mimeType: 'image/jpeg'

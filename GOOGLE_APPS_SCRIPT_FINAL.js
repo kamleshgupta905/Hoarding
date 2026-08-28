@@ -1378,12 +1378,32 @@ function updateHoardingDetails(data) {
       }
     }
 
-    // 2. Match by rowNumber
-    if (rowIndex === -1 && data.rowNumber && Number(data.rowNumber) >= 2 && Number(data.rowNumber) <= rows.length) {
-      rowIndex = Number(data.rowNumber);
+    // 2. Match by Lat-Long if present
+    var targetLatLong = cleanFull(data.latLong || (data.fields && (data.fields['Lat-Long'] || data.fields.LatLong)) || '');
+    var idxLatLong = headers.findIndex(function(h) { return cleanFull(h).indexOf('lat') !== -1 && cleanFull(h).indexOf('long') !== -1; });
+    if (rowIndex === -1 && targetLatLong && idxLatLong !== -1) {
+      for (var i = 1; i < rows.length; i++) {
+        if (cleanFull(rows[i][idxLatLong]) === targetLatLong) {
+          rowIndex = i + 1;
+          break;
+        }
+      }
     }
 
-    // 3. Match by exact siteName
+    // 3. Match by Location + Facing
+    var targetFacing = cleanFull(data.facing || (data.fields && data.fields.Facing) || '');
+    var idxFacing = headers.findIndex(function(h) { return cleanFull(h) === 'facing' || cleanFull(h) === 'trafficview'; });
+    if (rowIndex === -1 && targetFacing && idxFacing !== -1) {
+      var searchName = cleanFull(siteSearchTerm);
+      for (var i = 1; i < rows.length; i++) {
+        if (cleanFull(rows[i][idxSite]) === searchName && cleanFull(rows[i][idxFacing]) === targetFacing) {
+          rowIndex = i + 1;
+          break;
+        }
+      }
+    }
+
+    // 4. Match by exact siteName
     if (rowIndex === -1) {
       var searchName = cleanFull(siteSearchTerm);
       for (var i = 1; i < rows.length; i++) {
@@ -1394,7 +1414,7 @@ function updateHoardingDetails(data) {
       }
     }
 
-    // 4. Match by fuzzy siteName
+    // 5. Match by fuzzy siteName
     if (rowIndex === -1) {
       var searchName = cleanFull(siteSearchTerm);
       for (var i = 1; i < rows.length; i++) {
