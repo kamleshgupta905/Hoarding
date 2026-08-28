@@ -3009,58 +3009,33 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                             <Bell size={20} />
                         </button>
 
-                        {/* 👤 Admin Profile: Hare Krishna */}
-                        <div className="topbar-user-profile">
-                            <div className="topbar-user-avatar" style={{ width: '38px', height: '38px', borderRadius: '50%', overflow: 'hidden', background: '#ffd5dc', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                                <svg viewBox="0 0 100 100" width="100%" height="100%">
-                                    <defs>
-                                        <linearGradient id="krishnaSkin" x1="0%" y1="0%" x2="100%" y2="100%">
-                                            <stop offset="0%" stopColor="#7dd3fc" />
-                                            <stop offset="50%" stopColor="#38bdf8" />
-                                            <stop offset="100%" stopColor="#0284c7" />
-                                        </linearGradient>
-                                        <linearGradient id="krishnaCrown" x1="0%" y1="0%" x2="100%" y2="100%">
-                                            <stop offset="0%" stopColor="#fef08a" />
-                                            <stop offset="60%" stopColor="#facc15" />
-                                            <stop offset="100%" stopColor="#d97706" />
-                                        </linearGradient>
-                                        <linearGradient id="krishnaFeather" x1="0%" y1="0%" x2="100%" y2="100%">
-                                            <stop offset="0%" stopColor="#10b981" />
-                                            <stop offset="50%" stopColor="#0284c7" />
-                                            <stop offset="80%" stopColor="#6366f1" />
-                                            <stop offset="100%" stopColor="#d97706" />
-                                        </linearGradient>
-                                    </defs>
-                                    <circle cx="50" cy="50" r="48" fill="#fef3c7" />
-                                    <ellipse cx="50" cy="54" rx="26" ry="29" fill="url(#krishnaSkin)" />
-                                    <path d="M35 52 Q42 48 46 53 Q42 57 35 52 Z" fill="#0f172a" />
-                                    <path d="M65 52 Q58 48 54 53 Q58 57 65 52 Z" fill="#0f172a" />
-                                    <circle cx="41" cy="52.5" r="1.5" fill="#ffffff" />
-                                    <circle cx="59" cy="52.5" r="1.5" fill="#ffffff" />
-                                    <path d="M43 68 Q50 74 57 68" fill="none" stroke="#be123c" strokeWidth="2.5" strokeLinecap="round" />
-                                    <path d="M47 38 L47 52 L53 52 L53 38" fill="none" stroke="#ffffff" strokeWidth="2" strokeLinecap="round" />
-                                    <path d="M47 52 Q50 56 53 52" fill="none" stroke="#ffffff" strokeWidth="2" />
-                                    <ellipse cx="50" cy="49" rx="1.5" ry="3.5" fill="#e11d48" />
-                                    <circle cx="24" cy="58" r="3.5" fill="url(#krishnaCrown)" stroke="#b45309" strokeWidth="0.8" />
-                                    <circle cx="76" cy="58" r="3.5" fill="url(#krishnaCrown)" stroke="#b45309" strokeWidth="0.8" />
-                                    <path d="M28 36 Q50 18 72 36 Q50 30 28 36 Z" fill="url(#krishnaCrown)" stroke="#b45309" strokeWidth="1" />
-                                    <circle cx="50" cy="27" r="3" fill="#e11d48" />
-                                    <g transform="translate(42, 4) rotate(-15)">
-                                        <ellipse cx="14" cy="14" rx="9" ry="14" fill="url(#krishnaFeather)" />
-                                        <ellipse cx="14" cy="14" rx="5.5" ry="9" fill="#0369a1" />
-                                        <circle cx="14" cy="14" r="3.5" fill="#facc15" />
-                                        <circle cx="14" cy="14" r="1.8" fill="#4338ca" />
-                                    </g>
-                                    <g transform="rotate(-8 50 82)">
-                                        <rect x="20" y="80" width="60" height="4.5" rx="2" fill="url(#krishnaCrown)" stroke="#b45309" strokeWidth="0.6" />
-                                        <circle cx="36" cy="82.2" r="0.9" fill="#78350f" />
-                                        <circle cx="44" cy="82.2" r="0.9" fill="#78350f" />
-                                        <circle cx="52" cy="82.2" r="0.9" fill="#78350f" />
-                                        <circle cx="60" cy="82.2" r="0.9" fill="#78350f" />
-                                    </g>
-                                </svg>
+                        {/* 👤 Admin Profile (QuickMart Illustrated Persona Style) */}
+                        <div className="topbar-user-profile" style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                            <div className="topbar-user-avatar" style={{ 
+                                width: '38px', 
+                                height: '38px', 
+                                borderRadius: '50%', 
+                                overflow: 'hidden', 
+                                background: '#fef3c7', 
+                                display: 'flex', 
+                                alignItems: 'center', 
+                                justifyContent: 'center', 
+                                flexShrink: 0,
+                                border: '2px solid #ffffff',
+                                boxShadow: '0 2px 6px rgba(0, 0, 0, 0.08)'
+                            }}>
+                                <img 
+                                    src="/krishna_avatar.jpg" 
+                                    alt="Hare Krishna" 
+                                    style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                                />
                             </div>
-                            <span className="topbar-user-name">
+                            <span className="topbar-user-name" style={{ 
+                                fontSize: '0.92rem', 
+                                fontWeight: 700, 
+                                color: '#111827',
+                                letterSpacing: '-0.01em'
+                            }}>
                                 Hare Krishna
                             </span>
                         </div>
