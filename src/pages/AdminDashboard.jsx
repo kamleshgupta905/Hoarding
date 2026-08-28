@@ -3009,9 +3009,9 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                             <Bell size={20} />
                         </button>
 
-                        {/* 🙏 Spiritual Profile: Hare Krishna */}
-                        <div className="topbar-user-profile" style={{ display: 'flex', alignItems: 'center', gap: '10px', background: 'linear-gradient(135deg, rgba(254, 243, 199, 0.7), rgba(240, 249, 255, 0.9))', padding: '5px 14px 5px 8px', borderRadius: '30px', border: '1px solid rgba(245, 158, 11, 0.35)', boxShadow: '0 2px 10px rgba(245, 158, 11, 0.1)' }}>
-                            <div className="topbar-user-avatar" style={{ width: '36px', height: '36px', borderRadius: '50%', overflow: 'hidden', border: '2px solid #f59e0b', background: '#e0f2fe', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 0 10px rgba(245, 158, 11, 0.4)' }}>
+                        {/* 👤 Admin Profile: Hare Krishna */}
+                        <div className="topbar-user-profile">
+                            <div className="topbar-user-avatar" style={{ width: '38px', height: '38px', borderRadius: '50%', overflow: 'hidden', background: '#ffd5dc', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                                 <svg viewBox="0 0 100 100" width="100%" height="100%">
                                     <defs>
                                         <linearGradient id="krishnaSkin" x1="0%" y1="0%" x2="100%" y2="100%">
@@ -3031,8 +3031,7 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                             <stop offset="100%" stopColor="#d97706" />
                                         </linearGradient>
                                     </defs>
-                                    <circle cx="50" cy="50" r="48" fill="#fef3c7" opacity="0.95" />
-                                    <circle cx="50" cy="50" r="45" fill="none" stroke="#f59e0b" strokeWidth="1.5" strokeDasharray="3,2" opacity="0.7" />
+                                    <circle cx="50" cy="50" r="48" fill="#fef3c7" />
                                     <ellipse cx="50" cy="54" rx="26" ry="29" fill="url(#krishnaSkin)" />
                                     <path d="M35 52 Q42 48 46 53 Q42 57 35 52 Z" fill="#0f172a" />
                                     <path d="M65 52 Q58 48 54 53 Q58 57 65 52 Z" fill="#0f172a" />
@@ -3061,7 +3060,7 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                     </g>
                                 </svg>
                             </div>
-                            <span className="topbar-user-name" style={{ fontWeight: 800, fontSize: '0.95rem', color: '#b45309', letterSpacing: '0.3px' }}>
+                            <span className="topbar-user-name">
                                 Hare Krishna
                             </span>
                         </div>
