@@ -361,3 +361,87 @@ Return ONLY the raw JSON array (no markdown code blocks, no backticks, no commen
   }
 };
 
+/**
+ * 🎯 Match a PPT slide to candidate inventory hoardings using Gemini 2.0 / 1.5 Flash
+ */
+export const matchSlideToInventoryWithGemini = async (slideText, candidates, imageBase64 = null) => {
+  if (!candidates || candidates.length === 0) return null;
+
+  const candidateList = candidates.map((c, i) => ({
+    index: i,
+    siteId: c._SiteID,
+    location: c.Location || c['Location '] || c['Locality Site Location'],
+    facing: c.Facing || c['Traffic View'],
+    from: c['Traffic From'],
+    to: c['Traffic To'],
+    lat: c.Latitude || c['Lat.'],
+    lng: c.Longitude || c['Long.'],
+    city: c.City,
+    area: c.Area || c.Locality,
+    size: `${c.Width || ''}x${c.Height || ''}`
+  }));
+
+  const prompt = `You are an expert AI Outdoor Advertising matching engine.
+Match the outdoor hoarding billboard described in the PPT Slide to the best candidate from the inventory database.
+
+PPT Slide Information:
+Text: """${slideText || '(No slide text, compare visually if image provided)'}"""
+
+Candidate Inventory Sites:
+${JSON.stringify(candidateList, null, 2)}
+
+TASK:
+1. Carefully compare location landmarks, road names, facing direction, GPS coordinates, traffic from/to, and dimensions.
+2. Return ONLY a valid JSON object (no markdown, no backticks):
+{
+  "bestMatchIndex": number (0 to ${candidates.length - 1}, or -1 if no candidate matches),
+  "confidence": "HIGH" | "MEDIUM" | "LOW",
+  "reason": "Brief reason for match"
+}`;
+
+  const parts = [{ text: prompt }];
+
+  if (imageBase64) {
+    const parsed = parseBase64(imageBase64);
+    if (parsed) {
+      parts.push({
+        inline_data: {
+          mime_type: parsed.mimeType,
+          data: parsed.base64
+        }
+      });
+    }
+  }
+
+  const payload = {
+    contents: [{ parts }],
+    generationConfig: {
+      temperature: 0.1,
+      topP: 0.8,
+      maxOutputTokens: 400
+    }
+  };
+
+  try {
+    const rawResponse = await callGeminiVision(payload);
+    const cleanJson = rawResponse.replace(/```json\s*/i, '').replace(/```\s*$/i, '').trim();
+    const jsonMatch = cleanJson.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) return null;
+
+    const result = JSON.parse(jsonMatch[0]);
+    const idx = parseInt(result.bestMatchIndex, 10);
+    if (!isNaN(idx) && idx >= 0 && idx < candidates.length) {
+      return {
+        site: candidates[idx],
+        confidence: result.confidence || 'HIGH',
+        reason: result.reason || 'Matched using Gemini AI'
+      };
+    }
+    return null;
+  } catch (err) {
+    console.warn('[Gemini Slide Matcher Notice]:', err);
+    return null;
+  }
+};
+
+

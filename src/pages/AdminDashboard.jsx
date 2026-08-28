@@ -658,7 +658,7 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
 
                 let completed = 0;
                 let syncedCount = 0;
-                const CONCURRENCY = 30;
+                const CONCURRENCY = 6;
 
                 const queue = [...processableSlides];
                 const workers = Array.from({ length: CONCURRENCY }, async () => {
@@ -697,7 +697,7 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                         }
 
                         let success = false;
-                        for (let attempt = 1; attempt <= 2 && !success; attempt++) {
+                        for (let attempt = 1; attempt <= 3 && !success; attempt++) {
                             try {
                                 const res = await syncToGoogleSheet({
                                     action: 'updateHoarding',
@@ -717,10 +717,10 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                     throw new Error(res?.error || 'Sync rejected');
                                 }
                             } catch (uploadErr) {
-                                if (attempt < 2) {
-                                    await wait(800);
+                                if (attempt < 3) {
+                                    await wait(1200 * attempt);
                                 } else {
-                                    console.warn(`[PPT Upload] Failed for slide ${slide.number}:`, uploadErr);
+                                    console.warn(`[PPT Upload] Failed for slide ${slide.number} after 3 attempts:`, uploadErr);
                                 }
                             }
                         }
@@ -728,7 +728,7 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                         completed++;
                         const percent = Math.round(45 + (completed / processableSlides.length) * 50);
                         updateFileProcessing({
-                            phase: `⚡ AI Smart Sync: ${completed}/${processableSlides.length} slides (${syncedCount} photos saved)...`,
+                            phase: `⚡ AI Smart Sync (Groq + Gemini Vision): ${completed}/${processableSlides.length} slides (${syncedCount} photos saved)...`,
                             progress: percent
                         });
                     }

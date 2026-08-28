@@ -254,25 +254,39 @@ export const parsePptx = async (arrayBuffer, sites) => {
     slide.status = slide.suggestedSiteId && slide.photoCandidates.length ? (slide.confidence === 'HIGH' ? 'MATCHED' : 'REVIEW') : 'SKIPPED';
   });
 
-  // Optional Groq AI Enhancement for complex or ambiguous slides
-  const groqKey = typeof window !== 'undefined' ? (window.localStorage?.getItem('adh_groq_api_key') || '') : '';
-  if (groqKey) {
-    try {
-      const { matchSlideToInventoryWithGroq } = await import('../services/groqService');
-      for (const slide of slides) {
-        if (slide.confidence !== 'HIGH' && slide.text && slide.photoCandidates.length > 0) {
-          const topCandidates = slide.candidates.map(c => c.site);
-          const aiMatch = await matchSlideToInventoryWithGroq(slide.text, topCandidates, groqKey);
-          if (aiMatch && aiMatch.site) {
-            slide.suggestedSiteId = aiMatch.site._SiteID;
-            slide.confidence = aiMatch.confidence || 'HIGH';
-            slide.status = 'MATCHED';
-            slide.aiReason = aiMatch.reason;
-          }
+  // 🧠 DUAL AI ENGINE: Groq Semantic LLM + Gemini 2.0 Flash Vision
+  for (const slide of slides) {
+    if (slide.photoCandidates.length > 0 && slide.confidence !== 'HIGH') {
+      const topCandidates = slide.candidates.length > 0 
+        ? slide.candidates.map(c => c.site) 
+        : (sites || []).slice(0, 20);
+
+      let aiMatch = null;
+
+      // 1. Try Groq Semantic AI (Superfast LLM)
+      try {
+        const { matchSlideToInventoryWithGroq } = await import('../services/groqService');
+        aiMatch = await matchSlideToInventoryWithGroq(slide.text, topCandidates);
+      } catch (groqErr) {
+        console.warn('[Groq Engine Step Notice]:', groqErr);
+      }
+
+      // 2. If Groq didn't find high confidence match, try Gemini 2.0 Flash Vision & Language
+      if (!aiMatch || !aiMatch.site) {
+        try {
+          const { matchSlideToInventoryWithGemini } = await import('../services/geminiService');
+          aiMatch = await matchSlideToInventoryWithGemini(slide.text, topCandidates);
+        } catch (geminiErr) {
+          console.warn('[Gemini Engine Step Notice]:', geminiErr);
         }
       }
-    } catch (e) {
-      console.warn('[Groq Engine Optional Hook Ignored]:', e);
+
+      if (aiMatch && aiMatch.site) {
+        slide.suggestedSiteId = aiMatch.site._SiteID || aiMatch.site.UniqueID || aiMatch.site.ID || '';
+        slide.confidence = aiMatch.confidence || 'HIGH';
+        slide.status = 'MATCHED';
+        slide.aiReason = aiMatch.reason;
+      }
     }
   }
 
