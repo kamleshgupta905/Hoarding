@@ -5087,31 +5087,62 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                     </div>
                 )}
 
-                {/* 📅 Quick Booking Modal */}
+                {/* 📅 Quick Booking Modal (Centered Fixed Overlay) */}
                 {quickBookingTarget && (
-                    <div className="admin-modal-overlay animate-in" onClick={() => setQuickBookingTarget(null)}>
-                        <div className="admin-modal-container" style={{ maxWidth: '440px', padding: '24px' }} onClick={e => e.stopPropagation()}>
-                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-                                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                                    <div style={{ background: '#fee2e2', color: '#ef4444', padding: '8px', borderRadius: '10px', display: 'flex' }}>
-                                        <Calendar size={20} />
+                    <div 
+                        className="modal-overlay" 
+                        style={{ 
+                            position: 'fixed', 
+                            top: 0, 
+                            left: 0, 
+                            right: 0, 
+                            bottom: 0, 
+                            width: '100vw', 
+                            height: '100vh', 
+                            zIndex: 99999, 
+                            background: 'rgba(15, 23, 42, 0.65)', 
+                            backdropFilter: 'blur(6px)', 
+                            display: 'flex', 
+                            alignItems: 'center', 
+                            justifyContent: 'center', 
+                            padding: '20px' 
+                        }} 
+                        onClick={() => setQuickBookingTarget(null)}
+                    >
+                        <div 
+                            className="modal-card" 
+                            style={{ 
+                                maxWidth: '460px', 
+                                width: '100%', 
+                                borderRadius: '20px', 
+                                padding: '26px', 
+                                background: '#ffffff', 
+                                boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.35)', 
+                                border: '1px solid #e2e8f0' 
+                            }} 
+                            onClick={e => e.stopPropagation()}
+                        >
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '18px' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                                    <div style={{ background: '#fee2e2', color: '#ef4444', padding: '10px', borderRadius: '12px', display: 'flex' }}>
+                                        <Calendar size={22} />
                                     </div>
                                     <div>
-                                        <h3 style={{ margin: 0, fontSize: '1.15rem', fontWeight: 800, color: '#0f172a' }}>Book Hoarding Site</h3>
-                                        <p style={{ margin: '2px 0 0', fontSize: '0.78rem', color: '#64748b' }}>
+                                        <h3 style={{ margin: 0, fontSize: '1.2rem', fontWeight: 800, color: '#0f172a' }}>Book Hoarding Site</h3>
+                                        <p style={{ margin: '3px 0 0', fontSize: '0.8rem', color: '#64748b', fontWeight: 500 }}>
                                             {quickBookingTarget.site["Locality Site Location"] || quickBookingTarget.site["Location "] || quickBookingTarget.site.Location}
                                             {quickBookingTarget.site.Facing ? ` • ${quickBookingTarget.site.Facing}` : ''}
                                         </p>
                                     </div>
                                 </div>
-                                <button type="button" onClick={() => setQuickBookingTarget(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#94a3b8' }}>
+                                <button type="button" onClick={() => setQuickBookingTarget(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#94a3b8', padding: '4px' }}>
                                     <X size={20} />
                                 </button>
                             </div>
 
-                            <form onSubmit={handleConfirmQuickBooking} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                            <form onSubmit={handleConfirmQuickBooking} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
                                 <div>
-                                    <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 700, color: '#334155', marginBottom: '6px' }}>
+                                    <label style={{ display: 'block', fontSize: '0.84rem', fontWeight: 700, color: '#334155', marginBottom: '6px' }}>
                                         Client Name <span style={{ color: '#ef4444' }}>*</span>
                                     </label>
                                     <input
@@ -5120,14 +5151,14 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                         placeholder="e.g. Tata Motors, Samsung, Local Brand"
                                         value={quickBookingTarget.clientName}
                                         onChange={(e) => setQuickBookingTarget({ ...quickBookingTarget, clientName: e.target.value })}
-                                        style={{ width: '100%', padding: '10px 12px', borderRadius: '10px', border: '1px solid #cbd5e1', fontSize: '0.88rem', outline: 'none' }}
+                                        style={{ width: '100%', padding: '10px 14px', borderRadius: '10px', border: '1px solid #cbd5e1', fontSize: '0.9rem', outline: 'none' }}
                                         autoFocus
                                     />
                                 </div>
 
                                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
                                     <div>
-                                        <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 700, color: '#334155', marginBottom: '6px' }}>
+                                        <label style={{ display: 'block', fontSize: '0.84rem', fontWeight: 700, color: '#334155', marginBottom: '6px' }}>
                                             Booking Start <span style={{ color: '#ef4444' }}>*</span>
                                         </label>
                                         <input
@@ -5135,11 +5166,11 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                             required
                                             value={quickBookingTarget.startDate}
                                             onChange={(e) => setQuickBookingTarget({ ...quickBookingTarget, startDate: e.target.value })}
-                                            style={{ width: '100%', padding: '9px 10px', borderRadius: '10px', border: '1px solid #cbd5e1', fontSize: '0.84rem', outline: 'none' }}
+                                            style={{ width: '100%', padding: '9px 12px', borderRadius: '10px', border: '1px solid #cbd5e1', fontSize: '0.86rem', outline: 'none' }}
                                         />
                                     </div>
                                     <div>
-                                        <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 700, color: '#334155', marginBottom: '6px' }}>
+                                        <label style={{ display: 'block', fontSize: '0.84rem', fontWeight: 700, color: '#334155', marginBottom: '6px' }}>
                                             Booking End <span style={{ color: '#ef4444' }}>*</span>
                                         </label>
                                         <input
@@ -5147,22 +5178,22 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                             required
                                             value={quickBookingTarget.endDate}
                                             onChange={(e) => setQuickBookingTarget({ ...quickBookingTarget, endDate: e.target.value })}
-                                            style={{ width: '100%', padding: '9px 10px', borderRadius: '10px', border: '1px solid #cbd5e1', fontSize: '0.84rem', outline: 'none' }}
+                                            style={{ width: '100%', padding: '9px 12px', borderRadius: '10px', border: '1px solid #cbd5e1', fontSize: '0.86rem', outline: 'none' }}
                                         />
                                     </div>
                                 </div>
 
-                                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '10px', paddingTop: '14px', borderTop: '1px solid #f1f5f9' }}>
+                                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '8px', paddingTop: '16px', borderTop: '1px solid #f1f5f9' }}>
                                     <button
                                         type="button"
                                         onClick={() => setQuickBookingTarget(null)}
-                                        style={{ padding: '9px 16px', borderRadius: '10px', border: '1px solid #cbd5e1', background: '#f8fafc', color: '#475569', fontSize: '0.84rem', fontWeight: 700, cursor: 'pointer' }}
+                                        style={{ padding: '10px 18px', borderRadius: '10px', border: '1px solid #cbd5e1', background: '#f8fafc', color: '#475569', fontSize: '0.86rem', fontWeight: 700, cursor: 'pointer' }}
                                     >
                                         Cancel
                                     </button>
                                     <button
                                         type="submit"
-                                        style={{ padding: '9px 20px', borderRadius: '10px', border: 'none', background: '#ef4444', color: '#ffffff', fontSize: '0.84rem', fontWeight: 800, cursor: 'pointer', boxShadow: '0 4px 12px rgba(239, 68, 68, 0.3)' }}
+                                        style={{ padding: '10px 22px', borderRadius: '10px', border: 'none', background: '#ef4444', color: '#ffffff', fontSize: '0.86rem', fontWeight: 800, cursor: 'pointer', boxShadow: '0 4px 14px rgba(239, 68, 68, 0.35)' }}
                                     >
                                         Confirm Booking
                                     </button>
