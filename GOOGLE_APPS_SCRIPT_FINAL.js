@@ -2510,8 +2510,16 @@ function mapExistingImagesToSheet() {
  * - Detailed logging to 'System_Logs' for every slide processed
  */
 function processPPTs() {
-  var folder = DriveApp.getFolderById(CONFIG.INPUT_FOLDER_ID);
-  var files = folder.getFiles();
+  var foldersToSearch = [];
+  try {
+    if (CONFIG.INPUT_FOLDER_ID) foldersToSearch.push(DriveApp.getFolderById(CONFIG.INPUT_FOLDER_ID));
+  } catch(e) { logDebug("PPT | INPUT_FOLDER_ID error: " + e.toString()); }
+  try {
+    if (CONFIG.IMAGE_FOLDER_ID && CONFIG.IMAGE_FOLDER_ID !== CONFIG.INPUT_FOLDER_ID) {
+      foldersToSearch.push(DriveApp.getFolderById(CONFIG.IMAGE_FOLDER_ID));
+    }
+  } catch(e) { logDebug("PPT | IMAGE_FOLDER_ID error: " + e.toString()); }
+
   var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(CONFIG.SHEET_NAME);
   if (!sheet) { logDebug("PPT | ERROR: Sheet not found"); return; }
 
@@ -2551,10 +2559,18 @@ function processPPTs() {
     }
   }
 
-  while (files.hasNext()) {
-    var file = files.next();
-    var fileName = file.getName();
-    if (!fileName.toLowerCase().endsWith('.ppt') && !fileName.toLowerCase().endsWith('.pptx')) continue;
+  var processedFileIds = {};
+  for (var fIdx = 0; fIdx < foldersToSearch.length; fIdx++) {
+    var folder = foldersToSearch[fIdx];
+    var files = folder.getFiles();
+    while (files.hasNext()) {
+      var file = files.next();
+      var fileId = file.getId();
+      if (processedFileIds[fileId]) continue;
+      processedFileIds[fileId] = true;
+
+      var fileName = file.getName();
+      if (!fileName.toLowerCase().endsWith('.ppt') && !fileName.toLowerCase().endsWith('.pptx')) continue;
 
     var tempId = null;
     var count = 0;
@@ -2693,6 +2709,7 @@ function processPPTs() {
       if (tempId) try { DriveApp.getFileById(tempId).setTrashed(true); } catch(e){}
       try { file.setTrashed(true); } catch(e){}
     }
+  }
   }
   logDebug("PPT | ═══ processPPTs() complete ═══");
 }
@@ -3081,4 +3098,39 @@ function getStateFromCity(city) {
 
 function res(o) {
   return ContentService.createTextOutput(JSON.stringify(o)).setMimeType(ContentService.MimeType.JSON);
+}
+
+/**
+ * ⚡ Custom Menu in Google Spreadsheet for One-Click Automation
+ */
+function onOpen() {
+  var ui = SpreadsheetApp.getUi();
+  ui.createMenu('⚡ Hoarding Automation')
+    .addItem('▶ Process All PPT Files Now', 'processPPTs')
+    .addItem('🖼 Map Existing Images to Sheet', 'mapExistingImagesToSheet')
+    .addSeparator()
+    .addItem('⏰ Enable Auto-Process Trigger (Every 10 Mins)', 'setupAutomatedTrigger')
+    .addItem('🛑 Remove Auto-Process Trigger', 'removeAutomatedTrigger')
+    .addToUi();
+}
+
+/**
+ * ⏰ Sets up automatic time-driven trigger to scan Drive every 10 minutes
+ */
+function setupAutomatedTrigger() {
+  removeAutomatedTrigger();
+  ScriptApp.newTrigger('processPPTs')
+    .timeBased()
+    .everyMinutes(10)
+    .create();
+  SpreadsheetApp.getActiveSpreadsheet().toast('✅ Auto-processing trigger set to run every 10 minutes!', 'Trigger Active', 5);
+}
+
+function removeAutomatedTrigger() {
+  var triggers = ScriptApp.getProjectTriggers();
+  for (var i = 0; i < triggers.length; i++) {
+    if (triggers[i].getHandlerFunction() === 'processPPTs') {
+      ScriptApp.deleteTrigger(triggers[i]);
+    }
+  }
 }

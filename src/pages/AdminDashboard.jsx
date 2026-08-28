@@ -16,6 +16,7 @@ import ImageLightbox from '../components/ImageLightbox';
 import { clearAdminSession, getAdminSession, getStaffUploadLink } from '../services/secureApi';
 import { isInternalHeader } from '../core/hoardingSchema';
 import { blobToDataUrl, prepareImageOrientation } from '../core/imageOrientation';
+import { parsePptx, releasePptxPreviews } from '../core/pptxEngine';
 import { HIRA_LOGO } from '../assets/hiraLogoData';
 import './AdminDashboard.css';
 
@@ -435,67 +436,66 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                     return;
                 }
 
-                // PPT Upload — Direct Resumable Upload to Google Drive (Bypasses Apps Script 50MB limit)
-                const token = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
-                
-                // 1. Get Resumable Upload URL from Apps Script
-                updateFileProcessing({ phase: 'Securing upload channel...' });
-                const urlResponse = await postToScript({
-                    action: 'getResumableUrl',
-                    sessionToken: getAdminSession(),
-                    fileName: file.name
-                }, 30000);
-                
-                if (!urlResponse.uploadUrl) throw new Error('Could not get upload URL from server.');
-                
-                // 2. Upload raw file directly to Google's servers via XMLHttpRequest for progress
-                updateFileProcessing({ phase: `Uploading PPT (${fileSizeMB.toFixed(1)}MB)...`, progress: 0 });
-                
-                await new Promise((resolve, reject) => {
-                    const xhr = new XMLHttpRequest();
-                    xhr.open('PUT', urlResponse.uploadUrl, true);
-                    
-                    xhr.upload.onprogress = (event) => {
-                        if (event.lengthComputable) {
-                            const percent = Math.round((event.loaded / event.total) * 100);
-                            updateFileProcessing({ 
-                                phase: `Uploading PPT to Drive: ${percent}%`, 
-                                progress: percent 
-                            });
-                        }
-                    };
-                    
-                    xhr.onload = () => {
-                        if (xhr.status >= 200 && xhr.status < 300) {
-                            resolve(xhr.responseText);
-                        } else {
-                            reject(new Error(`Direct upload failed with status ${xhr.status}`));
-                        }
-                    };
-                    
-                    xhr.onerror = () => reject(new Error('Network error during direct upload.'));
-                    xhr.send(file);
+                // PPT Upload — Fast Client-Side Slide & Photo Extraction (100% Reliable, Zero Cloud Quotas)
+                updateFileProcessing({ phase: `Reading PPT file (${fileSizeMB.toFixed(1)}MB)...`, progress: 15 });
+                const arrayBuffer = await file.arrayBuffer();
+
+                updateFileProcessing({ phase: 'Analyzing slides and extracting high-res photos...', progress: 35 });
+                const slides = await parsePptx(arrayBuffer, hoardings);
+
+                if (!slides || slides.length === 0) {
+                    throw new Error('No valid slides could be found in the PPT.');
+                }
+
+                const processableSlides = slides.filter(s => s.photoCandidates && s.photoCandidates.length > 0);
+                if (processableSlides.length === 0) {
+                    throw new Error('No photos could be found in this PPT.');
+                }
+
+                updateFileProcessing({ 
+                    phase: `Extracted ${processableSlides.length} slides! Syncing photos to Google Sheet...`, 
+                    progress: 45 
                 });
-                
-                // 3. Trigger Background Processing in Apps Script
-                updateFileProcessing({ phase: 'Upload complete! Starting background processing...', progress: 100 });
-                await postToScript({
-                    action: 'startPptProcessing',
-                    sessionToken: getAdminSession(),
-                    token,
-                    fileName: file.name
-                }, 30000);
-                
-                // 4. Poll for background processing status
-                updateFileProcessing({ phase: 'PPT saved to Drive! Matching slides to sites in background...' });
-                const result = await waitForPptJob(token, (job) => updateFileProcessing({ phase: job.phase || 'Processing PPT slides...' }));
-                if (result.status === 'FAILED') throw new Error(result.error || 'PPT processing failed.');
-                
+
+                let syncedCount = 0;
+                for (let i = 0; i < processableSlides.length; i++) {
+                    const slide = processableSlides[i];
+                    const photoCandidate = slide.photoCandidates[0];
+                    if (!photoCandidate || !photoCandidate.blob) continue;
+
+                    const percent = Math.round(45 + ((i + 1) / processableSlides.length) * 50);
+                    const matchedSite = hoardings.find(h => h._SiteID === slide.suggestedSiteId) || slide.candidates?.[0]?.site;
+                    const siteName = matchedSite ? (matchedSite['Locality Site Location'] || matchedSite['Location '] || matchedSite.Location || matchedSite._SiteID) : `Slide_${slide.number}`;
+
+                    updateFileProcessing({
+                        phase: `Syncing slide ${i + 1}/${processableSlides.length}: ${String(siteName).substring(0, 24)}...`,
+                        progress: percent
+                    });
+
+                    try {
+                        const compressedDataUrl = await compressImage(photoCandidate.blob, 1600, 1200, 0.85);
+                        const pureBase64 = compressedDataUrl.replace(/^data:image\/[a-z]+;base64,/, '');
+
+                        await syncToGoogleSheet({
+                            action: 'updateHoarding',
+                            sessionToken: getAdminSession(),
+                            siteName: siteName,
+                            siteId: matchedSite?._SiteID || '',
+                            fileData: pureBase64,
+                            mimeType: 'image/jpeg'
+                        });
+                        syncedCount++;
+                    } catch (uploadErr) {
+                        console.warn(`[PPT Upload] Failed for slide ${slide.number}:`, uploadErr);
+                    }
+                }
+
+                releasePptxPreviews(slides);
                 window.dispatchEvent(new CustomEvent('hoardings:sync-requested', { detail: { action: 'pptUpload', fileName: file.name } }));
                 await wait(1200);
                 const freshData = await fetchHoardings();
                 if (freshData?.length) setHoardings(freshData);
-                completeBackgroundUpload('completed', 'PPT processing is complete. Matched site images have been refreshed.');
+                completeBackgroundUpload('completed', `PPT processing complete! ${syncedCount} of ${processableSlides.length} slide photos uploaded and synced.`);
             } catch (error) {
                 completeBackgroundUpload('error', type === 'excel' ? `Excel preview failed: ${error.message}` : `PPT failed: ${error.message}`);
             }
