@@ -49,18 +49,208 @@ const estimateUploadDuration = (file, type) => {
     return sizeInMb <= 8 ? '1-2 minutes' : `about ${Math.min(8, Math.max(2, Math.ceil(sizeInMb / 4)))} minutes`;
 };
 
+const MultiSelectFilter = ({ label, options, selected, onChange }) => {
+    const [isOpen, setIsOpen] = useState(false);
+    const [searchTerm, setSearchTerm] = useState('');
+    const dropdownRef = useRef(null);
+
+    useEffect(() => {
+        const handleClickOutside = (e) => {
+            if (dropdownRef.current && !dropdownRef.current.contains(e.target)) {
+                setIsOpen(false);
+            }
+        };
+        document.addEventListener('mousedown', handleClickOutside);
+        return () => document.removeEventListener('mousedown', handleClickOutside);
+    }, []);
+
+    const isAll = !selected || selected.length === 0 || selected.includes('All');
+
+    const cleanOptions = (options || []).filter(opt => opt && opt !== 'All');
+    const filteredOptions = cleanOptions.filter(opt => 
+        String(opt).toLowerCase().includes(searchTerm.toLowerCase())
+    );
+
+    const toggleOption = (opt) => {
+        if (opt === 'All') {
+            onChange(['All']);
+            return;
+        }
+        let next;
+        if (isAll) {
+            next = [opt];
+        } else if (selected.includes(opt)) {
+            next = selected.filter(s => s !== opt);
+            if (next.length === 0) next = ['All'];
+        } else {
+            next = [...selected, opt];
+        }
+        onChange(next);
+    };
+
+    const toggleSelectAll = () => {
+        if (isAll) {
+            onChange([]);
+        } else {
+            onChange(['All']);
+        }
+    };
+
+    const displayText = isAll
+        ? 'All'
+        : selected.length === 1
+            ? selected[0]
+            : `${selected[0]} (+${selected.length - 1})`;
+
+    return (
+        <div className="inventory-filter-group" ref={dropdownRef} style={{ position: 'relative' }}>
+            <label>{label}</label>
+            <div
+                role="button"
+                tabIndex={0}
+                onClick={() => setIsOpen(!isOpen)}
+                onKeyDown={(e) => e.key === 'Enter' && setIsOpen(!isOpen)}
+                style={{
+                    padding: '7px 10px',
+                    borderRadius: '8px',
+                    border: isOpen ? '1.5px solid #6366f1' : '1px solid #d1d5db',
+                    background: '#fff',
+                    fontSize: '0.84rem',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    fontWeight: isAll ? 400 : 600,
+                    color: isAll ? '#4b5563' : '#1e293b',
+                    boxShadow: isOpen ? '0 0 0 3px rgba(99, 102, 241, 0.15)' : 'none',
+                    transition: 'all 0.15s ease',
+                    userSelect: 'none',
+                    minHeight: '36px'
+                }}
+            >
+                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '120px' }}>
+                    {displayText}
+                </span>
+                <span style={{ fontSize: '9px', color: '#9ca3af', marginLeft: '6px' }}>{isOpen ? '▲' : '▼'}</span>
+            </div>
+
+            {isOpen && (
+                <div style={{
+                    position: 'absolute',
+                    top: 'calc(100% + 4px)',
+                    left: 0,
+                    zIndex: 1050,
+                    background: '#ffffff',
+                    border: '1px solid #e2e8f0',
+                    borderRadius: '10px',
+                    boxShadow: '0 12px 30px -4px rgba(0,0,0,0.15), 0 4px 6px -2px rgba(0,0,0,0.05)',
+                    width: '230px',
+                    maxHeight: '270px',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    overflow: 'hidden'
+                }}>
+                    {cleanOptions.length > 5 && (
+                        <div style={{ padding: '6px 8px', borderBottom: '1px solid #f1f5f9', background: '#f8fafc' }}>
+                            <input
+                                type="text"
+                                placeholder={`Search ${label}...`}
+                                value={searchTerm}
+                                onChange={(e) => setSearchTerm(e.target.value)}
+                                style={{
+                                    width: '100%',
+                                    padding: '5px 8px',
+                                    fontSize: '0.78rem',
+                                    border: '1px solid #cbd5e1',
+                                    borderRadius: '6px',
+                                    outline: 'none',
+                                    background: '#fff'
+                                }}
+                                onClick={(e) => e.stopPropagation()}
+                            />
+                        </div>
+                    )}
+                    <div style={{ padding: '5px 10px', borderBottom: '1px solid #f1f5f9', display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.74rem', background: '#f8fafc' }}>
+                        <button 
+                            type="button" 
+                            onClick={toggleSelectAll} 
+                            style={{ background: 'none', border: 'none', color: '#6366f1', fontWeight: 700, cursor: 'pointer', padding: 0 }}
+                        >
+                            {isAll ? 'Deselect All' : 'Select All'}
+                        </button>
+                        <span style={{ color: '#64748b', fontWeight: 500 }}>
+                            {isAll ? `${cleanOptions.length} Items` : `${selected.length} Selected`}
+                        </span>
+                    </div>
+                    <div style={{ overflowY: 'auto', flex: 1, padding: '4px 0', maxHeight: '180px' }}>
+                        <label 
+                            style={{ 
+                                display: 'flex', 
+                                alignItems: 'center', 
+                                gap: '8px', 
+                                padding: '6px 12px', 
+                                fontSize: '0.82rem', 
+                                cursor: 'pointer',
+                                background: isAll ? 'rgba(99, 102, 241, 0.08)' : 'transparent',
+                                fontWeight: isAll ? 700 : 400
+                            }}
+                            onClick={(e) => e.stopPropagation()}
+                        >
+                            <input
+                                type="checkbox"
+                                checked={isAll}
+                                onChange={() => toggleOption('All')}
+                                style={{ cursor: 'pointer', accentColor: '#6366f1' }}
+                            />
+                            <span>All</span>
+                        </label>
+                        {filteredOptions.map(opt => {
+                            const isChecked = !isAll && selected.includes(opt);
+                            return (
+                                <label 
+                                    key={opt} 
+                                    style={{ 
+                                        display: 'flex', 
+                                        alignItems: 'center', 
+                                        gap: '8px', 
+                                        padding: '5px 12px', 
+                                        fontSize: '0.82rem', 
+                                        cursor: 'pointer',
+                                        background: isChecked ? 'rgba(99, 102, 241, 0.08)' : 'transparent',
+                                        color: isChecked ? '#4338ca' : '#1f2937',
+                                        fontWeight: isChecked ? 600 : 400
+                                    }}
+                                    onClick={(e) => e.stopPropagation()}
+                                >
+                                    <input
+                                        type="checkbox"
+                                        checked={isChecked}
+                                        onChange={() => toggleOption(opt)}
+                                        style={{ cursor: 'pointer', accentColor: '#6366f1' }}
+                                    />
+                                    <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{opt}</span>
+                                </label>
+                            );
+                        })}
+                    </div>
+                </div>
+            )}
+        </div>
+    );
+};
+
 const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
     const navigate = useNavigate();
     const [activeTab, setActiveTab] = useState('dashboard');
     const [searchTerm, setSearchTerm] = useState('');
-    const [inventoryCityFilter, setInventoryCityFilter] = useState('All');
+    const [inventoryCityFilter, setInventoryCityFilter] = useState(['All']);
     const [inventoryStatusFilter, setInventoryStatusFilter] = useState('All');
     const [filterStartDate, setFilterStartDate] = useState('');
     const [filterEndDate, setFilterEndDate] = useState('');
-    const [inventoryLocalityFilter, setInventoryLocalityFilter] = useState('All');
-    const [inventoryMediaFilter, setInventoryMediaFilter] = useState('All');
-    const [inventorySizeFilter, setInventorySizeFilter] = useState('All');
-    const [inventoryCategoryFilter, setInventoryCategoryFilter] = useState('All');
+    const [inventoryLocalityFilter, setInventoryLocalityFilter] = useState(['All']);
+    const [inventoryMediaFilter, setInventoryMediaFilter] = useState(['All']);
+    const [inventorySizeFilter, setInventorySizeFilter] = useState(['All']);
+    const [inventoryCategoryFilter, setInventoryCategoryFilter] = useState(['All']);
     const [inventoryPriceFilter, setInventoryPriceFilter] = useState('All');
     const [isInventoryFilterOpen, setIsInventoryFilterOpen] = useState(false);
     const [toast, setToast] = useState(null); // { message: string, type: 'success' | 'error' | 'info' }
@@ -1329,7 +1519,6 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
 
     const filteredInventory = useMemo(() => {
         const cleanSearch = searchTerm.trim().toLowerCase();
-        const selectedCity = inventoryCityFilter.toLowerCase();
 
         return hoardings.filter(h => {
             if (!h) return false;
@@ -1367,7 +1556,8 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
             if (!matchSearch) return false;
 
             const hCity = (h.City || "").trim().toLowerCase();
-            const matchCity = inventoryCityFilter === 'All' || hCity === selectedCity;
+            const isAllCity = !inventoryCityFilter || inventoryCityFilter.length === 0 || inventoryCityFilter.includes('All');
+            const matchCity = isAllCity || inventoryCityFilter.some(c => c.toLowerCase() === hCity);
             if (!matchCity) return false;
 
             // Status & Date Range Availability Filter
@@ -1386,16 +1576,23 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
             if (!matchStatus) return false;
 
             const siteLocality = (h["Locality"] || h["Area"] || "").trim().toLowerCase();
-            const matchLocality = inventoryLocalityFilter === 'All' || siteLocality === inventoryLocalityFilter.toLowerCase();
+            const isAllLocality = !inventoryLocalityFilter || inventoryLocalityFilter.length === 0 || inventoryLocalityFilter.includes('All');
+            const matchLocality = isAllLocality || inventoryLocalityFilter.some(l => l.toLowerCase() === siteLocality);
             if (!matchLocality) return false;
 
-            const matchMedia = inventoryMediaFilter === 'All' || (h["Media Format (Front Lit / Back Lit / Non Lit)"] || h["Media Format"] || h["Media Type"] || h.Media) === inventoryMediaFilter;
+            const hMedia = (h["Media Format (Front Lit / Back Lit / Non Lit)"] || h["Media Format"] || h["Media Type"] || h.Media || '');
+            const isAllMedia = !inventoryMediaFilter || inventoryMediaFilter.length === 0 || inventoryMediaFilter.includes('All');
+            const matchMedia = isAllMedia || inventoryMediaFilter.includes(hMedia);
             if (!matchMedia) return false;
 
-            const matchSize = inventorySizeFilter === 'All' || (h["Size (Large/Medium/Small)"] || h["Size"]) === inventorySizeFilter;
+            const hSize = (h["Size (Large/Medium/Small)"] || h["Size"] || (h.Width && h.Height ? `${h.Width}x${h.Height}` : ''));
+            const isAllSize = !inventorySizeFilter || inventorySizeFilter.length === 0 || inventorySizeFilter.includes('All');
+            const matchSize = isAllSize || inventorySizeFilter.includes(hSize);
             if (!matchSize) return false;
 
-            const matchCategory = inventoryCategoryFilter === 'All' || (h["Site Category"] || h["Category"]) === inventoryCategoryFilter;
+            const hCat = (h["Site Category"] || h["Category"] || '');
+            const isAllCat = !inventoryCategoryFilter || inventoryCategoryFilter.length === 0 || inventoryCategoryFilter.includes('All');
+            const matchCategory = isAllCat || inventoryCategoryFilter.includes(hCat);
             if (!matchCategory) return false;
 
             const price = Number(h["Avg Monthly Cost (INR)"] || h["Rental Per Month"] || 0);
@@ -1464,9 +1661,10 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
         return city.charAt(0).toUpperCase() + city.slice(1).toLowerCase();
     }).filter(Boolean))];
     const inventoryStatuses = ['All', 'Available', 'Booked'];
-    const inventoryTargetHoardings = inventoryCityFilter === 'All'
+    const isAllCityFilter = !inventoryCityFilter || inventoryCityFilter.length === 0 || inventoryCityFilter.includes('All');
+    const inventoryTargetHoardings = isAllCityFilter
         ? safeHoardings
-        : safeHoardings.filter(h => (h.City || '').trim().toLowerCase() === inventoryCityFilter.toLowerCase());
+        : safeHoardings.filter(h => inventoryCityFilter.some(c => c.toLowerCase() === (h.City || '').trim().toLowerCase()));
     const inventoryLocalities = ['All', ...new Set(inventoryTargetHoardings.map(h => (h["Locality"] || h["Area"] || '').trim()).filter(Boolean))].sort((a, b) => a === 'All' ? -1 : b === 'All' ? 1 : a.localeCompare(b));
     const inventoryMediaFormats = ['All', ...new Set(safeHoardings.map(h => h["Media Format (Front Lit / Back Lit / Non Lit)"]).filter(Boolean))];
     const inventorySizes = ['All', ...new Set(safeHoardings.map(h => h["Size (Large/Medium/Small)"]).filter(Boolean))];
@@ -3886,20 +4084,15 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
 
                             {isInventoryFilterOpen && (
                                 <div className="inventory-filters animate-in">
-                                    <div className="inventory-filter-group">
-                                        <label>Region / City</label>
-                                        <select
-                                            value={inventoryCityFilter}
-                                            onChange={(e) => {
-                                                setInventoryCityFilter(e.target.value);
-                                                setInventoryLocalityFilter('All');
-                                            }}
-                                        >
-                                            {inventoryCities.map(city => (
-                                                <option key={city} value={city}>{city}</option>
-                                            ))}
-                                        </select>
-                                    </div>
+                                    <MultiSelectFilter
+                                        label="Region / City"
+                                        options={inventoryCities}
+                                        selected={inventoryCityFilter}
+                                        onChange={(val) => {
+                                            setInventoryCityFilter(val);
+                                            setInventoryLocalityFilter(['All']);
+                                        }}
+                                    />
                                     <div className="inventory-filter-group">
                                         <label>Live Status</label>
                                         <select
@@ -3929,38 +4122,30 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                             style={{ padding: '7px 10px', borderRadius: '8px', border: '1px solid #d1d5db', fontSize: '0.84rem', outline: 'none' }}
                                         />
                                     </div>
-                                    <div className="inventory-filter-group">
-                                        <label>Locality</label>
-                                        <select value={inventoryLocalityFilter} onChange={(e) => setInventoryLocalityFilter(e.target.value)}>
-                                            {inventoryLocalities.map(locality => (
-                                                <option key={locality} value={locality}>{locality}</option>
-                                            ))}
-                                        </select>
-                                    </div>
-                                    <div className="inventory-filter-group">
-                                        <label>Media Format</label>
-                                        <select value={inventoryMediaFilter} onChange={(e) => setInventoryMediaFilter(e.target.value)}>
-                                            {inventoryMediaFormats.map(format => (
-                                                <option key={format} value={format}>{format}</option>
-                                            ))}
-                                        </select>
-                                    </div>
-                                    <div className="inventory-filter-group">
-                                        <label>Size</label>
-                                        <select value={inventorySizeFilter} onChange={(e) => setInventorySizeFilter(e.target.value)}>
-                                            {inventorySizes.map(size => (
-                                                <option key={size} value={size}>{size}</option>
-                                            ))}
-                                        </select>
-                                    </div>
-                                    <div className="inventory-filter-group">
-                                        <label>Site Category</label>
-                                        <select value={inventoryCategoryFilter} onChange={(e) => setInventoryCategoryFilter(e.target.value)}>
-                                            {inventoryCategories.map(category => (
-                                                <option key={category} value={category}>{category}</option>
-                                            ))}
-                                        </select>
-                                    </div>
+                                    <MultiSelectFilter
+                                        label="Locality"
+                                        options={inventoryLocalities}
+                                        selected={inventoryLocalityFilter}
+                                        onChange={setInventoryLocalityFilter}
+                                    />
+                                    <MultiSelectFilter
+                                        label="Media Format"
+                                        options={inventoryMediaFormats}
+                                        selected={inventoryMediaFilter}
+                                        onChange={setInventoryMediaFilter}
+                                    />
+                                    <MultiSelectFilter
+                                        label="Size"
+                                        options={inventorySizes}
+                                        selected={inventorySizeFilter}
+                                        onChange={setInventorySizeFilter}
+                                    />
+                                    <MultiSelectFilter
+                                        label="Site Category"
+                                        options={inventoryCategories}
+                                        selected={inventoryCategoryFilter}
+                                        onChange={setInventoryCategoryFilter}
+                                    />
                                     <div className="inventory-filter-group">
                                         <label>Price Range</label>
                                         <select value={inventoryPriceFilter} onChange={(e) => setInventoryPriceFilter(e.target.value)}>
@@ -3973,14 +4158,14 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                         <button
                                             className="btn-reset-filters"
                                             onClick={() => {
-                                                setInventoryCityFilter('All');
+                                                setInventoryCityFilter(['All']);
                                                 setInventoryStatusFilter('All');
                                                 setFilterStartDate('');
                                                 setFilterEndDate('');
-                                                setInventoryLocalityFilter('All');
-                                                setInventoryMediaFilter('All');
-                                                setInventorySizeFilter('All');
-                                                setInventoryCategoryFilter('All');
+                                                setInventoryLocalityFilter(['All']);
+                                                setInventoryMediaFilter(['All']);
+                                                setInventorySizeFilter(['All']);
+                                                setInventoryCategoryFilter(['All']);
                                                 setInventoryPriceFilter('All');
                                                 setSearchTerm('');
                                             }}
@@ -3991,11 +4176,11 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                         <button
                                             className="btn-danger-admin"
                                             style={{ padding: '8px 14px', fontSize: '0.84rem' }}
-                                            disabled={inventoryCityFilter === 'All'}
-                                            title={inventoryCityFilter === 'All' ? 'Choose a city filter first' : `Delete ${inventoryCityFilter} city data`}
-                                            onClick={() => setBulkDeleteTarget({ type: 'city', city: inventoryCityFilter })}
+                                            disabled={!inventoryCityFilter || inventoryCityFilter.length === 0 || inventoryCityFilter.includes('All')}
+                                            title={inventoryCityFilter.includes('All') ? 'Choose a city filter first' : `Delete selected city data`}
+                                            onClick={() => setBulkDeleteTarget({ type: 'city', city: inventoryCityFilter[0] })}
                                         >
-                                            <Trash2 size={15} /> Delete {inventoryCityFilter === 'All' ? 'City' : inventoryCityFilter}
+                                            <Trash2 size={15} /> Delete {inventoryCityFilter.includes('All') || inventoryCityFilter.length === 0 ? 'City' : inventoryCityFilter.join(', ')}
                                         </button>
 
                                         <button
