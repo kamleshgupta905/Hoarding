@@ -220,7 +220,14 @@ function App() {
 
   const applyFreshHoardings = useCallback((data) => {
     const cleanData = sanitizeHoardings(data);
-    if (!cleanData || cleanData.length === 0) return;
+    if (!cleanData || cleanData.length === 0) {
+      try {
+        localStorage.removeItem('hoardings_cache');
+        localStorage.removeItem('local_added_sites_cache');
+      } catch {}
+      setHoardings([]);
+      return;
+    }
 
     let localAdded = [];
     try {
@@ -260,7 +267,8 @@ function App() {
     if (isTyping && !force) return;
     try {
       const data = await fetchHoardings();
-      if (data && data.length > 0) { lastFullRefreshRef.current = Date.now(); applyFreshHoardings(data); }
+      lastFullRefreshRef.current = Date.now();
+      applyFreshHoardings(data || []);
     } catch (error) { console.warn('Auto-refresh:', error); }
   }, [applyFreshHoardings]);
 
@@ -286,10 +294,7 @@ function App() {
           } catch { localStorage.removeItem('hoardings_cache'); }
         }
         const data = await fetchHoardings();
-        if (data && data.length > 0) {
-          const lastUpdate = localStorage.getItem('last_hoardings_update');
-          const now = Date.now();
-          if (lastUpdate && (now - parseInt(lastUpdate)) < LOCAL_SYNC_PRESERVATION_MS) return;
+        if (Array.isArray(data)) {
           applyFreshHoardings(data);
         }
       } catch (error) { console.error("Data load failed:", error); }
