@@ -658,7 +658,7 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
 
                 let completed = 0;
                 let syncedCount = 0;
-                const CONCURRENCY = 6;
+                const CONCURRENCY = 2;
 
                 const queue = [...processableSlides];
                 const workers = Array.from({ length: CONCURRENCY }, async () => {
@@ -690,14 +690,14 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
 
                         let pureBase64 = '';
                         try {
-                            const compressedDataUrl = await compressImage(photoCandidate.blob, 1024, 768, 0.72);
+                            const compressedDataUrl = await compressImage(photoCandidate.blob, 1280, 960, 0.78);
                             pureBase64 = compressedDataUrl.replace(/^data:image\/[a-z]+;base64,/, '');
                         } catch (compErr) {
                             console.warn(`[Compression Fallback] Slide ${slide.number}:`, compErr);
                         }
 
                         let success = false;
-                        for (let attempt = 1; attempt <= 3 && !success; attempt++) {
+                        for (let attempt = 1; attempt <= 4 && !success; attempt++) {
                             try {
                                 const res = await syncToGoogleSheet({
                                     action: 'updateHoarding',
@@ -717,10 +717,10 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                     throw new Error(res?.error || 'Sync rejected');
                                 }
                             } catch (uploadErr) {
-                                if (attempt < 3) {
+                                if (attempt < 4) {
                                     await wait(1200 * attempt);
                                 } else {
-                                    console.warn(`[PPT Upload] Failed for slide ${slide.number} after 3 attempts:`, uploadErr);
+                                    console.warn(`[PPT Upload] Failed for slide ${slide.number} after 4 attempts:`, uploadErr);
                                 }
                             }
                         }
@@ -728,7 +728,7 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                         completed++;
                         const percent = Math.round(45 + (completed / processableSlides.length) * 50);
                         updateFileProcessing({
-                            phase: `⚡ AI Smart Sync (Groq + Gemini Vision): ${completed}/${processableSlides.length} slides (${syncedCount} photos saved)...`,
+                            phase: `⚡ AI Smart Sync (2x Rock-Solid Mode): ${completed}/${processableSlides.length} slides (${syncedCount} photos saved)...`,
                             progress: percent
                         });
                     }
