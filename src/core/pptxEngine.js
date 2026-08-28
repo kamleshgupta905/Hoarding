@@ -131,8 +131,18 @@ export const parsePptx = async (arrayBuffer, sites) => {
     .filter((path) => /^ppt\/slides\/slide\d+\.xml$/.test(path))
     .sort((left, right) => slideNumber(left) - slideNumber(right));
 
+  // Collect all media files present in the PPT archive
+  const allMediaPaths = Object.keys(zip.files)
+    .filter((path) => /^ppt\/media\//i.test(path) && !/\.xml$/i.test(path))
+    .sort((a, b) => {
+      const numA = Number(a.match(/(\d+)/)?.[1] || 0);
+      const numB = Number(b.match(/(\d+)/)?.[1] || 0);
+      return numA - numB;
+    });
+
   const slides = [];
   const hashUsage = new Map();
+
   for (const slidePath of slidePaths) {
     const number = slideNumber(slidePath);
     const xml = xmlParser.parse(await zip.file(slidePath).async('text'));
@@ -141,20 +151,36 @@ export const parsePptx = async (arrayBuffer, sites) => {
     const relationshipFile = zip.file(relationshipPath);
     const relationships = relationshipFile ? xmlParser.parse(await relationshipFile.async('text')) : null;
     const relationshipMap = new Map();
+    const slideMediaFileNames = new Set();
+
     if (relationships) {
       collectXmlNodes(relationships, 'Relationship').forEach((node) => {
-        relationshipMap.set(node?.['@_Id'], node?.['@_Target']);
+        const id = node?.['@_Id'] || node?.['Id'];
+        const target = node?.['@_Target'] || node?.['Target'];
+        const type = node?.['@_Type'] || node?.['Type'] || '';
+        if (id && target) {
+          relationshipMap.set(id, target);
+        }
+        if (target && (target.includes('media/') || type.includes('image') || /\.(png|jpe?g|webp|bmp|gif|tiff)$/i.test(target))) {
+          const mediaName = target.split('/').pop();
+          if (mediaName) slideMediaFileNames.add(mediaName);
+        }
       });
     }
 
-    const embedIds = collectXmlNodes(xml, 'blip')
-      .map((node) => node?.['@_embed'])
-      .filter(Boolean);
+    // Also collect all blip embeds/links from the slide XML
+    const blipNodes = collectXmlNodes(xml, 'blip');
+    for (const node of blipNodes) {
+      const embedId = node?.['@_embed'] || node?.['@_link'] || node?.['@_r:embed'] || node?.['@_r:link'] || node?.embed || node?.link;
+      if (embedId && relationshipMap.has(embedId)) {
+        const target = relationshipMap.get(embedId);
+        const mediaName = target ? target.split('/').pop() : '';
+        if (mediaName) slideMediaFileNames.add(mediaName);
+      }
+    }
+
     const images = [];
-    for (const embedId of embedIds) {
-      const target = relationshipMap.get(embedId);
-      if (!target || !target.includes('media/')) continue;
-      const mediaName = target.split('/').pop();
+    for (const mediaName of slideMediaFileNames) {
       const path = `ppt/media/${mediaName}`;
       const file = zip.file(path);
       if (!file) continue;
@@ -163,7 +189,7 @@ export const parsePptx = async (arrayBuffer, sites) => {
       const dimensions = await getImageDimensions(blob);
       hashUsage.set(hash, (hashUsage.get(hash) || 0) + 1);
       images.push({
-        id: `${number}-${embedId}`,
+        id: `${number}-${mediaName}`,
         mediaName,
         blob,
         hash,
@@ -182,6 +208,31 @@ export const parsePptx = async (arrayBuffer, sites) => {
     slides.push({ number, text, images, candidates });
   }
 
+  // 🛡️ Global Fallback: If any slide has 0 images, but allMediaPaths has unused media
+  for (let i = 0; i < slides.length; i++) {
+    const slide = slides[i];
+    if (slide.images.length === 0 && allMediaPaths.length > 0) {
+      const candidatePath = allMediaPaths[i] || allMediaPaths[slide.number - 1];
+      if (candidatePath && zip.file(candidatePath)) {
+        const file = zip.file(candidatePath);
+        const blob = await file.async('blob');
+        const hash = await hashBlob(blob);
+        const dimensions = await getImageDimensions(blob);
+        hashUsage.set(hash, (hashUsage.get(hash) || 0) + 1);
+        slide.images.push({
+          id: `${slide.number}-fallback`,
+          mediaName: candidatePath.split('/').pop(),
+          blob,
+          hash,
+          size: blob.size,
+          width: dimensions.width,
+          height: dimensions.height,
+          previewUrl: ''
+        });
+      }
+    }
+  }
+
   slides.forEach((slide) => {
     const maxArea = Math.max(1, ...slide.images.map((image) => image.width * image.height));
     slide.images = slide.images.map((image) => {
@@ -192,7 +243,7 @@ export const parsePptx = async (arrayBuffer, sites) => {
     });
     slide.photoCandidates = slide.images.filter((image) => !image.logoCandidate);
 
-    // 🛡️ Fallback: If all images were marked as logoCandidate, pick the largest image so NO slide photo is lost!
+    // 🛡️ Zero-Loss Fallback: If all images were marked as logoCandidate, pick the largest image so NO slide photo is lost!
     if (slide.photoCandidates.length === 0 && slide.images.length > 0) {
       const sorted = [...slide.images].sort((a, b) => (b.width * b.height) - (a.width * a.height));
       slide.photoCandidates = [sorted[0]];
