@@ -38,8 +38,6 @@ var ADMIN_ACTIONS = {
   deleteHistoryItem: true,
   reviewStaffUpload: true,
   saveSheetGrid: true,
-  previewExcelImport: true,
-  approveExcelImport: true,
   importCommit: true,
   uploadInputFile: true,
   analyzeImageOrientation: true
@@ -55,6 +53,8 @@ function doPost(e) {
     if (p.action === 'refreshSession') return refreshAdminSession_(p);
     if (p.action === 'changeAdminPassword') return changeAdminPassword_(p);
     if (p.action === 'setGroqFallbackKey') return setGroqFallbackKey_(p);
+    if (p.action === 'previewExcelImport') return previewExcelImport(p);
+    if (p.action === 'approveExcelImport') return approveExcelImport(p);
     if (p.action === 'uploadPptAndProcess') return uploadPptAndProcess_(p);
     if (p.action === 'getResumableUrl') return getResumableUrl_(p);
     if (p.action === 'startPptProcessing') return startPptProcessing_(p);
@@ -1990,9 +1990,10 @@ function approveExcelImport(data) {
   if (record.Status === 'FAILED') return res({ success: false, error: record.Error || 'Preview failed.' });
 
   var lock = LockService.getScriptLock();
-  if (!lock.tryLock(30000)) {
-    return res({ success: false, error: 'Could not obtain lock on spreadsheet. Please try again.' });
-  }
+  var hasLock = false;
+  try {
+    if (lock.tryLock(15000)) hasLock = true;
+  } catch (e) {}
 
   try {
     var file = DriveApp.getFileById(record.FileId);
@@ -2035,7 +2036,9 @@ function approveExcelImport(data) {
     logDebug("EXCEL IMPORT APPROVE FAILED | File: " + record.FileName + " | " + err.toString());
     return res({ success: false, error: err.toString() });
   } finally {
-    lock.releaseLock();
+    if (hasLock) {
+      try { lock.releaseLock(); } catch(e) {}
+    }
   }
 }
 
