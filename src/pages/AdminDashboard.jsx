@@ -459,7 +459,7 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
 
                 let completed = 0;
                 let syncedCount = 0;
-                const CONCURRENCY = 10;
+                const CONCURRENCY = 20;
 
                 const queue = [...processableSlides];
                 const workers = Array.from({ length: CONCURRENCY }, async () => {
@@ -494,7 +494,7 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                 success = true;
                             } catch (uploadErr) {
                                 if (attempt < 3) {
-                                    await wait(500 * attempt);
+                                    await wait(400 * attempt);
                                 } else {
                                     console.warn(`[PPT Upload] Failed for slide ${slide.number}:`, uploadErr);
                                 }
@@ -504,7 +504,7 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                         completed++;
                         const percent = Math.round(45 + (completed / processableSlides.length) * 50);
                         updateFileProcessing({
-                            phase: `🚀 10x Turbo Sync: ${completed}/${processableSlides.length} slides (${syncedCount} photos saved)...`,
+                            phase: `⚡ 20x Hyper-Turbo Sync: ${completed}/${processableSlides.length} slides (${syncedCount} photos saved)...`,
                             progress: percent
                         });
                     }
