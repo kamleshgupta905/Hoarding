@@ -3167,7 +3167,7 @@ function ensureAllColumnsInSheet() {
  */
 function setupAutomatedTrigger() {
   removeAutomatedTrigger();
-  ScriptApp.newTrigger('processPPTs')
+  ScriptApp.newTrigger('processAutomation')
     .timeBased()
     .everyMinutes(10)
     .create();
@@ -3177,7 +3177,7 @@ function setupAutomatedTrigger() {
 function removeAutomatedTrigger() {
   var triggers = ScriptApp.getProjectTriggers();
   for (var i = 0; i < triggers.length; i++) {
-    if (triggers[i].getHandlerFunction() === 'processPPTs') {
+    if (triggers[i].getHandlerFunction() === 'processAutomation' || triggers[i].getHandlerFunction() === 'processPPTs') {
       ScriptApp.deleteTrigger(triggers[i]);
     }
   }
