@@ -3127,20 +3127,34 @@ function onOpen() {
 }
 
 function makeAllDriveImagesPublic() {
+  var folderIds = [
+    CONFIG.IMAGE_FOLDER_ID,
+    CONFIG.INPUT_FOLDER_ID,
+    "1gJmB53z4Ab7Jy-JTxU0v_05_A9Lq5BuE",
+    "1zlCavCgAa98MLZicTZrM0FTqqcG3h60l"
+  ];
   var count = 0;
-  try {
-    var folder = DriveApp.getFolderById(CONFIG.IMAGE_FOLDER_ID);
-    folder.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
-    var files = folder.getFiles();
-    while (files.hasNext()) {
-      var f = files.next();
-      f.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
-      count++;
+  var seenIds = {};
+  folderIds.forEach(function(fId) {
+    if (!fId) return;
+    try {
+      var folder = DriveApp.getFolderById(fId);
+      folder.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+      var files = folder.getFiles();
+      while (files.hasNext()) {
+        var f = files.next();
+        var id = f.getId();
+        if (!seenIds[id]) {
+          seenIds[id] = true;
+          f.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+          count++;
+        }
+      }
+    } catch (e) {
+      logDebug("makeAllDriveImagesPublic error for folder " + fId + ": " + e.toString());
     }
-  } catch (e) {
-    logDebug("makeAllDriveImagesPublic error: " + e.toString());
-  }
-  SpreadsheetApp.getActiveSpreadsheet().toast('✅ ' + count + ' images in Google Drive made publicly viewable!', 'Public Sharing Active', 5);
+  });
+  SpreadsheetApp.getActiveSpreadsheet().toast('✅ ' + count + ' images in Google Drive are now 100% publicly visible!', 'Images Unlocked', 5);
 }
 
 function ensureAllColumnsInSheet() {
