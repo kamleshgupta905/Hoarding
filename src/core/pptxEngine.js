@@ -170,6 +170,28 @@ export const parsePptx = async (arrayBuffer, sites) => {
     slide.status = slide.suggestedSiteId && slide.photoCandidates.length ? (slide.confidence === 'HIGH' ? 'MATCHED' : 'REVIEW') : 'SKIPPED';
   });
 
+  // Optional Groq AI Enhancement for complex or ambiguous slides
+  const groqKey = typeof window !== 'undefined' ? (window.localStorage?.getItem('adh_groq_api_key') || '') : '';
+  if (groqKey) {
+    try {
+      const { matchSlideToInventoryWithGroq } = await import('../services/groqService');
+      for (const slide of slides) {
+        if (slide.confidence !== 'HIGH' && slide.text && slide.photoCandidates.length > 0) {
+          const topCandidates = slide.candidates.map(c => c.site);
+          const aiMatch = await matchSlideToInventoryWithGroq(slide.text, topCandidates, groqKey);
+          if (aiMatch && aiMatch.site) {
+            slide.suggestedSiteId = aiMatch.site._SiteID;
+            slide.confidence = aiMatch.confidence || 'HIGH';
+            slide.status = 'MATCHED';
+            slide.aiReason = aiMatch.reason;
+          }
+        }
+      }
+    } catch (e) {
+      console.warn('[Groq Engine Optional Hook Ignored]:', e);
+    }
+  }
+
   return slides;
 };
 
