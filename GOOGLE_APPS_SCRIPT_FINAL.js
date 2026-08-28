@@ -711,6 +711,16 @@ function ensureSiteMetadata_() {
   var lastColumn = Math.max(sheet.getLastColumn(), 1);
   var headers = sheet.getRange(1, 1, 1, lastColumn).getValues()[0];
   var changedHeaders = false;
+
+  // 🌟 Ensure all essential business columns exist
+  var businessColumns = ['STATUS', 'ImageURL', 'BookedBy', 'BookingStart', 'BookingEnd', 'ExecutionHistory'];
+  businessColumns.forEach(function(col) {
+    if (headers.indexOf(col) === -1) {
+      headers.push(col);
+      changedHeaders = true;
+    }
+  });
+
   META_HEADERS.forEach(function(header) {
     if (headers.indexOf(header) === -1) {
       headers.push(header);
@@ -3108,10 +3118,16 @@ function onOpen() {
   ui.createMenu('⚡ Hoarding Automation')
     .addItem('▶ Process All PPT Files Now', 'processPPTs')
     .addItem('🖼 Map Existing Images to Sheet', 'mapExistingImagesToSheet')
+    .addItem('➕ Auto-Add Missing Columns (History, Booking, Status)', 'ensureAllColumnsInSheet')
     .addSeparator()
     .addItem('⏰ Enable Auto-Process Trigger (Every 10 Mins)', 'setupAutomatedTrigger')
     .addItem('🛑 Remove Auto-Process Trigger', 'removeAutomatedTrigger')
     .addToUi();
+}
+
+function ensureAllColumnsInSheet() {
+  ensureSiteMetadata_();
+  SpreadsheetApp.getActiveSpreadsheet().toast('✅ All columns (STATUS, ImageURL, BookedBy, BookingStart, BookingEnd, ExecutionHistory) are verified & added!', 'Columns Updated', 5);
 }
 
 /**
