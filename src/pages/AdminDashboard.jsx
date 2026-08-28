@@ -459,7 +459,7 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
 
                 let completed = 0;
                 let syncedCount = 0;
-                const CONCURRENCY = 50;
+                const CONCURRENCY = 5; // Reduced from 50 to 5 to avoid Google Apps Script "Too Many Concurrent Executions" rate limiting.
 
                 const queue = [...processableSlides];
                 const workers = Array.from({ length: CONCURRENCY }, async () => {

@@ -1406,11 +1406,18 @@ function updateHoardingDetails(data) {
 
     if (rowIndex === -1) {
       if (data.fileData) {
-        var newRow = new Array(headers.length);
-        for (var c = 0; c < headers.length; c++) newRow[c] = "";
-        newRow[idxSite] = siteSearchTerm;
-        sheet.appendRow(newRow);
-        rowIndex = sheet.getLastRow();
+        var appendLock = LockService.getScriptLock();
+        appendLock.waitLock(15000);
+        try {
+          var newRow = new Array(headers.length);
+          for (var c = 0; c < headers.length; c++) newRow[c] = "";
+          newRow[idxSite] = siteSearchTerm;
+          sheet.appendRow(newRow);
+          SpreadsheetApp.flush();
+          rowIndex = sheet.getLastRow();
+        } finally {
+          appendLock.releaseLock();
+        }
         logDebug("UPDATE | Appended new row for unmatched site: " + siteSearchTerm);
       } else {
         return res({ success: false, error: 'Site not found: ' + siteSearchTerm });
