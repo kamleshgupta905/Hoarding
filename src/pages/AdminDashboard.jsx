@@ -3772,20 +3772,6 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                         <p style={{ margin: '4px 0 0', color: '#6b7280', fontSize: '0.86rem' }}>{filteredInventory.length} active hoarding assets across operational regions</p>
                                     </div>
                                     <div className="inventory-actions">
-                                        <button
-                                            className="btn-danger-admin"
-                                            disabled={inventoryCityFilter === 'All'}
-                                            title={inventoryCityFilter === 'All' ? 'Choose a city filter first' : `Delete ${inventoryCityFilter} city data`}
-                                            onClick={() => setBulkDeleteTarget({ type: 'city', city: inventoryCityFilter })}
-                                        >
-                                            <Trash2 size={18} /> Delete City
-                                        </button>
-                                        <button
-                                            className="btn-danger-admin strong"
-                                            onClick={() => setBulkDeleteTarget({ type: 'all' })}
-                                        >
-                                            <Trash2 size={18} /> Delete All
-                                        </button>
                                         <button className="btn-primary-admin" style={{ background: '#6c5dd3' }} onClick={() => { 
                                             setFormData({}); 
                                             setSelectedAssetFile(null); 
@@ -3919,21 +3905,43 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                             ))}
                                         </select>
                                     </div>
-                                    <button
-                                        className="btn-reset-filters"
-                                        onClick={() => {
-                                            setInventoryCityFilter('All');
-                                            setInventoryStatusFilter('All');
-                                            setInventoryLocalityFilter('All');
-                                            setInventoryMediaFilter('All');
-                                            setInventorySizeFilter('All');
-                                            setInventoryCategoryFilter('All');
-                                            setInventoryPriceFilter('All');
-                                            setSearchTerm('');
-                                        }}
-                                    >
-                                        Reset All
-                                    </button>
+                                    
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                                        <button
+                                            className="btn-reset-filters"
+                                            onClick={() => {
+                                                setInventoryCityFilter('All');
+                                                setInventoryStatusFilter('All');
+                                                setInventoryLocalityFilter('All');
+                                                setInventoryMediaFilter('All');
+                                                setInventorySizeFilter('All');
+                                                setInventoryCategoryFilter('All');
+                                                setInventoryPriceFilter('All');
+                                                setSearchTerm('');
+                                            }}
+                                        >
+                                            Reset Filters
+                                        </button>
+                                        
+                                        <button
+                                            className="btn-danger-admin"
+                                            style={{ padding: '8px 14px', fontSize: '0.84rem' }}
+                                            disabled={inventoryCityFilter === 'All'}
+                                            title={inventoryCityFilter === 'All' ? 'Choose a city filter first' : `Delete ${inventoryCityFilter} city data`}
+                                            onClick={() => setBulkDeleteTarget({ type: 'city', city: inventoryCityFilter })}
+                                        >
+                                            <Trash2 size={15} /> Delete {inventoryCityFilter === 'All' ? 'City' : inventoryCityFilter}
+                                        </button>
+
+                                        <button
+                                            className="btn-danger-admin strong"
+                                            style={{ padding: '8px 14px', fontSize: '0.84rem' }}
+                                            onClick={() => setBulkDeleteTarget({ type: 'all' })}
+                                            title="Delete all hoarding data"
+                                        >
+                                            <Trash2 size={15} /> Delete All
+                                        </button>
+                                    </div>
                                     <div className="proposal-header-picker">
                                         <div className="proposal-header-picker-top">
                                             <span>Proposal Headers</span>
