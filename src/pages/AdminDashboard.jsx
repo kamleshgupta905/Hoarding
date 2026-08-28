@@ -480,6 +480,15 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                         }
                         const siteName = matchedSite ? (matchedSite['Locality Site Location'] || matchedSite['Location '] || matchedSite.Location || matchedSite._SiteID) : fallbackName;
 
+                        // 🏷️ Rich File Name with City, Location, Facing, Lat-Long, Dimensions
+                        const city = matchedSite?.City || 'Meerut';
+                        const locClean = (matchedSite?.Location || matchedSite?.['Locality Site Location'] || matchedSite?.['Location '] || siteName).replace(/[/\\?%*:|"<>]/g, '-').trim();
+                        const facingClean = matchedSite?.Facing ? `Facing_${matchedSite.Facing.replace(/[/\\?%*:|"<>]/g, '-').trim()}` : '';
+                        const latLongClean = (matchedSite?.['Lat-Long'] || (matchedSite?.Latitude && matchedSite?.Longitude ? `${matchedSite.Latitude},${matchedSite.Longitude}` : '')).replace(/\s+/g, '').replace(/[/\\?%*:|"<>]/g, '-');
+                        const sizeClean = matchedSite?.Width && matchedSite?.Height ? `${matchedSite.Width}x${matchedSite.Height}` : '';
+
+                        const descriptiveFileName = [city, locClean, facingClean, latLongClean, sizeClean].filter(Boolean).join('_') + '.jpg';
+
                         let pureBase64 = '';
                         try {
                             const compressedDataUrl = await compressImage(photoCandidate.blob, 1280, 960, 0.78);
@@ -496,6 +505,7 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                     sessionToken: getAdminSession(),
                                     siteName: siteName,
                                     siteId: matchedSite?._SiteID || '',
+                                    fileName: descriptiveFileName,
                                     fileData: pureBase64,
                                     mimeType: 'image/jpeg'
                                 });

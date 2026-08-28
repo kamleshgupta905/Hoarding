@@ -1269,7 +1269,10 @@ function uploadImageToDrive(data) {
       folder = folders.hasNext() ? folders.next() : DriveApp.createFolder("Hoarding_Project_Images");
     }
 
-    var blob = Utilities.newBlob(decoded, data.mimeType || 'image/jpeg', (data.siteName || "Site") + "_" + new Date().getTime() + ".jpg");
+    var rawName = data.fileName || ((data.siteName || "Site") + "_" + new Date().getTime() + ".jpg");
+    var cleanName = rawName.replace(/[/\\?%*:|"<>]/g, '-').trim();
+    if (!/\.(jpg|jpeg|png|webp)$/i.test(cleanName)) cleanName += '.jpg';
+    var blob = Utilities.newBlob(decoded, data.mimeType || 'image/jpeg', cleanName);
     var file = folder.createFile(blob);
     file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
     return "https://lh3.googleusercontent.com/d/" + file.getId();
