@@ -241,7 +241,14 @@ const MultiSelectFilter = ({ label, options, selected, onChange }) => {
 
 const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
     const navigate = useNavigate();
-    const [activeTab, setActiveTab] = useState('dashboard');
+    const [activeTab, setActiveTabState] = useState(() => {
+        return localStorage.getItem('adhoardings_active_tab') || 'inventory';
+    });
+    const setActiveTab = (tab) => {
+        setActiveTabState(tab);
+        try { localStorage.setItem('adhoardings_active_tab', tab); } catch {}
+    };
+    const [quickBookingTarget, setQuickBookingTarget] = useState(null); // { site, clientName, startDate, endDate }
     const [searchTerm, setSearchTerm] = useState('');
     const [inventoryCityFilter, setInventoryCityFilter] = useState(['All']);
     const [inventoryStatusFilter, setInventoryStatusFilter] = useState('All');
@@ -1078,51 +1085,160 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
     };
 
     // ------------------------------------------------------------------
-    // 🖥️ UI COMPONENTS
+    // 🖥️ UI COMPONENTS & QUICK BOOKING
     // ------------------------------------------------------------------
 
-    const toggleStatus = (targetHoarding) => {
-        if (!targetHoarding) return;
+    const handleStatusClick = (h) => {
+        if (!h) return;
+        const isBooked = (h.STATUS || '').toLowerCase() === 'booked' || (h.STATUS || '').toLowerCase() === 'occupied';
+        if (isBooked) {
+            toggleStatusToAvailable(h);
+        } else {
+            const today = new Date().toISOString().split('T')[0];
+            const nextMonth = new Date(Date.now() + 30 * 86400000).toISOString().split('T')[0];
+            setQuickBookingTarget({
+                site: h,
+                clientName: h.BookedBy || h.ClientName || h["Client Name"] || '',
+                startDate: h.BookingStart || today,
+                endDate: h.BookingEnd || nextMonth
+            });
+        }
+    };
 
-        const targetSL = targetHoarding.SL || targetHoarding["S. No."] || targetHoarding["SL NO"];
-        const targetId = targetHoarding.UniqueID || targetHoarding["Unique ID"] || targetHoarding.ID || targetHoarding._SiteID;
-        const targetLoc = String(targetHoarding["Locality Site Location"] || targetHoarding["Location "] || targetHoarding.Location || '').trim().toLowerCase();
-        const targetFacing = String(targetHoarding.Facing || targetHoarding["Traffic View"] || '').trim().toLowerCase();
-        const targetLat = String(targetHoarding.Latitude || '').trim();
-        const targetLng = String(targetHoarding.Longitude || '').trim();
+    const handleConfirmQuickBooking = async (e) => {
+        e.preventDefault();
+        if (!quickBookingTarget) return;
 
-        const updated = hoardings.map(h => {
-            let isMatch = (h === targetHoarding);
-            if (!isMatch && targetId && (h.UniqueID || h["Unique ID"] || h.ID || h._SiteID)) {
-                isMatch = String(h.UniqueID || h["Unique ID"] || h.ID || h._SiteID).trim().toLowerCase() === String(targetId).trim().toLowerCase();
-            }
-            if (!isMatch && targetSL && (h.SL || h["S. No."] || h["SL NO"])) {
-                isMatch = String(h.SL || h["S. No."] || h["SL NO"]).trim() === String(targetSL).trim();
-            }
-            if (!isMatch && targetLoc) {
-                const hLoc = String(h["Locality Site Location"] || h["Location "] || h.Location || '').trim().toLowerCase();
-                const hFacing = String(h.Facing || h["Traffic View"] || '').trim().toLowerCase();
-                const hLat = String(h.Latitude || '').trim();
-                const hLng = String(h.Longitude || '').trim();
-                
-                isMatch = (hLoc === targetLoc) && 
-                          (!targetFacing || hFacing === targetFacing) && 
-                          (!targetLat || hLat === targetLat) && 
-                          (!targetLng || hLng === targetLng);
-            }
+        const { site, clientName, startDate, endDate } = quickBookingTarget;
+        if (!clientName.trim()) {
+            showToast("Please enter client name", "error");
+            return;
+        }
+        if (!startDate || !endDate) {
+            showToast("Please enter booking start and end dates", "error");
+            return;
+        }
 
-            if (isMatch) {
-                const isCurrentlyBooked = (h.STATUS || '').toLowerCase() === 'booked' || (h.STATUS || '').toLowerCase() === 'occupied';
-                const newStatus = isCurrentlyBooked ? 'Available' : 'Booked';
-                return { ...h, STATUS: newStatus };
-            }
-            return h;
+        const targetSite = site;
+        const targetSL = targetSite.SL || targetSite["S. No."] || targetSite["SL NO"];
+        const targetId = targetSite.UniqueID || targetSite["Unique ID"] || targetSite.ID || targetSite._SiteID;
+        const targetLoc = String(targetSite["Locality Site Location"] || targetSite["Location "] || targetSite.Location || '').trim().toLowerCase();
+        const targetFacing = String(targetSite.Facing || targetSite["Traffic View"] || '').trim().toLowerCase();
+        const targetLat = String(targetSite.Latitude || '').trim();
+        const targetLng = String(targetSite.Longitude || '').trim();
+
+        const bookingUpdates = {
+            STATUS: 'Booked',
+            BookedBy: clientName.trim(),
+            BookingStart: startDate,
+            BookingEnd: endDate
+        };
+
+        // 1. Instantly update React state & cache with precision targeting
+        setHoardings(prev => {
+            const next = prev.map(h => {
+                let isMatch = (h === targetSite);
+                if (!isMatch && targetId && (h.UniqueID || h["Unique ID"] || h.ID || h._SiteID)) {
+                    isMatch = String(h.UniqueID || h["Unique ID"] || h.ID || h._SiteID).trim().toLowerCase() === String(targetId).trim().toLowerCase();
+                }
+                if (!isMatch && targetSL && (h.SL || h["S. No."] || h["SL NO"])) {
+                    isMatch = String(h.SL || h["S. No."] || h["SL NO"]).trim() === String(targetSL).trim();
+                }
+                if (!isMatch && targetLoc) {
+                    const hLoc = String(h["Locality Site Location"] || h["Location "] || h.Location || '').trim().toLowerCase();
+                    const hFacing = String(h.Facing || h["Traffic View"] || '').trim().toLowerCase();
+                    const hLat = String(h.Latitude || '').trim();
+                    const hLng = String(h.Longitude || '').trim();
+                    
+                    isMatch = (hLoc === targetLoc) && 
+                              (!targetFacing || hFacing === targetFacing) && 
+                              (!targetLat || hLat === targetLat) && 
+                              (!targetLng || hLng === targetLng);
+                }
+
+                return isMatch ? { ...h, ...bookingUpdates } : h;
+            });
+
+            try {
+                localStorage.setItem('hoardings_cache', JSON.stringify(next));
+                localStorage.setItem('last_hoardings_update', Date.now().toString());
+            } catch {}
+            return next;
         });
-        setHoardings(updated);
-        try {
-            localStorage.setItem('hoardings_cache', JSON.stringify(updated));
-            localStorage.setItem('last_hoardings_update', Date.now().toString());
-        } catch {}
+
+        setQuickBookingTarget(null);
+        showToast(`Site Booked for ${clientName}!`, "success");
+
+        // 2. Background sync to Google Sheet
+        syncToGoogleSheet({
+            action: 'updateHoarding',
+            siteName: targetSite["Locality Site Location"] || targetSite["Location "] || targetSite.Location,
+            siteId: targetId || '',
+            fields: {
+                ...targetSite,
+                ...bookingUpdates
+            }
+        }).catch(err => console.warn("Booking background sync:", err));
+    };
+
+    const toggleStatusToAvailable = (targetSite) => {
+        const targetSL = targetSite.SL || targetSite["S. No."] || targetSite["SL NO"];
+        const targetId = targetSite.UniqueID || targetSite["Unique ID"] || targetSite.ID || targetSite._SiteID;
+        const targetLoc = String(targetSite["Locality Site Location"] || targetSite["Location "] || targetSite.Location || '').trim().toLowerCase();
+        const targetFacing = String(targetSite.Facing || targetSite["Traffic View"] || '').trim().toLowerCase();
+        const targetLat = String(targetSite.Latitude || '').trim();
+        const targetLng = String(targetSite.Longitude || '').trim();
+
+        const availableUpdates = {
+            STATUS: 'Available',
+            BookedBy: '',
+            BookingStart: '',
+            BookingEnd: ''
+        };
+
+        setHoardings(prev => {
+            const next = prev.map(h => {
+                let isMatch = (h === targetSite);
+                if (!isMatch && targetId && (h.UniqueID || h["Unique ID"] || h.ID || h._SiteID)) {
+                    isMatch = String(h.UniqueID || h["Unique ID"] || h.ID || h._SiteID).trim().toLowerCase() === String(targetId).trim().toLowerCase();
+                }
+                if (!isMatch && targetSL && (h.SL || h["S. No."] || h["SL NO"])) {
+                    isMatch = String(h.SL || h["S. No."] || h["SL NO"]).trim() === String(targetSL).trim();
+                }
+                if (!isMatch && targetLoc) {
+                    const hLoc = String(h["Locality Site Location"] || h["Location "] || h.Location || '').trim().toLowerCase();
+                    const hFacing = String(h.Facing || h["Traffic View"] || '').trim().toLowerCase();
+                    const hLat = String(h.Latitude || '').trim();
+                    const hLng = String(h.Longitude || '').trim();
+                    
+                    isMatch = (hLoc === targetLoc) && 
+                              (!targetFacing || hFacing === targetFacing) && 
+                              (!targetLat || hLat === targetLat) && 
+                              (!targetLng || hLng === targetLng);
+                }
+
+                return isMatch ? { ...h, ...availableUpdates } : h;
+            });
+
+            try {
+                localStorage.setItem('hoardings_cache', JSON.stringify(next));
+                localStorage.setItem('last_hoardings_update', Date.now().toString());
+            } catch {}
+            return next;
+        });
+
+        showToast("Site marked as Available!", "success");
+
+        // Background sync to Google Sheet
+        syncToGoogleSheet({
+            action: 'updateHoarding',
+            siteName: targetSite["Locality Site Location"] || targetSite["Location "] || targetSite.Location,
+            siteId: targetId || '',
+            fields: {
+                ...targetSite,
+                ...availableUpdates
+            }
+        }).catch(err => console.warn("Available background sync:", err));
     };
 
     const handleAddAsset = async (e) => {
@@ -4383,8 +4499,8 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                                         </button>
                                                         <button
                                                             className={`btn-icon-small ${(h.STATUS === 'Booked' || h.STATUS === 'Occupied') ? 'occupied-btn' : 'available-btn'}`}
-                                                            onClick={() => toggleStatus(h)}
-                                                            title={(h.STATUS === 'Booked' || h.STATUS === 'Occupied') ? 'Mark as Available' : 'Mark as Booked'}
+                                                            onClick={() => handleStatusClick(h)}
+                                                            title={(h.STATUS === 'Booked' || h.STATUS === 'Occupied') ? 'Click to Mark Available' : 'Click to Book Site'}
                                                         >
                                                             {(h.STATUS === 'Booked' || h.STATUS === 'Occupied') ? <CheckCircle size={16} /> : <Calendar size={16} />}
                                                         </button>
@@ -4967,6 +5083,91 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                     Close
                                 </button>
                             </div>
+                        </div>
+                    </div>
+                )}
+
+                {/* 📅 Quick Booking Modal */}
+                {quickBookingTarget && (
+                    <div className="admin-modal-overlay animate-in" onClick={() => setQuickBookingTarget(null)}>
+                        <div className="admin-modal-container" style={{ maxWidth: '440px', padding: '24px' }} onClick={e => e.stopPropagation()}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                                    <div style={{ background: '#fee2e2', color: '#ef4444', padding: '8px', borderRadius: '10px', display: 'flex' }}>
+                                        <Calendar size={20} />
+                                    </div>
+                                    <div>
+                                        <h3 style={{ margin: 0, fontSize: '1.15rem', fontWeight: 800, color: '#0f172a' }}>Book Hoarding Site</h3>
+                                        <p style={{ margin: '2px 0 0', fontSize: '0.78rem', color: '#64748b' }}>
+                                            {quickBookingTarget.site["Locality Site Location"] || quickBookingTarget.site["Location "] || quickBookingTarget.site.Location}
+                                            {quickBookingTarget.site.Facing ? ` • ${quickBookingTarget.site.Facing}` : ''}
+                                        </p>
+                                    </div>
+                                </div>
+                                <button type="button" onClick={() => setQuickBookingTarget(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#94a3b8' }}>
+                                    <X size={20} />
+                                </button>
+                            </div>
+
+                            <form onSubmit={handleConfirmQuickBooking} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                                <div>
+                                    <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 700, color: '#334155', marginBottom: '6px' }}>
+                                        Client Name <span style={{ color: '#ef4444' }}>*</span>
+                                    </label>
+                                    <input
+                                        type="text"
+                                        required
+                                        placeholder="e.g. Tata Motors, Samsung, Local Brand"
+                                        value={quickBookingTarget.clientName}
+                                        onChange={(e) => setQuickBookingTarget({ ...quickBookingTarget, clientName: e.target.value })}
+                                        style={{ width: '100%', padding: '10px 12px', borderRadius: '10px', border: '1px solid #cbd5e1', fontSize: '0.88rem', outline: 'none' }}
+                                        autoFocus
+                                    />
+                                </div>
+
+                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                                    <div>
+                                        <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 700, color: '#334155', marginBottom: '6px' }}>
+                                            Booking Start <span style={{ color: '#ef4444' }}>*</span>
+                                        </label>
+                                        <input
+                                            type="date"
+                                            required
+                                            value={quickBookingTarget.startDate}
+                                            onChange={(e) => setQuickBookingTarget({ ...quickBookingTarget, startDate: e.target.value })}
+                                            style={{ width: '100%', padding: '9px 10px', borderRadius: '10px', border: '1px solid #cbd5e1', fontSize: '0.84rem', outline: 'none' }}
+                                        />
+                                    </div>
+                                    <div>
+                                        <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 700, color: '#334155', marginBottom: '6px' }}>
+                                            Booking End <span style={{ color: '#ef4444' }}>*</span>
+                                        </label>
+                                        <input
+                                            type="date"
+                                            required
+                                            value={quickBookingTarget.endDate}
+                                            onChange={(e) => setQuickBookingTarget({ ...quickBookingTarget, endDate: e.target.value })}
+                                            style={{ width: '100%', padding: '9px 10px', borderRadius: '10px', border: '1px solid #cbd5e1', fontSize: '0.84rem', outline: 'none' }}
+                                        />
+                                    </div>
+                                </div>
+
+                                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '10px', paddingTop: '14px', borderTop: '1px solid #f1f5f9' }}>
+                                    <button
+                                        type="button"
+                                        onClick={() => setQuickBookingTarget(null)}
+                                        style={{ padding: '9px 16px', borderRadius: '10px', border: '1px solid #cbd5e1', background: '#f8fafc', color: '#475569', fontSize: '0.84rem', fontWeight: 700, cursor: 'pointer' }}
+                                    >
+                                        Cancel
+                                    </button>
+                                    <button
+                                        type="submit"
+                                        style={{ padding: '9px 20px', borderRadius: '10px', border: 'none', background: '#ef4444', color: '#ffffff', fontSize: '0.84rem', fontWeight: 800, cursor: 'pointer', boxShadow: '0 4px 12px rgba(239, 68, 68, 0.3)' }}
+                                    >
+                                        Confirm Booking
+                                    </button>
+                                </div>
+                            </form>
                         </div>
                     </div>
                 )}
