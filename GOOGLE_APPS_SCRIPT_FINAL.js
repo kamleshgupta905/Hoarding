@@ -3118,11 +3118,29 @@ function onOpen() {
   ui.createMenu('⚡ Hoarding Automation')
     .addItem('▶ Process All PPT Files Now', 'processPPTs')
     .addItem('🖼 Map Existing Images to Sheet', 'mapExistingImagesToSheet')
+    .addItem('🔓 Make All Drive Images Publicly Visible', 'makeAllDriveImagesPublic')
     .addItem('➕ Auto-Add Missing Columns (History, Booking, Status)', 'ensureAllColumnsInSheet')
     .addSeparator()
     .addItem('⏰ Enable Auto-Process Trigger (Every 10 Mins)', 'setupAutomatedTrigger')
     .addItem('🛑 Remove Auto-Process Trigger', 'removeAutomatedTrigger')
     .addToUi();
+}
+
+function makeAllDriveImagesPublic() {
+  var count = 0;
+  try {
+    var folder = DriveApp.getFolderById(CONFIG.IMAGE_FOLDER_ID);
+    folder.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+    var files = folder.getFiles();
+    while (files.hasNext()) {
+      var f = files.next();
+      f.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+      count++;
+    }
+  } catch (e) {
+    logDebug("makeAllDriveImagesPublic error: " + e.toString());
+  }
+  SpreadsheetApp.getActiveSpreadsheet().toast('✅ ' + count + ' images in Google Drive made publicly viewable!', 'Public Sharing Active', 5);
 }
 
 function ensureAllColumnsInSheet() {
