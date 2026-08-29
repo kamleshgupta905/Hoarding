@@ -267,7 +267,7 @@ export const parsePptx = async (arrayBuffer, sites = [], onProgress = null) => {
         if (id && target) {
           relationshipMap.set(id, target);
         }
-        if (target && /\\.(png|jpe?g|webp|bmp|gif|jfif)$/i.test(target)) {
+        if (target && /\.(png|jpe?g|webp|bmp|gif|jfif)$/i.test(target)) {
           slideMediaTargets.add(target);
         }
       });
@@ -279,7 +279,7 @@ export const parsePptx = async (arrayBuffer, sites = [], onProgress = null) => {
       const embedId = node?.['@_embed'] || node?.['@_link'] || node?.['@_r:embed'] || node?.['@_r:link'] || node?.embed || node?.link;
       if (embedId && relationshipMap.has(embedId)) {
         const target = relationshipMap.get(embedId);
-        if (/\\.(png|jpe?g|webp|bmp|gif|jfif)$/i.test(target)) {
+        if (/\.(png|jpe?g|webp|bmp|gif|jfif)$/i.test(target)) {
             slideMediaTargets.add(target);
         }
       }
@@ -417,75 +417,73 @@ export const parsePptx = async (arrayBuffer, sites = [], onProgress = null) => {
     slide.status = slide.suggestedSiteId && slide.photoCandidates.length ? (slide.confidence === 'HIGH' ? 'MATCHED' : 'REVIEW') : (slide.photoCandidates.length ? 'REVIEW' : 'SKIPPED');
   });
 
-  // 🌟 LATEST AI ENGINE: Gemini 3.7 Flash Multimodal Vision + Groq Semantic Fallback
-  // Process in batches of 20 to speed up analysis and prevent timeouts on large files (e.g. 87MB+ files)
-  const AI_BATCH_SIZE = 2;
+  // 🌟 LATEST AI ENGINE: Ultra-Fast Groq AI + Multimodal Vision
+  // Process in fast parallel batches of 6 for lightning speed
+  const AI_BATCH_SIZE = 6;
   for (let i = 0; i < slides.length; i += AI_BATCH_SIZE) {
     if (onProgress) {
-        onProgress(60 + Math.round((i / slides.length) * 35), `Running AI Vision & Semantic Analysis... Slide ${i + 1} of ${slides.length}`);
+        onProgress(60 + Math.round((i / slides.length) * 35), `⚡ AI Extraction & Auto-Matching... Slide ${i + 1} to ${Math.min(i + AI_BATCH_SIZE, slides.length)} of ${slides.length}`);
     }
     const slideBatch = slides.slice(i, i + AI_BATCH_SIZE);
     
     await Promise.all(slideBatch.map(async (slide) => {
       if (slide.photoCandidates.length > 0) {
-        const primaryPhoto = slide.photoCandidates[0];
         const topCandidates = slide.candidates.length > 0 
           ? slide.candidates.map(c => c.site) 
-          : (sites || []).slice(0, 30);
+          : (sites || []).slice(0, 20);
 
-        let imageBase64 = null;
-        try {
-          imageBase64 = await blobToBase64(primaryPhoto.blob);
-        } catch (e) {
-          console.warn('Base64 conversion notice for slide AI:', e);
-        }
-
-        // 1. Primary: Groq Semantic Parsing (Extremely fast and accurate text extraction for file naming)
-        if (slide.text && slide.text.trim().length > 5) {
+        // 1. Primary: Ultra-Fast Groq Combined Semantic Parsing & Site Matching (~150ms)
+        let groqSuccess = false;
+        if (slide.text && slide.text.trim().length > 3) {
           try {
-            const { parseSlideWithGroq, matchSlideToInventoryWithGroq } = await import('../services/groqService');
-            const parsedData = await parseSlideWithGroq(slide.text);
-            if (parsedData) {
+            const { parseAndMatchSlideWithGroq } = await import('../services/groqService');
+            const groqRes = await parseAndMatchSlideWithGroq(slide.text, topCandidates);
+            if (groqRes && groqRes.parsedData) {
+              const p = groqRes.parsedData;
               slide.aiData = slide.aiData || {};
-              slide.aiData.locationName = parsedData.location || slide.aiData.locationName;
-              slide.aiData.city = parsedData.city || slide.aiData.city;
-              slide.aiData.facing = parsedData.facing || slide.aiData.facing;
-              slide.aiData.size = (parsedData.width && parsedData.height) ? `${parsedData.width}x${parsedData.height}` : slide.aiData.size;
-              if (parsedData.latitude && parsedData.longitude) {
-                slide.aiData.gpsStamp = `${parsedData.latitude},${parsedData.longitude}`;
+              slide.aiData.locationName = p.location || slide.aiData.locationName;
+              slide.aiData.city = p.city || slide.aiData.city;
+              slide.aiData.facing = p.facing || slide.aiData.facing;
+              slide.aiData.size = (p.width && p.height) ? `${p.width}x${p.height}` : slide.aiData.size;
+              if (p.latitude && p.longitude) {
+                slide.aiData.gpsStamp = `${p.latitude},${p.longitude}`;
               }
-            }
-            // Run Matcher in parallel
-            const groqMatch = await matchSlideToInventoryWithGroq(slide.text, topCandidates);
-            if (groqMatch && groqMatch.site) {
-              slide.suggestedSiteId = groqMatch.site._SiteID || groqMatch.site.UniqueID || groqMatch.site.ID || '';
-              slide.confidence = groqMatch.confidence || 'HIGH';
-              slide.status = 'MATCHED';
-              slide.aiReason = groqMatch.reason || 'Matched by Groq AI';
+              if (groqRes.matchedSite) {
+                slide.suggestedSiteId = groqRes.matchedSite._SiteID || groqRes.matchedSite.UniqueID || groqRes.matchedSite.ID || '';
+                slide.confidence = groqRes.confidence || 'HIGH';
+                slide.status = 'MATCHED';
+                slide.aiReason = groqRes.reason || 'Matched by Groq AI';
+              }
+              groqSuccess = true;
             }
           } catch (groqErr) {
-            console.warn('[Groq Text Engine Step Notice]:', groqErr);
+            console.warn('[Groq Fast Engine Notice]:', groqErr);
           }
         }
 
-        // 2. Secondary: Run Google Gemini 3.7 Flash Multimodal Vision (if no Groq match or no text)
-        if (!slide.suggestedSiteId) {
+        // 2. Secondary: Fallback to Gemini Multimodal ONLY if no text on slide
+        if (!groqSuccess && (!slide.text || slide.text.trim().length <= 3)) {
           try {
-            const { analyzePptSlideWithGeminiVision } = await import('../services/geminiService');
-            const aiResult = await analyzePptSlideWithGeminiVision(imageBase64, slide.text, topCandidates);
-            if (aiResult) {
-              slide.aiData = { ...(slide.aiData || {}), ...aiResult };
-              if (aiResult.matchedSite) {
-                slide.suggestedSiteId = aiResult.matchedSite._SiteID || aiResult.matchedSite.UniqueID || aiResult.matchedSite.ID || '';
-                slide.confidence = aiResult.confidence || 'HIGH';
-                slide.status = 'MATCHED';
-                slide.aiReason = aiResult.reason;
-              } else if (aiResult.locationName && !slide.aiReason) {
-                slide.aiReason = `Extracted by Gemini 3.7 Flash: ${aiResult.locationName} (${aiResult.facing || aiResult.city || 'Identified'})`;
+            const primaryPhoto = slide.photoCandidates[0];
+            let imageBase64 = null;
+            if (primaryPhoto && primaryPhoto.blob) {
+              imageBase64 = await blobToBase64(primaryPhoto.blob);
+            }
+            if (imageBase64) {
+              const { analyzePptSlideWithGeminiVision } = await import('../services/geminiService');
+              const aiResult = await analyzePptSlideWithGeminiVision(imageBase64, slide.text, topCandidates);
+              if (aiResult) {
+                slide.aiData = { ...(slide.aiData || {}), ...aiResult };
+                if (aiResult.matchedSite) {
+                  slide.suggestedSiteId = aiResult.matchedSite._SiteID || aiResult.matchedSite.UniqueID || aiResult.matchedSite.ID || '';
+                  slide.confidence = aiResult.confidence || 'HIGH';
+                  slide.status = 'MATCHED';
+                  slide.aiReason = aiResult.reason;
+                }
               }
             }
           } catch (geminiErr) {
-            console.warn('[Gemini 3.7 Flash Engine Step Notice]:', geminiErr);
+            console.warn('[Gemini Step Notice]:', geminiErr);
           }
         }
       }
