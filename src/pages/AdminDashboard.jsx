@@ -687,7 +687,7 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                 let syncedCount = 0;
                 
                 // Implement chunking mechanism: process slides in batches of 5 to prevent Apps Script timeouts
-                const BATCH_SIZE = 5;
+                const BATCH_SIZE = 2;
                 for (let i = 0; i < processableSlides.length; i += BATCH_SIZE) {
                     updateFileProcessing({ 
                         phase: `Syncing photos to Google Drive... (${i + 1} to ${Math.min(i + BATCH_SIZE, processableSlides.length)} of ${processableSlides.length})`, 
