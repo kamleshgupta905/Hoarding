@@ -247,7 +247,7 @@ export const fetchHoardings = async () => {
         // Attempt 1: Direct CSV Export (Fastest, no Apps Script quotas)
         // Omit {cache: 'no-store'} to strictly avoid CORS preflight OPTIONS requests!
         const fetchUrl = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/export?format=csv&sheet=${SHEET_NAME}&_t=${Date.now()}`;
-        const rawData = await requestText(fetchUrl, {}, 15000);
+        const rawData = await requestText(fetchUrl, { credentials: 'omit' }, 15000);
         
         const parsed = Papa.parse(rawData, { header: true, skipEmptyLines: true });
         if (parsed.data && parsed.data.length > 0) {
@@ -261,7 +261,7 @@ export const fetchHoardings = async () => {
     if (!isCsv || parsedData.length === 0) {
         // Attempt 2: Secure Apps Script Backend (Bypasses multiple-account CORS bugs)
         const fetchUrl = `${STAFF_SCRIPT_URL}?action=pullChanges&_t=${Date.now()}`;
-        const response = await requestJson(fetchUrl, {}, 60000); // 60s timeout for Apps Script
+        const response = await requestJson(fetchUrl, { credentials: 'omit' }, 60000); // 60s timeout for Apps Script
         
         if (!response || !response.success || !response.rows || response.rows.length === 0) {
           return [];
@@ -431,7 +431,7 @@ export const fetchStaffUploads = async () => {
   const localList = getLocalStaffUploads().filter(item => !rejectedSet.has(item.UploadId));
   try {
     const session = getAdminSession();
-    const data = await requestJson(`${STAFF_SCRIPT_URL}?action=staffUploads&sessionToken=${encodeURIComponent(session || 'admin')}&t=${Date.now()}`, {}, 30000);
+    const data = await requestJson(`${STAFF_SCRIPT_URL}?action=staffUploads&sessionToken=${encodeURIComponent(session || "admin")}&t=${Date.now()}`, { credentials: "omit" }, 30000);
     const remoteList = Array.isArray(data.uploads)
       ? data.uploads
           .filter(item => item && item.UploadId && !rejectedSet.has(item.UploadId) && item.Status !== 'REJECTED')
@@ -498,7 +498,7 @@ export const detectStaffPhotoOrientation = async (imageUrl) => {
 
 export const fetchSheetGrid = async () => {
   try {
-    const rawData = await requestText(GOOGLE_SHEET_URL, 15000);
+    const rawData = await requestText(GOOGLE_SHEET_URL, { credentials: 'omit' }, 15000);
     const parsed = Papa.parse(rawData, { skipEmptyLines: false });
     if (parsed.data && parsed.data.length > 0) {
       const headers = parsed.data[0] || [];

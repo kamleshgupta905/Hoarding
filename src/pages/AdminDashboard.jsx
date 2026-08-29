@@ -510,7 +510,7 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
     // ------------------------------------------------------------------
 
     const fetchExcelPreview = async (token) => {
-        const response = await fetch(`${scriptUrl}?action=excelImportPreview&token=${encodeURIComponent(token)}&sessionToken=${encodeURIComponent(getAdminSession())}&t=${Date.now()}`);
+        const response = await fetch(`${scriptUrl}?action=excelImportPreview&token=${encodeURIComponent(token)}&sessionToken=${encodeURIComponent(getAdminSession())}&t=${Date.now()}`, { credentials: 'omit' });
         if (!response.ok) throw new Error(`Preview fetch failed: ${response.status}`);
         return response.json();
     };
@@ -550,7 +550,7 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
     };
 
     const fetchFileJobStatus = async (token) => {
-        const response = await fetch(`${scriptUrl}?action=fileJobStatus&token=${encodeURIComponent(token)}&sessionToken=${encodeURIComponent(getAdminSession())}&t=${Date.now()}`);
+        const response = await fetch(`${scriptUrl}?action=fileJobStatus&token=${encodeURIComponent(token)}&sessionToken=${encodeURIComponent(getAdminSession())}&t=${Date.now()}`, { credentials: 'omit' });
         if (!response.ok) throw new Error(`Processing status fetch failed: ${response.status}`);
         return response.json();
     };
@@ -587,7 +587,7 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
         try {
             const response = await fetch(scriptUrl, {
                 method: 'POST',
-                headers: { 'Content-Type': 'text/plain' },
+                headers: { 'Content-Type': 'text/plain' }, credentials: 'omit',
                 body: JSON.stringify(payload),
                 signal: controller.signal
             });
@@ -685,18 +685,17 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
 
                 let completed = 0;
                 let syncedCount = 0;
-                const CONCURRENCY = 2;
-
-                const queue = [...processableSlides];
-                const workers = Array.from({ length: CONCURRENCY }, async () => {
-                    while (queue.length > 0) {
-                        const slide = queue.shift();
-                        if (!slide) break;
-
+                
+                // Implement chunking mechanism: process slides in batches of 20 to prevent Apps Script timeouts
+                const BATCH_SIZE = 20;
+                for (let i = 0; i < processableSlides.length; i += BATCH_SIZE) {
+                    const chunk = processableSlides.slice(i, i + BATCH_SIZE);
+                    
+                    await Promise.all(chunk.map(async (slide) => {
                         const photoCandidate = slide.photoCandidates?.[0];
                         if (!photoCandidate || !photoCandidate.blob) {
                             completed++;
-                            continue;
+                            return;
                         }
 
                         const ai = slide.aiData || {};
@@ -712,12 +711,12 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
 
                         // 🏷️ Rich File Name with City, Location, Facing, Lat-Long, Dimensions
                         const city = matchedSite?.City || ai.city || 'Meerut';
-                        const locClean = (matchedSite?.Location || matchedSite?.['Locality Site Location'] || matchedSite?.['Location '] || ai.locationName || siteName).replace(/[/\\?%*:|"<>]/g, '-').trim();
+                        const locClean = (matchedSite?.Location || matchedSite?.['Locality Site Location'] || matchedSite?.['Location '] || ai.locationName || siteName).replace(/[/[\\]?%*:|"<>]/g, '-').trim();
                         const facingValue = matchedSite?.Facing || ai.facing || '';
-                        const facingClean = facingValue ? `Facing_${facingValue.replace(/[/\\?%*:|"<>]/g, '-').trim()}` : '';
+                        const facingClean = facingValue ? `Facing_${facingValue.replace(/[/[\\]?%*:|"<>]/g, '-').trim()}` : '';
                         const latLongValue = matchedSite?.['Lat-Long'] || (matchedSite?.Latitude && matchedSite?.Longitude ? `${matchedSite.Latitude},${matchedSite.Longitude}` : '') || ai.gpsStamp || '';
-                        const latLongClean = latLongValue ? latLongValue.replace(/\s+/g, '').replace(/[/\\?%*:|"<>]/g, '-') : '';
-                        const sizeClean = matchedSite?.Width && matchedSite?.Height ? `${matchedSite.Width}x${matchedSite.Height}` : (ai.size ? ai.size.replace(/[/\\?%*:|"<>]/g, '-') : '');
+                        const latLongClean = latLongValue ? latLongValue.replace(/\s+/g, '').replace(/[/[\\]?%*:|"<>]/g, '-') : '';
+                        const sizeClean = matchedSite?.Width && matchedSite?.Height ? `${matchedSite.Width}x${matchedSite.Height}` : (ai.size ? ai.size.replace(/[/[\\]?%*:|"<>]/g, '-') : '');
 
                         const descriptiveFileName = [city, locClean, facingClean, latLongClean, sizeClean].filter(Boolean).join('_') + '.jpg';
 
@@ -744,6 +743,7 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                     fileData: pureBase64,
                                     mimeType: 'image/jpeg'
                                 });
+
                                 if (res && res.success !== false) {
                                     syncedCount++;
                                     success = true;
@@ -765,10 +765,13 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                             phase: `⚡ Gemini 3.7 Flash Sync: ${completed}/${processableSlides.length} slides (${syncedCount} photos synced)...`,
                             progress: percent
                         });
+                    }));
+                    
+                    // Tiny delay between chunks to let browser breathe and clear Apps Script limits
+                    if (i + BATCH_SIZE < processableSlides.length) {
+                        await wait(2000);
                     }
-                });
-
-                await Promise.all(workers);
+                }
                 releasePptxPreviews(slides);
                 window.dispatchEvent(new CustomEvent('hoardings:sync-requested', { detail: { action: 'pptUpload', fileName: file.name } }));
                 await wait(1200);

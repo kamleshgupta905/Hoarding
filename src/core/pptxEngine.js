@@ -418,55 +418,61 @@ export const parsePptx = async (arrayBuffer, sites = [], onProgress = null) => {
   });
 
   // 🌟 LATEST AI ENGINE: Gemini 3.7 Flash Multimodal Vision + Groq Semantic Fallback
-  for (const slide of slides) {
-    if (slide.photoCandidates.length > 0) {
-      const primaryPhoto = slide.photoCandidates[0];
-      const topCandidates = slide.candidates.length > 0 
-        ? slide.candidates.map(c => c.site) 
-        : (sites || []).slice(0, 30);
+  // Process in batches of 20 to speed up analysis and prevent timeouts on large files (e.g. 87MB+ files)
+  const AI_BATCH_SIZE = 20;
+  for (let i = 0; i < slides.length; i += AI_BATCH_SIZE) {
+    const slideBatch = slides.slice(i, i + AI_BATCH_SIZE);
+    
+    await Promise.all(slideBatch.map(async (slide) => {
+      if (slide.photoCandidates.length > 0) {
+        const primaryPhoto = slide.photoCandidates[0];
+        const topCandidates = slide.candidates.length > 0 
+          ? slide.candidates.map(c => c.site) 
+          : (sites || []).slice(0, 30);
 
-      let imageBase64 = null;
-      try {
-        imageBase64 = await blobToBase64(primaryPhoto.blob);
-      } catch (e) {
-        console.warn('Base64 conversion notice for slide AI:', e);
-      }
-
-      // 1. Primary: Run Google Gemini 3.7 Flash Multimodal Vision & OCR
-      try {
-        const { analyzePptSlideWithGeminiVision } = await import('../services/geminiService');
-        const aiResult = await analyzePptSlideWithGeminiVision(imageBase64, slide.text, topCandidates);
-        if (aiResult) {
-          slide.aiData = aiResult;
-          if (aiResult.matchedSite) {
-            slide.suggestedSiteId = aiResult.matchedSite._SiteID || aiResult.matchedSite.UniqueID || aiResult.matchedSite.ID || '';
-            slide.confidence = aiResult.confidence || 'HIGH';
-            slide.status = 'MATCHED';
-            slide.aiReason = aiResult.reason;
-          } else if (aiResult.locationName) {
-            slide.aiReason = `Extracted by Gemini 3.7 Flash: ${aiResult.locationName} (${aiResult.facing || aiResult.city || 'Identified'})`;
-          }
-        }
-      } catch (geminiErr) {
-        console.warn('[Gemini 3.7 Flash Engine Step Notice]:', geminiErr);
-      }
-
-      // 2. Secondary: Groq Semantic Matcher (if Gemini didn't match a site)
-      if (!slide.suggestedSiteId && slide.text && slide.text.length > 10) {
+        let imageBase64 = null;
         try {
-          const { matchSlideToInventoryWithGroq } = await import('../services/groqService');
-          const groqMatch = await matchSlideToInventoryWithGroq(slide.text, topCandidates);
-          if (groqMatch && groqMatch.site) {
-            slide.suggestedSiteId = groqMatch.site._SiteID || groqMatch.site.UniqueID || groqMatch.site.ID || '';
-            slide.confidence = groqMatch.confidence || 'HIGH';
-            slide.status = 'MATCHED';
-            slide.aiReason = groqMatch.reason;
+          imageBase64 = await blobToBase64(primaryPhoto.blob);
+        } catch (e) {
+          console.warn('Base64 conversion notice for slide AI:', e);
+        }
+
+        // 1. Primary: Run Google Gemini 3.7 Flash Multimodal Vision & OCR
+        try {
+          const { analyzePptSlideWithGeminiVision } = await import('../services/geminiService');
+          const aiResult = await analyzePptSlideWithGeminiVision(imageBase64, slide.text, topCandidates);
+          if (aiResult) {
+            slide.aiData = aiResult;
+            if (aiResult.matchedSite) {
+              slide.suggestedSiteId = aiResult.matchedSite._SiteID || aiResult.matchedSite.UniqueID || aiResult.matchedSite.ID || '';
+              slide.confidence = aiResult.confidence || 'HIGH';
+              slide.status = 'MATCHED';
+              slide.aiReason = aiResult.reason;
+            } else if (aiResult.locationName) {
+              slide.aiReason = `Extracted by Gemini 3.7 Flash: ${aiResult.locationName} (${aiResult.facing || aiResult.city || 'Identified'})`;
+            }
           }
-        } catch (groqErr) {
-          console.warn('[Groq Engine Step Notice]:', groqErr);
+        } catch (geminiErr) {
+          console.warn('[Gemini 3.7 Flash Engine Step Notice]:', geminiErr);
+        }
+
+        // 2. Secondary: Groq Semantic Matcher (if Gemini didn't match a site)
+        if (!slide.suggestedSiteId && slide.text && slide.text.length > 10) {
+          try {
+            const { matchSlideToInventoryWithGroq } = await import('../services/groqService');
+            const groqMatch = await matchSlideToInventoryWithGroq(slide.text, topCandidates);
+            if (groqMatch && groqMatch.site) {
+              slide.suggestedSiteId = groqMatch.site._SiteID || groqMatch.site.UniqueID || groqMatch.site.ID || '';
+              slide.confidence = groqMatch.confidence || 'HIGH';
+              slide.status = 'MATCHED';
+              slide.aiReason = groqMatch.reason;
+            }
+          } catch (groqErr) {
+            console.warn('[Groq Engine Step Notice]:', groqErr);
+          }
         }
       }
-    }
+    }));
   }
 
   return slides;
