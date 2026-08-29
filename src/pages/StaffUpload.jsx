@@ -1,6 +1,6 @@
 import React from 'react';
-import { Camera, CheckCircle2, MapPin, MapPinOff, RefreshCw, RotateCcw, WifiOff, XCircle, Sparkles, Check, AlertCircle, Navigation, ChevronRight, Compass, Volume2, VolumeX } from 'lucide-react';
-import { uploadStaffPhoto, fetchHoardings, saveLocalStaffUpload } from '../services/dataService';
+import { Camera, CheckCircle2, MapPin, MapPinOff, RefreshCw, RotateCcw, WifiOff, XCircle, Sparkles, Check, AlertCircle, Navigation, ChevronRight, Compass, Volume2, VolumeX, ShieldCheck, Zap } from 'lucide-react';
+import { uploadStaffPhoto, fetchHoardings, saveLocalStaffUpload, syncToGoogleSheet } from '../services/dataService';
 import { matchGeofencedHoardingWithGemini } from '../services/aiService';
 import { ensureUprightBlob } from '../core/imageOrientation';
 import { HIRA_LOGO } from '../assets/hiraLogoData';
@@ -24,6 +24,125 @@ const getStoredUploadedCount = () => {
     const value = Number(localStorage.getItem(UPLOADED_COUNT_KEY) || '0');
     return Number.isFinite(value) ? value : 0;
 };
+
+// 📍 Authentic GPS Map Camera / PinPoint Style Watermark Stamping
+const stampGpsWatermarkOnBlob = (blob, gpsData, siteInfo = {}) => new Promise((resolve) => {
+    if (!blob || !gpsData || !gpsData.latitude) {
+        resolve(blob);
+        return;
+    }
+
+    const img = new Image();
+    const url = URL.createObjectURL(blob);
+    img.onload = () => {
+        URL.revokeObjectURL(url);
+        try {
+            const canvas = document.createElement('canvas');
+            canvas.width = img.width;
+            canvas.height = img.height;
+            const ctx = canvas.getContext('2d');
+
+            // 1. Draw base photo
+            ctx.drawImage(img, 0, 0);
+
+            // 2. Compute proportional scale
+            const scale = Math.max(0.65, Math.min(1.45, canvas.width / 1200));
+            const cardWidth = Math.min(canvas.width * 0.94, 580 * scale);
+            const cardHeight = 155 * scale;
+            const padding = 16 * scale;
+            const cardX = canvas.width - cardWidth - (20 * scale);
+            const cardY = canvas.height - cardHeight - (22 * scale);
+            const radius = 14 * scale;
+
+            // 3. Draw rounded translucent card background
+            ctx.save();
+            ctx.shadowColor = 'rgba(0, 0, 0, 0.55)';
+            ctx.shadowBlur = 18 * scale;
+            ctx.fillStyle = 'rgba(15, 23, 42, 0.85)'; // Premium dark slate
+
+            ctx.beginPath();
+            ctx.moveTo(cardX + radius, cardY);
+            ctx.lineTo(cardX + cardWidth - radius, cardY);
+            ctx.quadraticCurveTo(cardX + cardWidth, cardY, cardX + cardWidth, cardY + radius);
+            ctx.lineTo(cardX + cardWidth, cardY + cardHeight - radius);
+            ctx.quadraticCurveTo(cardX + cardWidth, cardY + cardHeight, cardX + cardWidth - radius, cardY + cardHeight);
+            ctx.lineTo(cardX + radius, cardY + cardHeight);
+            ctx.quadraticCurveTo(cardX, cardY + cardHeight, cardX, cardY + cardHeight - radius);
+            ctx.lineTo(cardX, cardY + radius);
+            ctx.quadraticCurveTo(cardX, cardY, cardX + radius, cardY);
+            ctx.closePath();
+            ctx.fill();
+
+            // Card border
+            ctx.lineWidth = 1.5 * scale;
+            ctx.strokeStyle = 'rgba(255, 255, 255, 0.22)';
+            ctx.stroke();
+            ctx.restore();
+
+            // 4. Map Pin Circle
+            const iconSize = 36 * scale;
+            const iconX = cardX + padding;
+            const iconY = cardY + padding;
+            
+            ctx.fillStyle = '#ef4444';
+            ctx.beginPath();
+            ctx.arc(iconX + iconSize / 2, iconY + iconSize / 2, iconSize / 2, 0, Math.PI * 2);
+            ctx.fill();
+
+            ctx.fillStyle = '#ffffff';
+            ctx.font = `bold ${16 * scale}px sans-serif`;
+            ctx.textAlign = 'center';
+            ctx.fillText('📍', iconX + iconSize / 2, iconY + iconSize / 2 + (5 * scale));
+
+            // 5. Card Content Text
+            const textStartX = iconX + iconSize + (12 * scale);
+            const maxTextWidth = cardWidth - (iconSize + padding * 2 + 14 * scale);
+
+            // Line 1: City & Country
+            ctx.fillStyle = '#ffffff';
+            ctx.font = `bold ${16 * scale}px sans-serif`;
+            ctx.textAlign = 'left';
+            const cityText = `${siteInfo.city || 'Meerut'}, Uttar Pradesh, India 🇮🇳`;
+            ctx.fillText(cityText, textStartX, cardY + padding + (14 * scale), maxTextWidth);
+
+            // Line 2: Locality / Site Location
+            ctx.fillStyle = '#e2e8f0';
+            ctx.font = `600 ${13 * scale}px sans-serif`;
+            const locText = siteInfo.location || siteInfo.locality || 'Verified OOH Billboard Site';
+            ctx.fillText(locText, textStartX, cardY + padding + (35 * scale), maxTextWidth);
+
+            // Line 3: Timestamp
+            ctx.fillStyle = '#94a3b8';
+            ctx.font = `${12 * scale}px sans-serif`;
+            const dateStr = new Date(gpsData.capturedAt || Date.now()).toLocaleString('en-IN', {
+                weekday: 'short', day: '2-digit', month: 'short', year: 'numeric',
+                hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false
+            });
+            ctx.fillText(`${dateStr} IST`, textStartX, cardY + padding + (55 * scale), maxTextWidth);
+
+            // Line 4: Lat & Long Coordinates
+            ctx.fillStyle = '#38bdf8'; // Sky blue
+            ctx.font = `bold ${13 * scale}px monospace`;
+            const latStr = Number(gpsData.latitude).toFixed(6);
+            const lngStr = Number(gpsData.longitude).toFixed(6);
+            ctx.fillText(`Lat ${latStr}  Long ${lngStr}`, textStartX, cardY + padding + (76 * scale), maxTextWidth);
+
+            // Line 5: PinPoint & Brand Stamp
+            ctx.fillStyle = '#f59e0b'; // Amber
+            ctx.font = `700 ${11 * scale}px sans-serif`;
+            ctx.fillText('🎯 GPS camera - PinPoint • HIRA Advertising Co.', textStartX, cardY + padding + (95 * scale), maxTextWidth);
+
+            canvas.toBlob((stampedBlob) => {
+                resolve(stampedBlob || blob);
+            }, 'image/jpeg', 0.82);
+        } catch (e) {
+            console.warn('GPS Watermark canvas notice:', e);
+            resolve(blob);
+        }
+    };
+    img.onerror = () => resolve(blob);
+    img.src = url;
+});
 
 // 🔊 100% OFFLINE ROBUST MULTI-TIER AUDIO & VOICE ENGINE
 
@@ -66,7 +185,7 @@ const unlockAudio = () => {
 };
 
 // 🎵 Offline Melodic Web Audio Chime Generator (Guaranteed to play on 100% of devices)
-export const playChime = (type = 'success') => {
+const playChime = (type = 'success') => {
     try {
         unlockAudio();
         const ctx = getAudioContext();
@@ -558,7 +677,9 @@ const StaffUpload = () => {
 
     React.useEffect(() => {
         migrateLegacyStaffQueue().then(refreshPendingCount);
-        startCamera();
+        setTimeout(() => {
+            startCamera();
+        }, 50);
 
         // 🔊 Global User Interaction Listener to Unlock Audio Context
         const handleUserGesture = () => {
@@ -675,11 +796,11 @@ const StaffUpload = () => {
 
 
         try {
-            const blob = await captureCameraPhoto(videoRef.current, streamRef.current);
-            const base64Data = await blobToDataUrl(blob);
+            const rawBlob = await captureCameraPhoto(videoRef.current, streamRef.current);
 
-            // 📍 50M GEOFENCED AI MATCHING
+            // 📍 150M ADAPTIVE GEOFENCED AI MATCHING
             let matchedSite = '';
+            let matchedSiteData = null;
             let siteStatus = 'Available';
             let status = 'REVIEW_REQUIRED';
             let aiDecision = 'GPS_REVIEW';
@@ -690,26 +811,30 @@ const StaffUpload = () => {
                 // Calculate distance to all hoardings
                 const candidatesWithDistance = allHoardings
                     .map(h => {
-                        const lat = parseFloat(h.Latitude || h.Lat || h.lat);
-                        const lng = parseFloat(h.Longitude || h.Long || h.lng);
+                        const lat = parseFloat(h.Latitude || h.Lat || h['Lat.'] || (h['Lat-Long'] ? h['Lat-Long'].split(',')[0] : ''));
+                        const lng = parseFloat(h.Longitude || h.Long || h['Long.'] || (h['Lat-Long'] ? h['Lat-Long'].split(',')[1] : ''));
                         if (isNaN(lat) || isNaN(lng)) return null;
                         const dist = distanceMeters(currentGps.latitude, currentGps.longitude, lat, lng);
-                        return { ...h, distanceM: dist };
+                        return { ...h, distanceM: dist, _parsedLat: lat, _parsedLng: lng };
                     })
                     .filter(Boolean)
                     .sort((a, b) => a.distanceM - b.distanceM);
 
-                // Primary 50m filter, fallback 75m
+                // Multi-tier candidate filter: 50m (pinpoint), 100m (corridor), 175m (highway)
                 const candidates50m = candidatesWithDistance.filter(h => h.distanceM <= 50);
+                const candidates100m = candidatesWithDistance.filter(h => h.distanceM <= 100);
                 const candidates = candidates50m.length > 0 
                     ? candidates50m 
-                    : candidatesWithDistance.filter(h => h.distanceM <= 75);
+                    : (candidates100m.length > 0 ? candidates100m : candidatesWithDistance.filter(h => h.distanceM <= 175));
+
+                const rawBase64 = await blobToDataUrl(rawBlob);
 
                 if (candidates.length > 0) {
                     try {
-                        const geminiMatch = await matchGeofencedHoardingWithGemini(base64Data, candidates.slice(0, 4));
+                        const geminiMatch = await matchGeofencedHoardingWithGemini(rawBase64, candidates.slice(0, 5));
                         if (geminiMatch.matchedSiteName) {
                             matchedSite = geminiMatch.matchedSiteName;
+                            matchedSiteData = candidates.find(c => (c["Location "] || c.siteName) === matchedSite) || candidates[0];
                             siteStatus = geminiMatch.status || 'Available';
                             status = 'AUTO_APPROVED';
                             aiDecision = 'GEMINI_GPS_AUTO_MATCH';
@@ -718,12 +843,13 @@ const StaffUpload = () => {
                             showMatchBanner({
                                 siteName: matchedSite,
                                 status: siteStatus,
-                                distance: Math.round(candidates[0].distanceM),
+                                distance: Math.round(matchedSiteData.distanceM || candidates[0].distanceM),
                                 confidence: matchConfidence
                             });
 
-                            speakOfflineVoice('Site photo auto-match ho gayi hai.');
-                        } else if (candidates.length === 1 && candidates[0].distanceM <= 35) {
+                            speakOfflineVoice('Site photo auto-match aur history me sync ho gayi hai.');
+                        } else if (candidates.length === 1 && candidates[0].distanceM <= 60) {
+                            matchedSiteData = candidates[0];
                             matchedSite = candidates[0]["Location "] || candidates[0].siteName;
                             siteStatus = 'Available';
                             status = 'AUTO_APPROVED';
@@ -732,21 +858,36 @@ const StaffUpload = () => {
                                 siteName: matchedSite,
                                 status: siteStatus,
                                 distance: Math.round(candidates[0].distanceM),
-                                confidence: 85
+                                confidence: 88
                             });
 
-                            speakOfflineVoice('Site photo auto-match ho gayi hai.');
+                            speakOfflineVoice('Site photo auto-match aur history me sync ho gayi hai.');
                         } else {
-                            // Unmatched candidates
-                            showMatchBanner({
-                                warning: true,
-                                message: 'Visual match not confirmed. Sent to admin review.'
-                            });
-                            speakOfflineVoice('Photo kisi registered site se match nahi hui.');
+                            // Nearest fallback if under 40m
+                            if (candidates[0].distanceM <= 40) {
+                                matchedSiteData = candidates[0];
+                                matchedSite = candidates[0]["Location "] || candidates[0].siteName;
+                                status = 'AUTO_APPROVED';
+                                aiDecision = 'GPS_PROXIMITY_MATCH';
+                                showMatchBanner({
+                                    siteName: matchedSite,
+                                    status: 'Available',
+                                    distance: Math.round(candidates[0].distanceM),
+                                    confidence: 82
+                                });
+                                speakOfflineVoice('Site photo auto-match ho gayi hai.');
+                            } else {
+                                showMatchBanner({
+                                    warning: true,
+                                    message: 'Visual match not confirmed. Sent to admin review.'
+                                });
+                                speakOfflineVoice('Photo kisi registered site se match nahi hui.');
+                            }
                         }
                     } catch (aiErr) {
                         console.warn('AI vision matching error:', aiErr);
-                        if (candidates.length === 1 && candidates[0].distanceM <= 30) {
+                        if (candidates.length > 0 && candidates[0].distanceM <= 50) {
+                            matchedSiteData = candidates[0];
                             matchedSite = candidates[0]["Location "] || candidates[0].siteName;
                             status = 'AUTO_APPROVED';
                             aiDecision = 'GPS_AUTO_MATCH';
@@ -756,7 +897,7 @@ const StaffUpload = () => {
                                 distance: Math.round(candidates[0].distanceM),
                                 confidence: 80
                             });
-                            speakOfflineVoice('Site photo auto-match ho gayi hai.');
+                            speakOfflineVoice('Site photo auto-match aur history me sync ho gayi hai.');
                         } else {
                             showMatchBanner({
                                 warning: true,
@@ -768,15 +909,24 @@ const StaffUpload = () => {
                 } else {
                     showMatchBanner({
                         warning: true,
-                        message: 'No registered hoarding within 75m GPS range.'
+                        message: 'No registered hoarding within GPS range.'
                     });
                     speakOfflineVoice('50 meter ke range me koi hoarding nahi mili.');
                 }
             }
 
+            // 🎯 Stamp Authentic PinPoint GPS Card onto Image
+            const siteInfoForStamp = {
+                city: matchedSiteData?.City || 'Meerut',
+                location: matchedSite || matchedSiteData?.["Location "] || matchedSiteData?.Locality || 'Verified OOH Site',
+                locality: matchedSiteData?.Locality || matchedSiteData?.Area || ''
+            };
+            const stampedBlob = await stampGpsWatermarkOnBlob(rawBlob, currentGps, siteInfoForStamp);
+            const base64Data = await blobToDataUrl(stampedBlob);
+
             const item = {
                 id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
-                blob,
+                blob: stampedBlob,
                 capturedAt: currentGps?.capturedAt || new Date().toISOString(),
                 latitude: currentGps?.latitude || null,
                 longitude: currentGps?.longitude || null,
@@ -805,9 +955,57 @@ const StaffUpload = () => {
             saveLocalStaffUpload(localRecord);
             window.dispatchEvent(new CustomEvent('staff:photo-uploaded', { detail: localRecord }));
 
+            // ⚡ ZERO MANUAL REVIEW: INSTANTLY AUTO-SYNC TO SITE'S EXECUTION HISTORY
+            if (matchedSite && (status === 'AUTO_APPROVED' || aiDecision.includes('AUTO_MATCH') || aiDecision.includes('PROXIMITY'))) {
+                try {
+                    const gpsString = currentGps ? `${currentGps.latitude.toFixed(6)}, ${currentGps.longitude.toFixed(6)}` : '';
+                    
+                    // 1. Instantly update client-side cache for live zero-latency rendering
+                    try {
+                        const cachedRaw = localStorage.getItem('adh_cached_hoardings');
+                        if (cachedRaw) {
+                            const cachedList = JSON.parse(cachedRaw);
+                            const targetIdx = cachedList.findIndex(h => (h["Location "] || h.Location) === matchedSite);
+                            if (targetIdx >= 0) {
+                                const newAuditItem = {
+                                    url: base64Data,
+                                    timestamp: Date.now(),
+                                    date: new Date().toISOString(),
+                                    gps: gpsString,
+                                    source: 'Staff Live Capture',
+                                    status: siteStatus
+                                };
+                                const existingHistory = Array.isArray(cachedList[targetIdx].History) ? cachedList[targetIdx].History : [];
+                                cachedList[targetIdx] = {
+                                    ...cachedList[targetIdx],
+                                    History: [newAuditItem, ...existingHistory],
+                                    STATUS: siteStatus
+                                };
+                                localStorage.setItem('adh_cached_hoardings', JSON.stringify(cachedList));
+                                window.dispatchEvent(new CustomEvent('hoardings:updated', { detail: cachedList }));
+                            }
+                        }
+                    } catch (cacheErr) {
+                        console.warn('Local history update notice:', cacheErr);
+                    }
+
+                    // 2. Sync to Google Sheets ExecutionHistory backend asynchronously
+                    syncToGoogleSheet({
+                        action: 'updateHoarding',
+                        siteName: matchedSite,
+                        fileData: base64Data,
+                        mimeType: 'image/jpeg',
+                        gps: gpsString,
+                        mode: 'archive_existing'
+                    }).catch(syncErr => console.warn('Direct execution history sheet sync notice:', syncErr));
+                } catch (historySyncErr) {
+                    console.warn('Auto-sync to history error:', historySyncErr);
+                }
+            }
+
             await enqueueStaffPhoto(item);
             await refreshPendingCount();
-            setLastCapture({ ...item, preview: URL.createObjectURL(blob) });
+            setLastCapture({ ...item, preview: URL.createObjectURL(stampedBlob) });
             lastCaptureIdRef.current = item.id;
             setLatestStillPending(true);
             scheduleFlush();

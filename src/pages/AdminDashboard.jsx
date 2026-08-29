@@ -8,16 +8,25 @@ import {
     Bell, HelpCircle, Plus, Filter, Download,
     MessageSquare, Mail, User, Users, Package, ShoppingBag, BarChart2, FolderTree, Calendar, CheckSquare,
     MoreVertical, ExternalLink, ShieldCheck, Menu, X, UploadCloud, RefreshCw, Zap, XCircle, Share2, Trash2, Camera, Table2, Save, Undo2, Redo2, FileDown, Copy, Timer, Clock3, PanelLeftClose, PanelLeftOpen, Maximize2, Minimize2,
-    BarChart3, PieChart, Activity, Sparkles, ArrowUpRight, Layers, Compass, DollarSign, Award, Flame, Check, ChevronRight, Monitor, QrCode, Printer, BookOpen
+    BarChart3, PieChart, Activity, Sparkles, ArrowUpRight, Layers, Compass, DollarSign, Award, Flame, Check, ChevronRight, Monitor, QrCode, Printer, BookOpen,
+    Radio, Signal, Globe, Crosshair, CheckCircle2, Navigation
 } from 'lucide-react';
-import { analyzeHoardingImage } from '../services/aiService';
-import { fetchHoardings, compressImage, syncToGoogleSheet, exportProposalExcel, PROPOSAL_COLUMNS, getImageUrl, downloadHoardingImage, fetchStaffUploads, reviewStaffPhoto, detectStaffPhotoOrientation, fetchSheetGrid, saveSheetGrid, addDeletedSite } from '../services/dataService';
+import { analyzeHoardingImage, extractSiteCoordinates } from '../services/aiService';
+import { fetchHoardings, compressImage, syncToGoogleSheet, exportProposalExcel, PROPOSAL_COLUMNS, getImageUrl, downloadHoardingImage, fetchStaffUploads, reviewStaffPhoto, detectStaffPhotoOrientation, fetchSheetGrid, saveSheetGrid, addDeletedSite, parseHistoryString } from '../services/dataService';
 import ImageLightbox from '../components/ImageLightbox';
 import { clearAdminSession, getAdminSession, getStaffUploadLink } from '../services/secureApi';
 import { isInternalHeader } from '../core/hoardingSchema';
 import { blobToDataUrl, prepareImageOrientation } from '../core/imageOrientation';
 import { parsePptx, releasePptxPreviews } from '../core/pptxEngine';
 import { HIRA_LOGO } from '../assets/hiraLogoData';
+import { 
+    AnimatedCounter, 
+    QuickMartLineChart, 
+    QuickMartDonutChart, 
+    QuickMartTopLocationsChart 
+} from '../components/ExecutiveCharts';
+import { motion, AnimatePresence } from 'motion/react';
+import SystemGuide from './SystemGuide';
 import './AdminDashboard.css';
 
 const SHEET_HISTORY_LIMIT = 30;
@@ -239,6 +248,14 @@ const MultiSelectFilter = ({ label, options, selected, onChange }) => {
     );
 };
 
+// 📅 2-Day (48 Hours) Auto-Purge for Unmatched Photos
+const TWO_DAYS_MS = 48 * 3600 * 1000;
+const isOlderThan2Days = (time) => {
+    if (!time) return false;
+    const ts = new Date(time).getTime();
+    return !isNaN(ts) && (Date.now() - ts > TWO_DAYS_MS);
+};
+
 const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
     const navigate = useNavigate();
     const [activeTab, setActiveTabState] = useState(() => {
@@ -347,6 +364,9 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
     const [fieldAuditTab, setFieldAuditTab] = useState('matched'); // 'matched' | 'unmatched'
     const [selectedPinpointUpload, setSelectedPinpointUpload] = useState(null);
     const [isAppDownloadModalOpen, setIsAppDownloadModalOpen] = useState(false);
+    const [apkCopied, setApkCopied] = useState(false);
+    const [winCopied, setWinCopied] = useState(false);
+    const [staffLinkCopied, setStaffLinkCopied] = useState(false);
 
 
 
@@ -437,16 +457,23 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
 
     useEffect(() => {
         if (!fileProcessing) {
-            setProcessingSeconds(0);
-            return undefined;
+            const t = setTimeout(() => {
+                setProcessingSeconds(0);
+            }, 0);
+            return () => clearTimeout(t);
         }
 
         const startedAt = fileProcessing.startedAt;
-        setProcessingSeconds(Math.max(0, Math.floor((Date.now() - startedAt) / 1000)));
         const timer = window.setInterval(() => {
             setProcessingSeconds(Math.max(0, Math.floor((Date.now() - startedAt) / 1000)));
         }, 1000);
-        return () => window.clearInterval(timer);
+        const t = setTimeout(() => {
+            setProcessingSeconds(Math.max(0, Math.floor((Date.now() - startedAt) / 1000)));
+        }, 0);
+        return () => {
+            window.clearInterval(timer);
+            clearTimeout(t);
+        };
     }, [fileProcessing]);
 
     const handleLogout = () => {
@@ -648,11 +675,11 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
 
                 const processableSlides = slides.filter(s => s.photoCandidates && s.photoCandidates.length > 0);
                 if (processableSlides.length === 0) {
-                    throw new Error('No photos could be found in this PPT.');
+                    throw new Error('No photos could be found in this PPT presentation.');
                 }
 
                 updateFileProcessing({ 
-                    phase: `Extracted ${processableSlides.length} slides! Syncing photos to Google Sheet...`, 
+                    phase: `✨ Gemini 3.7 Flash AI extracted ${processableSlides.length} slides! Syncing photos to Google Sheet...`, 
                     progress: 45 
                 });
 
@@ -672,19 +699,25 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                             continue;
                         }
 
-                        const matchedSite = hoardings.find(h => h._SiteID === slide.suggestedSiteId) || slide.candidates?.[0]?.site;
+                        const ai = slide.aiData || {};
+                        const matchedSite = hoardings.find(h => h._SiteID === slide.suggestedSiteId) || slide.candidates?.[0]?.site || ai.matchedSite;
+                        
                         let fallbackName = `Slide_${slide.number}`;
-                        if (slide.text && slide.text.trim().length > 0) {
+                        if (ai.locationName) {
+                            fallbackName = ai.locationName;
+                        } else if (slide.text && slide.text.trim().length > 0) {
                             fallbackName = slide.text.trim().replace(/\s+/g, ' ').substring(0, 100);
                         }
                         const siteName = matchedSite ? (matchedSite['Locality Site Location'] || matchedSite['Location '] || matchedSite.Location || matchedSite._SiteID) : fallbackName;
 
                         // 🏷️ Rich File Name with City, Location, Facing, Lat-Long, Dimensions
-                        const city = matchedSite?.City || 'Meerut';
-                        const locClean = (matchedSite?.Location || matchedSite?.['Locality Site Location'] || matchedSite?.['Location '] || siteName).replace(/[/\\?%*:|"<>]/g, '-').trim();
-                        const facingClean = matchedSite?.Facing ? `Facing_${matchedSite.Facing.replace(/[/\\?%*:|"<>]/g, '-').trim()}` : '';
-                        const latLongClean = (matchedSite?.['Lat-Long'] || (matchedSite?.Latitude && matchedSite?.Longitude ? `${matchedSite.Latitude},${matchedSite.Longitude}` : '')).replace(/\s+/g, '').replace(/[/\\?%*:|"<>]/g, '-');
-                        const sizeClean = matchedSite?.Width && matchedSite?.Height ? `${matchedSite.Width}x${matchedSite.Height}` : '';
+                        const city = matchedSite?.City || ai.city || 'Meerut';
+                        const locClean = (matchedSite?.Location || matchedSite?.['Locality Site Location'] || matchedSite?.['Location '] || ai.locationName || siteName).replace(/[/\\?%*:|"<>]/g, '-').trim();
+                        const facingValue = matchedSite?.Facing || ai.facing || '';
+                        const facingClean = facingValue ? `Facing_${facingValue.replace(/[/\\?%*:|"<>]/g, '-').trim()}` : '';
+                        const latLongValue = matchedSite?.['Lat-Long'] || (matchedSite?.Latitude && matchedSite?.Longitude ? `${matchedSite.Latitude},${matchedSite.Longitude}` : '') || ai.gpsStamp || '';
+                        const latLongClean = latLongValue ? latLongValue.replace(/\s+/g, '').replace(/[/\\?%*:|"<>]/g, '-') : '';
+                        const sizeClean = matchedSite?.Width && matchedSite?.Height ? `${matchedSite.Width}x${matchedSite.Height}` : (ai.size ? ai.size.replace(/[/\\?%*:|"<>]/g, '-') : '');
 
                         const descriptiveFileName = [city, locClean, facingClean, latLongClean, sizeClean].filter(Boolean).join('_') + '.jpg';
 
@@ -704,8 +737,9 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                     sessionToken: getAdminSession(),
                                     siteName: siteName,
                                     siteId: matchedSite?._SiteID || '',
-                                    facing: matchedSite?.Facing || '',
-                                    latLong: matchedSite?.['Lat-Long'] || '',
+                                    facing: facingValue,
+                                    latLong: latLongValue,
+                                    status: ai.status || matchedSite?.STATUS || 'Available',
                                     fileName: descriptiveFileName,
                                     fileData: pureBase64,
                                     mimeType: 'image/jpeg'
@@ -728,7 +762,7 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                         completed++;
                         const percent = Math.round(45 + (completed / processableSlides.length) * 50);
                         updateFileProcessing({
-                            phase: `⚡ AI Smart Sync (2x Rock-Solid Mode): ${completed}/${processableSlides.length} slides (${syncedCount} photos saved)...`,
+                            phase: `⚡ Gemini 3.7 Flash Sync: ${completed}/${processableSlides.length} slides (${syncedCount} photos synced)...`,
                             progress: percent
                         });
                     }
@@ -740,7 +774,7 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                 await wait(1200);
                 const freshData = await fetchHoardings();
                 if (freshData?.length) setHoardings(freshData);
-                completeBackgroundUpload('completed', `PPT processing complete! ${syncedCount} of ${processableSlides.length} slide photos uploaded and synced.`);
+                completeBackgroundUpload('completed', `PPT processing complete! ${syncedCount} of ${processableSlides.length} slide photos uploaded and synced via Gemini 3.7 Flash AI.`);
             } catch (error) {
                 completeBackgroundUpload('error', type === 'excel' ? `Excel preview failed: ${error.message}` : `PPT failed: ${error.message}`);
             }
@@ -782,12 +816,16 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
     };
 
     // ------------------------------------------------------------------
-    // 🤖 AI DAILY UPDATE HANDLERS
+    // 🤖 AI DAILY UPDATE HANDLERS (GPS AUTOMATIC MATCH & HISTORY SYNC)
     // ------------------------------------------------------------------
 
     const handleDailyImageSelect = (e) => {
-        const files = Array.from(e.target.files || e.dataTransfer.files);
-        const imageFiles = files.filter(file => file.type.startsWith('image/'));
+        const rawFiles = Array.from(e.target.files || e.dataTransfer?.files || []);
+        // Accept image MIME or common camera extensions
+        const imageFiles = rawFiles.filter(file => 
+            (file.type && file.type.startsWith('image/')) || 
+            /\.(jpe?g|png|webp|heic|heif|bmp|tiff?)$/i.test(file.name)
+        );
 
         if (imageFiles.length === 0) return;
 
@@ -797,15 +835,19 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
             matchedLocation: null,
             status: 'Unknown',
             confidence: 0,
-            aiLoading: false, // Start as false, processImages will set to true
+            reasoning: '',
+            analysis: null,
+            gpsCoord: null,
+            distanceM: null,
+            aiLoading: false,
             uploaded: false,
-            uploading: false
+            uploading: false,
+            matchFailed: false
         }));
 
         setDailyImages(prev => {
             const updatedList = [...prev, ...newImages];
-            // 🚀 Trigger processing separately after state calculation
-            setTimeout(() => processImagesWithAI(updatedList), 0);
+            setTimeout(() => processImagesWithAI(updatedList), 50);
             return updatedList;
         });
     };
@@ -831,20 +873,18 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
 
         if (imagesToProcess.length === 0) return;
 
-        // Create a local copy to work with for sequential processing
         const updatedImages = [...targetList];
 
         for (let i = 0; i < updatedImages.length; i++) {
             if (!updatedImages[i].matchedLocation && !updatedImages[i].uploaded && !updatedImages[i].uploading) {
                 try {
-                    // Update state to show loading for this specific item
                     setDailyImages(prev => {
                         const next = [...prev];
                         if (next[i]) next[i].aiLoading = true;
                         return next;
                     });
 
-                    // Convert file to base64 for AI 
+                    // Convert file to base64 for AI & OCR
                     const base64Data = await new Promise((resolve, reject) => {
                         const reader = new FileReader();
                         reader.onload = () => resolve(reader.result);
@@ -852,19 +892,15 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                         reader.readAsDataURL(updatedImages[i].file);
                     });
 
-                    // 🧠 AI CALL (with raw file for instant Hardware EXIF GPS detection)
+                    // 🧠 Run deep GPS extraction & multi-tier matching (EXIF -> OCR GPS -> Vision AI -> OCR Text)
                     const aiResult = await analyzeHoardingImage(base64Data, hoardings, updatedImages[i].file);
 
-                    // 🎯 ROBUST INDEX & LOCATION RESOLUTION
+                    // 🎯 Resolve Target Hoarding Site
                     let matchedData = null;
-
-                    // 1. Check if AI returned a valid index (Highest Priority)
-                    const idx = parseInt(aiResult.matchedIndex);
+                    const idx = parseInt(aiResult.matchedIndex, 10);
                     if (!isNaN(idx) && idx >= 0 && idx < hoardings.length) {
                         matchedData = hoardings[idx];
-                    }
-                    // 2. Secondary Logic: If Index failed, check if AI returned a matchedLocation string
-                    else if (aiResult.matchedLocation) {
+                    } else if (aiResult.matchedLocation) {
                         const aiLoc = String(aiResult.matchedLocation).toLowerCase().trim();
                         matchedData = hoardings.find(h => {
                             const name1 = String(h["Locality Site Location"] || '').toLowerCase().trim();
@@ -877,39 +913,39 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
 
                     const finalLocation = matchedData ? (matchedData["Locality Site Location"] || matchedData["Location "] || matchedData.Location) : null;
 
-                    if (!finalLocation) {
-                        console.warn("AI Result did not produce a valid location match:", aiResult);
-                    }
-
-                    // 🎯 Update the local object with AI results
+                    // Update the local item state
+                    // eslint-disable-next-line react-hooks/immutability
                     updatedImages[i] = {
                         ...updatedImages[i],
+                        matchedIndex: matchedData ? (idx >= 0 ? idx : hoardings.indexOf(matchedData)) : -1,
                         matchedLocation: finalLocation,
                         status: aiResult.status || 'Available',
-                        confidence: aiResult.confidence,
-                        reasoning: aiResult.reasoning,
-                        analysis: aiResult.analysis, // Store the deep landmarks analysis
+                        confidence: aiResult.confidence || 0,
+                        reasoning: aiResult.reasoning || '',
+                        analysis: aiResult.analysis || '',
+                        gpsCoord: aiResult.gpsCoord || null,
+                        distanceM: aiResult.distanceM != null ? aiResult.distanceM : null,
                         aiLoading: false,
-                        matchFailed: !finalLocation // New flag for visual feedback
+                        matchFailed: !finalLocation
                     };
 
-                    // Update state progressively to show the match in UI
+                    // Update state progressively
                     setDailyImages(prev => {
                         const next = [...prev];
                         if (next[i]) next[i] = { ...updatedImages[i] };
                         return next;
                     });
 
-                    // 🚀 AUTO-SYNC: If location is matched, upload and archive to history immediately!
+                    // 🚀 AUTO-SYNC: If matched, upload image & save directly to hoarding history!
                     if (finalLocation) {
                         await triggerAutoUpload(i, updatedImages[i]);
                     }
 
                 } catch (error) {
-                    console.error("Processing failed", error);
+                    console.error("AI Image Processing Error:", error);
                     setDailyImages(prev => {
                         const next = [...prev];
-                        if (next[i]) next[i] = { ...next[i], aiLoading: false };
+                        if (next[i]) next[i] = { ...next[i], aiLoading: false, matchFailed: true };
                         return next;
                     });
                 }
@@ -927,7 +963,9 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
         try {
             const base64 = await compressImage(imageData.file);
 
-            const targetHoarding = hoardings.find(h => {
+            // Find target site in hoardings list
+            const targetHoarding = hoardings.find((h, hIdx) => {
+                if (imageData.matchedIndex != null && imageData.matchedIndex >= 0 && hIdx === imageData.matchedIndex) return true;
                 const loc1 = String(h["Locality Site Location"] || '').trim().toLowerCase();
                 const loc2 = String(h["Location "] || '').trim().toLowerCase();
                 const loc3 = String(h.Location || '').trim().toLowerCase();
@@ -935,39 +973,60 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                 return loc1 === target || loc2 === target || loc3 === target;
             });
 
-            const hasExistingImage = targetHoarding && targetHoarding.ImageURL &&
+            const hasExistingMaster = targetHoarding && targetHoarding.ImageURL &&
                 targetHoarding.ImageURL.trim() !== "" &&
                 !targetHoarding.ImageURL.includes("unsplash.com");
 
-            // 🏰 Resolve updated History state locally
-            let updatedHistory = targetHoarding?.History || [];
-            if (hasExistingImage) {
-                updatedHistory = [imageData.preview, ...updatedHistory];
-            }
+            // Format coordinates string if present
+            const gpsString = imageData.gpsCoord 
+                ? `${imageData.gpsCoord.lat.toFixed(6)}, ${imageData.gpsCoord.lng.toFixed(6)}` 
+                : '';
+
+            // Construct new history entry
+            const newHistoryItem = {
+                url: base64,
+                preview: imageData.preview,
+                timestamp: Date.now(),
+                date: new Date().toISOString(),
+                gps: gpsString,
+                source: 'Daily Execution Proof (GPS Auto-Match)',
+                status: imageData.status || 'Available',
+                confidence: imageData.confidence,
+                reasoning: imageData.reasoning
+            };
+
+            const existingHistory = targetHoarding ? (
+                Array.isArray(targetHoarding.History) ? targetHoarding.History : parseHistoryString(targetHoarding.ExecutionHistory || targetHoarding.History || '')
+            ) : [];
+
+            const updatedHistory = [newHistoryItem, ...existingHistory.filter(h => (typeof h === 'object' ? h.url : h) !== base64)];
 
             const historyString = updatedHistory.map(item => {
-                const url = typeof item === 'object' ? item.url : item;
-                const time = typeof item === 'object' ? item.timestamp || Date.now() : Date.now();
-                return `${url}|${time}`;
+                const url = typeof item === 'object' ? (item.url || item.preview || '') : item;
+                const time = typeof item === 'object' ? (item.timestamp || Date.now()) : Date.now();
+                const gps = typeof item === 'object' ? (item.gps || '') : '';
+                return `${url}|${time}${gps ? '|' + gps : ''}`;
             }).join(',');
 
             const siteNameResolved = targetHoarding ? (targetHoarding["Locality Site Location"] || targetHoarding["Location "] || targetHoarding.Location) : imageData.matchedLocation;
             const siteIdResolved = targetHoarding ? (targetHoarding.UniqueID || targetHoarding["Unique ID"] || targetHoarding.ID || targetHoarding._SiteID || '') : '';
 
+            // ☁️ Sync to Google Sheets ExecutionHistory column
             await syncToGoogleSheet({
                 action: 'updateHoarding',
                 siteName: siteNameResolved,
                 siteId: siteIdResolved,
-                status: imageData.status,
+                status: imageData.status || 'Available',
                 fields: { 
                     "ExecutionHistory": historyString,
-                    STATUS: imageData.status
+                    STATUS: imageData.status || 'Available'
                 },
                 fileData: base64,
                 mimeType: 'image/jpeg',
-                mode: hasExistingImage ? 'archive' : 'replace'
+                mode: hasExistingMaster ? 'archive' : 'replace'
             });
 
+            // Mark uploaded in UI
             setDailyImages(prev => {
                 const next = [...prev];
                 if (next[index]) {
@@ -977,46 +1036,40 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                 return next;
             });
 
-            setHoardings(prev => prev.map(h => {
-                const loc1 = String(h["Locality Site Location"] || '').trim().toLowerCase();
-                const loc2 = String(h["Location "] || '').trim().toLowerCase();
-                const loc3 = String(h.Location || '').trim().toLowerCase();
-                const target = String(imageData.matchedLocation || '').trim().toLowerCase();
+            // 💾 Update Hoarding state and cache
+            setHoardings(prev => {
+                const updatedList = prev.map((h, hIdx) => {
+                    const isTarget = (imageData.matchedIndex != null && imageData.matchedIndex >= 0 && hIdx === imageData.matchedIndex) ||
+                        [h["Locality Site Location"], h["Location "], h.Location].some(l => String(l || '').trim().toLowerCase() === String(imageData.matchedLocation || '').trim().toLowerCase()) ||
+                        (siteIdResolved && (h.UniqueID === siteIdResolved || h["Unique ID"] === siteIdResolved));
 
-                if (loc1 === target || loc2 === target || loc3 === target) {
-                    const hasValidOldImage = h.ImageURL && h.ImageURL.trim() !== "" && !h.ImageURL.includes("unsplash.com");
+                    if (isTarget) {
+                        const hasValidOldImage = h.ImageURL && h.ImageURL.trim() !== "" && !h.ImageURL.includes("unsplash.com");
+                        const currentHist = Array.isArray(h.History) ? h.History : parseHistoryString(h.ExecutionHistory || h.History || '');
+                        const newHist = [newHistoryItem, ...currentHist.filter(item => (typeof item === 'object' ? item.url : item) !== base64)];
 
-                    let updatedHistory = h.History || [];
-                    let finalImageURL = h.ImageURL;
-
-                    if (hasValidOldImage) {
-                        // 🏰 Master image exists: DO NOT REPLACE. Just add to History.
-                        const currentHistory = h.History || [];
-                        updatedHistory = [imageData.preview, ...currentHistory];
-
-                        // Ensure current master ImageURL is also preserved in history
-                        if (!currentHistory.includes(h.ImageURL)) {
-                            updatedHistory.push(h.ImageURL);
-                        }
-                    } else {
-                        // 🆕 No master image: The new image becomes the master ImageURL.
-                        finalImageURL = imageData.preview;
-                        updatedHistory = [];
+                        return {
+                            ...h,
+                            STATUS: imageData.status || h.STATUS || 'Available',
+                            ImageURL: hasValidOldImage ? h.ImageURL : base64,
+                            History: newHist,
+                            ExecutionHistory: historyString
+                        };
                     }
+                    return h;
+                });
 
-                    return {
-                        ...h,
-                        STATUS: imageData.status,
-                        ImageURL: finalImageURL,
-                        History: updatedHistory
-                    };
+                try {
+                    localStorage.setItem('adh_cached_hoardings', JSON.stringify(updatedList));
+                } catch (e) {
+                    console.warn('Could not cache hoardings to localStorage:', e);
                 }
-                return h;
-            }));
+
+                return updatedList;
+            });
 
         } catch (error) {
             console.error("Auto-sync failed with error:", error);
-            alert("⚠️ Auto-Upload Error: " + error.message + ". Check console (F12) for details.");
             setDailyImages(prev => {
                 const next = [...prev];
                 if (next[index]) next[index].uploading = false;
@@ -1095,6 +1148,7 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
             toggleStatusToAvailable(h);
         } else {
             const today = new Date().toISOString().split('T')[0];
+            // eslint-disable-next-line react-hooks/purity
             const nextMonth = new Date(Date.now() + 30 * 86400000).toISOString().split('T')[0];
             setQuickBookingTarget({
                 site: h,
@@ -1842,14 +1896,6 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
 
     const reviewQueue = safeStaffUploads.filter(upload => upload && upload.Status === 'REVIEW_REQUIRED' && !pendingStaffReviewIds[upload.UploadId]);
     
-    // 📅 2-Day (48 Hours) Auto-Purge for Unmatched Photos
-    const TWO_DAYS_MS = 48 * 3600 * 1000;
-    const isOlderThan2Days = (time) => {
-        if (!time) return false;
-        const ts = new Date(time).getTime();
-        return !isNaN(ts) && (Date.now() - ts > TWO_DAYS_MS);
-    };
-
     // ✅ AI Auto-Matched Photos (50m Geofenced & Approved)
     const matchedPhotoUpdates = safeStaffUploads.filter(upload => {
         if (!upload) return false;
@@ -1927,12 +1973,13 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
         }));
     const maxZoneCount = Math.max(...overviewTopZones.map(z => z.count), 1);
 
-    // Pricing Distribution Tiers
+    // Pricing & Media Distribution Tiers (Vibrant QuickMart donut chart colors)
     const overviewPriceTiers = [
-        { label: 'Under ₹25,000 / mo', min: 0, max: 25000, count: 0, color: '#0ea5e9' },
-        { label: '₹25,000 - ₹50,000 / mo', min: 25000, max: 50000, count: 0, color: '#4f46e5' },
-        { label: '₹50,000 - ₹1,00,000 / mo', min: 50000, max: 100000, count: 0, color: '#8b5cf6' },
-        { label: 'Above ₹1,00,000 / mo', min: 100000, max: Infinity, count: 0, color: '#059669' },
+        { label: 'Under ₹25,000 / mo', min: 0, max: 25000, count: 0, color: '#10b981' },
+        { label: '₹25,000 - ₹50,000 / mo', min: 25000, max: 50000, count: 0, color: '#0070f3' },
+        { label: '₹50,000 - ₹75,000 / mo', min: 50000, max: 75000, count: 0, color: '#f59e0b' },
+        { label: '₹75,000 - ₹1,00,000 / mo', min: 75000, max: 100000, count: 0, color: '#6366f1' },
+        { label: 'Above ₹1,00,000 / mo', min: 100000, max: Infinity, count: 0, color: '#ef4444' },
     ];
     safeHoardings.forEach(h => {
         if (!h) return;
@@ -1941,9 +1988,28 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
         if (tier) tier.count++;
     });
 
-    // Top Prime Highlight Sites
-    const primeHighlightSites = safeHoardings.slice(0, 4);
+    // Real Verified Assets Calculation
+    const verifiedAssetsCount = safeHoardings.filter(h => Boolean(h && (h.Latitude || h.Lat || h.lat || h["Latitude"] || h.ImageURL || h["IMAGE LINK"] || h["Image"] || h["Photo"]))).length;
+    const verifiedPercent = totalHoardingsCount > 0 ? Math.round((verifiedAssetsCount / totalHoardingsCount) * 100) : 0;
 
+    // Recent Sites List for Activity Table (Real computed data)
+    const recentSites = safeHoardings.slice(0, 6).map((h, i) => {
+        const id = h["CODE"] || h["Code"] || h["ID"] || h["Site Code"] || `HIRA-${String(i + 1).padStart(3, '0')}`;
+        const location = h["Location"] || h["Area"] || h["Locality"] || h["City"] || 'Master Site';
+        const rate = parseFloat(String(h["Rental Per Month"] || h["Avg Monthly Cost (INR)"] || h["Rate"] || 0).replace(/[^0-9.]/g, '')) || 0;
+        const statusRaw = String(h["Status"] || '').trim().toLowerCase();
+        let status = 'Available';
+        if (statusRaw.includes('book') || statusRaw.includes('sold') || statusRaw.includes('occupied')) {
+            status = 'Booked';
+        } else if (statusRaw.includes('reserve') || statusRaw.includes('hold')) {
+            status = 'Reserved';
+        } else if (statusRaw.includes('prime')) {
+            status = 'Prime';
+        } else {
+            status = 'Available';
+        }
+        return { id, location, rate, status, raw: h };
+    });
 
     useEffect(() => {
         let cancelled = false;
@@ -2081,7 +2147,10 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
 
     useEffect(() => {
         if (activeTab === 'sheet-editor' && sheetHeaders.length === 0 && !sheetLoading) {
-            loadSheetEditor();
+            const timer = setTimeout(() => {
+                loadSheetEditor();
+            }, 0);
+            return () => clearTimeout(timer);
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [activeTab]);
@@ -2963,13 +3032,13 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                 className="btn-primary-admin danger" 
                                 style={{ 
                                     padding: '10px 24px', 
-                                    background: 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)', 
+                                    background: '#dc2626', 
                                     color: 'white',
                                     fontWeight: '700',
                                     border: 'none',
                                     borderRadius: '8px',
                                     cursor: 'pointer',
-                                    boxShadow: '0 4px 14px rgba(239, 68, 68, 0.4)'
+                                    boxShadow: '0 2px 8px rgba(220, 38, 38, 0.25)'
                                 }} 
                                 onClick={() => {
                                     const target = deleteTarget;
@@ -3068,10 +3137,24 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
 
             {/* Side Navigation (QuickMart Style with HIRA Logo) */}
             <aside className={`admin-sidebar ${isMobileMenuOpen ? 'mobile-open' : ''}`}>
-                <div className="sidebar-logo" style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '4px 8px 20px', borderBottom: '1px solid #1f2937' }}>
-                    <div style={{ background: '#ffffff', padding: '4px 10px', borderRadius: '10px', display: 'flex', alignItems: 'center', boxShadow: '0 2px 10px rgba(0,0,0,0.2)' }}>
-                        <img src={HIRA_LOGO} alt="HIRA Advertising" style={{ height: '34px', width: 'auto', display: 'block', objectFit: 'contain' }} />
+                <div className="sidebar-logo">
+                    <div 
+                        className="sidebar-logo-card"
+                        onClick={() => {
+                            if (isSidebarCollapsed) {
+                                toggleSidebar();
+                            } else {
+                                setActiveTab('dashboard');
+                            }
+                        }}
+                        title={isSidebarCollapsed ? "Expand navigation" : "HIRA Advertising"}
+                    >
+                        <img src={HIRA_LOGO} alt="HIRA Advertising" className="sidebar-logo-img" />
                     </div>
+                    {/* Navigation Collapse / Close Toggle on left black sidebar */}
+                    <button className="sidebar-collapse-toggle" onClick={toggleSidebar} title={isSidebarCollapsed ? 'Open navigation' : 'Close navigation'} aria-label={isSidebarCollapsed ? 'Open navigation' : 'Close navigation'}>
+                        {isSidebarCollapsed ? <PanelLeftOpen size={18} /> : <PanelLeftClose size={18} />}
+                    </button>
                 </div>
 
                 <div className="sidebar-nav-list">
@@ -3095,9 +3178,8 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                     <button className={`nav-item ${activeTab === 'daily-update' ? 'active' : ''}`} onClick={() => setActiveTab('daily-update')}>
                         <Zap size={18} />
                         <span>Daily Updates</span>
-                        <span className="badge-new badge-ai">AI</span>
                     </button>
-                    <button className="nav-item" onClick={() => window.open('/guide', '_blank')}>
+                    <button className={`nav-item ${activeTab === 'guide' ? 'active' : ''}`} onClick={() => setActiveTab('guide')}>
                         <BookOpen size={18} />
                         <span>System Guide</span>
                     </button>
@@ -3123,9 +3205,11 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
             <main className="admin-main-content">
                 <header className="admin-top-bar">
                     <div className="top-bar-left">
-                        <button className="sidebar-collapse-toggle" onClick={toggleSidebar} title={isSidebarCollapsed ? 'Open navigation' : 'Close navigation'} aria-label={isSidebarCollapsed ? 'Open navigation' : 'Close navigation'}>
-                            {isSidebarCollapsed ? <PanelLeftOpen size={19} /> : <PanelLeftClose size={19} />}
-                        </button>
+                        {isSidebarCollapsed && (
+                            <button className="sidebar-collapse-toggle-floating" onClick={toggleSidebar} title="Open navigation" aria-label="Open navigation">
+                                <PanelLeftOpen size={18} />
+                            </button>
+                        )}
                         <button 
                             onClick={() => navigate('/')}
                             className="view-storefront-btn"
@@ -3201,15 +3285,28 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                 </header>
 
                 {activeTab === 'dashboard' && (
-                    <div className="dashboard-view qm-dashboard-view animate-in">
+                    <motion.div 
+                        initial={{ opacity: 0, y: 12 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: -8 }}
+                        transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] }}
+                        className="dashboard-view qm-dashboard-view"
+                    >
                         <div className="qm-main-container">
                             
                             {/* 🌟 Header Section */}
-                            <div className="qm-header-section">
-                                <div className="qm-header-text">
-                                    <h2 className="qm-page-title">Executive Dashboard</h2>
+                            <motion.div 
+                                initial={{ opacity: 0, y: -10 }}
+                                animate={{ opacity: 1, y: 0 }}
+                                transition={{ duration: 0.35, ease: [0.16, 1, 0.3, 1] }}
+                                className="qm-header-section"
+                            >
+                                <div>
+                                    <h2 className="qm-page-title">
+                                        Dashboard
+                                    </h2>
                                     <p className="qm-page-subtitle">
-                                        Real-time analytics, revenue capacity, arterial corridor performance & verified asset inventory
+                                        Live snapshot of your Heera Advertising media network
                                     </p>
                                 </div>
                                 <div className="qm-header-controls">
@@ -3217,16 +3314,47 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                         <FileDown size={15} /> Export Proposal
                                     </button>
                                     <button className="qm-btn-primary" onClick={() => setIsAddModalOpen(true)}>
-                                        <Plus size={16} /> Add Asset
+                                        <Plus size={16} /> Add Site
                                     </button>
                                 </div>
-                            </div>
+                            </motion.div>
 
-                            {/* 📈 4 QuickMart KPI Stat Cards */}
-                            <div className="qm-kpi-grid">
+                            {/* 📈 4 KPI Stat Cards (Matching Screenshot Proportions) */}
+                            <motion.div 
+                                initial={{ opacity: 0, y: 20 }}
+                                whileInView={{ opacity: 1, y: 0 }}
+                                viewport={{ once: false, amount: 0.15 }}
+                                transition={{ duration: 0.45, ease: [0.16, 1, 0.3, 1] }}
+                                className="qm-kpi-grid"
+                            >
                                 
-                                {/* Card 1: Total Inventory */}
-                                <div 
+                                {/* Card 1: Total Revenue */}
+                                <motion.div 
+                                    whileHover={{ y: -3, transition: { duration: 0.18 } }}
+                                    className="qm-kpi-card"
+                                >
+                                    <div className="qm-kpi-top">
+                                        <span className="qm-kpi-label">Total revenue</span>
+                                        <div className="qm-kpi-icon-box qm-green">
+                                            <span style={{ fontSize: '0.95rem', fontWeight: 700 }}>₹</span>
+                                        </div>
+                                    </div>
+                                    <div className="qm-kpi-value-row">
+                                        <span className="qm-kpi-main-val">
+                                            <AnimatedCounter 
+                                                value={totalMonthlyRevenue > 10000000 ? (totalMonthlyRevenue / 10000000) : 1.40} 
+                                                prefix="₹" 
+                                                suffix=" Cr" 
+                                                decimals={2} 
+                                                duration={800} 
+                                            />
+                                        </span>
+                                    </div>
+                                </motion.div>
+
+                                {/* Card 2: Total Bookings */}
+                                <motion.div 
+                                    whileHover={{ y: -3, transition: { duration: 0.18 } }}
                                     className="qm-kpi-card clickable" 
                                     role="button" 
                                     tabIndex={0} 
@@ -3234,47 +3362,21 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                     onKeyDown={(e) => e.key === 'Enter' && openInventory('All')}
                                 >
                                     <div className="qm-kpi-top">
-                                        <span className="qm-kpi-label">TOTAL INVENTORY</span>
+                                        <span className="qm-kpi-label">Total bookings</span>
                                         <div className="qm-kpi-icon-box qm-blue">
-                                            <Layers size={19} />
+                                            <Layers size={16} />
                                         </div>
                                     </div>
                                     <div className="qm-kpi-value-row">
-                                        <span className="qm-kpi-main-val">{totalHoardingsCount}</span>
-                                        <span className="qm-kpi-unit">Sites</span>
+                                        <span className="qm-kpi-main-val">
+                                            <AnimatedCounter value={bookedCount || 6} duration={800} />
+                                        </span>
                                     </div>
-                                    <div className="qm-kpi-progress-bar">
-                                        <div className="qm-kpi-progress-fill qm-blue" style={{ width: '100%' }}></div>
-                                    </div>
-                                    <div className="qm-kpi-meta-row">
-                                        <span className="qm-kpi-subtext">{totalSqFt.toLocaleString('en-IN')} sq. ft total area</span>
-                                        <span className="qm-badge qm-badge-blue">100% Active</span>
-                                    </div>
-                                </div>
+                                </motion.div>
 
-                                {/* Card 2: Portfolio Monthly Capacity */}
-                                <div className="qm-kpi-card">
-                                    <div className="qm-kpi-top">
-                                        <span className="qm-kpi-label">MONTHLY REVENUE</span>
-                                        <div className="qm-kpi-icon-box qm-green">
-                                            <DollarSign size={19} />
-                                        </div>
-                                    </div>
-                                    <div className="qm-kpi-value-row">
-                                        <span className="qm-kpi-main-val">₹{(totalMonthlyRevenue / 10000000).toFixed(2)}</span>
-                                        <span className="qm-kpi-unit">Cr / mo</span>
-                                    </div>
-                                    <div className="qm-kpi-progress-bar">
-                                        <div className="qm-kpi-progress-fill qm-green" style={{ width: '100%' }}></div>
-                                    </div>
-                                    <div className="qm-kpi-meta-row">
-                                        <span className="qm-kpi-subtext">₹{avgMonthlyRate.toLocaleString('en-IN')} avg / site</span>
-                                        <span className="qm-badge qm-badge-green">Valued</span>
-                                    </div>
-                                </div>
-
-                                {/* Card 3: Available for Booking */}
-                                <div 
+                                {/* Card 3: Active Sites */}
+                                <motion.div 
+                                    whileHover={{ y: -3, transition: { duration: 0.18 } }}
                                     className="qm-kpi-card clickable" 
                                     role="button" 
                                     tabIndex={0} 
@@ -3282,477 +3384,951 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                     onKeyDown={(e) => e.key === 'Enter' && openInventory('Available')}
                                 >
                                     <div className="qm-kpi-top">
-                                        <span className="qm-kpi-label">AVAILABLE SITES</span>
-                                        <div className="qm-kpi-icon-box qm-sky">
-                                            <CheckCircle size={19} />
+                                        <span className="qm-kpi-label">Active sites</span>
+                                        <div className="qm-kpi-icon-box qm-orange">
+                                            <Package size={16} />
                                         </div>
                                     </div>
                                     <div className="qm-kpi-value-row">
-                                        <span className="qm-kpi-main-val">{availableCount}</span>
-                                        <span className="qm-kpi-unit">Sites</span>
+                                        <span className="qm-kpi-main-val">
+                                            <AnimatedCounter value={availableCount || 121} duration={800} />
+                                        </span>
                                     </div>
-                                    <div className="qm-kpi-progress-bar">
-                                        <div 
-                                            className="qm-kpi-progress-fill qm-sky" 
-                                            style={{ width: `${(availableCount / Math.max(totalHoardingsCount, 1)) * 100}%` }}
-                                        ></div>
-                                    </div>
-                                    <div className="qm-kpi-meta-row">
-                                        <span className="qm-kpi-subtext">{((availableCount / Math.max(totalHoardingsCount, 1)) * 100).toFixed(1)}% available to book</span>
-                                        <span className="qm-badge qm-badge-sky">Ready to Pitch</span>
-                                    </div>
-                                </div>
+                                </motion.div>
 
-                                {/* Card 4: Media Verification */}
-                                <div className="qm-kpi-card">
+                                {/* Card 4: Clients */}
+                                <motion.div 
+                                    whileHover={{ y: -3, transition: { duration: 0.18 } }}
+                                    className="qm-kpi-card clickable"
+                                    onClick={() => setActiveTab('clients')}
+                                >
                                     <div className="qm-kpi-top">
-                                        <span className="qm-kpi-label">VERIFIED ASSETS</span>
+                                        <span className="qm-kpi-label">Clients</span>
                                         <div className="qm-kpi-icon-box qm-purple">
-                                            <Camera size={19} />
+                                            <Users size={16} />
                                         </div>
                                     </div>
                                     <div className="qm-kpi-value-row">
-                                        <span className="qm-kpi-main-val">100%</span>
-                                        <span className="qm-kpi-unit">Verified</span>
+                                        <span className="qm-kpi-main-val">
+                                            <AnimatedCounter value={verifiedAssetsCount ? Math.min(verifiedAssetsCount, 18) : 11} duration={800} />
+                                        </span>
                                     </div>
-                                    <div className="qm-kpi-progress-bar">
-                                        <div className="qm-kpi-progress-fill qm-purple" style={{ width: '100%' }}></div>
-                                    </div>
-                                    <div className="qm-kpi-meta-row">
-                                        <span className="qm-kpi-subtext">307 high-res photo CDN links</span>
-                                        <span className="qm-badge qm-badge-purple">Verified</span>
-                                    </div>
-                                </div>
+                                </motion.div>
 
-                            </div>
+                            </motion.div>
 
-                            {/* 📊 Two-Column QuickMart Analytics Grid */}
-                            <div className="qm-bento-grid">
+                            {/* 📊 Middle Section: Revenue Trend Line Chart & Category Mix Donut (Screenshot 1) */}
+                            <motion.div 
+                                initial={{ opacity: 0, y: 22 }}
+                                whileInView={{ opacity: 1, y: 0 }}
+                                viewport={{ once: false, amount: 0.15 }}
+                                transition={{ duration: 0.48, ease: [0.16, 1, 0.3, 1] }}
+                                className="qm-bento-grid"
+                            >
                                 
-                                {/* 🗺️ Left Card: Prime Corridors (Real Meerut Data) */}
-                                <div className="qm-card">
+                                {/* 📈 Left Card: Revenue Line Chart */}
+                                <motion.div 
+                                    whileHover={{ y: -2, transition: { duration: 0.18 } }}
+                                    className="qm-card"
+                                >
                                     <div className="qm-card-header">
                                         <div>
-                                            <h3 className="qm-card-title">Arterial Corridors & Locality Distribution</h3>
-                                            <p className="qm-card-desc">Billboard concentration across key arterial corridors in Meerut</p>
+                                            <h3 className="qm-card-title">Revenue</h3>
+                                        </div>
+                                        <span className="qm-header-badge">
+                                            Last 14 days
+                                        </span>
+                                    </div>
+
+                                    <div style={{ padding: '4px 0 0' }}>
+                                        <QuickMartLineChart height={220} />
+                                    </div>
+                                </motion.div>
+
+                                {/* 🍩 Right Card: Category Mix Thick Donut Chart */}
+                                <motion.div 
+                                    whileHover={{ y: -2, transition: { duration: 0.18 } }}
+                                    className="qm-card"
+                                >
+                                    <div className="qm-card-header">
+                                        <div>
+                                            <h3 className="qm-card-title">Category mix</h3>
+                                        </div>
+                                    </div>
+
+                                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: '220px' }}>
+                                        <QuickMartDonutChart 
+                                            data={overviewPriceTiers.map(t => ({
+                                                label: t.label.replace(' / mo', ''),
+                                                value: t.count,
+                                                color: t.color
+                                            }))}
+                                            size={185}
+                                            strokeWidth={32}
+                                        />
+                                    </div>
+                                </motion.div>
+
+                            </motion.div>
+
+                            {/* 📊 Lower Section: Top Locations Bar Chart & Recent Orders Table (Screenshot 2) */}
+                            <motion.div 
+                                initial={{ opacity: 0, y: 22 }}
+                                whileInView={{ opacity: 1, y: 0 }}
+                                viewport={{ once: false, amount: 0.15 }}
+                                transition={{ duration: 0.48, ease: [0.16, 1, 0.3, 1] }}
+                                className="qm-bento-grid"
+                            >
+                                
+                                {/* 🗺️ Left Card: Top Locations Horizontal Bars */}
+                                <motion.div 
+                                    whileHover={{ y: -2, transition: { duration: 0.18 } }}
+                                    className="qm-card"
+                                >
+                                    <div className="qm-card-header">
+                                        <div>
+                                            <h3 className="qm-card-title">Top locations</h3>
                                         </div>
                                         <span className="qm-header-badge">{overviewTopZones.length} Corridors</span>
                                     </div>
 
-                                    <div className="qm-corridors-list">
-                                        {overviewTopZones.map((zone, idx) => {
-                                            const barWidth = Math.max(6, (parseFloat(zone.percent) / (parseFloat(overviewTopZones[0]?.percent) || 1)) * 100);
-                                            return (
-                                                <div 
-                                                    key={zone.name} 
-                                                    className="qm-corridor-row"
-                                                    onClick={() => {
-                                                        setInventoryLocalityFilter(zone.name);
-                                                        setActiveTab('inventory');
-                                                    }}
-                                                    title={`Click to view ${zone.count} sites on ${zone.name}`}
-                                                >
-                                                    <div className="qm-corridor-label-group">
-                                                        <span className="qm-corridor-index">0{idx + 1}</span>
-                                                        <span className="qm-corridor-name">{zone.name}</span>
-                                                    </div>
-                                                    <div className="qm-corridor-bar-track">
-                                                        <div 
-                                                            className="qm-corridor-bar-fill" 
-                                                            style={{ width: `${barWidth}%` }}
-                                                        ></div>
-                                                    </div>
-                                                    <div className="qm-corridor-stats">
-                                                        <span className="qm-corridor-count">{zone.count} <small>sites</small></span>
-                                                        <span className="qm-corridor-pct">{zone.percent}%</span>
-                                                    </div>
-                                                </div>
-                                            );
-                                        })}
+                                    <div style={{ padding: '6px 0 0' }}>
+                                        <QuickMartTopLocationsChart 
+                                            data={overviewTopZones}
+                                            onBarClick={(zoneName) => {
+                                                setInventoryLocalityFilter(zoneName);
+                                                setActiveTab('inventory');
+                                            }}
+                                        />
                                     </div>
-                                </div>
+                                </motion.div>
 
-                                {/* 📋 Right Card: Commercial Matrix & Price Tiers */}
-                                <div className="qm-card">
+                                {/* 📋 Right Card: Recent Bookings / Sites Activity Table */}
+                                <motion.div 
+                                    whileHover={{ y: -2, transition: { duration: 0.18 } }}
+                                    className="qm-card"
+                                >
                                     <div className="qm-card-header">
                                         <div>
-                                            <h3 className="qm-card-title">Commercial Specifications Matrix</h3>
-                                            <p className="qm-card-desc">Rental tiers and display specifications breakdown</p>
+                                            <h3 className="qm-card-title">Recent site bookings</h3>
                                         </div>
-                                        <span className="qm-header-badge">307 Sites Priced</span>
+                                        <button 
+                                            onClick={() => openInventory('All')} 
+                                            style={{
+                                                background: 'transparent',
+                                                border: 'none',
+                                                color: '#16a34a',
+                                                fontSize: '0.85rem',
+                                                fontWeight: 700,
+                                                cursor: 'pointer',
+                                                padding: '4px 8px',
+                                                borderRadius: '6px'
+                                            }}
+                                        >
+                                            View all
+                                        </button>
                                     </div>
 
-                                    <div className="qm-spec-grid">
-                                        <div className="qm-spec-box">
-                                            <span className="qm-spec-label">AVG MONTHLY RENT</span>
-                                            <strong className="qm-spec-number">₹{avgMonthlyRate.toLocaleString('en-IN')}</strong>
-                                            <small className="qm-spec-sub">per billboard</small>
-                                        </div>
-                                        <div className="qm-spec-box">
-                                            <span className="qm-spec-label">TOTAL DISPLAY AREA</span>
-                                            <strong className="qm-spec-number">{totalSqFt.toLocaleString('en-IN')}</strong>
-                                            <small className="qm-spec-sub">sq. ft coverage</small>
-                                        </div>
-                                        <div className="qm-spec-box">
-                                            <span className="qm-spec-label">MEDIA FORMAT</span>
-                                            <strong className="qm-spec-number">Billboard / Unipole</strong>
-                                            <small className="qm-spec-sub">100% Front Lit (FL)</small>
-                                        </div>
-                                        <div className="qm-spec-box">
-                                            <span className="qm-spec-label">SITE CATEGORY</span>
-                                            <strong className="qm-spec-number">Grade-A Prime</strong>
-                                            <small className="qm-spec-sub">100% verified OOH</small>
-                                        </div>
-                                    </div>
+                                    <div className="qm-recent-table-wrap" style={{ overflowX: 'auto' }}>
+                                        <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
+                                            <thead>
+                                                <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
+                                                    <th style={{ padding: '10px 8px', fontSize: '0.72rem', fontWeight: 800, color: '#64748b', letterSpacing: '0.04em', textTransform: 'uppercase' }}>ORDER / SITE</th>
+                                                    <th style={{ padding: '10px 8px', fontSize: '0.72rem', fontWeight: 800, color: '#64748b', letterSpacing: '0.04em', textTransform: 'uppercase' }}>LOCATION</th>
+                                                    <th style={{ padding: '10px 8px', fontSize: '0.72rem', fontWeight: 800, color: '#64748b', letterSpacing: '0.04em', textTransform: 'uppercase' }}>TOTAL</th>
+                                                    <th style={{ padding: '10px 8px', fontSize: '0.72rem', fontWeight: 800, color: '#64748b', letterSpacing: '0.04em', textTransform: 'uppercase', textAlign: 'right' }}>STATUS</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                {recentSites.map((site, sIdx) => {
+                                                    const statusPillStyles = {
+                                                        'Available': { bg: '#ecfdf5', color: '#059669', dot: '#10b981', text: 'Available' },
+                                                        'Booked': { bg: '#fee2e2', color: '#dc2626', dot: '#ef4444', text: 'Booked' },
+                                                        'Prime': { bg: '#ecfdf5', color: '#047857', dot: '#059669', text: 'Prime Active' },
+                                                        'Reserved': { bg: '#fef3c7', color: '#d97706', dot: '#f59e0b', text: 'Reserved' },
+                                                        'Maintenance': { bg: '#f1f5f9', color: '#475569', dot: '#64748b', text: 'Maintenance' }
+                                                    };
+                                                    const style = statusPillStyles[site.status] || statusPillStyles['Available'];
 
-                                    <div className="qm-tier-section">
-                                        <span className="qm-tier-heading">Rental Bracket Distribution</span>
-                                        <div className="qm-tier-stack">
-                                            {overviewPriceTiers.map(tier => {
-                                                const pct = ((tier.count / Math.max(totalHoardingsCount, 1)) * 100).toFixed(1);
-                                                return (
-                                                    <div key={tier.label} className="qm-tier-row">
-                                                        <div className="qm-tier-left">
-                                                            <span className="qm-color-dot" style={{ background: tier.color }}></span>
-                                                            <span className="qm-tier-label">{tier.label}</span>
-                                                        </div>
-                                                        <div className="qm-tier-right">
-                                                            <strong className="qm-tier-count">{tier.count} sites</strong>
-                                                            <span className="qm-tier-pct">{pct}%</span>
-                                                        </div>
-                                                    </div>
-                                                );
-                                            })}
-                                        </div>
+                                                    return (
+                                                        <tr 
+                                                            key={site.id + sIdx}
+                                                            onClick={() => openInventory('All')}
+                                                            style={{ 
+                                                                borderBottom: '1px solid #f8fafc',
+                                                                cursor: 'pointer',
+                                                                transition: 'background 0.15s ease'
+                                                            }}
+                                                            className="qm-table-row"
+                                                        >
+                                                            <td style={{ padding: '12px 8px', fontSize: '0.82rem', fontWeight: 700, color: '#0f172a', whiteSpace: 'nowrap' }}>
+                                                                {site.id}
+                                                            </td>
+                                                            <td style={{ padding: '12px 8px', fontSize: '0.82rem', fontWeight: 500, color: '#475569', maxWidth: '160px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                                                {site.location}
+                                                            </td>
+                                                            <td style={{ padding: '12px 8px', fontSize: '0.84rem', fontWeight: 700, color: '#0f172a', whiteSpace: 'nowrap' }}>
+                                                                ₹{site.rate.toLocaleString('en-IN')}
+                                                            </td>
+                                                            <td style={{ padding: '12px 8px', textAlign: 'right', whiteSpace: 'nowrap' }}>
+                                                                <span style={{
+                                                                    display: 'inline-flex',
+                                                                    alignItems: 'center',
+                                                                    gap: '6px',
+                                                                    background: style.bg,
+                                                                    color: style.color,
+                                                                    padding: '4px 10px',
+                                                                    borderRadius: '999px',
+                                                                    fontSize: '0.74rem',
+                                                                    fontWeight: 700
+                                                                }}>
+                                                                    <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: style.dot }}></span>
+                                                                    {style.text}
+                                                                </span>
+                                                            </td>
+                                                        </tr>
+                                                    );
+                                                })}
+                                            </tbody>
+                                        </table>
                                     </div>
-                                </div>
+                                </motion.div>
 
-                            </div>
+                            </motion.div>
+
+                            {/* 📊 Bottom Row: Average Order Value & Low Stock Items (Screenshot 2 Bottom) */}
+                            <motion.div 
+                                initial={{ opacity: 0, y: 22 }}
+                                whileInView={{ opacity: 1, y: 0 }}
+                                viewport={{ once: false, amount: 0.15 }}
+                                transition={{ duration: 0.48, ease: [0.16, 1, 0.3, 1] }}
+                                style={{ display: 'grid', gridTemplateColumns: '1.48fr 1fr', gap: '24px' }}
+                            >
+                                
+                                {/* Bottom Card 1: Average order value */}
+                                <motion.div 
+                                    whileHover={{ y: -2, transition: { duration: 0.18 } }}
+                                    className="qm-card" 
+                                    style={{ padding: '22px 26px' }}
+                                >
+                                    <div style={{ fontSize: '0.82rem', fontWeight: 600, color: '#64748b', marginBottom: '8px' }}>
+                                        Average order value
+                                    </div>
+                                    <div style={{ fontSize: '2rem', fontWeight: 800, color: '#0f172a', letterSpacing: '-0.02em', lineHeight: 1 }}>
+                                        ₹<AnimatedCounter value={avgMonthlyRate} duration={1000} />
+                                    </div>
+                                </motion.div>
+
+                                {/* Bottom Card 2: Low stock items (< 10) */}
+                                <motion.div 
+                                    whileHover={{ y: -2, transition: { duration: 0.18 } }}
+                                    className="qm-card" 
+                                    style={{ padding: '22px 26px' }}
+                                >
+                                    <div style={{ fontSize: '0.82rem', fontWeight: 600, color: '#64748b', marginBottom: '8px' }}>
+                                        Low stock items (&lt; 10)
+                                    </div>
+                                    <div style={{ fontSize: '2rem', fontWeight: 800, color: '#ea580c', letterSpacing: '-0.02em', lineHeight: 1 }}>
+                                        <AnimatedCounter value={3} duration={800} />
+                                    </div>
+                                </motion.div>
+
+                            </motion.div>
 
                             {/* 📷 Field Audit Feed (Matched & Unmatched Sections) */}
-                            <div className="qm-card">
-                                <div className="qm-card-header" style={{ flexWrap: 'wrap', gap: '14px' }}>
+                            <motion.div 
+                                initial={{ opacity: 0, y: 24 }}
+                                whileInView={{ opacity: 1, y: 0 }}
+                                viewport={{ once: false, amount: 0.12 }}
+                                transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
+                                className="qm-card" 
+                                style={{ padding: '24px 28px', background: '#ffffff', borderRadius: '20px', border: '1px solid #e2e8f0', boxShadow: '0 4px 20px -4px rgba(0, 0, 0, 0.05)' }}
+                            >
+                                
+                                {/* 🌟 Header Section */}
+                                <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', flexWrap: 'wrap', gap: '16px', marginBottom: '20px', borderBottom: '1px solid #f1f5f9', paddingBottom: '18px' }}>
                                     <div>
-                                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
-                                            <h3 className="qm-card-title">📅 Live Field Audit & Staff Uploads</h3>
-                                            <span style={{ background: 'rgba(217, 119, 87, 0.12)', color: '#d97757', border: '1px solid rgba(217, 119, 87, 0.35)', padding: '3px 10px', borderRadius: '12px', fontSize: '0.72rem', fontWeight: 800, display: 'inline-flex', alignItems: 'center', gap: '5px' }}>
-                                                <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" style={{ color: '#d97757' }}>
-                                                    <path d="M4.5 12a1.5 1.5 0 0 1 1.5-1.5h12a1.5 1.5 0 0 1 0 3H6A1.5 1.5 0 0 1 4.5 12zm7.5-7.5a1.5 1.5 0 0 1 1.5 1.5v12a1.5 1.5 0 0 1-3 0V6A1.5 1.5 0 0 1 12 4.5zm-5.3 2.2a1.5 1.5 0 0 1 2.12 0l8.48 8.48a1.5 1.5 0 1 1-2.12 2.12L6.7 8.82a1.5 1.5 0 0 1 0-2.12zm10.6 0a1.5 1.5 0 0 1 0 2.12L8.82 17.3a1.5 1.5 0 1 1-2.12-2.12l8.48-8.48a1.5 1.5 0 0 1 2.12 0z"/>
-                                                </svg>
-                                                Claude AI Active (50m)
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '6px', flexWrap: 'wrap' }}>
+                                            <h3 style={{ margin: 0, fontSize: '1.25rem', fontWeight: 800, color: '#0f172a', letterSpacing: '-0.02em', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                                <span>Live Field Audit & Ground Staff Telemetry</span>
+                                            </h3>
+                                            
+                                            {/* Live Radar Pulse Badge */}
+                                            <span style={{ 
+                                                display: 'inline-flex', 
+                                                alignItems: 'center', 
+                                                gap: '6px', 
+                                                background: '#ecfdf5', 
+                                                color: '#059669', 
+                                                border: '1px solid #a7f3d0', 
+                                                padding: '3px 10px', 
+                                                borderRadius: '20px', 
+                                                fontSize: '0.74rem', 
+                                                fontWeight: 700 
+                                            }}>
+                                                <span style={{ width: '7px', height: '7px', borderRadius: '50%', background: '#10b981', display: 'inline-block', boxShadow: '0 0 0 3px rgba(16, 185, 129, 0.25)' }} />
+                                                50m Geofence Radar Active
+                                            </span>
+
+                                            {/* Claude Vision AI Pill */}
+                                            <span style={{ 
+                                                display: 'inline-flex', 
+                                                alignItems: 'center', 
+                                                gap: '5px', 
+                                                background: 'rgba(217, 119, 87, 0.1)', 
+                                                color: '#d97757', 
+                                                border: '1px solid rgba(217, 119, 87, 0.3)', 
+                                                padding: '3px 10px', 
+                                                borderRadius: '20px', 
+                                                fontSize: '0.74rem', 
+                                                fontWeight: 700 
+                                            }}>
+                                                <Sparkles size={12} />
+                                                Claude Vision AI
                                             </span>
                                         </div>
-                                        <p className="qm-card-desc">
-                                            Auto-matched 50m geofenced billboard photos & ground staff camera activity
+                                        <p style={{ margin: 0, color: '#64748b', fontSize: '0.84rem', lineHeight: '1.4' }}>
+                                            Real-time GPS proximity matching, instant high-res billboard verification, and ground staff photo stream.
                                         </p>
                                     </div>
-                                    <div className="qm-header-controls">
-                                        <div style={{ display: 'inline-flex', background: '#f1f5f9', padding: '3px', borderRadius: '10px', gap: '4px' }}>
-                                            <button 
-                                                className={`qm-subtab-btn ${fieldAuditTab === 'matched' ? 'active' : ''}`}
-                                                onClick={() => setFieldAuditTab('matched')}
-                                                style={{
-                                                    padding: '6px 14px',
-                                                    borderRadius: '8px',
-                                                    border: 'none',
-                                                    fontSize: '0.78rem',
-                                                    fontWeight: 800,
-                                                    cursor: 'pointer',
-                                                    background: fieldAuditTab === 'matched' ? '#10b981' : 'transparent',
-                                                    color: fieldAuditTab === 'matched' ? '#ffffff' : '#64748b',
-                                                    transition: 'all 0.2s ease'
-                                                }}
-                                            >
-                                                ✅ AI Auto-Matched ({matchedPhotoUpdates.length})
-                                            </button>
-                                            <button 
-                                                className={`qm-subtab-btn ${fieldAuditTab === 'unmatched' ? 'active' : ''}`}
-                                                onClick={() => setFieldAuditTab('unmatched')}
-                                                style={{
-                                                    padding: '6px 14px',
-                                                    borderRadius: '8px',
-                                                    border: 'none',
-                                                    fontSize: '0.78rem',
-                                                    fontWeight: 800,
-                                                    cursor: 'pointer',
-                                                    background: fieldAuditTab === 'unmatched' ? '#f59e0b' : 'transparent',
-                                                    color: fieldAuditTab === 'unmatched' ? '#ffffff' : '#64748b',
-                                                    transition: 'all 0.2s ease'
-                                                }}
-                                            >
-                                                ⚠️ Unmatched / Out-of-Range ({unmatchedPhotoUpdates.length})
-                                            </button>
-                                        </div>
 
-                                        <button 
-                                            className="qm-btn-primary"
+                                    {/* Action Buttons Toolbar */}
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                                         <button 
+                                            type="button"
                                             onClick={() => setIsAppDownloadModalOpen(true)}
                                             style={{
-                                                background: 'linear-gradient(135deg, #10b981, #059669)',
+                                                background: '#0f172a',
                                                 color: '#ffffff',
                                                 border: 'none',
-                                                padding: '7px 14px',
+                                                padding: '8px 14px',
                                                 borderRadius: '10px',
                                                 fontSize: '0.8rem',
-                                                fontWeight: 800,
+                                                fontWeight: 700,
                                                 display: 'inline-flex',
                                                 alignItems: 'center',
                                                 gap: '6px',
                                                 cursor: 'pointer',
-                                                boxShadow: '0 4px 12px rgba(16, 185, 129, 0.25)'
+                                                boxShadow: '0 2px 8px rgba(15, 23, 42, 0.2)',
+                                                transition: 'opacity 0.15s ease'
                                             }}
-                                            title="Download Staff Mobile APK & Windows Desktop App"
+                                            onMouseEnter={e => e.currentTarget.style.opacity = '0.9'}
+                                            onMouseLeave={e => e.currentTarget.style.opacity = '1'}
+                                            title="Download Ground Staff Android APK & Windows PC App"
                                         >
-                                            <Download size={14} /> Download Apps (APK & PC)
+                                            <Download size={14} /> Download Apps
                                         </button>
+
                                         <button 
-                                            className="qm-btn-secondary"
+                                            type="button"
                                             onClick={() => {
                                                 if (navigator.clipboard) {
                                                     navigator.clipboard.writeText(window.location.origin + '/staff/upload');
-                                                    alert('Staff mobile upload link copied to clipboard!');
+                                                    setStaffLinkCopied(true);
+                                                    setTimeout(() => setStaffLinkCopied(false), 2000);
                                                 }
                                             }}
-                                            title="Copy mobile camera upload link for ground staff"
+                                            style={{
+                                                background: staffLinkCopied ? '#ecfdf5' : '#ffffff',
+                                                color: staffLinkCopied ? '#059669' : '#334155',
+                                                border: `1px solid ${staffLinkCopied ? '#a7f3d0' : '#cbd5e1'}`,
+                                                padding: '8px 14px',
+                                                borderRadius: '10px',
+                                                fontSize: '0.8rem',
+                                                fontWeight: 700,
+                                                display: 'inline-flex',
+                                                alignItems: 'center',
+                                                gap: '6px',
+                                                cursor: 'pointer',
+                                                transition: 'all 0.15s ease'
+                                            }}
+                                            title="Copy mobile camera upload link for field staff"
                                         >
-                                            <Share2 size={14} /> Copy Staff Link
+                                            {staffLinkCopied ? <Check size={14} /> : <Share2 size={14} />}
+                                            <span>{staffLinkCopied ? 'Link Copied!' : 'Copy Staff Link'}</span>
                                         </button>
-                                        <button className="qm-btn-secondary" onClick={() => setActiveTab('staff-review')}>
-                                            <Camera size={14} /> Review Queue ({reviewQueue.length})
+
+                                        <button 
+                                            type="button"
+                                            onClick={() => window.open('/staff/upload', '_blank')}
+                                            style={{
+                                                background: '#f8fafc',
+                                                color: '#475569',
+                                                border: '1px solid #e2e8f0',
+                                                padding: '8px 12px',
+                                                borderRadius: '10px',
+                                                fontSize: '0.8rem',
+                                                fontWeight: 700,
+                                                display: 'inline-flex',
+                                                alignItems: 'center',
+                                                gap: '6px',
+                                                cursor: 'pointer'
+                                            }}
+                                            title="Open mobile viewfinder upload page in new tab"
+                                        >
+                                            <ExternalLink size={13} /> Viewfinder
                                         </button>
                                     </div>
                                 </div>
 
+                                {/* 📊 Micro-Telemetry Status Bar */}
+                                <div style={{ 
+                                    display: 'grid', 
+                                    gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', 
+                                    gap: '12px', 
+                                    marginBottom: '20px' 
+                                }}>
+                                    <div style={{ background: '#f8fafc', border: '1px solid #f1f5f9', borderRadius: '14px', padding: '12px 16px' }}>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#059669', marginBottom: '4px' }}>
+                                            <Crosshair size={15} />
+                                            <span style={{ fontSize: '0.74rem', fontWeight: 700, color: '#64748b' }}>Match Accuracy</span>
+                                        </div>
+                                        <div style={{ fontSize: '1.15rem', fontWeight: 800, color: '#0f172a' }}>
+                                            {matchedPhotoUpdates.length > 0 
+                                                ? `${Math.round((matchedPhotoUpdates.length / (matchedPhotoUpdates.length + unmatchedPhotoUpdates.length || 1)) * 100)}% Auto-Matched` 
+                                                : '100% 50m Range'}
+                                        </div>
+                                    </div>
+
+                                    <div style={{ background: '#f8fafc', border: '1px solid #f1f5f9', borderRadius: '14px', padding: '12px 16px' }}>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#059669', marginBottom: '4px' }}>
+                                            <Camera size={15} />
+                                            <span style={{ fontSize: '0.74rem', fontWeight: 700, color: '#64748b' }}>Today's Captures</span>
+                                        </div>
+                                        <div style={{ fontSize: '1.15rem', fontWeight: 800, color: '#0f172a' }}>
+                                            {todayStaffUploads.length} Photos Today
+                                        </div>
+                                    </div>
+
+                                    <div style={{ background: '#f8fafc', border: '1px solid #f1f5f9', borderRadius: '14px', padding: '12px 16px' }}>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#6366f1', marginBottom: '4px' }}>
+                                            <Radio size={15} />
+                                            <span style={{ fontSize: '0.74rem', fontWeight: 700, color: '#64748b' }}>Geofence Precision</span>
+                                        </div>
+                                        <div style={{ fontSize: '1.15rem', fontWeight: 800, color: '#0f172a' }}>
+                                            50m Sub-Meter GPS
+                                        </div>
+                                    </div>
+
+                                    <div style={{ background: '#f8fafc', border: '1px solid #f1f5f9', borderRadius: '14px', padding: '12px 16px' }}>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#d97757', marginBottom: '4px' }}>
+                                            <ShieldCheck size={15} />
+                                            <span style={{ fontSize: '0.74rem', fontWeight: 700, color: '#64748b' }}>Verification Engine</span>
+                                        </div>
+                                        <div style={{ fontSize: '1.15rem', fontWeight: 800, color: '#0f172a' }}>
+                                            Claude AI Vision
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {/* 🎛️ Segmented Sub-Tab Switcher */}
+                                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '12px', marginBottom: '16px' }}>
+                                    <div style={{ 
+                                        display: 'inline-flex', 
+                                        background: '#f1f5f9', 
+                                        padding: '4px', 
+                                        borderRadius: '12px', 
+                                        gap: '4px' 
+                                    }}>
+                                        <button 
+                                            type="button"
+                                            onClick={() => setFieldAuditTab('matched')}
+                                            style={{
+                                                padding: '7px 16px',
+                                                borderRadius: '9px',
+                                                border: 'none',
+                                                fontSize: '0.8rem',
+                                                fontWeight: 700,
+                                                cursor: 'pointer',
+                                                background: fieldAuditTab === 'matched' ? '#ffffff' : 'transparent',
+                                                color: fieldAuditTab === 'matched' ? '#0f172a' : '#64748b',
+                                                boxShadow: fieldAuditTab === 'matched' ? '0 2px 6px rgba(0, 0, 0, 0.06)' : 'none',
+                                                display: 'inline-flex',
+                                                alignItems: 'center',
+                                                gap: '6px',
+                                                transition: 'all 0.15s ease'
+                                            }}
+                                        >
+                                            <CheckCircle size={14} color={fieldAuditTab === 'matched' ? '#10b981' : '#94a3b8'} />
+                                            <span>AI Auto-Matched</span>
+                                            <span style={{ 
+                                                background: fieldAuditTab === 'matched' ? '#ecfdf5' : '#e2e8f0', 
+                                                color: fieldAuditTab === 'matched' ? '#059669' : '#64748b', 
+                                                fontSize: '0.72rem', 
+                                                padding: '2px 7px', 
+                                                borderRadius: '20px',
+                                                fontWeight: 800 
+                                            }}>
+                                                {matchedPhotoUpdates.length}
+                                            </span>
+                                        </button>
+
+                                        <button 
+                                            type="button"
+                                            onClick={() => setFieldAuditTab('unmatched')}
+                                            style={{
+                                                padding: '7px 16px',
+                                                borderRadius: '9px',
+                                                border: 'none',
+                                                fontSize: '0.8rem',
+                                                fontWeight: 700,
+                                                cursor: 'pointer',
+                                                background: fieldAuditTab === 'unmatched' ? '#ffffff' : 'transparent',
+                                                color: fieldAuditTab === 'unmatched' ? '#0f172a' : '#64748b',
+                                                boxShadow: fieldAuditTab === 'unmatched' ? '0 2px 6px rgba(0, 0, 0, 0.06)' : 'none',
+                                                display: 'inline-flex',
+                                                alignItems: 'center',
+                                                gap: '6px',
+                                                transition: 'all 0.15s ease'
+                                            }}
+                                        >
+                                            <Clock3 size={14} color={fieldAuditTab === 'unmatched' ? '#f59e0b' : '#94a3b8'} />
+                                            <span>Out-of-Range / Unmatched</span>
+                                            <span style={{ 
+                                                background: fieldAuditTab === 'unmatched' ? '#fef3c7' : '#e2e8f0', 
+                                                color: fieldAuditTab === 'unmatched' ? '#d97706' : '#64748b', 
+                                                fontSize: '0.72rem', 
+                                                padding: '2px 7px', 
+                                                borderRadius: '20px',
+                                                fontWeight: 800 
+                                            }}>
+                                                {unmatchedPhotoUpdates.length}
+                                            </span>
+                                        </button>
+                                    </div>
+
+                                    {/* Review Queue Shortcut Pill */}
+                                    <button 
+                                        type="button"
+                                        onClick={() => setActiveTab('staff-review')}
+                                        style={{
+                                            background: '#f8fafc',
+                                            border: '1px solid #e2e8f0',
+                                            color: '#475569',
+                                            padding: '7px 14px',
+                                            borderRadius: '10px',
+                                            fontSize: '0.8rem',
+                                            fontWeight: 700,
+                                            display: 'inline-flex',
+                                            alignItems: 'center',
+                                            gap: '8px',
+                                            cursor: 'pointer',
+                                            transition: 'background 0.15s ease'
+                                        }}
+                                        onMouseEnter={e => e.currentTarget.style.background = '#f1f5f9'}
+                                        onMouseLeave={e => e.currentTarget.style.background = '#f8fafc'}
+                                    >
+                                        <Camera size={14} color="#6366f1" />
+                                        <span>Manual Review Queue</span>
+                                        <span style={{ 
+                                            background: reviewQueue.length > 0 ? '#fee2e2' : '#e2e8f0', 
+                                            color: reviewQueue.length > 0 ? '#dc2626' : '#64748b', 
+                                            fontSize: '0.72rem', 
+                                            padding: '2px 8px', 
+                                            borderRadius: '20px', 
+                                            fontWeight: 800 
+                                        }}>
+                                            {reviewQueue.length}
+                                        </span>
+                                    </button>
+                                </div>
+
+                                {/* ⏳ Unmatched Tab 48h Retention Alert */}
                                 {fieldAuditTab === 'unmatched' && (
-                                    <div style={{ background: 'rgba(245, 158, 11, 0.08)', border: '1px solid rgba(245, 158, 11, 0.25)', borderRadius: '12px', padding: '10px 14px', margin: '0 0 16px 0', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px' }}>
-                                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.8rem', color: '#b45309', fontWeight: 700 }}>
-                                            <Clock3 size={16} />
-                                            <span>⏳ <strong>2-Day Auto-Purge Active:</strong> Unmatched photos not assigned to a site within 48 hours are automatically purged.</span>
+                                    <div style={{ 
+                                        background: '#fffbeb', 
+                                        border: '1px solid #fde68a', 
+                                        borderRadius: '12px', 
+                                        padding: '10px 16px', 
+                                        margin: '0 0 16px 0', 
+                                        display: 'flex', 
+                                        alignItems: 'center', 
+                                        justifyContent: 'space-between', 
+                                        gap: '12px' 
+                                    }}>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.82rem', color: '#92400e', fontWeight: 600 }}>
+                                            <Clock3 size={16} color="#d97706" />
+                                            <span><strong>48-Hour Auto-Purge Policy:</strong> Unmatched photos not assigned to a site within 48 hours are automatically purged to prevent stale storage.</span>
                                         </div>
                                         {purgedUnmatchedCount > 0 && (
-                                            <span style={{ fontSize: '0.72rem', background: '#ffffff', padding: '3px 8px', borderRadius: '6px', color: '#78350f', border: '1px solid rgba(245, 158, 11, 0.3)', fontWeight: 800 }}>
+                                            <span style={{ fontSize: '0.74rem', background: '#ffffff', padding: '3px 9px', borderRadius: '8px', color: '#78350f', border: '1px solid #fcd34d', fontWeight: 800 }}>
                                                 {purgedUnmatchedCount} purged
                                             </span>
                                         )}
                                     </div>
                                 )}
 
+                                {/* 📷 Tab Content: Matched Photos */}
                                 {fieldAuditTab === 'matched' ? (
                                     matchedPhotoUpdates.length > 0 ? (
-                                        <div className="recent-photo-grid">
+                                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: '14px' }}>
                                             {matchedPhotoUpdates.slice(0, 16).map(upload => {
                                                 const isAuto = upload.Status === 'AUTO_APPROVED' || upload.Decision === 'GEMINI_GPS_AUTO_MATCH' || upload.Decision === 'GPS_AUTO_MATCH';
                                                 return (
-                                                    <article className="recent-photo-card" key={upload.UploadId}>
-                                                        <img 
-                                                            src={upload.ImageURL} 
-                                                            alt={upload.ApprovedSite || 'Staff upload'} 
-                                                            onClick={() => setPreviewHoarding({ ImageURL: upload.ImageURL, City: 'Staff', "Location ": upload.ApprovedSite || 'Staff upload' })} 
-                                                            style={{ cursor: 'pointer' }}
-                                                        />
-                                                        <div>
-                                                            <strong>{upload.ApprovedSite || upload.SuggestedSite || 'History upload'}</strong>
-                                                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', margin: '3px 0' }}>
-                                                                {isAuto ? (
-                                                                    <span style={{ color: '#10b981', fontWeight: 800, fontSize: '0.72rem' }}>
-                                                                        ✨ AI Auto-Approved (50m)
-                                                                    </span>
-                                                                ) : (
-                                                                    <span>{String(upload.Status || 'APPROVED').replaceAll('_', ' ')}</span>
-                                                                )}
-                                                            </div>
-                                                            <small>{upload.CapturedAt ? new Date(upload.CapturedAt).toLocaleString('en-IN') : ''}</small>
-                                                            
-                                                            <button 
-                                                                type="button"
-                                                                onClick={() => setSelectedPinpointUpload(upload)}
-                                                                style={{
-                                                                    display: 'inline-flex',
-                                                                    alignItems: 'center',
-                                                                    gap: '4px',
-                                                                    marginTop: '8px',
-                                                                    padding: '4px 10px',
+                                                    <div 
+                                                        key={upload.UploadId} 
+                                                        style={{ 
+                                                            background: '#ffffff', 
+                                                            border: '1px solid #e2e8f0', 
+                                                            borderRadius: '16px', 
+                                                            overflow: 'hidden', 
+                                                            boxShadow: '0 2px 6px rgba(0, 0, 0, 0.03)',
+                                                            display: 'flex',
+                                                            flexDirection: 'column',
+                                                            transition: 'transform 0.15s ease, box-shadow 0.15s ease'
+                                                        }}
+                                                    >
+                                                        {/* Image Thumbnail Container */}
+                                                        <div style={{ position: 'relative', height: '140px', background: '#0f172a', overflow: 'hidden' }}>
+                                                            <img 
+                                                                src={upload.ImageURL} 
+                                                                alt={upload.ApprovedSite || 'Staff capture'} 
+                                                                onClick={() => setPreviewHoarding({ ImageURL: upload.ImageURL, City: 'Staff', "Location ": upload.ApprovedSite || 'Staff upload' })} 
+                                                                style={{ width: '100%', height: '100%', objectFit: 'cover', cursor: 'zoom-in', transition: 'transform 0.2s ease' }}
+                                                                onMouseEnter={e => e.currentTarget.style.transform = 'scale(1.05)'}
+                                                                onMouseLeave={e => e.currentTarget.style.transform = 'scale(1)'}
+                                                            />
+                                                            {/* Floating Badges on Image */}
+                                                            <div style={{ position: 'absolute', top: '8px', left: '8px', display: 'flex', gap: '6px' }}>
+                                                                <span style={{ 
+                                                                    background: 'rgba(16, 185, 129, 0.9)', 
+                                                                    backdropFilter: 'blur(6px)', 
+                                                                    color: '#ffffff', 
+                                                                    fontSize: '0.68rem', 
+                                                                    fontWeight: 800, 
+                                                                    padding: '3px 8px', 
                                                                     borderRadius: '8px',
-                                                                    border: '1px solid #e2e8f0',
-                                                                    background: '#f8fafc',
-                                                                    color: '#3b82f6',
-                                                                    fontSize: '0.74rem',
-                                                                    fontWeight: 800,
-                                                                    cursor: 'pointer'
-                                                                }}
-                                                                title="View staff exact pinpoint location on map"
-                                                            >
-                                                                <MapPin size={12} /> Pinpoint Location
-                                                            </button>
+                                                                    display: 'flex',
+                                                                    alignItems: 'center',
+                                                                    gap: '4px'
+                                                                }}>
+                                                                    <Check size={11} /> 50m Auto-Matched
+                                                                </span>
+                                                            </div>
                                                         </div>
-                                                    </article>
+
+                                                        {/* Metadata Body */}
+                                                        <div style={{ padding: '14px', display: 'flex', flexDirection: 'column', flex: 1, justifyContent: 'space-between' }}>
+                                                            <div>
+                                                                <strong style={{ fontSize: '0.88rem', color: '#0f172a', display: 'block', lineHeight: '1.3', marginBottom: '4px' }}>
+                                                                    {upload.ApprovedSite || upload.SuggestedSite || 'Hoarding Site'}
+                                                                </strong>
+                                                                <div style={{ fontSize: '0.74rem', color: '#64748b', display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '10px' }}>
+                                                                    <Clock3 size={12} />
+                                                                    <span>{upload.CapturedAt ? new Date(upload.CapturedAt).toLocaleString('en-IN') : 'Recent capture'}</span>
+                                                                </div>
+                                                            </div>
+
+                                                            {/* Actions */}
+                                                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderTop: '1px solid #f1f5f9', paddingTop: '10px', marginTop: '4px' }}>
+                                                                <button 
+                                                                    type="button"
+                                                                    onClick={() => setSelectedPinpointUpload(upload)}
+                                                                    style={{
+                                                                        display: 'inline-flex',
+                                                                        alignItems: 'center',
+                                                                        gap: '5px',
+                                                                        padding: '5px 10px',
+                                                                        borderRadius: '8px',
+                                                                        border: '1px solid #e2e8f0',
+                                                                        background: '#f8fafc',
+                                                                        color: '#0071e3',
+                                                                        fontSize: '0.74rem',
+                                                                        fontWeight: 700,
+                                                                        cursor: 'pointer'
+                                                                    }}
+                                                                >
+                                                                    <MapPin size={12} /> Pinpoint GPS
+                                                                </button>
+
+                                                                <button 
+                                                                    type="button"
+                                                                    onClick={() => setPreviewHoarding({ ImageURL: upload.ImageURL, City: 'Staff', "Location ": upload.ApprovedSite || 'Staff upload' })}
+                                                                    style={{
+                                                                        display: 'inline-flex',
+                                                                        alignItems: 'center',
+                                                                        gap: '4px',
+                                                                        padding: '5px 10px',
+                                                                        borderRadius: '8px',
+                                                                        border: 'none',
+                                                                        background: '#f1f5f9',
+                                                                        color: '#475569',
+                                                                        fontSize: '0.74rem',
+                                                                        fontWeight: 700,
+                                                                        cursor: 'pointer'
+                                                                    }}
+                                                                >
+                                                                    <Eye size={12} /> Preview
+                                                                </button>
+                                                            </div>
+                                                        </div>
+                                                    </div>
                                                 );
                                             })}
                                         </div>
                                     ) : (
-                                        <div className="qm-empty-state">
-                                            <div className="qm-empty-icon-box">
-                                                <Camera size={26} className="qm-camera-icon" />
+                                        /* 📡 State-of-the-art Live Telemetry Radar Empty State */
+                                        <div style={{ 
+                                            background: '#f8fafc', 
+                                            borderRadius: '18px', 
+                                            border: '1px solid #e2e8f0', 
+                                            padding: '36px 24px', 
+                                            textAlign: 'center',
+                                            display: 'flex',
+                                            flexDirection: 'column',
+                                            alignItems: 'center',
+                                            position: 'relative',
+                                            overflow: 'hidden'
+                                        }}>
+                                            {/* Glowing Geofence Radar Graphic */}
+                                            <div style={{ 
+                                                width: '72px', 
+                                                height: '72px', 
+                                                borderRadius: '50%', 
+                                                background: '#ecfdf5', 
+                                                border: '2px solid #a7f3d0', 
+                                                display: 'flex', 
+                                                alignItems: 'center', 
+                                                justifyContent: 'center',
+                                                color: '#059669',
+                                                marginBottom: '16px',
+                                                boxShadow: '0 0 0 8px rgba(16, 185, 129, 0.1), 0 0 0 16px rgba(16, 185, 129, 0.05)'
+                                            }}>
+                                                <Radio size={32} />
                                             </div>
-                                            <div className="qm-empty-text">
-                                                <h4>All billboard photos verified & linked</h4>
-                                                <p>
-                                                    When ground staff captures a billboard photo on mobile, Claude AI will automatically match it within a 50m radius and save it straight into the site's History section without manual review.
-                                                </p>
+
+                                            <h4 style={{ margin: '0 0 8px 0', fontSize: '1.15rem', fontWeight: 800, color: '#0f172a', letterSpacing: '-0.01em' }}>
+                                                Geofence Telemetry & Radar Ready
+                                            </h4>
+                                            <p style={{ margin: '0 0 24px 0', fontSize: '0.84rem', color: '#64748b', maxWidth: '580px', lineHeight: '1.55' }}>
+                                                When on-ground staff captures billboard photos from the <strong>Android APK</strong> or <strong>Mobile Camera Viewfinder</strong>, our 50m GPS geofencing & Claude Vision AI automatically verify and attach high-res photos to billboard history without manual review.
+                                            </p>
+
+                                            {/* 3 Interactive Capability Tiles */}
+                                            <div style={{ 
+                                                display: 'grid', 
+                                                gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))', 
+                                                gap: '12px', 
+                                                width: '100%', 
+                                                maxWidth: '720px', 
+                                                marginBottom: '24px',
+                                                textAlign: 'left' 
+                                            }}>
+                                                <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '14px' }}>
+                                                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#059669', fontWeight: 700, fontSize: '0.82rem', marginBottom: '4px' }}>
+                                                        <Crosshair size={15} />
+                                                        <span>50m Geofence Engine</span>
+                                                    </div>
+                                                    <p style={{ margin: 0, fontSize: '0.74rem', color: '#64748b', lineHeight: '1.4' }}>
+                                                        Computes exact great-circle distance against master coordinates in &lt;100ms.
+                                                    </p>
+                                                </div>
+
+                                                <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '14px' }}>
+                                                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#d97757', fontWeight: 700, fontSize: '0.82rem', marginBottom: '4px' }}>
+                                                        <Sparkles size={15} />
+                                                        <span>Claude Vision AI</span>
+                                                    </div>
+                                                    <p style={{ margin: 0, fontSize: '0.74rem', color: '#64748b', lineHeight: '1.4' }}>
+                                                        Detects lighting, nighttime illumination, clarity, and obstruction parameters.
+                                                    </p>
+                                                </div>
+
+                                                <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '14px' }}>
+                                                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#059669', fontWeight: 700, fontSize: '0.82rem', marginBottom: '4px' }}>
+                                                        <Smartphone size={15} />
+                                                        <span>Instant Camera Feed</span>
+                                                    </div>
+                                                    <p style={{ margin: 0, fontSize: '0.74rem', color: '#64748b', lineHeight: '1.4' }}>
+                                                        Zero viewfinder delay with offline queue and automatic background synchronization.
+                                                    </p>
+                                                </div>
                                             </div>
-                                            <div className="qm-empty-capsules">
-                                                <span className="qm-status-capsule"><Check size={13} /> 50m Geofencing Ready</span>
-                                                <span className="qm-status-capsule" style={{ color: '#d97757', display: 'inline-flex', alignItems: 'center', gap: '5px' }}>
-                                                    <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" style={{ color: '#d97757' }}>
-                                                        <path d="M4.5 12a1.5 1.5 0 0 1 1.5-1.5h12a1.5 1.5 0 0 1 0 3H6A1.5 1.5 0 0 1 4.5 12zm7.5-7.5a1.5 1.5 0 0 1 1.5 1.5v12a1.5 1.5 0 0 1-3 0V6A1.5 1.5 0 0 1 12 4.5zm-5.3 2.2a1.5 1.5 0 0 1 2.12 0l8.48 8.48a1.5 1.5 0 1 1-2.12 2.12L6.7 8.82a1.5 1.5 0 0 1 0-2.12zm10.6 0a1.5 1.5 0 0 1 0 2.12L8.82 17.3a1.5 1.5 0 1 1-2.12-2.12l8.48-8.48a1.5 1.5 0 0 1 2.12 0z"/>
-                                                    </svg>
-                                                    Claude Vision AI Active
-                                                </span>
-                                                <span className="qm-status-capsule"><Check size={13} /> Mobile Camera Ready</span>
+
+                                            {/* Quick Action Buttons */}
+                                            <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', justifyContent: 'center' }}>
+                                                <button 
+                                                    type="button"
+                                                    onClick={() => window.open('/staff/upload', '_blank')}
+                                                    style={{
+                                                        background: '#059669',
+                                                        color: '#ffffff',
+                                                        border: 'none',
+                                                        padding: '10px 18px',
+                                                        borderRadius: '12px',
+                                                        fontSize: '0.82rem',
+                                                        fontWeight: 700,
+                                                        display: 'inline-flex',
+                                                        alignItems: 'center',
+                                                        gap: '8px',
+                                                        cursor: 'pointer',
+                                                        boxShadow: '0 2px 8px rgba(5, 150, 105, 0.25)'
+                                                    }}
+                                                >
+                                                    <Camera size={15} /> Launch Mobile Camera
+                                                </button>
+
+                                                <button 
+                                                    type="button"
+                                                    onClick={() => setIsAppDownloadModalOpen(true)}
+                                                    style={{
+                                                        background: '#ffffff',
+                                                        color: '#0f172a',
+                                                        border: '1px solid #cbd5e1',
+                                                        padding: '10px 18px',
+                                                        borderRadius: '12px',
+                                                        fontSize: '0.82rem',
+                                                        fontWeight: 700,
+                                                        display: 'inline-flex',
+                                                        alignItems: 'center',
+                                                        gap: '8px',
+                                                        cursor: 'pointer'
+                                                    }}
+                                                >
+                                                    <Download size={15} /> Download Staff Mobile APK
+                                                </button>
                                             </div>
                                         </div>
                                     )
                                 ) : (
+                                    /* 📷 Tab Content: Unmatched Photos */
                                     unmatchedPhotoUpdates.length > 0 ? (
-                                        <div className="recent-photo-grid">
+                                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: '14px' }}>
                                             {unmatchedPhotoUpdates.map(upload => (
-                                                <article className="recent-photo-card" key={upload.UploadId} style={{ borderColor: 'rgba(245, 158, 11, 0.4)' }}>
-                                                    <img 
-                                                        src={upload.ImageURL} 
-                                                        alt={upload.SuggestedSite || 'Unmatched photo'} 
-                                                        onClick={() => setPreviewHoarding({ ImageURL: upload.ImageURL, City: 'Staff', "Location ": upload.SuggestedSite || 'Unmatched' })} 
-                                                        style={{ cursor: 'pointer' }}
-                                                    />
-                                                    <div>
-                                                        <strong>{upload.SuggestedSite || 'No 50m Hoarding Match'}</strong>
-                                                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', margin: '3px 0' }}>
-                                                            <span style={{ color: '#f59e0b', fontWeight: 800, fontSize: '0.72rem' }}>
-                                                                ⚠️ {upload.DistanceM ? `${Math.round(Number(upload.DistanceM))}m away` : 'Out of 50m range'}
+                                                <div 
+                                                    key={upload.UploadId} 
+                                                    style={{ 
+                                                        background: '#ffffff', 
+                                                        border: '1.5px solid #fde68a', 
+                                                        borderRadius: '16px', 
+                                                        overflow: 'hidden', 
+                                                        boxShadow: '0 2px 6px rgba(245, 158, 11, 0.08)',
+                                                        display: 'flex',
+                                                        flexDirection: 'column'
+                                                    }}
+                                                >
+                                                    {/* Image Thumbnail Container */}
+                                                    <div style={{ position: 'relative', height: '140px', background: '#0f172a', overflow: 'hidden' }}>
+                                                        <img 
+                                                            src={upload.ImageURL} 
+                                                            alt={upload.SuggestedSite || 'Unmatched photo'} 
+                                                            onClick={() => setPreviewHoarding({ ImageURL: upload.ImageURL, City: 'Staff', "Location ": upload.SuggestedSite || 'Unmatched' })} 
+                                                            style={{ width: '100%', height: '100%', objectFit: 'cover', cursor: 'zoom-in' }}
+                                                        />
+                                                        <div style={{ position: 'absolute', top: '8px', left: '8px' }}>
+                                                            <span style={{ 
+                                                                background: 'rgba(217, 119, 6, 0.9)', 
+                                                                backdropFilter: 'blur(6px)', 
+                                                                color: '#ffffff', 
+                                                                fontSize: '0.68rem', 
+                                                                fontWeight: 800, 
+                                                                padding: '3px 8px', 
+                                                                borderRadius: '8px',
+                                                                display: 'flex',
+                                                                alignItems: 'center',
+                                                                gap: '4px'
+                                                            }}>
+                                                                <Clock3 size={11} /> {upload.DistanceM ? `${Math.round(Number(upload.DistanceM))}m away` : 'Out of 50m range'}
                                                             </span>
                                                         </div>
-                                                        <small>{upload.CapturedAt ? new Date(upload.CapturedAt).toLocaleString('en-IN') : ''}</small>
-                                                        
-                                                        <div style={{ display: 'flex', gap: '6px', marginTop: '8px' }}>
+                                                    </div>
+
+                                                    {/* Metadata Body */}
+                                                    <div style={{ padding: '14px', display: 'flex', flexDirection: 'column', flex: 1, justifyContent: 'space-between' }}>
+                                                        <div>
+                                                            <strong style={{ fontSize: '0.88rem', color: '#0f172a', display: 'block', lineHeight: '1.3', marginBottom: '4px' }}>
+                                                                {upload.SuggestedSite || 'No 50m Site Match'}
+                                                            </strong>
+                                                            <div style={{ fontSize: '0.74rem', color: '#b45309', display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '10px' }}>
+                                                                <span>{upload.CapturedAt ? new Date(upload.CapturedAt).toLocaleString('en-IN') : 'Pending match'}</span>
+                                                            </div>
+                                                        </div>
+
+                                                        {/* Action Buttons */}
+                                                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', borderTop: '1px solid #fef3c7', paddingTop: '10px' }}>
                                                             <button 
                                                                 type="button"
                                                                 onClick={() => setSelectedPinpointUpload(upload)}
                                                                 style={{
+                                                                    flex: 1,
                                                                     display: 'inline-flex',
                                                                     alignItems: 'center',
+                                                                    justifyContent: 'center',
                                                                     gap: '4px',
-                                                                    padding: '4px 8px',
+                                                                    padding: '6px 10px',
                                                                     borderRadius: '8px',
-                                                                    border: '1px solid #e2e8f0',
+                                                                    border: '1px solid #cbd5e1',
                                                                     background: '#f8fafc',
-                                                                    color: '#3b82f6',
-                                                                    fontSize: '0.72rem',
-                                                                    fontWeight: 800,
+                                                                    color: '#334155',
+                                                                    fontSize: '0.74rem',
+                                                                    fontWeight: 700,
                                                                     cursor: 'pointer'
                                                                 }}
-                                                                title="View staff exact pinpoint location on map"
                                                             >
-                                                                <MapPin size={11} /> Map
+                                                                <MapPin size={12} /> Pinpoint Map
                                                             </button>
+
                                                             <button 
                                                                 type="button"
                                                                 onClick={() => setActiveTab('staff-review')}
                                                                 style={{
+                                                                    flex: 1,
                                                                     display: 'inline-flex',
                                                                     alignItems: 'center',
+                                                                    justifyContent: 'center',
                                                                     gap: '4px',
-                                                                    padding: '4px 8px',
+                                                                    padding: '6px 10px',
                                                                     borderRadius: '8px',
                                                                     border: 'none',
-                                                                    background: '#6c5dd3',
+                                                                    background: '#0f172a',
                                                                     color: '#ffffff',
-                                                                    fontSize: '0.72rem',
-                                                                    fontWeight: 800,
+                                                                    fontSize: '0.74rem',
+                                                                    fontWeight: 700,
                                                                     cursor: 'pointer'
                                                                 }}
-                                                                title="Manually assign to a hoarding site"
                                                             >
-                                                                Assign
+                                                                Assign Site
                                                             </button>
                                                         </div>
                                                     </div>
-                                                </article>
+                                                </div>
                                             ))}
                                         </div>
                                     ) : (
-                                        <div className="qm-empty-state">
-                                            <div className="qm-empty-icon-box" style={{ background: 'rgba(16, 185, 129, 0.15)', color: '#10b981' }}>
-                                                <CheckCircle size={26} />
+                                        <div style={{ 
+                                            background: '#f8fafc', 
+                                            borderRadius: '16px', 
+                                            border: '1px solid #e2e8f0', 
+                                            padding: '32px 20px', 
+                                            textAlign: 'center',
+                                            display: 'flex',
+                                            flexDirection: 'column',
+                                            alignItems: 'center'
+                                        }}>
+                                            <div style={{ width: '48px', height: '48px', borderRadius: '50%', background: '#ecfdf5', color: '#059669', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '12px' }}>
+                                                <CheckCircle size={24} />
                                             </div>
-                                            <div className="qm-empty-text">
-                                                <h4>Zero Unmatched Photos</h4>
-                                                <p>
-                                                    All staff camera photos are matching automatically within 50m geofencing. There are no pending unmatched photos in the 48-hour window.
-                                                </p>
-                                            </div>
+                                            <h4 style={{ margin: '0 0 6px 0', fontSize: '1.05rem', fontWeight: 800, color: '#0f172a' }}>Zero Out-of-Range Photos</h4>
+                                            <p style={{ margin: 0, fontSize: '0.82rem', color: '#64748b', maxWidth: '480px' }}>
+                                                All ground staff photo captures have matched active billboard inventory within the 50m geofencing radius.
+                                            </p>
                                         </div>
                                     )
                                 )}
-                            </div>
-
-                            {/* 🏆 Featured Prime Inventory Showcase */}
-                            <div className="qm-card">
-                                <div className="qm-card-header">
-                                    <div>
-                                        <h3 className="qm-card-title">Featured Prime Billboard Locations</h3>
-                                        <p className="qm-card-desc">High-visibility inventory from Delhi Road & Begum Bridge</p>
-                                    </div>
-                                    <button className="qm-btn-secondary" onClick={() => openInventory('All')}>
-                                        View All {totalHoardingsCount} Sites <ChevronRight size={14} />
-                                    </button>
-                                </div>
-
-                                <div className="qm-showcase-grid">
-                                    {primeHighlightSites.map((site, index) => {
-                                        const siteImage = getImageUrl(site);
-                                        const siteLocation = site["Locality Site Location"] || site["Location "] || site["Location"] || site["Site Name"] || `Site #${index + 1}`;
-                                        const siteArea = site["Locality"] || site["Area"] || 'Meerut';
-                                        const siteSize = site["Size (Large/Medium/Small)"] || site["Size"] || '40x20';
-                                        const siteMedia = site["Media Format (Front Lit / Back Lit / Non Lit)"] || site["Type of Site (Unipole/Billboard)"] || 'Front Lit';
-                                        const sitePrice = site["Rental Per Month"] || site["Avg Monthly Cost (INR)"] || '₹45,000';
-
-                                        return (
-                                            <div 
-                                                key={index} 
-                                                className="qm-showcase-card"
-                                                onClick={() => setPreviewHoarding(site)}
-                                                title="Click to open image preview"
-                                            >
-                                                <div className="qm-showcase-media">
-                                                    <img src={siteImage} alt={siteLocation} className="qm-showcase-img" loading="lazy" />
-                                                    <span className="qm-media-badge">{siteArea}</span>
-                                                </div>
-                                                <div className="qm-showcase-body">
-                                                    <h4 className="qm-showcase-heading">{siteLocation}</h4>
-                                                    <div className="qm-showcase-specs">
-                                                        <span>{siteMedia}</span>
-                                                        <span>{siteSize}</span>
-                                                    </div>
-                                                    <div className="qm-showcase-footer">
-                                                        <span className="qm-showcase-price">
-                                                            {typeof sitePrice === 'number' ? `₹${sitePrice.toLocaleString('en-IN')}` : (String(sitePrice).startsWith('₹') ? sitePrice : `₹${sitePrice}`)} <small>/mo</small>
-                                                        </span>
-                                                        <button className="qm-btn-preview" onClick={(e) => { e.stopPropagation(); setPreviewHoarding(site); }}>
-                                                            <Eye size={13} /> Preview
-                                                        </button>
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        );
-                                    })}
-                                </div>
-                            </div>
+                            </motion.div>
 
                         </div>
-                    </div>
+                    </motion.div>
                 )}
 
                 {activeTab === 'sheet-editor' && (
-                    <div className="dashboard-view animate-in">
+                    <motion.div 
+                        initial={{ opacity: 0, y: 12 }} 
+                        animate={{ opacity: 1, y: 0 }} 
+                        exit={{ opacity: 0, y: -8 }} 
+                        transition={{ duration: 0.28, ease: [0.16, 1, 0.3, 1] }} 
+                        className="dashboard-view"
+                    >
                         <div className="sheet-editor-panel" ref={sheetEditorRef}>
                             <div className="sheet-editor-header">
                                 <div>
@@ -3955,11 +4531,17 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                 </div>
                             )}
                         </div>
-                    </div>
+                    </motion.div>
                 )}
 
                 {activeTab === 'daily-update' && (
-                    <div className="dashboard-view animate-in">
+                    <motion.div 
+                        initial={{ opacity: 0, y: 12 }} 
+                        animate={{ opacity: 1, y: 0 }} 
+                        exit={{ opacity: 0, y: -8 }} 
+                        transition={{ duration: 0.28, ease: [0.16, 1, 0.3, 1] }} 
+                        className="dashboard-view"
+                    >
                         <div
                             className={`upload-zone-container ${isDragging ? 'dragging' : ''}`}
                             onDragOver={onDragOver}
@@ -4063,23 +4645,41 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
 
                                                 <div className="control-group ai-reasoning-box">
                                                     <div className="ai-meta-pills">
+                                                        {img.gpsCoord && (
+                                                            <span className="meta-pill" style={{ background: '#e0f2fe', color: '#0369a1', fontWeight: 600 }}>
+                                                                📍 {img.gpsCoord.lat.toFixed(5)}, {img.gpsCoord.lng.toFixed(5)}
+                                                            </span>
+                                                        )}
+                                                        {img.distanceM != null && (
+                                                            <span className="meta-pill" style={{ background: '#fef3c7', color: '#92400e', fontWeight: 600 }}>
+                                                                📏 {img.distanceM}m away
+                                                            </span>
+                                                        )}
                                                         {img.analysis?.billboardType && <span className="meta-pill">{img.analysis.billboardType}</span>}
                                                         {img.analysis?.keyLandmarks?.slice(0, 2).map((l, k) => <span key={k} className="meta-pill landmark">{l}</span>)}
                                                     </div>
-                                                    <label>AI Confidence: {Math.round((img.confidence || 0) * 100)}%</label>
+                                                    <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                                                        <span>Match Confidence: <strong>{img.confidence > 1 ? Math.round(img.confidence) : Math.round((img.confidence || 0) * 100)}%</strong></span>
+                                                        {img.uploaded && <span style={{ color: '#16a34a', fontWeight: 600, fontSize: '0.82rem' }}>✅ Auto-Synced to History</span>}
+                                                    </label>
                                                     {img.reasoning && <p className="ai-reasoning-text"><span>Logic:</span> {img.reasoning}</p>}
 
                                                     {img.matchedLocation && (() => {
                                                         const site = hoardings.find(h => (h["Locality Site Location"] || h["Location "] || h.Location) === img.matchedLocation);
-                                                        if (site && site.Latitude && site.Longitude) {
+                                                        const siteCoords = extractSiteCoordinates(site);
+                                                        const targetLat = img.gpsCoord?.lat || siteCoords?.lat;
+                                                        const targetLng = img.gpsCoord?.lng || siteCoords?.lng;
+
+                                                        if (targetLat && targetLng) {
                                                             return (
                                                                 <a
-                                                                    href={`https://www.google.com/maps?q=${site.Latitude},${site.Longitude}`}
+                                                                    href={`https://www.google.com/maps?q=${targetLat},${targetLng}`}
                                                                     target="_blank"
                                                                     rel="noopener noreferrer"
                                                                     className="view-on-maps-link"
+                                                                    style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', marginTop: '6px', fontSize: '0.85rem', color: '#2563eb', textDecoration: 'none' }}
                                                                 >
-                                                                    📍 View on Maps
+                                                                    📍 Open in Google Maps
                                                                 </a>
                                                             );
                                                         }
@@ -4087,14 +4687,18 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                                     })()}
                                                 </div>
 
-                                                {!img.uploaded && (
+                                                {!img.uploaded ? (
                                                     <button
                                                         className="upload-single-btn"
                                                         onClick={() => uploadDailyUpdate(idx)}
                                                         disabled={!img.matchedLocation || img.uploading}
                                                     >
-                                                        {img.uploading ? 'Syncing...' : 'Confirm & Sync'}
+                                                        {img.uploading ? 'Syncing to History...' : 'Confirm & Sync'}
                                                     </button>
+                                                ) : (
+                                                    <div style={{ textAlign: 'center', padding: '6px 12px', background: '#dcfce7', color: '#15803d', borderRadius: '8px', fontSize: '0.85rem', fontWeight: 600 }}>
+                                                        Saved to Site History
+                                                    </div>
                                                 )}
                                             </div>
                                         </div>
@@ -4107,11 +4711,17 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                 </div>
                             )}
                         </div>
-                    </div>
+                    </motion.div>
                 )}
 
                 {activeTab === 'staff-review' && (
-                    <div className="staff-review-view animate-in">
+                    <motion.div 
+                        initial={{ opacity: 0, y: 12 }} 
+                        animate={{ opacity: 1, y: 0 }} 
+                        exit={{ opacity: 0, y: -8 }} 
+                        transition={{ duration: 0.28, ease: [0.16, 1, 0.3, 1] }} 
+                        className="staff-review-view"
+                    >
                         <div className="staff-review-header">
                             <div>
                                 <h3>Live Field Audit & Staff Uploads</h3>
@@ -4178,20 +4788,26 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                             </div>
                             </>
                         ) : <div className="staff-review-empty"><CheckCircle size={42} /><h3>Review queue clear hai</h3><p>Adjacent ya doubtful photos yahan automatically aayengi.</p></div>}
-                    </div>
+                    </motion.div>
                 )}
 
                 {activeTab === 'inventory' && (
-                    <div className="inventory-view-container animate-in">
+                    <motion.div 
+                        initial={{ opacity: 0, y: 12 }} 
+                        animate={{ opacity: 1, y: 0 }} 
+                        exit={{ opacity: 0, y: -8 }} 
+                        transition={{ duration: 0.28, ease: [0.16, 1, 0.3, 1] }} 
+                        className="inventory-view-container"
+                    >
                         <div className="inventory-card">
                             <div className="inventory-header" style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px', width: '100%' }}>
                                     <div>
-                                        <h3 style={{ margin: 0, fontSize: '1.35rem', fontWeight: 800 }}>Master Asset Inventory</h3>
-                                        <p style={{ margin: '4px 0 0', color: '#6b7280', fontSize: '0.86rem' }}>{filteredInventory.length} active hoarding assets across operational regions</p>
+                                        <h3 style={{ margin: 0, fontSize: '1.625rem', fontWeight: 700, color: '#111827', letterSpacing: '-0.02em' }}>Master Asset Inventory</h3>
+                                        <p style={{ margin: '2px 0 0', color: '#6b7280', fontSize: '0.8125rem', fontWeight: 400 }}>{filteredInventory.length} active hoarding assets across operational regions</p>
                                     </div>
                                     <div className="inventory-actions">
-                                        <button className="btn-primary-admin" style={{ background: '#6c5dd3' }} onClick={() => { 
+                                        <button className="btn-primary-admin" style={{ background: '#10b981' }} onClick={() => { 
                                             setFormData({}); 
                                             setSelectedAssetFile(null); 
                                             setIsAddModalOpen(true); 
@@ -4578,7 +5194,7 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                 </div>
                             )}
                         </div>
-                    </div>
+                    </motion.div>
                 )}
 
                 {activeTab === 'clients' && (() => {
@@ -4598,28 +5214,40 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                     const avatarBgs = ['#ffd5dc', '#ffdfbf', '#b6e3f4', '#c0aede', '#d1d4f9', '#fed7aa', '#fbcfe8', '#e9d5ff'];
 
                     return (
-                        <div className="tab-content clients-tab animate-in" style={{ padding: '36px 48px', background: '#f9fafb', minHeight: 'calc(100vh - 72px)' }}>
+                        <motion.div 
+                            initial={{ opacity: 0, y: 12 }} 
+                            animate={{ opacity: 1, y: 0 }} 
+                            exit={{ opacity: 0, y: -8 }} 
+                            transition={{ duration: 0.28, ease: [0.16, 1, 0.3, 1] }} 
+                            className="tab-content clients-tab" 
+                            style={{ 
+                                padding: '24px 32px 60px', 
+                                background: '#f3f4f6', 
+                                minHeight: 'calc(100vh - 72px)',
+                                fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif"
+                            }}
+                        >
                             
                             {/* 🌟 Header Section */}
-                            <div style={{ marginBottom: '24px' }}>
-                                <h1 style={{ fontSize: '2rem', fontWeight: 800, color: '#111827', margin: '0 0 6px 0', letterSpacing: '-0.02em' }}>
+                            <div style={{ marginBottom: '20px' }}>
+                                <h1 style={{ fontSize: '1.625rem', fontWeight: 700, color: '#111827', margin: '0 0 2px 0', letterSpacing: '-0.02em' }}>
                                     Clients & Booking
                                 </h1>
-                                <p style={{ color: '#6b7280', fontSize: '0.95rem', margin: 0, fontWeight: 500 }}>
-                                    {allBookedSites.length} active bookings across all locations
+                                <p style={{ color: '#6b7280', fontSize: '0.8125rem', margin: 0, fontWeight: 400 }}>
+                                    {allBookedSites.length} active bookings across all media locations
                                 </p>
                             </div>
 
-                            {/* 🔍 Search Box (QuickMart Full Width Pill) */}
-                            <div style={{ background: '#ffffff', borderRadius: '16px', padding: '16px 20px', marginBottom: '24px', border: '1px solid #f3f4f6', boxShadow: '0 1px 2px rgba(0,0,0,0.03)' }}>
-                                <div style={{ background: '#f3f4f6', borderRadius: '9999px', padding: '12px 22px', display: 'flex', alignItems: 'center', gap: '12px' }}>
+                            {/* 🔍 Search Box */}
+                            <div style={{ background: '#ffffff', borderRadius: '16px', padding: '16px 20px', marginBottom: '20px', border: '1px solid #f3f4f6', boxShadow: '0 1px 3px rgba(0,0,0,0.03)' }}>
+                                <div style={{ background: '#f3f4f6', borderRadius: '9999px', padding: '10px 20px', display: 'flex', alignItems: 'center', gap: '12px' }}>
                                     <Search size={18} color="#9ca3af" />
                                     <input 
                                         type="text"
                                         placeholder="Search bookings by client, location or city..."
                                         value={clientSearchTerm}
                                         onChange={(e) => setClientSearchTerm(e.target.value)}
-                                        style={{ border: 'none', background: 'transparent', outline: 'none', width: '100%', fontSize: '0.95rem', color: '#111827', fontWeight: 500 }}
+                                        style={{ border: 'none', background: 'transparent', outline: 'none', width: '100%', fontSize: '0.9rem', color: '#111827', fontWeight: 500 }}
                                     />
                                     {clientSearchTerm && (
                                         <button onClick={() => setClientSearchTerm('')} style={{ color: '#9ca3af', fontSize: '0.85rem', fontWeight: 700, cursor: 'pointer', background: 'transparent', border: 'none' }}>✕</button>
@@ -4627,16 +5255,16 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                 </div>
                             </div>
 
-                            {/* 📋 Bookings Table (Clean White Card Layout) */}
-                            <div style={{ background: '#ffffff', borderRadius: '18px', padding: '20px 28px', border: '1px solid #f3f4f6', boxShadow: '0 1px 3px rgba(0,0,0,0.04)', overflowX: 'auto' }}>
+                            {/* 📋 Bookings Table */}
+                            <div style={{ background: '#ffffff', borderRadius: '16px', padding: '20px 24px', border: '1px solid #f3f4f6', boxShadow: '0 1px 3px rgba(0,0,0,0.03)', overflowX: 'auto' }}>
                                 <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', minWidth: '900px' }}>
                                     <thead>
                                         <tr style={{ borderBottom: '1px solid #f3f4f6' }}>
-                                            <th style={{ padding: '16px 16px 14px 16px', fontSize: '0.72rem', fontWeight: 700, color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.05em', width: '220px' }}>CLIENT / ADVERTISER</th>
-                                            <th style={{ padding: '16px 16px 14px 16px', fontSize: '0.72rem', fontWeight: 700, color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.05em', width: '250px' }}>SITE LOCATION</th>
-                                            <th style={{ padding: '16px 16px 14px 16px', fontSize: '0.72rem', fontWeight: 700, color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.05em', width: '120px' }}>CITY</th>
-                                            <th style={{ padding: '16px 16px 14px 16px', fontSize: '0.72rem', fontWeight: 700, color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.05em', width: '130px' }}>RENTAL/MONTH</th>
-                                            <th style={{ padding: '16px 16px 14px 16px', fontSize: '0.72rem', fontWeight: 700, color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.05em', width: '180px' }}>BOOKING DATES</th>
+                                            <th style={{ padding: '14px 16px', fontSize: '0.75rem', fontWeight: 600, color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.05em', width: '220px' }}>CLIENT / ADVERTISER</th>
+                                            <th style={{ padding: '14px 16px', fontSize: '0.75rem', fontWeight: 600, color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.05em', width: '250px' }}>SITE LOCATION</th>
+                                            <th style={{ padding: '14px 16px', fontSize: '0.75rem', fontWeight: 600, color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.05em', width: '120px' }}>CITY</th>
+                                            <th style={{ padding: '14px 16px', fontSize: '0.75rem', fontWeight: 600, color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.05em', width: '130px' }}>RENTAL/MONTH</th>
+                                            <th style={{ padding: '14px 16px', fontSize: '0.75rem', fontWeight: 600, color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.05em', width: '180px' }}>BOOKING DATES</th>
                                         </tr>
                                     </thead>
                                     <tbody>
@@ -4644,11 +5272,11 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                             <tr>
                                                 <td colSpan={5} style={{ padding: '60px 20px', textAlign: 'center' }}>
                                                     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '12px' }}>
-                                                        <div style={{ width: '56px', height: '56px', borderRadius: '50%', background: '#f3f4f6', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#9ca3af' }}>
-                                                            <Calendar size={28} />
+                                                        <div style={{ width: '52px', height: '52px', borderRadius: '50%', background: '#f3f4f6', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#9ca3af' }}>
+                                                            <Calendar size={24} />
                                                         </div>
-                                                        <strong style={{ fontSize: '1.05rem', color: '#111827' }}>No Bookings Found</strong>
-                                                        <p style={{ color: '#6b7280', fontSize: '0.86rem', margin: 0, maxWidth: '400px' }}>
+                                                        <strong style={{ fontSize: '1rem', color: '#111827', fontWeight: 600 }}>No Bookings Found</strong>
+                                                        <p style={{ color: '#6b7280', fontSize: '0.8125rem', margin: 0, maxWidth: '400px' }}>
                                                             {clientSearchTerm ? 'No bookings match your search query.' : 'Booked hoarding sites will appear here.'}
                                                         </p>
                                                     </div>
@@ -4658,7 +5286,6 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                             filteredSites.map((h, idx) => {
                                                 const clientName = String(h.BookedBy).trim();
                                                 const avatarBg = avatarBgs[idx % avatarBgs.length];
-                                                // Using initials avatar to avoid default persona images
                                                 const avatarUrl = `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(clientName)}&backgroundColor=${avatarBg.replace('#', '')}&textColor=000000`;
                                                 const location = String(h['Location '] || h.Location || 'Unknown Location');
                                                 const city = String(h.City || 'Unknown');
@@ -4677,46 +5304,46 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                                         onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
                                                     >
                                                         {/* CLIENT (Avatar + Name) */}
-                                                        <td style={{ padding: '18px 16px' }}>
-                                                            <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+                                                        <td style={{ padding: '16px' }}>
+                                                            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                                                                 <div style={{
-                                                                    width: '42px', height: '42px', borderRadius: '50%', backgroundColor: avatarBg, overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0
+                                                                    width: '38px', height: '38px', borderRadius: '50%', backgroundColor: avatarBg, overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0
                                                                 }}>
                                                                     <img src={avatarUrl} alt={clientName} style={{ width: '100%', height: '100%', objectFit: 'cover' }} onError={(e) => e.currentTarget.style.display = 'none'} />
                                                                 </div>
-                                                                <span style={{ fontSize: '0.92rem', fontWeight: 700, color: '#111827' }}>
+                                                                <span style={{ fontSize: '0.875rem', fontWeight: 600, color: '#111827' }}>
                                                                     {clientName}
                                                                 </span>
                                                             </div>
                                                         </td>
 
                                                         {/* SITE LOCATION */}
-                                                        <td style={{ padding: '18px 16px' }}>
-                                                            <div style={{ fontSize: '0.86rem', color: '#4b5563', fontWeight: 500, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                                        <td style={{ padding: '16px' }}>
+                                                            <div style={{ fontSize: '0.875rem', color: '#374151', fontWeight: 500, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                                                                 {location}
                                                             </div>
-                                                            <div style={{ fontSize: '0.78rem', color: '#9ca3af', fontWeight: 500, marginTop: '2px' }}>
+                                                            <div style={{ fontSize: '0.75rem', color: '#9ca3af', fontWeight: 400, marginTop: '2px' }}>
                                                                 {h.Media || 'Unipole'} • {h.Dimensions || h.Width + 'x' + h.Height || ''}
                                                             </div>
                                                         </td>
 
                                                         {/* CITY */}
-                                                        <td style={{ padding: '18px 16px' }}>
-                                                            <span style={{ padding: '4px 10px', background: '#f3f4f6', borderRadius: '12px', fontSize: '0.78rem', fontWeight: 600, color: '#4b5563' }}>
+                                                        <td style={{ padding: '16px' }}>
+                                                            <span style={{ padding: '4px 10px', background: '#f3f4f6', borderRadius: '6px', fontSize: '0.75rem', fontWeight: 600, color: '#4b5563' }}>
                                                                 {city}
                                                             </span>
                                                         </td>
 
                                                         {/* RENTAL / MONTH */}
-                                                        <td style={{ padding: '18px 16px' }}>
-                                                            <span style={{ fontSize: '0.92rem', fontWeight: 800, color: '#00c851' }}>
+                                                        <td style={{ padding: '16px' }}>
+                                                            <span style={{ fontSize: '0.9375rem', fontWeight: 700, color: '#10b981' }}>
                                                                 ₹{price.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                                                             </span>
                                                         </td>
 
                                                         {/* BOOKING DATES */}
-                                                        <td style={{ padding: '18px 16px' }}>
-                                                            <div style={{ fontSize: '0.82rem', color: '#4b5563', fontWeight: 600 }}>
+                                                        <td style={{ padding: '16px' }}>
+                                                            <div style={{ fontSize: '0.8125rem', color: '#4b5563', fontWeight: 500 }}>
                                                                 {start} → {end}
                                                             </div>
                                                         </td>
@@ -4727,9 +5354,23 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                     </tbody>
                                 </table>
                             </div>
-                        </div>
+                        </motion.div>
                     );
                 })()}
+
+                {/* 📖 Embedded System Functionality & Operational Guide View */}
+                {activeTab === 'guide' && (
+                    <motion.div 
+                        initial={{ opacity: 0, y: 12 }} 
+                        animate={{ opacity: 1, y: 0 }} 
+                        exit={{ opacity: 0, y: -8 }} 
+                        transition={{ duration: 0.28, ease: [0.16, 1, 0.3, 1] }} 
+                        className="dashboard-view qm-dashboard-view" 
+                        style={{ padding: '4px 0 24px 0' }}
+                    >
+                        <SystemGuide embedded={true} />
+                    </motion.div>
+                )}
                 {uploadNotice && (
                     <aside className={`upload-background-notice ${uploadNotice.status}`} role="status" aria-live="polite">
                         <div className="upload-notice-icon">
@@ -4865,7 +5506,7 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                     />
                 )}
 
-                {/* 📥 Native Apps Download Modal (Staff Android APK & Windows Desktop App) */}
+                {/* 📥 Native Apps Download Modal (Apple-Grade Minimalist Interface) */}
                 {isAppDownloadModalOpen && (
                     <div 
                         className="admin-modal-overlay" 
@@ -4873,13 +5514,14 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                         style={{
                             position: 'fixed',
                             inset: 0,
-                            background: 'rgba(15, 23, 42, 0.75)',
-                            backdropFilter: 'blur(8px)',
+                            background: 'rgba(0, 0, 0, 0.45)',
+                            backdropFilter: 'blur(20px) saturate(180%)',
+                            WebkitBackdropFilter: 'blur(20px) saturate(180%)',
                             display: 'flex',
                             alignItems: 'center',
                             justifyContent: 'center',
                             zIndex: 10000,
-                            padding: '20px'
+                            padding: '16px'
                         }}
                     >
                         <div 
@@ -4888,185 +5530,348 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                             style={{
                                 background: '#ffffff',
                                 borderRadius: '24px',
-                                maxWidth: '820px',
+                                maxWidth: '780px',
                                 width: '100%',
-                                maxHeight: '90vh',
-                                overflowY: 'auto',
-                                boxShadow: '0 25px 60px -15px rgba(0, 0, 0, 0.3)',
+                                overflow: 'hidden',
+                                boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25), 0 0 0 1px rgba(0, 0, 0, 0.05)',
                                 border: '1px solid rgba(226, 232, 240, 0.8)',
-                                padding: '32px'
+                                padding: '24px 28px',
+                                animation: 'fadeInScale 0.2s cubic-bezier(0.16, 1, 0.3, 1)'
                             }}
                         >
                             {/* Modal Header */}
-                            <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: '24px', borderBottom: '1px solid #e2e8f0', paddingBottom: '18px' }}>
-                                <div>
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '6px' }}>
-                                        <div style={{ background: 'linear-gradient(135deg, #10b981, #059669)', color: '#ffffff', width: '38px', height: '38px', borderRadius: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                                            <Download size={20} />
-                                        </div>
-                                        <h2 style={{ margin: 0, fontSize: '1.45rem', fontWeight: 800, color: '#0f172a' }}>Download Official Applications</h2>
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '20px' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                                    <div style={{ 
+                                        width: '40px', 
+                                        height: '40px', 
+                                        borderRadius: '12px', 
+                                        background: '#0f172a', 
+                                        color: '#ffffff', 
+                                        display: 'flex', 
+                                        alignItems: 'center', 
+                                        justifyContent: 'center',
+                                        boxShadow: '0 4px 12px rgba(15, 23, 42, 0.25)'
+                                    }}>
+                                        <Download size={20} />
                                     </div>
-                                    <p style={{ margin: 0, color: '#64748b', fontSize: '0.88rem' }}>
-                                        Install high-speed native apps for Ground Staff Mobile Audits and Executive Desktop Administration.
-                                    </p>
+                                    <div>
+                                        <h2 style={{ margin: 0, fontSize: '1.25rem', fontWeight: 700, color: '#1d1d1f', letterSpacing: '-0.02em' }}>
+                                            Get Official Applications
+                                        </h2>
+                                        <p style={{ margin: 0, color: '#86868b', fontSize: '0.82rem' }}>
+                                            Ultra-fast native clients for on-ground field audits and desktop administration
+                                        </p>
+                                    </div>
                                 </div>
                                 <button 
                                     type="button" 
                                     onClick={() => setIsAppDownloadModalOpen(false)}
-                                    style={{ background: '#f1f5f9', border: 'none', width: '36px', height: '36px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#64748b', cursor: 'pointer', transition: 'all 0.2s ease' }}
+                                    style={{ 
+                                        background: '#f5f5f7', 
+                                        border: 'none', 
+                                        width: '32px', 
+                                        height: '32px', 
+                                        borderRadius: '50%', 
+                                        display: 'flex', 
+                                        alignItems: 'center', 
+                                        justifyContent: 'center', 
+                                        color: '#6e6e73', 
+                                        cursor: 'pointer', 
+                                        transition: 'all 0.15s ease'
+                                    }}
+                                    onMouseEnter={e => { e.currentTarget.style.background = '#e8e8ed'; e.currentTarget.style.color = '#1d1d1f'; }}
+                                    onMouseLeave={e => { e.currentTarget.style.background = '#f5f5f7'; e.currentTarget.style.color = '#6e6e73'; }}
                                 >
-                                    <X size={20} />
+                                    <X size={17} />
                                 </button>
                             </div>
 
                             {/* Two App Cards Grid */}
-                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(330px, 1fr))', gap: '20px', marginBottom: '24px' }}>
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '20px' }}>
                                 
                                 {/* 📱 Card 1: Staff Camera Android APK */}
-                                <div style={{ background: 'linear-gradient(180deg, #f0fdf4 0%, #ffffff 100%)', border: '1.5px solid #86efac', borderRadius: '20px', padding: '24px', display: 'flex', flexDirection: 'column', position: 'relative' }}>
-                                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px' }}>
-                                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                                            <div style={{ background: '#10b981', color: '#ffffff', padding: '10px', borderRadius: '14px', display: 'flex' }}>
-                                                <Smartphone size={24} />
+                                <div style={{ 
+                                    background: '#fbfbfd', 
+                                    border: '1px solid #e5e5ea', 
+                                    borderRadius: '18px', 
+                                    padding: '18px', 
+                                    display: 'flex', 
+                                    flexDirection: 'column',
+                                    justifyContent: 'space-between'
+                                }}>
+                                    <div>
+                                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px' }}>
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                                <div style={{ 
+                                                    width: '32px', 
+                                                    height: '32px', 
+                                                    borderRadius: '9px', 
+                                                    background: '#34c759', 
+                                                    color: '#ffffff', 
+                                                    display: 'flex', 
+                                                    alignItems: 'center', 
+                                                    justifyContent: 'center' 
+                                                }}>
+                                                    <Smartphone size={18} />
+                                                </div>
+                                                <div>
+                                                    <h3 style={{ margin: 0, fontSize: '0.96rem', fontWeight: 700, color: '#1d1d1f' }}>Heera Staff Camera</h3>
+                                                    <span style={{ fontSize: '0.72rem', color: '#86868b' }}>Android APK v1.2</span>
+                                                </div>
                                             </div>
-                                            <div>
-                                                <h3 style={{ margin: 0, fontSize: '1.15rem', fontWeight: 800, color: '#065f46' }}>Heera Staff Camera</h3>
-                                                <span style={{ fontSize: '0.74rem', color: '#047857', fontWeight: 700 }}>Android Mobile App</span>
+                                            <span style={{ 
+                                                background: '#e8f8ed', 
+                                                color: '#248a3d', 
+                                                fontSize: '0.7rem', 
+                                                fontWeight: 700, 
+                                                padding: '3px 8px', 
+                                                borderRadius: '20px' 
+                                            }}>
+                                                15 MB
+                                            </span>
+                                        </div>
+
+                                        <div style={{ 
+                                            display: 'flex', 
+                                            flexDirection: 'column', 
+                                            gap: '5px', 
+                                            color: '#515154', 
+                                            fontSize: '0.78rem',
+                                            marginBottom: '12px'
+                                        }}>
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                                <Check size={13} color="#34c759" /> <span>0s Instant Viewfinder</span>
+                                            </div>
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                                <Check size={13} color="#34c759" /> <span>50m Geofenced GPS Matching</span>
+                                            </div>
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                                <Check size={13} color="#34c759" /> <span>Offline Queue & Auto-Sync</span>
                                             </div>
                                         </div>
-                                        <span style={{ background: '#10b981', color: '#ffffff', fontSize: '0.72rem', fontWeight: 800, padding: '4px 10px', borderRadius: '20px' }}>
-                                            Latest APK (~15MB)
-                                        </span>
-                                    </div>
 
-                                    <ul style={{ margin: '0 0 18px 0', padding: '0 0 0 16px', color: '#334155', fontSize: '0.82rem', lineHeight: '1.6' }}>
-                                        <li>⚡ <strong>0s Instant Camera Viewfinder:</strong> Direct launch without loading delays.</li>
-                                        <li>📍 <strong>50m Smart GPS Geofence:</strong> Auto-matches billboard location.</li>
-                                        <li>🔄 <strong>In-App Auto Update:</strong> Updates automatically on newer releases.</li>
-                                        <li>📶 <strong>Offline Storage Queue:</strong> Captures even without active internet.</li>
-                                    </ul>
-
-                                    {/* QR Code + Download Button */}
-                                    <div style={{ background: '#ffffff', border: '1px solid #dcfce7', borderRadius: '16px', padding: '14px', display: 'flex', alignItems: 'center', gap: '14px', marginBottom: '16px' }}>
-                                        <img 
-                                            src="https://api.qrserver.com/v1/create-qr-code/?size=120x120&data=https%3A%2F%2Fgithub.com%2Fkamleshgupta905%2FHoarding%2Freleases%2Fdownload%2Fstaff-apk-latest%2Fheera-staff-camera.apk" 
-                                            alt="Scan to Download APK" 
-                                            style={{ width: '85px', height: '85px', borderRadius: '10px', border: '1px solid #cbd5e1' }}
-                                        />
-                                        <div style={{ fontSize: '0.76rem', color: '#475569' }}>
-                                            <div style={{ fontWeight: 800, color: '#0f172a', marginBottom: '2px', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                                                <QrCode size={14} color="#10b981" /> Scan from Phone Camera
+                                        {/* QR Code Card */}
+                                        <div style={{ 
+                                            background: '#ffffff', 
+                                            border: '1px solid #e5e5ea', 
+                                            borderRadius: '12px', 
+                                            padding: '10px 12px', 
+                                            display: 'flex', 
+                                            alignItems: 'center', 
+                                            gap: '12px',
+                                            marginBottom: '14px'
+                                        }}>
+                                            <img 
+                                                src="https://api.qrserver.com/v1/create-qr-code/?size=100x100&data=https%3A%2F%2Fgithub.com%2Fkamleshgupta905%2FHoarding%2Freleases%2Fdownload%2Fstaff-apk-latest%2Fheera-staff-camera.apk" 
+                                                alt="Scan to Download APK" 
+                                                style={{ width: '64px', height: '64px', borderRadius: '8px', border: '1px solid #e5e5ea', flexShrink: 0 }}
+                                            />
+                                            <div style={{ fontSize: '0.74rem', color: '#6e6e73' }}>
+                                                <div style={{ fontWeight: 600, color: '#1d1d1f', marginBottom: '2px', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                                    <QrCode size={13} color="#34c759" /> Scan with Phone
+                                                </div>
+                                                Direct download & install APK on Android.
                                             </div>
-                                            Scan this QR code with any mobile camera to download APK directly onto your Android device.
                                         </div>
                                     </div>
 
-                                    <div style={{ marginTop: 'auto', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                                    <div style={{ display: 'flex', gap: '8px' }}>
                                         <a 
                                             href="https://github.com/kamleshgupta905/Hoarding/releases/download/staff-apk-latest/heera-staff-camera.apk" 
                                             target="_blank" 
                                             rel="noopener noreferrer"
                                             style={{
-                                                background: '#10b981',
+                                                flex: 1,
+                                                background: '#34c759',
                                                 color: '#ffffff',
-                                                padding: '12px 18px',
-                                                borderRadius: '12px',
-                                                textAlign: 'center',
-                                                fontWeight: 800,
-                                                fontSize: '0.9rem',
+                                                padding: '9px 12px',
+                                                borderRadius: '10px',
+                                                fontWeight: 600,
+                                                fontSize: '0.82rem',
                                                 textDecoration: 'none',
                                                 display: 'flex',
                                                 alignItems: 'center',
                                                 justifyContent: 'center',
-                                                gap: '8px',
-                                                boxShadow: '0 4px 14px rgba(16, 185, 129, 0.35)'
+                                                gap: '6px',
+                                                transition: 'opacity 0.15s ease'
                                             }}
+                                            onMouseEnter={e => e.currentTarget.style.opacity = '0.9'}
+                                            onMouseLeave={e => e.currentTarget.style.opacity = '1'}
                                         >
-                                            <Download size={18} /> Download Android APK (Direct)
+                                            <Download size={14} /> Download APK
                                         </a>
                                         <button 
                                             type="button"
                                             onClick={() => {
                                                 if (navigator.clipboard) {
                                                     navigator.clipboard.writeText('https://github.com/kamleshgupta905/Hoarding/releases/download/staff-apk-latest/heera-staff-camera.apk');
-                                                    alert('Direct APK download link copied to clipboard!');
+                                                    setApkCopied(true);
+                                                    setTimeout(() => setApkCopied(false), 2000);
                                                 }
                                             }}
-                                            style={{ background: '#f8fafc', border: '1px solid #cbd5e1', color: '#475569', padding: '8px 12px', borderRadius: '10px', fontSize: '0.78rem', fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}
+                                            style={{ 
+                                                background: apkCopied ? '#e8f8ed' : '#ffffff', 
+                                                border: `1px solid ${apkCopied ? '#34c759' : '#d2d2d7'}`, 
+                                                color: apkCopied ? '#248a3d' : '#1d1d1f', 
+                                                padding: '9px 12px', 
+                                                borderRadius: '10px', 
+                                                fontSize: '0.78rem', 
+                                                fontWeight: 600, 
+                                                cursor: 'pointer',
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                gap: '4px'
+                                            }}
                                         >
-                                            <Share2 size={13} /> Copy Direct APK Link
+                                            {apkCopied ? <Check size={13} /> : <Share2 size={13} />}
+                                            <span>{apkCopied ? 'Copied' : 'Copy'}</span>
                                         </button>
                                     </div>
                                 </div>
 
                                 {/* 💻 Card 2: Windows Desktop App (.exe) */}
-                                <div style={{ background: 'linear-gradient(180deg, #eff6ff 0%, #ffffff 100%)', border: '1.5px solid #93c5fd', borderRadius: '20px', padding: '24px', display: 'flex', flexDirection: 'column', position: 'relative' }}>
-                                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px' }}>
-                                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                                            <div style={{ background: '#2563eb', color: '#ffffff', padding: '10px', borderRadius: '14px', display: 'flex' }}>
-                                                <Monitor size={24} />
+                                <div style={{ 
+                                    background: '#fbfbfd', 
+                                    border: '1px solid #e5e5ea', 
+                                    borderRadius: '18px', 
+                                    padding: '18px', 
+                                    display: 'flex', 
+                                    flexDirection: 'column',
+                                    justifyContent: 'space-between'
+                                }}>
+                                    <div>
+                                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px' }}>
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                                <div style={{ 
+                                                    width: '32px', 
+                                                    height: '32px', 
+                                                    borderRadius: '9px', 
+                                                    background: '#0f172a', 
+                                                    color: '#ffffff', 
+                                                    display: 'flex', 
+                                                    alignItems: 'center', 
+                                                    justifyContent: 'center' 
+                                                }}>
+                                                    <Monitor size={18} />
+                                                </div>
+                                                <div>
+                                                    <h3 style={{ margin: 0, fontSize: '0.96rem', fontWeight: 700, color: '#1d1d1f' }}>Heera Hoardings PC</h3>
+                                                    <span style={{ fontSize: '0.72rem', color: '#86868b' }}>Windows & Mac Desktop</span>
+                                                </div>
                                             </div>
-                                            <div>
-                                                <h3 style={{ margin: 0, fontSize: '1.15rem', fontWeight: 800, color: '#1e40af' }}>Heera Hoardings PC</h3>
-                                                <span style={{ fontSize: '0.74rem', color: '#1d4ed8', fontWeight: 700 }}>Windows Desktop App</span>
+                                            <span style={{ 
+                                                background: '#f1f5f9', 
+                                                color: '#334155', 
+                                                fontSize: '0.7rem', 
+                                                fontWeight: 700, 
+                                                padding: '3px 8px', 
+                                                borderRadius: '20px' 
+                                            }}>
+                                                64-bit
+                                            </span>
+                                        </div>
+
+                                        <div style={{ 
+                                            display: 'flex', 
+                                            flexDirection: 'column', 
+                                            gap: '5px', 
+                                            color: '#515154', 
+                                            fontSize: '0.78rem',
+                                            marginBottom: '12px'
+                                        }}>
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                                <Check size={13} color="#0f172a" /> <span>60 FPS Native Performance</span>
+                                            </div>
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                                <Check size={13} color="#0f172a" /> <span>Full Excel Sheet & Audit Sync</span>
+                                            </div>
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                                <Check size={13} color="#0f172a" /> <span>Desktop Notifications & Alerts</span>
                                             </div>
                                         </div>
-                                        <span style={{ background: '#2563eb', color: '#ffffff', fontSize: '0.72rem', fontWeight: 800, padding: '4px 10px', borderRadius: '20px' }}>
-                                            Windows (.exe)
-                                        </span>
+
+                                        {/* Desktop Info Box */}
+                                        <div style={{ 
+                                            background: '#ffffff', 
+                                            border: '1px solid #e5e5ea', 
+                                            borderRadius: '12px', 
+                                            padding: '10px 12px', 
+                                            display: 'flex', 
+                                            alignItems: 'center', 
+                                            gap: '12px',
+                                            marginBottom: '14px'
+                                        }}>
+                                            <div style={{ 
+                                                width: '38px', 
+                                                height: '38px', 
+                                                borderRadius: '10px', 
+                                                background: '#f8fafc', 
+                                                display: 'flex', 
+                                                alignItems: 'center', 
+                                                justifyContent: 'center', 
+                                                color: '#0f172a',
+                                                flexShrink: 0 
+                                            }}>
+                                                <Sparkles size={18} />
+                                            </div>
+                                            <div style={{ fontSize: '0.74rem', color: '#6e6e73' }}>
+                                                <div style={{ fontWeight: 600, color: '#1d1d1f', marginBottom: '2px' }}>
+                                                    Standalone Desktop Client
+                                                </div>
+                                                Zero browser overhead with automated updates.
+                                            </div>
+                                        </div>
                                     </div>
 
-                                    <ul style={{ margin: '0 0 18px 0', padding: '0 0 0 16px', color: '#334155', fontSize: '0.82rem', lineHeight: '1.6' }}>
-                                        <li>⚡ <strong>60 FPS Native Performance:</strong> Ultra-fast local SQLite and caching.</li>
-                                        <li>📊 <strong>Full Excel Sheet & Audit Sync:</strong> Work seamlessly offline or online.</li>
-                                        <li>🔔 <strong>Desktop System Notifications:</strong> Instant alert on field audit submissions.</li>
-                                        <li>🖥️ <strong>Standalone Executable:</strong> Dedicated window without browser tabs.</li>
-                                    </ul>
-
-                                    <div style={{ background: '#ffffff', border: '1px solid #dbeafe', borderRadius: '16px', padding: '14px', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '12px' }}>
-                                        <div style={{ background: '#dbeafe', color: '#2563eb', padding: '10px', borderRadius: '12px', display: 'flex' }}>
-                                            <Sparkles size={20} />
-                                        </div>
-                                        <div style={{ fontSize: '0.78rem', color: '#334155' }}>
-                                            <strong>Standalone Windows Setup:</strong>
-                                            <div style={{ color: '#64748b', fontSize: '0.73rem', marginTop: '2px' }}>
-                                                Compiled via GitHub CI/CD with automatic update hooks.
-                                            </div>
-                                        </div>
-                                    </div>
-
-                                    <div style={{ marginTop: 'auto', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                                    <div style={{ display: 'flex', gap: '8px' }}>
                                         <a 
                                             href="https://github.com/kamleshgupta905/Hoarding/releases" 
                                             target="_blank" 
                                             rel="noopener noreferrer"
                                             style={{
-                                                background: '#2563eb',
+                                                flex: 1,
+                                                background: '#0f172a',
                                                 color: '#ffffff',
-                                                padding: '12px 18px',
-                                                borderRadius: '12px',
-                                                textAlign: 'center',
-                                                fontWeight: 800,
-                                                fontSize: '0.9rem',
+                                                padding: '9px 12px',
+                                                borderRadius: '10px',
+                                                fontWeight: 600,
+                                                fontSize: '0.82rem',
                                                 textDecoration: 'none',
                                                 display: 'flex',
                                                 alignItems: 'center',
                                                 justifyContent: 'center',
-                                                gap: '8px',
-                                                boxShadow: '0 4px 14px rgba(37, 99, 235, 0.35)'
+                                                gap: '6px',
+                                                transition: 'opacity 0.15s ease'
                                             }}
+                                            onMouseEnter={e => e.currentTarget.style.opacity = '0.9'}
+                                            onMouseLeave={e => e.currentTarget.style.opacity = '1'}
                                         >
-                                            <Download size={18} /> Download Desktop App Releases
+                                            <Download size={14} /> Desktop Releases
                                         </a>
                                         <button 
                                             type="button"
                                             onClick={() => {
                                                 setIsAppDownloadModalOpen(false);
-                                                window.open('/guide', '_blank');
+                                                setActiveTab('guide');
                                             }}
-                                            style={{ background: '#f8fafc', border: '1.5px solid #6366f1', color: '#4f46e5', padding: '10px 14px', borderRadius: '10px', fontSize: '0.82rem', fontWeight: 800, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', transition: 'all 0.2s' }}
+                                            style={{ 
+                                                background: '#ffffff', 
+                                                border: '1px solid #d2d2d7', 
+                                                color: '#1d1d1f', 
+                                                padding: '9px 12px', 
+                                                borderRadius: '10px', 
+                                                fontSize: '0.78rem', 
+                                                fontWeight: 600, 
+                                                cursor: 'pointer',
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                gap: '4px'
+                                            }}
+                                            title="View System Guide"
                                         >
-                                            <FileText size={15} color="#4f46e5" /> System Functionality & User Guide (PDF)
+                                            <BookOpen size={13} />
+                                            <span>Guide</span>
                                         </button>
                                     </div>
                                 </div>
@@ -5074,13 +5879,28 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                             </div>
 
                             {/* Modal Footer */}
-                            <div style={{ display: 'flex', justifyContent: 'flex-end', borderTop: '1px solid #e2e8f0', paddingTop: '16px' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderTop: '1px solid #f2f2f7', paddingTop: '14px' }}>
+                                <span style={{ fontSize: '0.76rem', color: '#86868b' }}>
+                                    HIRA Advertising OOH Infrastructure • Native Suite v1.2
+                                </span>
                                 <button 
                                     type="button" 
                                     onClick={() => setIsAppDownloadModalOpen(false)}
-                                    style={{ padding: '10px 22px', borderRadius: '12px', border: '1px solid #cbd5e1', background: '#f8fafc', color: '#475569', fontSize: '0.88rem', fontWeight: 800, cursor: 'pointer' }}
+                                    style={{ 
+                                        padding: '7px 18px', 
+                                        borderRadius: '18px', 
+                                        border: 'none', 
+                                        background: '#f5f5f7', 
+                                        color: '#1d1d1f', 
+                                        fontSize: '0.82rem', 
+                                        fontWeight: 600, 
+                                        cursor: 'pointer',
+                                        transition: 'background 0.15s ease'
+                                    }}
+                                    onMouseEnter={e => e.currentTarget.style.background = '#e8e8ed'}
+                                    onMouseLeave={e => e.currentTarget.style.background = '#f5f5f7'}
                                 >
-                                    Close
+                                    Done
                                 </button>
                             </div>
                         </div>

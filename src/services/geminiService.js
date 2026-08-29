@@ -1,27 +1,36 @@
 /**
- * 🧠 Gemini Vision AI Service for Geofenced Hoarding Auto-Detection
- * Uses Google Generative Language REST API with dual-key auto-failover.
+ * 🧠 Gemini Vision AI Service for Outdoor Hoarding & PPT Extraction
+ * Powered by Google Gemini 3.7 Flash with multi-key auto-failover.
  */
 
 // Keys assembled dynamically from runtime environment or secure components
 const K1 = ['AQ.', 'Ab8RN6IR8j97v_', 'TwvrhH8cB-HXI2y6-', 'XDmPD6fjpsPHFUI1v-g'].join('');
 const K2 = ['AQ.', 'Ab8RN6KKCBjZXk', 'MCVP50IXHFI_oeqS', '88iQoSJ7wHw_fAtCc1JQ'].join('');
 
-const GEMINI_API_KEYS = [
-  import.meta.env?.VITE_GEMINI_API_KEY_1 || K1, // Primary Gemini Pro Key
-  import.meta.env?.VITE_GEMINI_API_KEY_2 || K2  // Secondary Fallback Key
-];
+export const getGeminiApiKeys = () => {
+  const customKey = (typeof window !== 'undefined' && (
+    window.localStorage?.getItem('adh_gemini_api_key') ||
+    window.localStorage?.getItem('gemini_api_key')
+  )) || null;
 
-const GEMINI_MODELS = [
-  'gemini-2.0-flash',
-  'gemini-1.5-flash',
-  'gemini-1.5-pro'
+  return [
+    customKey,
+    import.meta.env?.VITE_GEMINI_API_KEY,
+    import.meta.env?.VITE_GEMINI_API_KEY_1 || K1,
+    import.meta.env?.VITE_GEMINI_API_KEY_2 || K2
+  ].filter(Boolean);
+};
+
+export const GEMINI_MODELS = [
+  'gemini-3.7-flash',
+  'gemini-flash-latest',
+  'gemini-3.1-flash-lite'
 ];
 
 /**
  * Strips data URL prefix to extract raw base64 and mime type.
  */
-const parseBase64 = (dataUrl) => {
+export const parseBase64 = (dataUrl) => {
   if (!dataUrl || typeof dataUrl !== 'string') return null;
   const match = dataUrl.match(/^data:(image\/[a-zA-Z0-9+.-]+);base64,(.+)$/);
   if (match) {
@@ -33,10 +42,11 @@ const parseBase64 = (dataUrl) => {
 /**
  * Execute Gemini Generative Vision API call with model and key fallback.
  */
-const callGeminiVision = async (payload) => {
+export const callGeminiVision = async (payload) => {
   let lastError = null;
+  const apiKeys = getGeminiApiKeys();
 
-  for (const apiKey of GEMINI_API_KEYS) {
+  for (const apiKey of apiKeys) {
     if (!apiKey) continue;
 
     for (const model of GEMINI_MODELS) {
@@ -46,20 +56,22 @@ const callGeminiVision = async (payload) => {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            'x-goog-api-key': apiKey
+            'x-goog-api-key': apiKey,
+            'User-Agent': 'aistudio-build'
           },
           body: JSON.stringify(payload)
         });
 
         if (!response.ok) {
           const errorText = await response.text();
-          console.warn(`Gemini [${model}] returned status ${response.status}:`, errorText);
-          lastError = new Error(`Gemini API Error: ${response.status}`);
+          console.warn(`Gemini [${model}] status ${response.status}:`, errorText);
+          lastError = new Error(`Gemini API Error (${model}): ${response.status}`);
           continue; // Try next model or next key
         }
 
         const data = await response.json();
-        const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+        const parts = data?.candidates?.[0]?.content?.parts || [];
+        const text = parts.map(p => p.text || '').filter(Boolean).join('\n').trim();
         if (text) {
           return text;
         }
@@ -215,13 +227,13 @@ export const matchDailyExecutionProofWithAI = async (imageBase64, inventoryList)
   const parsed = parseBase64(imageBase64);
   if (!parsed) throw new Error('Invalid image data.');
 
-  // Concise inventory mapping
-  const inventoryText = inventoryList.slice(0, 75).map((item, index) => {
+  // Concise inventory mapping with robust coordinate extraction
+  const inventoryText = inventoryList.slice(0, 100).map((item, index) => {
     const loc = item["Location "] || item["Locality Site Location"] || item.Location || item.site_name || `Site ${index}`;
     const city = item.City || item.city || '';
     const area = item.Locality || item.Area || '';
-    const lat = item.Latitude || item.Lat || '';
-    const lng = item.Longitude || item.Long || '';
+    const lat = item.Latitude || item.Lat || item['Lat.'] || (item['Lat-Long'] ? item['Lat-Long'].split(',')[0] : '');
+    const lng = item.Longitude || item.Long || item['Long.'] || (item['Lat-Long'] ? item['Lat-Long'].split(',')[1] : '');
     const latLng = lat && lng ? ` [GPS: ${lat}, ${lng}]` : '';
     const traffic = [item["Traffic From"], item["Traffic To"]].filter(Boolean).join(' to ');
     return `[Index ${index}]: "${loc}" | City: "${city}" | Area: "${area}"${traffic ? ` | Traffic: "${traffic}"` : ''}${latLng}`;
@@ -443,5 +455,124 @@ TASK:
     return null;
   }
 };
+
+/**
+ * 🌟 GEMINI 3.7 FLASH MULTIMODAL PPT SLIDE ANALYZER & IMAGE EXTRACTOR
+ * Analyzes a PPT slide's extracted image and text, identifies the billboard/hoarding,
+ * reads visual landmarks, road signs, GPS watermarks, and matches with master inventory.
+ */
+export const analyzePptSlideWithGeminiVision = async (imageBase64, slideText = '', candidates = []) => {
+  if (!imageBase64 && !slideText) return null;
+
+  const candidateSummary = (candidates || []).slice(0, 40).map((c, i) => {
+    const id = c._SiteID || c.UniqueID || `Site_${i}`;
+    const loc = c.Location || c['Location '] || c['Locality Site Location'] || '';
+    const city = c.City || '';
+    const area = c.Area || c.Locality || '';
+    const facing = c.Facing || c['Traffic View'] || '';
+    const traffic = [c['Traffic From'], c['Traffic To']].filter(Boolean).join(' to ');
+    const lat = c.Latitude || c['Lat.'] || '';
+    const lng = c.Longitude || c['Long.'] || '';
+    const size = (c.Width && c.Height) ? `${c.Width}x${c.Height}` : '';
+    return `[Index ${i} - ID: ${id}]: "${loc}" | City: "${city}" | Area: "${area}" | Facing: "${facing || traffic}" | Size: "${size}" | GPS: ${lat},${lng}`;
+  }).join('\n');
+
+  const prompt = `You are an expert AI Outdoor Advertising (OOH/Billboard) Vision Analyst using the latest Gemini 3.7 Flash model.
+Analyze this billboard / hoarding presentation slide image and text.
+
+SLIDE TEXT (if any):
+"""${slideText || '(No text on slide, inspect visual billboard image)'}"""
+
+CANDIDATE HOARDINGS IN MASTER INVENTORY:
+${candidateSummary || '(No inventory candidates provided)'}
+
+YOUR TASKS:
+1. 📸 IMAGE & VISUAL ANALYSIS:
+   - Determine if this image shows a billboard/hoarding, unipole, gantry, bridge panel, or outdoor advertisement.
+   - Read all printed text inside the slide or on the billboard itself (brand name, road name, landmark, area, city, contact info, GPS watermark).
+2. 📍 LOCATION & METADATA EXTRACTION:
+   - Location / Landmark name: (e.g., "Begum Bridge facing Delhi Road")
+   - City: (e.g., "Meerut", "Delhi", "Noida")
+   - Locality / Area: (e.g., "Civil Lines", "Modipuram", "Abu Lane")
+   - Traffic / Facing Direction: (e.g., "Facing Delhi Road", "Towards Clock Tower")
+   - Dimensions / Size: (e.g., "20x10", "40x20")
+   - Media Type: ("Unipole", "Billboard", "Gantry", "BQS", "Bridge Panel")
+   - Status: ("Occupied" if active commercial brand ad is mounted, "Available" if blank/white/torn/To-Let)
+   - GPS Stamp: (Any latitude/longitude coordinates visible on watermark or slide text)
+3. 🎯 INVENTORY MATCHING:
+   - Compare with the candidate list above.
+   - Determine the best matching candidate by Index (0, 1, 2, ...).
+   - If a candidate matches, return its index and confidence ("HIGH", "MEDIUM", "LOW"). If none match, return -1.
+
+RETURN ONLY VALID JSON (no markdown formatting, no backticks):
+{
+  "isHoardingPhoto": true,
+  "bestMatchIndex": 0,
+  "confidence": "HIGH",
+  "locationName": "Begum Bridge facing Delhi Road",
+  "city": "Meerut",
+  "area": "Begum Bridge",
+  "facing": "Facing Delhi Road",
+  "size": "20x10",
+  "mediaType": "Unipole",
+  "status": "Occupied",
+  "gpsStamp": "28.9845, 77.7064",
+  "reason": "Clear match with Begum Bridge hoarding facing Delhi Road"
+}`;
+
+  const parts = [{ text: prompt }];
+
+  if (imageBase64) {
+    const parsed = parseBase64(imageBase64);
+    if (parsed) {
+      parts.push({
+        inline_data: {
+          mime_type: parsed.mimeType,
+          data: parsed.base64
+        }
+      });
+    }
+  }
+
+  const payload = {
+    contents: [{ parts }],
+    generationConfig: {
+      temperature: 0.1,
+      topP: 0.8,
+      maxOutputTokens: 600
+    }
+  };
+
+  try {
+    const rawResponse = await callGeminiVision(payload);
+    const cleanJson = rawResponse.replace(/```json\s*/i, '').replace(/```\s*$/i, '').trim();
+    const jsonMatch = cleanJson.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) return null;
+
+    const result = JSON.parse(jsonMatch[0]);
+    const idx = parseInt(result.bestMatchIndex, 10);
+    const matchedSite = (!isNaN(idx) && idx >= 0 && idx < (candidates || []).length) ? candidates[idx] : null;
+
+    return {
+      matchedSite,
+      bestMatchIndex: matchedSite ? idx : -1,
+      confidence: result.confidence || (matchedSite ? 'HIGH' : 'LOW'),
+      isHoardingPhoto: result.isHoardingPhoto !== false,
+      locationName: result.locationName || (matchedSite ? (matchedSite['Location '] || matchedSite['Locality Site Location'] || matchedSite.Location) : ''),
+      city: result.city || matchedSite?.City || '',
+      area: result.area || matchedSite?.Area || matchedSite?.Locality || '',
+      facing: result.facing || matchedSite?.Facing || '',
+      size: result.size || (matchedSite?.Width && matchedSite?.Height ? `${matchedSite.Width}x${matchedSite.Height}` : ''),
+      mediaType: result.mediaType || matchedSite?.Media || 'Billboard',
+      status: result.status === 'Occupied' ? 'Occupied' : 'Available',
+      gpsStamp: result.gpsStamp || null,
+      reason: result.reason || 'Analyzed with Gemini 3.7 Flash Vision AI'
+    };
+  } catch (err) {
+    console.warn('[Gemini 3.7 Flash PPT Analyzer Notice]:', err);
+    return null;
+  }
+};
+
 
 

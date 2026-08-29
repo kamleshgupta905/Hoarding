@@ -339,7 +339,7 @@
 
 /* 🏆 Summary Matrix */
 .guide-summary-matrix {
-    background: linear-gradient(135deg, #1e1b4b 0%, #0f172a 100%);
+    background: #0f172a;
     color: #ffffff;
     border-radius: 20px;
     padding: 28px 32px;

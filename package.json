@@ -61,11 +61,13 @@
   "dependencies": {
     "@hookform/resolvers": "^5.2.2",
     "electron-updater": "^6.8.9",
+    "exifreader": "^4.44.0",
     "fast-xml-parser": "^5.2.5",
     "idb": "^8.0.3",
     "jszip": "^3.10.1",
     "leaflet": "^1.9.4",
     "lucide-react": "^0.562.0",
+    "motion": "^13.1.1",
     "papaparse": "^5.5.3",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",

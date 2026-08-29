@@ -46,8 +46,7 @@ export function LazyImage({ src, alt, style, ...props }) {
       {!loaded && (
         <div style={{
           position: 'absolute', inset: 0,
-          background: 'linear-gradient(90deg, #f1f5f9 25%, #e2e8f0 50%, #f1f5f9 75%)',
-          backgroundSize: '200% 100%', animation: 'shimmer 1.5s ease-in-out infinite'
+          background: '#f1f5f9'
         }} />
       )}
       {inView && (
@@ -135,7 +134,7 @@ function AutoUpdateBar() {
       </div>
       {updateState.status === 'downloading' && (
         <div style={{ width: '100%', height: '6px', background: 'rgba(255,255,255,0.1)', borderRadius: '3px', overflow: 'hidden' }}>
-          <div style={{ width: `${updateState.percent}%`, height: '100%', background: 'linear-gradient(90deg, #3b82f6, #60a5fa)', transition: 'width 0.3s ease' }} />
+          <div style={{ width: `${updateState.percent}%`, height: '100%', background: '#10b981', transition: 'width 0.3s ease' }} />
         </div>
       )}
       {updateState.status === 'ready' && (

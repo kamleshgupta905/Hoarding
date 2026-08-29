@@ -8,13 +8,15 @@ import {
 import { HIRA_LOGO } from '../assets/hiraLogoData';
 import './SystemGuide.css';
 
-const SystemGuide = () => {
+const SystemGuide = ({ embedded = false }) => {
     const navigate = useNavigate();
 
     useEffect(() => {
-        document.title = 'System Functionality & Operational User Guide | HIRA Advertising';
-        window.scrollTo(0, 0);
-    }, []);
+        if (!embedded) {
+            document.title = 'System Functionality & Operational User Guide | HIRA Advertising';
+            window.scrollTo(0, 0);
+        }
+    }, [embedded]);
 
     const handlePrint = () => {
         window.print();
@@ -30,13 +32,15 @@ const SystemGuide = () => {
     };
 
     return (
-        <div className="system-guide-page">
+        <div className={`system-guide-page ${embedded ? 'embedded-guide' : ''}`} style={embedded ? { padding: '0', background: 'transparent', minHeight: 'auto' } : {}}>
             {/* Top Action Bar (Hidden during print) */}
-            <header className="guide-top-bar no-print">
+            <header className="guide-top-bar no-print" style={embedded ? { margin: '0 0 20px 0', borderRadius: '16px', background: '#ffffff', border: '1px solid #f1f5f9', boxShadow: '0 2px 8px rgba(0,0,0,0.03)' } : {}}>
                 <div className="guide-top-left">
-                    <button type="button" className="btn-back" onClick={() => window.history.length > 1 ? navigate(-1) : navigate('/admin/dashboard')}>
-                        <ArrowLeft size={16} /> Back to Dashboard
-                    </button>
+                    {!embedded && (
+                        <button type="button" className="btn-back" onClick={() => window.history.length > 1 ? navigate(-1) : navigate('/admin/dashboard')}>
+                            <ArrowLeft size={16} /> Back to Dashboard
+                        </button>
+                    )}
                     <div className="guide-brand-pill">
                         <img src={HIRA_LOGO} alt="HIRA Advertising" className="guide-logo-img" />
                         <span>System Guide</span>
@@ -44,6 +48,9 @@ const SystemGuide = () => {
                 </div>
 
                 <div className="guide-top-actions">
+                    <button type="button" className="btn-action-ghost" onClick={() => window.open('/guide', '_blank')}>
+                        <ExternalLink size={15} /> Open in New Tab
+                    </button>
                     <button type="button" className="btn-action-ghost" onClick={handleCopySummary}>
                         <Copy size={15} /> Copy Summary
                     </button>

@@ -648,6 +648,18 @@ const HoardingDetail = ({ hoardings, setHoardings }) => {
                                                                 : 'Verified Date Unknown'}
                                                         </span>
                                                     </div>
+                                                    {typeof item === 'object' && item.gps && (
+                                                        <a 
+                                                            href={`https://www.google.com/maps?q=${item.gps.replace(/\s+/g, '')}`} 
+                                                            target="_blank" 
+                                                            rel="noopener noreferrer"
+                                                            className="audit-meta"
+                                                            style={{ color: '#2563eb', textDecoration: 'none', fontSize: '0.8rem', marginTop: '4px' }}
+                                                        >
+                                                            <MapPin size={14} />
+                                                            <span>📍 {item.gps}</span>
+                                                        </a>
+                                                    )}
                                                     <div className="audit-status-strip">
                                                         <ShieldCheck size={14} />
                                                         <span>Verified Capture</span>

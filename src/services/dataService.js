@@ -56,6 +56,53 @@ const getDirectDriveLink = (url) => {
   return cleanUrl;
 };
 
+export const parseHistoryString = (rawHistory) => {
+  if (!rawHistory) return [];
+  if (Array.isArray(rawHistory)) {
+    return rawHistory.map(item => {
+      if (typeof item === 'object' && item !== null) {
+        return {
+          url: getDirectDriveLink(item.url || item.ImageURL || item.preview || ''),
+          timestamp: item.timestamp || (item.date ? new Date(item.date).getTime() : Date.now()),
+          date: item.date || (item.timestamp ? new Date(item.timestamp).toISOString() : new Date().toISOString()),
+          gps: item.gps || '',
+          source: item.source || 'Verified Capture',
+          status: item.status || 'Available'
+        };
+      }
+      const str = String(item).trim();
+      const parts = str.split('|');
+      return {
+        url: getDirectDriveLink(parts[0]?.trim() || ''),
+        timestamp: parseInt(parts[1]?.trim(), 10) || Date.now(),
+        date: new Date(parseInt(parts[1]?.trim(), 10) || Date.now()).toISOString(),
+        gps: parts[2]?.trim() || '',
+        source: 'Verified Capture',
+        status: 'Available'
+      };
+    }).filter(i => Boolean(i.url));
+  }
+
+  if (typeof rawHistory === 'string' && rawHistory.trim()) {
+    return rawHistory.split(',').map(entry => {
+      const parts = entry.split('|');
+      const url = getDirectDriveLink(parts[0]?.trim() || '');
+      const timestamp = parseInt(parts[1]?.trim(), 10) || Date.now();
+      const gps = parts[2]?.trim() || '';
+      return {
+        url,
+        timestamp,
+        date: new Date(timestamp).toISOString(),
+        gps,
+        source: 'Verified Capture',
+        status: 'Available'
+      };
+    }).filter(i => Boolean(i.url));
+  }
+
+  return [];
+};
+
 const imageValuesFromHistory = (history) => {
   if (Array.isArray(history)) {
     return history.map((item) => typeof item === 'string' ? item : item?.url);
@@ -107,13 +154,14 @@ export const normalizeHoarding = (item) => {
   let lng = item['Longitude'] || item['Long.'] || item['Long'] || item['lng'] || '';
   const combinedCoord = item['Lat-Long'] || item['Lat Long (Concatenated)'] || item['Coordinates'] || '';
   if ((!lat || !lng) && combinedCoord && typeof combinedCoord === 'string') {
-    const parts = combinedCoord.split(',').map(s => s.trim());
-    if (parts.length === 2) {
+    const parts = combinedCoord.split(/[,/\s|]+/).map(s => s.trim()).filter(Boolean);
+    if (parts.length >= 2) {
       lat = lat || parts[0];
       lng = lng || parts[1];
     }
   }
 
+  const parsedHistory = parseHistoryString(item['ExecutionHistory'] || item['History'] || item['execution_history'] || '');
   const siteCategory = item['Site Category'] || item['Category'] || 'Commercial';
 
   return {
@@ -147,10 +195,12 @@ export const normalizeHoarding = (item) => {
     'Avg. monthly Cost': price,
     'Lat-Long': lat && lng ? `${lat}, ${lng}` : combinedCoord,
     'Lat Long (Concatenated)': lat && lng ? `${lat}, ${lng}` : combinedCoord,
-    'Latitude': lat ? Number(lat) || lat : '',
-    'Longitude': lng ? Number(lng) || lng : '',
-    'Lat.': lat ? Number(lat) || lat : '',
-    'Long.': lng ? Number(lng) || lng : '',
+    'Latitude': lat ? (typeof lat === 'number' ? lat : (parseFloat(lat) || lat)) : '',
+    'Longitude': lng ? (typeof lng === 'number' ? lng : (parseFloat(lng) || lng)) : '',
+    'Lat.': lat ? (typeof lat === 'number' ? lat : (parseFloat(lat) || lat)) : '',
+    'Long.': lng ? (typeof lng === 'number' ? lng : (parseFloat(lng) || lng)) : '',
+    'History': parsedHistory,
+    'ExecutionHistory': item['ExecutionHistory'] || (parsedHistory.length > 0 ? parsedHistory.map(h => `${h.url}|${h.timestamp}${h.gps ? '|' + h.gps : ''}`).join(',') : ''),
     'Site Category': siteCategory,
     'STATUS': item.STATUS || item.status || 'Available'
   };

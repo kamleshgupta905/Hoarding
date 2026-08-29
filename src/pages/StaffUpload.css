@@ -271,7 +271,7 @@
     width: 34px;
     height: 34px;
     border-radius: 50%;
-    background: linear-gradient(135deg, #10b981, #059669);
+    background: #10b981;
     color: white;
     display: flex;
     align-items: center;
@@ -425,11 +425,11 @@
     width: 72px;
     height: 72px;
     border-radius: 50%;
-    background: linear-gradient(135deg, #4f46e5, #3b82f6);
+    background: #10b981;
     display: flex;
     align-items: center;
     justify-content: center;
-    box-shadow: 0 8px 25px rgba(99, 102, 241, 0.4);
+    box-shadow: 0 8px 25px rgba(16, 185, 129, 0.3);
 }
 
 .staff-gps-modal h3 {
@@ -473,9 +473,9 @@
     width: 22px;
     height: 22px;
     border-radius: 50%;
-    background: rgba(99, 102, 241, 0.2);
-    color: #818cf8;
-    border: 1px solid rgba(99, 102, 241, 0.4);
+    background: rgba(16, 185, 129, 0.2);
+    color: #34d399;
+    border: 1px solid rgba(16, 185, 129, 0.4);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -497,7 +497,7 @@
     min-height: 48px;
     border: none;
     border-radius: 14px;
-    background: linear-gradient(135deg, #4f46e5, #3b82f6);
+    background: #10b981;
     color: #ffffff;
     font-size: clamp(0.85rem, 3.5vw, 0.95rem);
     font-weight: 900;
@@ -506,7 +506,7 @@
     justify-content: center;
     gap: 10px;
     cursor: pointer;
-    box-shadow: 0 10px 25px rgba(99, 102, 241, 0.35);
+    box-shadow: 0 10px 25px rgba(16, 185, 129, 0.35);
     transition: transform 0.15s ease, box-shadow 0.15s ease;
 }
 

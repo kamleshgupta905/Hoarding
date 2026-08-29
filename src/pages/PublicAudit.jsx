@@ -24,12 +24,6 @@ const PublicAudit = ({ hoardings, setHoardings }) => {
     const [cameraError, setCameraError] = useState(null);
     const [showPreview, setShowPreview] = useState(false);
 
-    useEffect(() => {
-        // Auto-start camera when page loads
-        startCamera();
-        return () => stopCamera();
-    }, []);
-
     const startCamera = async () => {
         setCameraError(null);
         setIsCameraActive(true);
@@ -69,6 +63,17 @@ const PublicAudit = ({ hoardings, setHoardings }) => {
         setIsCameraActive(false);
         setShowPreview(true);
     };
+
+    useEffect(() => {
+        // Auto-start camera when page loads
+        const timer = setTimeout(() => {
+            startCamera();
+        }, 50);
+        return () => {
+            clearTimeout(timer);
+            stopCamera();
+        };
+    }, []);
 
     const capturePhoto = () => {
         if (!videoRef.current || !canvasRef.current) return;

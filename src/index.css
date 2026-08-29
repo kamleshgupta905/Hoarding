@@ -320,4 +320,65 @@ main {
     animation: fadeIn 0.4s ease-out;
 }
 
+/* 🚀 Executive Dashboard Premium Animations */
+@keyframes dashboardCardIn {
+    0% {
+        opacity: 0;
+        transform: translateY(20px) scale(0.98);
+    }
+    100% {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+    }
+}
+
+@keyframes glowPulse {
+    0%, 100% {
+        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.04);
+    }
+    50% {
+        box-shadow: 0 8px 30px rgba(59, 130, 246, 0.12);
+    }
+}
+
+.qm-dashboard-view {
+    animation: fadeIn 0.5s ease-out;
+}
+
+.qm-kpi-card {
+    animation: dashboardCardIn 0.6s cubic-bezier(0.16, 1, 0.3, 1) backwards;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
+}
+
+.qm-kpi-card:hover {
+    transform: translateY(-4px) scale(1.01);
+    box-shadow: 0 12px 28px rgba(15, 23, 42, 0.08) !important;
+}
+
+.qm-kpi-card:nth-child(1) { animation-delay: 0.05s; }
+.qm-kpi-card:nth-child(2) { animation-delay: 0.12s; }
+.qm-kpi-card:nth-child(3) { animation-delay: 0.19s; }
+.qm-kpi-card:nth-child(4) { animation-delay: 0.26s; }
+
+.qm-card {
+    animation: dashboardCardIn 0.7s cubic-bezier(0.16, 1, 0.3, 1) backwards;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.qm-card:hover {
+    box-shadow: 0 14px 32px rgba(15, 23, 42, 0.07);
+}
+
+.qm-bento-grid > .qm-card:nth-child(1) { animation-delay: 0.3s; }
+.qm-bento-grid > .qm-card:nth-child(2) { animation-delay: 0.4s; }
+
+.qm-kpi-progress-fill {
+    transition: width 1.2s cubic-bezier(0.16, 1, 0.3, 1) !important;
+}
+
+.animated-counter-value {
+    display: inline-block;
+    font-variant-numeric: tabular-nums;
+}
+
 /* End of Styles */

@@ -1,14 +1,13 @@
 import React from 'react';
 
 const shimmerKeyframes = `
-@keyframes shimmer {
-  0% { background-position: -200% 0; }
-  100% { background-position: 200% 0; }
+@keyframes shimmerPulse {
+  0%, 100% { opacity: 0.5; }
+  50% { opacity: 0.9; }
 }
 .skeleton-shimmer {
-  background: linear-gradient(90deg, #f1f5f9 25%, #e2e8f0 50%, #f1f5f9 75%);
-  background-size: 200% 100%;
-  animation: shimmer 1.5s ease-in-out infinite;
+  background: #e2e8f0;
+  animation: shimmerPulse 1.5s ease-in-out infinite;
   border-radius: 8px;
 }
 `;

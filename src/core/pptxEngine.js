@@ -12,8 +12,10 @@ const xmlParser = new XMLParser({
 
 const collectXmlNodes = (value, key, output = []) => {
   if (!value || typeof value !== 'object') return output;
+  const targetKey = key.toLowerCase();
   Object.entries(value).forEach(([entryKey, entryValue]) => {
-    if (entryKey === key) {
+    const cleanKey = entryKey.toLowerCase().replace(/^.*:/, '');
+    if (cleanKey === targetKey) {
       if (Array.isArray(entryValue)) output.push(...entryValue);
       else output.push(entryValue);
     }
@@ -26,21 +28,93 @@ const xmlText = (node) => typeof node === 'string' ? node : String(node?.['#text
 
 const getImageDimensions = async (blob) => {
   try {
-    const bitmap = await createImageBitmap(blob);
-    const dimensions = { width: bitmap.width, height: bitmap.height };
-    bitmap.close();
-    return dimensions;
+    if (typeof createImageBitmap === 'function') {
+      const bitmap = await createImageBitmap(blob);
+      const dimensions = { width: bitmap.width, height: bitmap.height };
+      bitmap.close();
+      return dimensions;
+    }
   } catch {
-    return { width: 0, height: 0 };
+    // Continue to fallback
   }
+
+  if (typeof Image !== 'undefined' && typeof URL !== 'undefined' && typeof URL.createObjectURL === 'function') {
+    try {
+      const url = URL.createObjectURL(blob);
+      const dimensions = await new Promise((resolve) => {
+        const img = new Image();
+        img.onload = () => {
+          URL.revokeObjectURL(url);
+          resolve({ width: img.naturalWidth || img.width || 0, height: img.naturalHeight || img.height || 0 });
+        };
+        img.onerror = () => {
+          URL.revokeObjectURL(url);
+          resolve({ width: 0, height: 0 });
+        };
+        img.src = url;
+      });
+      return dimensions;
+    } catch {
+      return { width: 0, height: 0 };
+    }
+  }
+  return { width: 0, height: 0 };
 };
 
 const hashBlob = async (blob) => {
-  const digest = await crypto.subtle.digest('SHA-256', await blob.arrayBuffer());
-  return [...new Uint8Array(digest)].map((value) => value.toString(16).padStart(2, '0')).join('');
+  try {
+    const buffer = await blob.arrayBuffer();
+    const digest = await crypto.subtle.digest('SHA-256', buffer);
+    return [...new Uint8Array(digest)].map((value) => value.toString(16).padStart(2, '0')).join('');
+  } catch {
+    return `${blob.size}-${blob.type}`;
+  }
 };
 
-const slideNumber = (path) => Number(path.match(/slide(\d+)\.xml$/)?.[1] || 0);
+/**
+ * ⚡ Worker-safe & Browser-safe Blob to Base64 Data URL converter
+ */
+export const blobToBase64 = async (blob) => {
+  if (!blob) return null;
+  try {
+    const buffer = await blob.arrayBuffer();
+    const bytes = new Uint8Array(buffer);
+    let binary = '';
+    const len = bytes.byteLength;
+    for (let i = 0; i < len; i += 8192) {
+      binary += String.fromCharCode.apply(null, bytes.subarray(i, Math.min(i + 8192, len)));
+    }
+    const mime = blob.type || 'image/jpeg';
+    return `data:${mime};base64,${btoa(binary)}`;
+  } catch (err) {
+    console.warn('blobToBase64 conversion notice:', err);
+    return null;
+  }
+};
+
+const slideNumber = (path) => Number(path.match(/slide(\d+)\.xml$/i)?.[1] || 0);
+
+const findZipMedia = (zip, target) => {
+  if (!target) return null;
+  const decoded = decodeURIComponent(target).replace(/\\/g, '/');
+  const filename = decoded.split('/').pop();
+  const lowerFilename = filename.toLowerCase();
+
+  // 1. Direct path check
+  if (zip.file(decoded)) return { path: decoded, file: zip.file(decoded), filename };
+  if (zip.file(`ppt/media/${filename}`)) {
+    return { path: `ppt/media/${filename}`, file: zip.file(`ppt/media/${filename}`), filename };
+  }
+
+  // 2. Case-insensitive search across all zip media files
+  for (const zipPath of Object.keys(zip.files)) {
+    if (!zip.files[zipPath].dir && zipPath.toLowerCase().endsWith(`/${lowerFilename}`)) {
+      return { path: zipPath, file: zip.files[zipPath], filename };
+    }
+  }
+
+  return null;
+};
 
 const scoreSite = (text, site) => {
   const normalized = normalizeText(text);
@@ -125,15 +199,18 @@ const scoreSite = (text, site) => {
   return score;
 };
 
-export const parsePptx = async (arrayBuffer, sites) => {
+/**
+ * 📦 PARSE PPTX PRESENTATIONS WITH ZERO-LOSS EXTRACTION & GEMINI 3.7 FLASH
+ */
+export const parsePptx = async (arrayBuffer, sites = []) => {
   const zip = await JSZip.loadAsync(arrayBuffer);
   const slidePaths = Object.keys(zip.files)
-    .filter((path) => /^ppt\/slides\/slide\d+\.xml$/.test(path))
+    .filter((path) => /^ppt\/slides\/slide\d+\.xml$/i.test(path))
     .sort((left, right) => slideNumber(left) - slideNumber(right));
 
   // Collect all media files present in the PPT archive
   const allMediaPaths = Object.keys(zip.files)
-    .filter((path) => /^ppt\/media\//i.test(path) && !/\.xml$/i.test(path))
+    .filter((path) => /^ppt\/media\//i.test(path) && !zip.files[path].dir && !/\.xml$/i.test(path))
     .sort((a, b) => {
       const numA = Number(a.match(/(\d+)/)?.[1] || 0);
       const numB = Number(b.match(/(\d+)/)?.[1] || 0);
@@ -142,6 +219,7 @@ export const parsePptx = async (arrayBuffer, sites) => {
 
   const slides = [];
   const hashUsage = new Map();
+  const assignedMediaPaths = new Set();
 
   for (const slidePath of slidePaths) {
     const number = slideNumber(slidePath);
@@ -151,19 +229,18 @@ export const parsePptx = async (arrayBuffer, sites) => {
     const relationshipFile = zip.file(relationshipPath);
     const relationships = relationshipFile ? xmlParser.parse(await relationshipFile.async('text')) : null;
     const relationshipMap = new Map();
-    const slideMediaFileNames = new Set();
+    const slideMediaTargets = new Set();
 
     if (relationships) {
-      collectXmlNodes(relationships, 'Relationship').forEach((node) => {
-        const id = node?.['@_Id'] || node?.['Id'];
-        const target = node?.['@_Target'] || node?.['Target'];
-        const type = node?.['@_Type'] || node?.['Type'] || '';
+      collectXmlNodes(relationships, 'relationship').forEach((node) => {
+        const id = node?.['@_Id'] || node?.['@_id'] || node?.['Id'] || node?.['id'];
+        const target = node?.['@_Target'] || node?.['@_target'] || node?.['Target'] || node?.['target'];
+        const type = node?.['@_Type'] || node?.['@_type'] || node?.['Type'] || '';
         if (id && target) {
           relationshipMap.set(id, target);
         }
-        if (target && (target.includes('media/') || type.includes('image') || /\.(png|jpe?g|webp|bmp|gif|tiff)$/i.test(target))) {
-          const mediaName = target.split('/').pop();
-          if (mediaName) slideMediaFileNames.add(mediaName);
+        if (target && (target.includes('media/') || type.includes('image') || /\.(png|jpe?g|webp|bmp|gif|tiff|jfif)$/i.test(target))) {
+          slideMediaTargets.add(target);
         }
       });
     }
@@ -173,24 +250,24 @@ export const parsePptx = async (arrayBuffer, sites) => {
     for (const node of blipNodes) {
       const embedId = node?.['@_embed'] || node?.['@_link'] || node?.['@_r:embed'] || node?.['@_r:link'] || node?.embed || node?.link;
       if (embedId && relationshipMap.has(embedId)) {
-        const target = relationshipMap.get(embedId);
-        const mediaName = target ? target.split('/').pop() : '';
-        if (mediaName) slideMediaFileNames.add(mediaName);
+        slideMediaTargets.add(relationshipMap.get(embedId));
       }
     }
 
     const images = [];
-    for (const mediaName of slideMediaFileNames) {
-      const path = `ppt/media/${mediaName}`;
-      const file = zip.file(path);
-      if (!file) continue;
-      const blob = await file.async('blob');
+    for (const target of slideMediaTargets) {
+      const match = findZipMedia(zip, target);
+      if (!match) continue;
+
+      assignedMediaPaths.add(match.path);
+      const blob = await match.file.async('blob');
       const hash = await hashBlob(blob);
       const dimensions = await getImageDimensions(blob);
       hashUsage.set(hash, (hashUsage.get(hash) || 0) + 1);
+
       images.push({
-        id: `${number}-${mediaName}`,
-        mediaName,
+        id: `${number}-${match.filename}`,
+        mediaName: match.filename,
         blob,
         hash,
         size: blob.size,
@@ -204,16 +281,18 @@ export const parsePptx = async (arrayBuffer, sites) => {
       .map((site) => ({ site, score: scoreSite(text, site) }))
       .filter((item) => item.score > 0)
       .sort((left, right) => right.score - left.score)
-      .slice(0, 6);
+      .slice(0, 8);
+
     slides.push({ number, text, images, candidates });
   }
 
-  // 🛡️ Global Fallback: If any slide has 0 images, but allMediaPaths has unused media
+  // 🛡️ Zero-Loss Fallback 1: If any slide has 0 images, match with available PPT media by slide index
   for (let i = 0; i < slides.length; i++) {
     const slide = slides[i];
     if (slide.images.length === 0 && allMediaPaths.length > 0) {
       const candidatePath = allMediaPaths[i] || allMediaPaths[slide.number - 1];
       if (candidatePath && zip.file(candidatePath)) {
+        assignedMediaPaths.add(candidatePath);
         const file = zip.file(candidatePath);
         const blob = await file.async('blob');
         const hash = await hashBlob(blob);
@@ -233,59 +312,100 @@ export const parsePptx = async (arrayBuffer, sites) => {
     }
   }
 
+  // 🏷️ Ultra-Accurate Agency Logo & Watermark Identification
   slides.forEach((slide) => {
-    const maxArea = Math.max(1, ...slide.images.map((image) => image.width * image.height));
-    slide.images = slide.images.map((image) => {
-      const repeated = (hashUsage.get(image.hash) || 0) > 1;
-      const relativeArea = (image.width * image.height) / maxArea;
-      const tooSmall = image.size < 5000 || image.width < 100 || image.height < 60 || relativeArea < 0.05;
-      return { ...image, repeated, logoCandidate: repeated && tooSmall };
-    });
-    slide.photoCandidates = slide.images.filter((image) => !image.logoCandidate);
+    const maxArea = Math.max(1, ...slide.images.map((image) => (image.width || 1) * (image.height || 1)));
 
-    // 🛡️ Zero-Loss Fallback: If all images were marked as logoCandidate, pick the largest image so NO slide photo is lost!
-    if (slide.photoCandidates.length === 0 && slide.images.length > 0) {
-      const sorted = [...slide.images].sort((a, b) => (b.width * b.height) - (a.width * a.height));
-      slide.photoCandidates = [sorted[0]];
+    slide.images = slide.images.map((image) => {
+      const count = hashUsage.get(image.hash) || 0;
+      const area = (image.width || 0) * (image.height || 0);
+      const relativeArea = maxArea > 0 ? area / maxArea : 1;
+      const isRepeatedAcrossSlides = count >= 2;
+      const hasLogoKeyword = /(logo|watermark|icon|badge|header|footer|shape|bullet|arrow|hira|adv|stamp)/i.test(image.mediaName || '');
+      
+      // Strict Logo Criteria:
+      // 1. Appears on 2+ slides (like the agency logo at the corner of every slide)
+      // 2. Or is small relative to the main photo (area < 35% of maxArea or size < 40KB when larger photo exists)
+      // 3. Or has explicit logo keywords with small dimensions
+      const isSmallGraphic = (relativeArea < 0.35 || image.size < 40000) && slide.images.length > 1;
+      const isTinyDimensions = (image.width > 0 && image.width < 320 && image.height > 0 && image.height < 220);
+      const isAspectLogo = (image.width > 0 && image.height > 0) && ((image.width / image.height > 3.2) || (image.height / image.width > 3.2)) && image.size < 80000;
+
+      const logoCandidate = isRepeatedAcrossSlides || hasLogoKeyword || isSmallGraphic || isTinyDimensions || isAspectLogo;
+
+      return { ...image, repeated: isRepeatedAcrossSlides, logoCandidate };
+    });
+
+    // Pick ONLY genuine billboard photos (excluding all logos, icons, and watermark graphics)
+    const validPhotos = slide.images.filter((image) => !image.logoCandidate);
+
+    if (validPhotos.length > 0) {
+      // Sort to get the highest quality main billboard photo
+      validPhotos.sort((a, b) => {
+        const areaA = (a.width || 0) * (a.height || 0);
+        const areaB = (b.width || 0) * (b.height || 0);
+        return (areaB - areaA) || (b.size - a.size);
+      });
+      // Pick the single best primary billboard photo for this slide
+      slide.photoCandidates = [validPhotos[0]];
+    } else {
+      // If slide only contains logos (e.g. Title slide, Thank You slide, Agency profile), do NOT extract logo!
+      slide.photoCandidates = [];
     }
 
     slide.suggestedSiteId = slide.candidates[0]?.site?._SiteID || '';
     slide.confidence = slide.candidates[0]?.score >= 4000 ? 'HIGH' : slide.candidates[0]?.score >= 900 ? 'MEDIUM' : 'LOW';
-    slide.status = slide.suggestedSiteId && slide.photoCandidates.length ? (slide.confidence === 'HIGH' ? 'MATCHED' : 'REVIEW') : 'SKIPPED';
+    slide.status = slide.suggestedSiteId && slide.photoCandidates.length ? (slide.confidence === 'HIGH' ? 'MATCHED' : 'REVIEW') : (slide.photoCandidates.length ? 'REVIEW' : 'SKIPPED');
   });
 
-  // 🧠 DUAL AI ENGINE: Groq Semantic LLM + Gemini 2.0 Flash Vision
+  // 🌟 LATEST AI ENGINE: Gemini 3.7 Flash Multimodal Vision + Groq Semantic Fallback
   for (const slide of slides) {
-    if (slide.photoCandidates.length > 0 && slide.confidence !== 'HIGH') {
+    if (slide.photoCandidates.length > 0) {
+      const primaryPhoto = slide.photoCandidates[0];
       const topCandidates = slide.candidates.length > 0 
         ? slide.candidates.map(c => c.site) 
-        : (sites || []).slice(0, 20);
+        : (sites || []).slice(0, 30);
 
-      let aiMatch = null;
-
-      // 1. Try Groq Semantic AI (Superfast LLM)
+      let imageBase64 = null;
       try {
-        const { matchSlideToInventoryWithGroq } = await import('../services/groqService');
-        aiMatch = await matchSlideToInventoryWithGroq(slide.text, topCandidates);
-      } catch (groqErr) {
-        console.warn('[Groq Engine Step Notice]:', groqErr);
+        imageBase64 = await blobToBase64(primaryPhoto.blob);
+      } catch (e) {
+        console.warn('Base64 conversion notice for slide AI:', e);
       }
 
-      // 2. If Groq didn't find high confidence match, try Gemini 2.0 Flash Vision & Language
-      if (!aiMatch || !aiMatch.site) {
-        try {
-          const { matchSlideToInventoryWithGemini } = await import('../services/geminiService');
-          aiMatch = await matchSlideToInventoryWithGemini(slide.text, topCandidates);
-        } catch (geminiErr) {
-          console.warn('[Gemini Engine Step Notice]:', geminiErr);
+      // 1. Primary: Run Google Gemini 3.7 Flash Multimodal Vision & OCR
+      try {
+        const { analyzePptSlideWithGeminiVision } = await import('../services/geminiService');
+        const aiResult = await analyzePptSlideWithGeminiVision(imageBase64, slide.text, topCandidates);
+        if (aiResult) {
+          slide.aiData = aiResult;
+          if (aiResult.matchedSite) {
+            slide.suggestedSiteId = aiResult.matchedSite._SiteID || aiResult.matchedSite.UniqueID || aiResult.matchedSite.ID || '';
+            slide.confidence = aiResult.confidence || 'HIGH';
+            slide.status = 'MATCHED';
+            slide.aiReason = aiResult.reason;
+          } else if (aiResult.locationName) {
+            slide.aiReason = `Extracted by Gemini 3.7 Flash: ${aiResult.locationName} (${aiResult.facing || aiResult.city || 'Identified'})`;
+          }
         }
+      } catch (geminiErr) {
+        console.warn('[Gemini 3.7 Flash Engine Step Notice]:', geminiErr);
       }
 
-      if (aiMatch && aiMatch.site) {
-        slide.suggestedSiteId = aiMatch.site._SiteID || aiMatch.site.UniqueID || aiMatch.site.ID || '';
-        slide.confidence = aiMatch.confidence || 'HIGH';
-        slide.status = 'MATCHED';
-        slide.aiReason = aiMatch.reason;
+      // 2. Secondary: Groq Semantic Matcher (if Gemini didn't match a site)
+      if (!slide.suggestedSiteId && slide.text && slide.text.length > 10) {
+        try {
+          const { matchSlideToInventoryWithGroq } = await import('../services/groqService');
+          const groqMatch = await matchSlideToInventoryWithGroq(slide.text, topCandidates);
+          if (groqMatch && groqMatch.site) {
+            slide.suggestedSiteId = groqMatch.site._SiteID || groqMatch.site.UniqueID || groqMatch.site.ID || '';
+            slide.confidence = groqMatch.confidence || 'HIGH';
+            slide.status = 'MATCHED';
+            slide.aiReason = groqMatch.reason;
+          }
+        } catch (groqErr) {
+          console.warn('[Groq Engine Step Notice]:', groqErr);
+        }
       }
     }
   }
@@ -294,7 +414,13 @@ export const parsePptx = async (arrayBuffer, sites) => {
 };
 
 export const releasePptxPreviews = (slides) => {
-  slides.forEach((slide) => slide.images.forEach((image) => {
-    if (image.previewUrl) URL.revokeObjectURL(image.previewUrl);
-  }));
+  if (!Array.isArray(slides)) return;
+  slides.forEach((slide) => {
+    (slide.images || []).forEach((image) => {
+      if (image.previewUrl && typeof URL !== 'undefined' && typeof URL.revokeObjectURL === 'function') {
+        URL.revokeObjectURL(image.previewUrl);
+      }
+    });
+  });
 };
+
