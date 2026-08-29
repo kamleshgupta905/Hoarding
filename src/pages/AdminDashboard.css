@@ -2,30 +2,29 @@
 :root {
     --sidebar-bg: #111827;
     --sidebar-hover: rgba(255, 255, 255, 0.06);
-    --sidebar-active: #142e20;
-    --primary-accent: #10b981;
-    --success-green: #10b981;
+    --sidebar-active: rgba(0, 200, 81, 0.15);
+    --primary-accent: #00c851;
+    --success-green: #00c851;
     --warning-orange: #f59e0b;
-    --bg-main: #f3f4f6;
-    --text-dark: #111827;
-    --text-muted: #6b7280;
-    --border-color: #e5e7eb;
+    --bg-main: #f8fafc;
+    --text-dark: #0f172a;
+    --text-muted: #64748b;
+    --border-color: #e2e8f0;
     --card-shadow: 0 1px 3px rgba(0, 0, 0, 0.03);
 }
 
 .admin-dashboard {
     display: flex;
     min-height: 100vh;
-    background: #f3f4f6;
+    background: var(--bg-main);
     font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-    color: #111827;
+    color: var(--text-dark);
 }
 
 /* 🧊 Sidebar Styles */
-/* 🧊 Sidebar Styles (QuickMart Executive Charcoal) */
 .admin-sidebar {
     width: 250px;
-    background: #111827;
+    background: var(--sidebar-bg);
     padding: 24px 16px;
     display: flex;
     flex-direction: column;
@@ -143,7 +142,7 @@
 .logo-icon {
     width: 38px;
     height: 38px;
-    background: #00c851;
+    background: var(--primary-accent);
     border-radius: 12px;
     display: flex;
     align-items: center;
@@ -200,14 +199,14 @@
 }
 
 .nav-item.active {
-    background: #142e20 !important;
-    color: #00c851 !important;
+    background: var(--sidebar-active) !important;
+    color: var(--primary-accent) !important;
     font-weight: 700;
     border-radius: 12px;
 }
 
 .nav-item.active svg {
-    color: #00c851 !important;
+    color: var(--primary-accent) !important;
 }
 
 /* 🏷️ Sidebar Badges */
@@ -391,10 +390,13 @@
     flex-direction: column;
     padding: 0;
     min-width: 0;
-    overflow: hidden;
+    overflow-x: clip;
 }
 
 .admin-top-bar {
+    position: sticky;
+    top: 0;
+    z-index: 100;
     height: 72px;
     background: rgba(255, 255, 255, 0.88);
     padding: 0 32px;
@@ -5241,3 +5243,182 @@
 .sheet-context-menu button:last-child:hover { background: #fef2f2; }
 .sheet-filter-dropdown button:hover { background: #eff6ff !important; }
 .sheet-filter-dropdown button:last-child { border-bottom: none; }
+
+/* =========================================================================
+   📱 ADMIN DASHBOARD UNIVERSAL RESPONSIVE STYLES (PC, Laptop, Tablet, Mobile)
+   ========================================================================= */
+
+@media (max-width: 1200px) {
+    .charts-flex-container {
+        grid-template-columns: 1fr;
+    }
+    .qm-kpi-grid {
+        grid-template-columns: repeat(2, 1fr);
+    }
+    .qm-bento-grid {
+        grid-template-columns: 1fr;
+    }
+    .qm-showcase-grid {
+        grid-template-columns: repeat(2, 1fr);
+    }
+}
+
+@media (max-width: 992px) {
+    .admin-dashboard {
+        position: relative;
+        width: 100%;
+        max-width: 100vw;
+        overflow-x: clip;
+    }
+
+    .admin-sidebar {
+        position: fixed;
+        top: 0;
+        left: 0;
+        bottom: 0;
+        z-index: 2000;
+        transform: translateX(-100%);
+        box-shadow: 0 0 40px rgba(0, 0, 0, 0.4);
+    }
+
+    .admin-sidebar.mobile-open {
+        transform: translateX(0);
+    }
+
+    .mobile-admin-toggle {
+        display: flex;
+    }
+
+    .admin-main-content {
+        width: 100%;
+        max-width: 100vw;
+        overflow-x: clip;
+    }
+
+    .admin-top-bar {
+        padding: 0 16px;
+        height: auto;
+        min-height: 64px;
+        flex-wrap: wrap;
+        gap: 12px;
+    }
+
+    .top-bar-right {
+        width: 100%;
+        justify-content: space-between;
+        gap: 12px;
+        flex-wrap: wrap;
+    }
+
+    .admin-search-box {
+        width: 100%;
+        max-width: 100%;
+        order: 2;
+    }
+
+    .action-btns {
+        width: 100%;
+        justify-content: flex-start;
+        overflow-x: auto;
+        padding-bottom: 4px;
+        order: 1;
+    }
+
+    .staff-updates-section,
+    .staff-review-view {
+        margin: 16px;
+        padding: 16px;
+    }
+
+    .proposal-panel {
+        padding: 16px;
+    }
+
+    .proposal-panel-header {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 12px;
+    }
+
+    .sheet-editor-header {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 12px;
+        padding: 16px;
+    }
+
+    .sheet-editor-toolbar {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 10px;
+        padding: 12px 16px;
+    }
+
+    .sheet-search-box {
+        width: 100%;
+    }
+}
+
+@media (max-width: 768px) {
+    .qm-dashboard-view {
+        padding: 16px 12px 32px;
+    }
+
+    .qm-kpi-grid {
+        grid-template-columns: 1fr;
+        gap: 12px;
+    }
+
+    .qm-showcase-grid {
+        grid-template-columns: 1fr;
+        gap: 12px;
+    }
+
+    .staff-review-grid {
+        grid-template-columns: 1fr;
+        gap: 14px;
+    }
+
+    .recent-photo-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .crud-modal,
+    .modal-card {
+        width: 95% !important;
+        max-width: 95% !important;
+        margin: 8px auto !important;
+    }
+
+    .form-row,
+    .form-row.two-cols,
+    .form-row.three-cols {
+        grid-template-columns: 1fr !important;
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+    }
+
+    .admin-toast-container {
+        left: 12px;
+        right: 12px;
+        bottom: 16px;
+    }
+
+    .admin-toast {
+        min-width: auto;
+        max-width: 100%;
+        width: 100%;
+    }
+}
+
+@media (max-width: 480px) {
+    .top-bar-left h2 {
+        font-size: 0.95rem;
+    }
+
+    .qm-spec-pill {
+        padding: 4px 8px;
+        font-size: 0.7rem;
+    }
+}
