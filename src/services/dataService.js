@@ -238,68 +238,108 @@ export const getDeletedSites = () => {
 };
 
 export const fetchHoardings = async () => {
+  let parsedData = [];
+  let isLoaded = false;
+  const deletedSet = getDeletedSites();
+
+  // Tier 1: Google Visualization API (Direct CORS-enabled CSV - Super Fast & No Quota)
   try {
-    let parsedData = [];
-    let isCsv = false;
-    const deletedSet = getDeletedSites();
-
-    try {
-        // Attempt 1: Direct CSV Export (Fastest, no Apps Script quotas)
-        // Omit {cache: 'no-store'} to strictly avoid CORS preflight OPTIONS requests!
-        const fetchUrl = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/export?format=csv&sheet=${SHEET_NAME}&_t=${Date.now()}`;
-        const rawData = await requestText(fetchUrl, { credentials: 'omit' }, 15000);
-        
-        const parsed = Papa.parse(rawData, { header: true, skipEmptyLines: true });
-        if (parsed.data && parsed.data.length > 0) {
-            parsedData = parsed.data;
-            isCsv = true;
-        }
-    } catch (err1) {
-        console.warn("Direct CSV fetch failed, falling back to Apps Script:", err1.message);
+    const fetchUrl = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:csv&sheet=${SHEET_NAME}&_t=${Date.now()}`;
+    const rawData = await requestText(fetchUrl, { credentials: 'omit' }, 12000);
+    const parsed = Papa.parse(rawData, { header: true, skipEmptyLines: true });
+    if (parsed.data && parsed.data.length > 0) {
+      parsedData = parsed.data;
+      isLoaded = true;
     }
+  } catch (errGviz) {
+    console.warn("GViz spreadsheet fetch failed, trying Apps Script:", errGviz.message);
+  }
 
-    if (!isCsv || parsedData.length === 0) {
-        // Attempt 2: Secure Apps Script Backend (Bypasses multiple-account CORS bugs)
-        const fetchUrl = `${STAFF_SCRIPT_URL}?action=pullChanges&_t=${Date.now()}`;
-        const response = await requestJson(fetchUrl, { credentials: 'omit' }, 60000); // 60s timeout for Apps Script
-        
-        if (!response || !response.success || !response.rows || response.rows.length === 0) {
-          return [];
-        }
-        
+  // Tier 2: Secure Apps Script Backend (Bypasses multiple-account CORS bugs)
+  if (!isLoaded || parsedData.length === 0) {
+    try {
+      const fetchUrl = `${STAFF_SCRIPT_URL}?action=pullChanges&_t=${Date.now()}`;
+      const response = await requestJson(fetchUrl, { credentials: 'omit' }, 30000);
+      if (response && response.success && response.rows && response.rows.length > 0) {
         const headers = response.headers;
         parsedData = response.rows.map(row => {
-            const obj = {};
-            headers.forEach((h, i) => obj[h] = row[i]);
-            return obj;
+          const obj = {};
+          headers.forEach((h, i) => obj[h] = row[i]);
+          return obj;
         });
+        isLoaded = true;
+      }
+    } catch (errScript) {
+      console.warn("Apps Script live fetch failed, trying direct export:", errScript.message);
     }
-
-    if (!parsedData || parsedData.length === 0) return [];
-
-    return parsedData
-      .filter(item => {
-        if (!item || !item.City || item.City.toLowerCase() === 'total') return false;
-        if (item._DeletedAt) return false;
-        
-        const loc = String(item['Location '] || item['Locality Site Location'] || item['Location'] || '').trim();
-        const locality = String(item['Locality'] || item['Area'] || '').trim();
-        const img = String(item.ImageURL || item['Site Photo'] || '');
-        const id = String(item.UniqueID || item['Unique ID'] || item.ID || item._SiteID || '').trim().toLowerCase();
-        
-        if (img.includes('1gxuIMFvFbop-0usp0vf41QbwRgoOKJFr')) return false;
-        if (!loc && (!locality || locality === 't' || locality.length <= 1)) return false;
-        
-        if (id && deletedSet.has(id)) return false;
-        if (loc && deletedSet.has(loc.toLowerCase())) return false;
-        
-        return true;
-      })
-      .map(normalizeHoarding);
-  } catch (error) {
-    console.error("Live Spreadsheet Fetch Failed:", error);
-    throw error;
   }
+
+  // Tier 3: Direct CSV Export Fallback
+  if (!isLoaded || parsedData.length === 0) {
+    try {
+      const fetchUrl = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/export?format=csv&sheet=${SHEET_NAME}&_t=${Date.now()}`;
+      const rawData = await requestText(fetchUrl, { credentials: 'omit' }, 12000);
+      const parsed = Papa.parse(rawData, { header: true, skipEmptyLines: true });
+      if (parsed.data && parsed.data.length > 0) {
+        parsedData = parsed.data;
+        isLoaded = true;
+      }
+    } catch (errExport) {
+      console.warn("Direct CSV export fetch failed:", errExport.message);
+    }
+  }
+
+  // If live network succeeded, filter, normalize, cache and return
+  if (isLoaded && parsedData.length > 0) {
+    try {
+      const normalized = parsedData
+        .filter(item => {
+          if (!item || !item.City || item.City.toLowerCase() === 'total') return false;
+          if (item._DeletedAt) return false;
+          
+          const loc = String(item['Location '] || item['Locality Site Location'] || item['Location'] || '').trim();
+          const locality = String(item['Locality'] || item['Area'] || '').trim();
+          const img = String(item.ImageURL || item['Site Photo'] || '');
+          const id = String(item.UniqueID || item['Unique ID'] || item.ID || item._SiteID || '').trim().toLowerCase();
+          
+          if (img.includes('1gxuIMFvFbop-0usp0vf41QbwRgoOKJFr')) return false;
+          if (!loc && (!locality || locality === 't' || locality.length <= 1)) return false;
+          
+          if (id && deletedSet.has(id)) return false;
+          if (loc && deletedSet.has(loc.toLowerCase())) return false;
+          
+          return true;
+        })
+        .map(normalizeHoarding);
+
+      if (normalized.length > 0 && typeof window !== 'undefined') {
+        try {
+          localStorage.setItem('hoardings_cache', JSON.stringify(normalized));
+        } catch {}
+      }
+      return normalized;
+    } catch (normErr) {
+      console.warn("Data normalization error:", normErr);
+    }
+  }
+
+  // Tier 4: Offline / Cache Fallback (Ensures zero downtime or crashes)
+  if (typeof window !== 'undefined') {
+    try {
+      const cached = localStorage.getItem('hoardings_cache');
+      if (cached) {
+        const parsedCached = JSON.parse(cached);
+        if (Array.isArray(parsedCached) && parsedCached.length > 0) {
+          console.log("Serving hoardings from local storage cache.");
+          return parsedCached;
+        }
+      }
+    } catch (cacheErr) {
+      console.warn("Cache read error:", cacheErr);
+    }
+  }
+
+  return [];
 };
 
 /**
@@ -514,18 +554,28 @@ export const fetchSheetGrid = async () => {
     console.warn("Direct CSV sheetGrid fetch failed, attempting Apps Script:", err);
   }
 
-  const result = await submitAdminOperation({
-    type: 'sheetGrid',
-    payload: {},
-    siteId: '',
-    baseVersion: null
-  }, { attempts: 3 });
-  return {
-    headers: result.headers || [],
-    rows: result.rows || [],
-    updatedAt: result.updatedAt || new Date().toISOString(),
-    hiddenColumns: result.hiddenColumns || []
-  };
+  try {
+    const result = await submitAdminOperation({
+      type: 'sheetGrid',
+      payload: {},
+      siteId: '',
+      baseVersion: null
+    }, { attempts: 2 });
+    return {
+      headers: result?.headers || [],
+      rows: result?.rows || [],
+      updatedAt: result?.updatedAt || new Date().toISOString(),
+      hiddenColumns: result?.hiddenColumns || []
+    };
+  } catch (adminErr) {
+    console.warn("Apps script sheetGrid fetch notice:", adminErr);
+    return {
+      headers: [],
+      rows: [],
+      updatedAt: new Date().toISOString(),
+      hiddenColumns: []
+    };
+  }
 };
 
 export const saveSheetGrid = async ({ headers, rows }) => {

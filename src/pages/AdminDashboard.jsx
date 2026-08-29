@@ -686,8 +686,8 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                 let completed = 0;
                 let syncedCount = 0;
                 
-                // Process photo sync in parallel batches of 4 for speed with minimal delay
-                const BATCH_SIZE = 4;
+                // Process photo sync in parallel batches of 2 for maximum Google Apps Script & Drive reliability
+                const BATCH_SIZE = 2;
                 for (let i = 0; i < processableSlides.length; i += BATCH_SIZE) {
                     updateFileProcessing({ 
                         phase: `Syncing photos to Google Drive... (${i + 1} to ${Math.min(i + BATCH_SIZE, processableSlides.length)} of ${processableSlides.length})`, 
@@ -733,7 +733,7 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                         }
 
                         let success = false;
-                        for (let attempt = 1; attempt <= 4 && !success; attempt++) {
+                        for (let attempt = 1; attempt <= 5 && !success; attempt++) {
                             try {
                                 const res = await syncToGoogleSheet({
                                     action: 'updateHoarding',
@@ -755,10 +755,10 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                     throw new Error(res?.error || 'Sync rejected');
                                 }
                             } catch (uploadErr) {
-                                if (attempt < 4) {
-                                    await wait(1200 * attempt);
+                                if (attempt < 5) {
+                                    await wait(1500 * attempt);
                                 } else {
-                                    console.warn(`[PPT Upload] Failed for slide ${slide.number} after 4 attempts:`, uploadErr);
+                                    console.warn(`[PPT Upload] Failed for slide ${slide.number} after 5 attempts:`, uploadErr);
                                 }
                             }
                         }
@@ -766,14 +766,14 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                         completed++;
                         const percent = Math.round(45 + (completed / processableSlides.length) * 50);
                         updateFileProcessing({
-                            phase: `⚡ Groq & Gemini AI Sync: ${completed}/${processableSlides.length} slides (${syncedCount} photos synced)...`,
+                            phase: `⚡ Groq AI Sync: ${completed}/${processableSlides.length} slides (${syncedCount} photos synced)...`,
                             progress: percent
                         });
                     }));
                     
-                    // Smooth breathing delay
+                    // Smooth breathing delay between batches to ensure Drive & Apps Script lock safety
                     if (i + BATCH_SIZE < processableSlides.length) {
-                        await wait(300);
+                        await wait(500);
                     }
                 }
                 releasePptxPreviews(slides);
@@ -781,7 +781,7 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                 await wait(1200);
                 const freshData = await fetchHoardings();
                 if (freshData?.length) setHoardings(freshData);
-                completeBackgroundUpload('completed', `PPT processing complete! ${syncedCount} of ${processableSlides.length} slide photos uploaded and synced via Groq & Gemini AI.`);
+                completeBackgroundUpload('completed', `PPT processing complete! ${syncedCount} of ${processableSlides.length} slide photos uploaded and synced via Groq AI.`);
             } catch (error) {
                 completeBackgroundUpload('error', type === 'excel' ? `Excel preview failed: ${error.message}` : `PPT failed: ${error.message}`);
             }

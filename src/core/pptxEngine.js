@@ -331,12 +331,17 @@ export const parsePptx = async (arrayBuffer, sites = [], onProgress = null) => {
 
   if (onProgress) onProgress(55, `Processing unlinked media files...`);
 
-  // 🛡️ Zero-Loss Fallback 1: If any slide has 0 images, match with available PPT media by slide index
+  // 🛡️ Zero-Loss Fallback 1: If any genuine hoarding slide has 0 images, match with unassigned PPT media
   for (let i = 0; i < slides.length; i++) {
     const slide = slides[i];
-    if (slide.images.length === 0 && allMediaPaths.length > 0) {
+    const isCoverOrNonSiteSlide = /^(presentation|media\s*plan|proposal|thank\s*you|about\s*us|contact\s*us|heera\s*advertising\s*profile|profile|index|agenda)$/i.test((slide.text || '').trim())
+      && !/(latitude|longitude|\d+\.\d{3,}|\d+\s*[xX*]\s*\d+|sq\.?\s*ft|facing|unipole|billboard|gantry|b-board|road|chowk|bypass|marg|nagar|cantt|bridge)/i.test(slide.text || '');
+
+    if (slide.images.length === 0 && allMediaPaths.length > 0 && !isCoverOrNonSiteSlide) {
       const candidatePath = allMediaPaths[i] || allMediaPaths[slide.number - 1];
-      if (candidatePath && zip.file(candidatePath)) {
+      const isLogoPath = /(logo|watermark|icon|badge|header|footer|bullet|arrow|stamp|button|shape|symbol|vector)/i.test(candidatePath || '');
+
+      if (candidatePath && !isLogoPath && zip.file(candidatePath)) {
         assignedMediaPaths.add(candidatePath);
         
         let cached = mediaCache.get(candidatePath);
@@ -353,52 +358,69 @@ export const parsePptx = async (arrayBuffer, sites = [], onProgress = null) => {
                 continue;
             }
         }
-        
-        hashUsage.set(cached.hash, (hashUsage.get(cached.hash) || 0) + 1);
 
-        slide.images.push({
-          id: `${slide.number}-fallback`,
-          mediaName: cached.mediaName,
-          blob: cached.blob,
-          hash: cached.hash,
-          size: cached.size,
-          width: cached.dimensions.width,
-          height: cached.dimensions.height,
-          previewUrl: ''
-        });
+        // Assign if not an empty/corrupted file
+        if (cached && cached.size >= 8000) {
+            hashUsage.set(cached.hash, (hashUsage.get(cached.hash) || 0) + 1);
+
+            slide.images.push({
+              id: `${slide.number}-fallback`,
+              mediaName: cached.mediaName,
+              blob: cached.blob,
+              hash: cached.hash,
+              size: cached.size,
+              width: cached.dimensions.width,
+              height: cached.dimensions.height,
+              previewUrl: ''
+            });
+        }
       }
     }
   }
 
   // 🏷️ Ultra-Accurate Agency Logo & Watermark Identification
+  const totalSlides = slides.length;
   slides.forEach((slide) => {
+    const isCoverOrNonSiteSlide = /^(presentation|media\s*plan|proposal|thank\s*you|about\s*us|contact\s*us|heera\s*advertising\s*profile|profile|index|agenda)$/i.test((slide.text || '').trim())
+      && !/(latitude|longitude|\d+\.\d{3,}|\d+\s*[xX*]\s*\d+|sq\.?\s*ft|facing|unipole|billboard|gantry|b-board|road|chowk|bypass|marg|nagar|cantt|bridge)/i.test(slide.text || '');
+
     const maxArea = Math.max(1, ...slide.images.map((image) => (image.width || 1) * (image.height || 1)));
 
     slide.images = slide.images.map((image) => {
       const count = hashUsage.get(image.hash) || 0;
       const area = (image.width || 0) * (image.height || 0);
       const relativeArea = maxArea > 0 ? area / maxArea : 1;
-      const isRepeatedAcrossSlides = count >= 5;
-      const hasLogoKeyword = /(logo|watermark|icon|badge|header|footer|bullet|arrow|hira|adv|stamp)/i.test(image.mediaName || '');
       
-      const isSmallGraphic = (relativeArea < 0.35 || image.size < 40000) && slide.images.length > 1;
-      const isTinyDimensions = (image.width > 0 && image.width < 320 && image.height > 0 && image.height < 220);
-      const isAspectLogo = (image.width > 0 && image.height > 0) && ((image.width / image.height > 3.2) || (image.height / image.width > 3.2)) && image.size < 80000;
+      // 1. Repeated across 3 or more slides (or >30% of total slides) = Template Logo/Watermark
+      const isRepeatedAcrossSlides = totalSlides >= 4 ? count >= 3 : count >= totalSlides;
       
-      let logoCandidate = isRepeatedAcrossSlides || hasLogoKeyword || isSmallGraphic || isTinyDimensions || isAspectLogo;
+      // 2. Keyword matching for brand/logo assets
+      const hasLogoKeyword = /(logo|watermark|icon|badge|header|footer|bullet|arrow|stamp|button|shape|symbol|vector)/i.test(image.mediaName || '');
       
-      // Never mark as logo if it's a large image and the only one on the slide, unless it's repeated everywhere
-      if (slide.images.length === 1 && count < 10) {
-          logoCandidate = false;
-      }
+      // 3. Small size / low resolution graphic when slide has multiple images
+      const isSmallGraphic = (relativeArea < 0.25 || image.size < 25000) && slide.images.length > 1;
+      const isTinyDimensions = (image.width > 0 && image.width < 180) || (image.height > 0 && image.height < 140);
+      const isAspectLogo = (image.width > 0 && image.height > 0) && ((image.width / image.height > 3.5) || (image.height / image.width > 3.5)) && image.size < 60000 && slide.images.length > 1;
+      
+      let logoCandidate = isRepeatedAcrossSlides || (slide.images.length > 1 && (hasLogoKeyword || isSmallGraphic || isTinyDimensions || isAspectLogo)) || (isCoverOrNonSiteSlide && isTinyDimensions);
 
       return { ...image, repeated: isRepeatedAcrossSlides, logoCandidate };
     });
 
-    // Pick ONLY genuine billboard photos (excluding all logos, icons, and watermark graphics)
-    const validPhotos = slide.images.filter((image) => !image.logoCandidate);
+    // Pick ONLY genuine billboard photos
+    let validPhotos = slide.images.filter((image) => !image.logoCandidate && image.size >= 8000);
 
-    if (validPhotos.length > 0) {
+    // 🛡️ Zero-Loss Guarantee: If filtering was too aggressive and slide has images, pick the largest image that is not the repeated deck logo
+    if (validPhotos.length === 0 && slide.images.length > 0 && !isCoverOrNonSiteSlide) {
+      const nonDeckLogoImages = slide.images.filter(img => !img.repeated && img.size >= 8000);
+      if (nonDeckLogoImages.length > 0) {
+        validPhotos = nonDeckLogoImages;
+      } else {
+        validPhotos = slide.images.filter(img => img.size >= 8000);
+      }
+    }
+
+    if (validPhotos.length > 0 && !isCoverOrNonSiteSlide) {
       // Sort to get the highest quality main billboard photo
       validPhotos.sort((a, b) => {
         const areaA = (a.width || 0) * (a.height || 0);
@@ -408,7 +430,6 @@ export const parsePptx = async (arrayBuffer, sites = [], onProgress = null) => {
       // Pick the single best primary billboard photo for this slide
       slide.photoCandidates = [validPhotos[0]];
     } else {
-      // If slide only contains logos (e.g. Title slide, Thank You slide, Agency profile), do NOT extract logo!
       slide.photoCandidates = [];
     }
 
@@ -417,12 +438,12 @@ export const parsePptx = async (arrayBuffer, sites = [], onProgress = null) => {
     slide.status = slide.suggestedSiteId && slide.photoCandidates.length ? (slide.confidence === 'HIGH' ? 'MATCHED' : 'REVIEW') : (slide.photoCandidates.length ? 'REVIEW' : 'SKIPPED');
   });
 
-  // 🌟 LATEST AI ENGINE: Ultra-Fast Groq AI + Multimodal Vision
+  // ⚡ PURE GROQ AI ENGINE: Ultra-Fast Groq Semantic Extraction & Inventory Matching
   // Process in fast parallel batches of 6 for lightning speed
   const AI_BATCH_SIZE = 6;
   for (let i = 0; i < slides.length; i += AI_BATCH_SIZE) {
     if (onProgress) {
-        onProgress(60 + Math.round((i / slides.length) * 35), `⚡ AI Extraction & Auto-Matching... Slide ${i + 1} to ${Math.min(i + AI_BATCH_SIZE, slides.length)} of ${slides.length}`);
+        onProgress(60 + Math.round((i / slides.length) * 35), `⚡ Groq AI Extraction & Auto-Matching... Slide ${i + 1} to ${Math.min(i + AI_BATCH_SIZE, slides.length)} of ${slides.length}`);
     }
     const slideBatch = slides.slice(i, i + AI_BATCH_SIZE);
     
@@ -432,8 +453,7 @@ export const parsePptx = async (arrayBuffer, sites = [], onProgress = null) => {
           ? slide.candidates.map(c => c.site) 
           : (sites || []).slice(0, 20);
 
-        // 1. Primary: Ultra-Fast Groq Combined Semantic Parsing & Site Matching (~150ms)
-        let groqSuccess = false;
+        // Primary: Ultra-Fast Groq Combined Semantic Parsing & Site Matching (~150ms)
         if (slide.text && slide.text.trim().length > 3) {
           try {
             const { parseAndMatchSlideWithGroq } = await import('../services/groqService');
@@ -454,36 +474,9 @@ export const parsePptx = async (arrayBuffer, sites = [], onProgress = null) => {
                 slide.status = 'MATCHED';
                 slide.aiReason = groqRes.reason || 'Matched by Groq AI';
               }
-              groqSuccess = true;
             }
           } catch (groqErr) {
             console.warn('[Groq Fast Engine Notice]:', groqErr);
-          }
-        }
-
-        // 2. Secondary: Fallback to Gemini Multimodal ONLY if no text on slide
-        if (!groqSuccess && (!slide.text || slide.text.trim().length <= 3)) {
-          try {
-            const primaryPhoto = slide.photoCandidates[0];
-            let imageBase64 = null;
-            if (primaryPhoto && primaryPhoto.blob) {
-              imageBase64 = await blobToBase64(primaryPhoto.blob);
-            }
-            if (imageBase64) {
-              const { analyzePptSlideWithGeminiVision } = await import('../services/geminiService');
-              const aiResult = await analyzePptSlideWithGeminiVision(imageBase64, slide.text, topCandidates);
-              if (aiResult) {
-                slide.aiData = { ...(slide.aiData || {}), ...aiResult };
-                if (aiResult.matchedSite) {
-                  slide.suggestedSiteId = aiResult.matchedSite._SiteID || aiResult.matchedSite.UniqueID || aiResult.matchedSite.ID || '';
-                  slide.confidence = aiResult.confidence || 'HIGH';
-                  slide.status = 'MATCHED';
-                  slide.aiReason = aiResult.reason;
-                }
-              }
-            }
-          } catch (geminiErr) {
-            console.warn('[Gemini Step Notice]:', geminiErr);
           }
         }
       }
