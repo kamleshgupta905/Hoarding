@@ -21,11 +21,16 @@
     transition: transform 0.6s cubic-bezier(0.165, 0.84, 0.44, 1);
 }
 
-.shot-download-btn {
+.shot-top-actions {
     position: absolute;
     top: 12px;
     right: 12px;
     z-index: 3;
+    display: flex;
+    gap: 8px;
+}
+
+.shot-action-btn {
     width: 36px;
     height: 36px;
     border: 1px solid rgba(255, 255, 255, 0.65);
@@ -40,9 +45,17 @@
     transition: var(--transition);
 }
 
-.shot-download-btn:hover {
+.shot-action-btn:hover {
     background: white;
     transform: translateY(-1px);
+}
+
+.shot-action-btn.active-favorite {
+    color: #ea4c89;
+}
+
+.shot-action-btn.active-favorite svg {
+    fill: #ea4c89;
 }
 
 .hoarding-shot:hover .shot-image-container img {

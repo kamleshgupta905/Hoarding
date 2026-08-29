@@ -1,14 +1,16 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { downloadHoardingImage, getImageUrl } from '../services/dataService';
-import { MapPin, ArrowRight, Download } from 'lucide-react';
+import { MapPin, ArrowRight, Download, Heart } from 'lucide-react';
 import ImageLightbox from './ImageLightbox';
 import './HoardingCard.css';
 
 const HoardingCard = ({ hoarding }) => {
     const navigate = useNavigate();
     const [isImageOpen, setIsImageOpen] = React.useState(false);
+    const [isFavorite, setIsFavorite] = useState(false);
     const clickTimer = React.useRef(null);
+
     const imageUrl = getImageUrl(hoarding);
     const locality = hoarding["Area"] || hoarding["Locality"] || 'Unknown Locality';
     const siteLocation = hoarding["Location "] || hoarding["Locality Site Location"] || hoarding["Location"] || 'Unknown Location';
@@ -16,6 +18,34 @@ const HoardingCard = ({ hoarding }) => {
     const typeOfSite = hoarding["Media"] || hoarding["Type of Site (Unipole/Billboard)"] || 'N/A';
     const cost = hoarding["Rental Per Month"] || hoarding["Avg Monthly Cost (INR)"] || '0';
     const status = (hoarding.STATUS || 'Available').trim().toLowerCase();
+
+    const favoriteId = `${hoarding.City}-${siteLocation}`;
+
+    // Initialize favorite status from localStorage
+    useEffect(() => {
+        const storedFavorites = JSON.parse(localStorage.getItem('favorite_hoardings') || '[]');
+        if (storedFavorites.includes(favoriteId)) {
+            setIsFavorite(true);
+        }
+    }, [favoriteId]);
+
+    const toggleFavorite = (event) => {
+        event.stopPropagation();
+        const storedFavorites = JSON.parse(localStorage.getItem('favorite_hoardings') || '[]');
+        
+        let newFavorites;
+        if (isFavorite) {
+            newFavorites = storedFavorites.filter(id => id !== favoriteId);
+        } else {
+            newFavorites = [...storedFavorites, favoriteId];
+        }
+        
+        localStorage.setItem('favorite_hoardings', JSON.stringify(newFavorites));
+        setIsFavorite(!isFavorite);
+        
+        // Dispatch custom event in case we want to sync across tabs/components
+        window.dispatchEvent(new CustomEvent('hoardings:favorites-updated'));
+    };
 
     const handleClick = () => {
         clickTimer.current = setTimeout(() => {
@@ -44,15 +74,26 @@ const HoardingCard = ({ hoarding }) => {
                         e.target.src = 'https://placehold.co/600x400?text=Premium+Hoarding';
                     }}
                 />
-                <button
-                    type="button"
-                    className="shot-download-btn"
-                    onClick={handleDownload}
-                    title="Download image"
-                    aria-label="Download hoarding image"
-                >
-                    <Download size={16} />
-                </button>
+                <div className="shot-top-actions">
+                    <button
+                        type="button"
+                        className={`shot-action-btn ${isFavorite ? 'active-favorite' : ''}`}
+                        onClick={toggleFavorite}
+                        title={isFavorite ? "Remove from favorites" : "Save to favorites"}
+                        aria-label={isFavorite ? "Remove from favorites" : "Save to favorites"}
+                    >
+                        <Heart size={16} />
+                    </button>
+                    <button
+                        type="button"
+                        className="shot-action-btn"
+                        onClick={handleDownload}
+                        title="Download image"
+                        aria-label="Download hoarding image"
+                    >
+                        <Download size={16} />
+                    </button>
+                </div>
                 <div className="shot-overlay">
                     <div className="shot-action">
                         <ArrowRight size={20} />

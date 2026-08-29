@@ -21,12 +21,12 @@ import { parsePptx, releasePptxPreviews } from '../core/pptxEngine';
 import { HIRA_LOGO } from '../assets/hiraLogoData';
 import { 
     AnimatedCounter, 
-    QuickMartLineChart, 
     QuickMartDonutChart, 
     QuickMartTopLocationsChart 
 } from '../components/ExecutiveCharts';
 import { motion, AnimatePresence } from 'motion/react';
 import SystemGuide from './SystemGuide';
+import ProposalBuilder from '../components/ProposalBuilder';
 import './AdminDashboard.css';
 
 const SHEET_HISTORY_LIMIT = 30;
@@ -583,7 +583,7 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
     // Helper: POST to Apps Script with timeout to prevent infinite hanging
     const postToScript = async (payload, timeoutMs = 120000) => {
         const controller = new AbortController();
-        const timer = setTimeout(() => controller.abort(), timeoutMs);
+        const timer = setTimeout(() => controller.abort(new Error(`Upload timed out after ${Math.round(timeoutMs / 1000)} seconds`)), timeoutMs);
         try {
             const response = await fetch(scriptUrl, {
                 method: 'POST',
@@ -667,7 +667,7 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                 const arrayBuffer = await file.arrayBuffer();
 
                 updateFileProcessing({ phase: 'Analyzing slides and extracting high-res photos...', progress: 35 });
-                const slides = await parsePptx(arrayBuffer, hoardings);
+                const slides = await parsePptx(arrayBuffer, hoardings, (progress, phase) => updateFileProcessing({ phase, progress }));
 
                 if (!slides || slides.length === 0) {
                     throw new Error('No valid slides could be found in the PPT.');
@@ -1957,6 +1957,21 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
     }, 0);
 
     // Prime Corridors / Localities Breakdown (Top 8 from real Meerut data)
+    const mediaFormatMap = {};
+    safeHoardings.forEach(h => {
+        if (!h) return;
+        const type = (h["Type of Site (Unipole/Billboard)"] || h["Media Format (Front Lit/ Back Lit/Non Lit)"] || 'Other').trim();
+        if (type) mediaFormatMap[type] = (mediaFormatMap[type] || 0) + 1;
+    });
+    const mediaFormats = Object.entries(mediaFormatMap)
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 5)
+        .map(([name, count]) => ({
+            name,
+            count,
+            percent: ((count / Math.max(totalHoardingsCount, 1)) * 100).toFixed(1)
+        }));
+
     const zoneMap = {};
     safeHoardings.forEach(h => {
         if (!h) return;
@@ -3175,6 +3190,10 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                         <Users size={18} />
                         <span>Clients & Booking</span>
                     </button>
+                    <button className={`nav-item ${activeTab === 'proposal-builder' ? 'active' : ''}`} onClick={() => setActiveTab('proposal-builder')}>
+                        <FileText size={18} />
+                        <span>Proposal Builder</span>
+                    </button>
                     <button className={`nav-item ${activeTab === 'daily-update' ? 'active' : ''}`} onClick={() => setActiveTab('daily-update')}>
                         <Zap size={18} />
                         <span>Daily Updates</span>
@@ -3342,9 +3361,9 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                     <div className="qm-kpi-value-row">
                                         <span className="qm-kpi-main-val">
                                             <AnimatedCounter 
-                                                value={totalMonthlyRevenue > 10000000 ? (totalMonthlyRevenue / 10000000) : 1.40} 
+                                                value={totalMonthlyRevenue > 10000000 ? (totalMonthlyRevenue / 10000000) : (totalMonthlyRevenue > 100000 ? (totalMonthlyRevenue / 100000) : (totalMonthlyRevenue > 1000 ? (totalMonthlyRevenue / 1000) : totalMonthlyRevenue))} 
                                                 prefix="₹" 
-                                                suffix=" Cr" 
+                                                suffix={totalMonthlyRevenue > 10000000 ? " Cr" : (totalMonthlyRevenue > 100000 ? " L" : (totalMonthlyRevenue > 1000 ? " K" : ""))} 
                                                 decimals={2} 
                                                 duration={800} 
                                             />
@@ -3369,7 +3388,7 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                     </div>
                                     <div className="qm-kpi-value-row">
                                         <span className="qm-kpi-main-val">
-                                            <AnimatedCounter value={bookedCount || 6} duration={800} />
+                                            <AnimatedCounter value={bookedCount} duration={800} />
                                         </span>
                                     </div>
                                 </motion.div>
@@ -3391,7 +3410,7 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                     </div>
                                     <div className="qm-kpi-value-row">
                                         <span className="qm-kpi-main-val">
-                                            <AnimatedCounter value={availableCount || 121} duration={800} />
+                                            <AnimatedCounter value={availableCount} duration={800} />
                                         </span>
                                     </div>
                                 </motion.div>
@@ -3403,14 +3422,14 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                     onClick={() => setActiveTab('clients')}
                                 >
                                     <div className="qm-kpi-top">
-                                        <span className="qm-kpi-label">Clients</span>
+                                        <span className="qm-kpi-label">Verified Sites</span>
                                         <div className="qm-kpi-icon-box qm-purple">
                                             <Users size={16} />
                                         </div>
                                     </div>
                                     <div className="qm-kpi-value-row">
                                         <span className="qm-kpi-main-val">
-                                            <AnimatedCounter value={verifiedAssetsCount ? Math.min(verifiedAssetsCount, 18) : 11} duration={800} />
+                                            <AnimatedCounter value={verifiedAssetsCount} duration={800} />
                                         </span>
                                     </div>
                                 </motion.div>
@@ -3426,22 +3445,22 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                 className="qm-bento-grid"
                             >
                                 
-                                {/* 📈 Left Card: Revenue Line Chart */}
+                                {/* 📈 Left Card: Media Formats (Real Data) */}
                                 <motion.div 
                                     whileHover={{ y: -2, transition: { duration: 0.18 } }}
                                     className="qm-card"
                                 >
                                     <div className="qm-card-header">
                                         <div>
-                                            <h3 className="qm-card-title">Revenue</h3>
+                                            <h3 className="qm-card-title">Media Formats</h3>
                                         </div>
                                         <span className="qm-header-badge">
-                                            Last 14 days
+                                            {mediaFormats.length} Types
                                         </span>
                                     </div>
 
-                                    <div style={{ padding: '4px 0 0' }}>
-                                        <QuickMartLineChart height={220} />
+                                    <div style={{ padding: '24px 0 0' }}>
+                                        <QuickMartTopLocationsChart data={mediaFormats} />
                                     </div>
                                 </motion.div>
 
@@ -4531,6 +4550,18 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                 </div>
                             )}
                         </div>
+                    </motion.div>
+                )}
+
+                {activeTab === 'proposal-builder' && (
+                    <motion.div 
+                        initial={{ opacity: 0, y: 12 }} 
+                        animate={{ opacity: 1, y: 0 }} 
+                        exit={{ opacity: 0, y: -8 }} 
+                        transition={{ duration: 0.28, ease: [0.16, 1, 0.3, 1] }} 
+                        className="dashboard-view"
+                    >
+                        <ProposalBuilder hoardings={safeHoardings} />
                     </motion.div>
                 )}
 

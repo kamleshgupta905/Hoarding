@@ -1,5 +1,5 @@
 import React from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { 
     ShieldCheck, Calendar, MapPin, ExternalLink, 
     TrendingUp, Layout, Clock, ChevronLeft, 
@@ -11,20 +11,30 @@ import { HIRA_LOGO } from '../assets/hiraLogoData';
 const ClientReport = ({ hoardings }) => {
     const { clientName } = useParams();
     const navigate = useNavigate();
+    const [searchParams] = useSearchParams();
     const decodedName = decodeURIComponent(clientName);
 
     // Filter sites for this specific client
-    const clientSites = hoardings.filter(h => 
-        h.BookedBy?.toLowerCase() === decodedName.toLowerCase() && 
-        h.STATUS === 'Occupied'
-    );
+    const sitesParam = searchParams.get('sites');
+    const isProposal = !!sitesParam;
+    
+    let clientSites = [];
+    if (isProposal) {
+        const siteIds = new Set(sitesParam.split(','));
+        clientSites = hoardings.filter(h => siteIds.has(h.UniqueID) || siteIds.has(h._SiteID) || siteIds.has(h.ID) || siteIds.has(h['Site Code']));
+    } else {
+        clientSites = hoardings.filter(h => 
+            h.BookedBy?.toLowerCase() === decodedName.toLowerCase() && 
+            h.STATUS === 'Occupied'
+        );
+    }
 
     if (clientSites.length === 0) {
         return (
             <div className="report-empty-state">
                 <div className="empty-card animate-in">
                     <Layout size={48} color="#6c5dd3" />
-                    <h2>No Active Campaigns</h2>
+                    <h2>{isProposal ? 'No Sites Found' : 'No Active Campaigns'}</h2>
                     <p>We couldn't find any live sites for <strong>{decodedName}</strong>.</p>
                     <button onClick={() => navigate('/')} className="btn-return">Return to Homepage</button>
                 </div>

@@ -4,9 +4,14 @@ import { ensureUprightDataUrl } from '../core/imageOrientation';
 
 const fetchWithTimeout = async (url, options = {}, timeoutMs = 35000) => {
   const controller = new AbortController();
-  const timer = window.setTimeout(() => controller.abort(), timeoutMs);
+  const timer = window.setTimeout(() => controller.abort(new Error(`Request timed out after ${timeoutMs}ms`)), timeoutMs);
   try {
     return await fetch(url, { ...options, signal: controller.signal });
+  } catch (err) {
+    if (err.name === 'AbortError' || err.message.includes('abort')) {
+        throw new Error(`Request timed out after ${timeoutMs}ms`);
+    }
+    throw err;
   } finally {
     window.clearTimeout(timer);
   }
@@ -264,7 +269,7 @@ export const fetchHoardings = async () => {
       .map(normalizeHoarding);
   } catch (error) {
     console.error("Live Spreadsheet Fetch Failed:", error);
-    return [];
+    throw error;
   }
 };
 

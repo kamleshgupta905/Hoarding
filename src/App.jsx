@@ -187,6 +187,7 @@ function AppContent({ hoardings, setHoardings }) {
             <Route path="/:city/:siteName" element={<HoardingDetail hoardings={hoardings} setHoardings={setHoardings} />} />
             <Route path="/audit/:city/:siteName" element={<PublicAudit hoardings={hoardings} setHoardings={setHoardings} />} />
             <Route path="/client/:clientName" element={<ClientReport hoardings={hoardings} />} />
+            <Route path="/proposal/:clientName" element={<ClientReport hoardings={hoardings} />} />
             <Route path="/staff" element={<StaffUpload />} />
             <Route path="/staff/upload" element={<StaffUpload />} />
           </Routes>

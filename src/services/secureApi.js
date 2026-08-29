@@ -10,9 +10,14 @@ const sleep = (duration) => new Promise((resolve) => window.setTimeout(resolve, 
 
 const fetchWithTimeout = async (url, options = {}, timeoutMs = 60000) => {
   const controller = new AbortController();
-  const timer = window.setTimeout(() => controller.abort(), timeoutMs);
+  const timer = window.setTimeout(() => controller.abort(new Error(`Request timed out after ${timeoutMs}ms`)), timeoutMs);
   try {
     return await fetch(url, { ...options, signal: controller.signal });
+  } catch (err) {
+    if (err.name === 'AbortError' || err.message.includes('abort')) {
+        throw new Error(`Request timed out after ${timeoutMs}ms`);
+    }
+    throw err;
   } finally {
     window.clearTimeout(timer);
   }
