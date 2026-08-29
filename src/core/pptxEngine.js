@@ -32,7 +32,7 @@ const getImageDimensions = async (blob) => {
       // Add a timeout to createImageBitmap just in case
       const bitmap = await Promise.race([
         createImageBitmap(blob),
-        new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 2000))
+        new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 300))
       ]);
       const dimensions = { width: bitmap.width, height: bitmap.height };
       bitmap.close();
@@ -63,7 +63,7 @@ const getImageDimensions = async (blob) => {
           img.src = ''; 
           URL.revokeObjectURL(url);
           resolve({ width: 0, height: 0 });
-        }, 3000);
+        }, 300);
         
         img.src = url;
       });
@@ -227,7 +227,7 @@ export const parsePptx = async (arrayBuffer, sites = [], onProgress = null) => {
 
   // Collect all media files present in the PPT archive
   const allMediaPaths = Object.keys(zip.files)
-    .filter((path) => /^ppt\/media\//i.test(path) && !zip.files[path].dir && !/\.xml$/i.test(path))
+    .filter((path) => /^ppt\/media\//i.test(path) && !zip.files[path].dir && /\.(png|jpe?g|webp|bmp|gif|jfif)$/i.test(path))
     .sort((a, b) => {
       const numA = Number(a.match(/(\d+)/)?.[1] || 0);
       const numB = Number(b.match(/(\d+)/)?.[1] || 0);
@@ -267,7 +267,7 @@ export const parsePptx = async (arrayBuffer, sites = [], onProgress = null) => {
         if (id && target) {
           relationshipMap.set(id, target);
         }
-        if (target && (target.includes('media/') || type.includes('image') || /\.(png|jpe?g|webp|bmp|gif|tiff|jfif)$/i.test(target))) {
+        if (target && /\\.(png|jpe?g|webp|bmp|gif|jfif)$/i.test(target)) {
           slideMediaTargets.add(target);
         }
       });
@@ -278,7 +278,10 @@ export const parsePptx = async (arrayBuffer, sites = [], onProgress = null) => {
     for (const node of blipNodes) {
       const embedId = node?.['@_embed'] || node?.['@_link'] || node?.['@_r:embed'] || node?.['@_r:link'] || node?.embed || node?.link;
       if (embedId && relationshipMap.has(embedId)) {
-        slideMediaTargets.add(relationshipMap.get(embedId));
+        const target = relationshipMap.get(embedId);
+        if (/\\.(png|jpe?g|webp|bmp|gif|jfif)$/i.test(target)) {
+            slideMediaTargets.add(target);
+        }
       }
     }
 
@@ -375,18 +378,19 @@ export const parsePptx = async (arrayBuffer, sites = [], onProgress = null) => {
       const count = hashUsage.get(image.hash) || 0;
       const area = (image.width || 0) * (image.height || 0);
       const relativeArea = maxArea > 0 ? area / maxArea : 1;
-      const isRepeatedAcrossSlides = count >= 2;
-      const hasLogoKeyword = /(logo|watermark|icon|badge|header|footer|shape|bullet|arrow|hira|adv|stamp)/i.test(image.mediaName || '');
+      const isRepeatedAcrossSlides = count >= 5;
+      const hasLogoKeyword = /(logo|watermark|icon|badge|header|footer|bullet|arrow|hira|adv|stamp)/i.test(image.mediaName || '');
       
-      // Strict Logo Criteria:
-      // 1. Appears on 2+ slides (like the agency logo at the corner of every slide)
-      // 2. Or is small relative to the main photo (area < 35% of maxArea or size < 40KB when larger photo exists)
-      // 3. Or has explicit logo keywords with small dimensions
       const isSmallGraphic = (relativeArea < 0.35 || image.size < 40000) && slide.images.length > 1;
       const isTinyDimensions = (image.width > 0 && image.width < 320 && image.height > 0 && image.height < 220);
       const isAspectLogo = (image.width > 0 && image.height > 0) && ((image.width / image.height > 3.2) || (image.height / image.width > 3.2)) && image.size < 80000;
-
-      const logoCandidate = isRepeatedAcrossSlides || hasLogoKeyword || isSmallGraphic || isTinyDimensions || isAspectLogo;
+      
+      let logoCandidate = isRepeatedAcrossSlides || hasLogoKeyword || isSmallGraphic || isTinyDimensions || isAspectLogo;
+      
+      // Never mark as logo if it's a large image and the only one on the slide, unless it's repeated everywhere
+      if (slide.images.length === 1 && count < 10) {
+          logoCandidate = false;
+      }
 
       return { ...image, repeated: isRepeatedAcrossSlides, logoCandidate };
     });

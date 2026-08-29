@@ -510,7 +510,7 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
     // ------------------------------------------------------------------
 
     const fetchExcelPreview = async (token) => {
-        const response = await fetch(`${scriptUrl}?action=excelImportPreview&token=${encodeURIComponent(token)}&sessionToken=${encodeURIComponent(getAdminSession())}&t=${Date.now()}`, { cache: 'no-store' });
+        const response = await fetch(`${scriptUrl}?action=excelImportPreview&token=${encodeURIComponent(token)}&sessionToken=${encodeURIComponent(getAdminSession())}&t=${Date.now()}`);
         if (!response.ok) throw new Error(`Preview fetch failed: ${response.status}`);
         return response.json();
     };
@@ -550,7 +550,7 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
     };
 
     const fetchFileJobStatus = async (token) => {
-        const response = await fetch(`${scriptUrl}?action=fileJobStatus&token=${encodeURIComponent(token)}&sessionToken=${encodeURIComponent(getAdminSession())}&t=${Date.now()}`, { cache: 'no-store' });
+        const response = await fetch(`${scriptUrl}?action=fileJobStatus&token=${encodeURIComponent(token)}&sessionToken=${encodeURIComponent(getAdminSession())}&t=${Date.now()}`);
         if (!response.ok) throw new Error(`Processing status fetch failed: ${response.status}`);
         return response.json();
     };

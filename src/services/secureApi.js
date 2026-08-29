@@ -40,7 +40,7 @@ const getJson = async (params, timeoutMs = 60000) => {
     if (value !== undefined && value !== null && value !== '') url.searchParams.set(key, String(value));
   });
   url.searchParams.set('_t', String(Date.now()));
-  const response = await fetchWithTimeout(url.toString(), { cache: 'no-store' }, timeoutMs);
+  const response = await fetchWithTimeout(url.toString(), timeoutMs);
   if (!response.ok) throw new Error(`Network request failed (${response.status}).`);
   return response.json();
 };
