@@ -4597,9 +4597,37 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                                 )}
                                             </div>
 
-                                            <div className="card-controls">
+                                             <div className="card-controls">
                                                 <div className="control-group">
-                                                    <label>Location Match</label>
+                                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+                                                        <label style={{ margin: 0 }}>Location Match</label>
+                                                        {img.matchedLocation && (() => {
+                                                            const site = hoardings.find(h => (h["Locality Site Location"] || h["Location "] || h.Location) === img.matchedLocation);
+                                                            const targetCity = site?.City || 'city';
+                                                            const targetSiteName = site?.["Location "] || site?.Location || site?.["Locality Site Location"] || img.matchedLocation;
+                                                            return (
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => navigate(`/${encodeURIComponent(targetCity)}/${encodeURIComponent(targetSiteName)}#site-history`)}
+                                                                    style={{
+                                                                        background: 'transparent',
+                                                                        border: 'none',
+                                                                        color: '#4f46e5',
+                                                                        fontSize: '0.78rem',
+                                                                        fontWeight: 600,
+                                                                        cursor: 'pointer',
+                                                                        display: 'inline-flex',
+                                                                        alignItems: 'center',
+                                                                        gap: '3px',
+                                                                        padding: 0
+                                                                    }}
+                                                                    title="View site history page"
+                                                                >
+                                                                    View Site <ExternalLink size={12} />
+                                                                </button>
+                                                            );
+                                                        })()}
+                                                    </div>
                                                     <select
                                                         value={img.matchedLocation || ""}
                                                         onChange={(e) => {
@@ -4696,8 +4724,52 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                                         {img.uploading ? 'Syncing to History...' : 'Confirm & Sync'}
                                                     </button>
                                                 ) : (
-                                                    <div style={{ textAlign: 'center', padding: '6px 12px', background: '#dcfce7', color: '#15803d', borderRadius: '8px', fontSize: '0.85rem', fontWeight: 600 }}>
-                                                        Saved to Site History
+                                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '4px' }}>
+                                                        <div style={{ 
+                                                            display: 'flex', 
+                                                            alignItems: 'center', 
+                                                            justifyContent: 'center', 
+                                                            gap: '6px', 
+                                                            padding: '7px 12px', 
+                                                            background: '#dcfce7', 
+                                                            color: '#15803d', 
+                                                            borderRadius: '8px', 
+                                                            fontSize: '0.84rem', 
+                                                            fontWeight: 600 
+                                                        }}>
+                                                            <CheckCircle size={15} color="#15803d" /> Saved to Site History
+                                                        </div>
+                                                        {img.matchedLocation && (() => {
+                                                            const site = hoardings.find(h => (h["Locality Site Location"] || h["Location "] || h.Location) === img.matchedLocation);
+                                                            const targetCity = site?.City || 'city';
+                                                            const targetSiteName = site?.["Location "] || site?.Location || site?.["Locality Site Location"] || img.matchedLocation;
+                                                            const historyPath = `/${encodeURIComponent(targetCity)}/${encodeURIComponent(targetSiteName)}#site-history`;
+
+                                                            return (
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => navigate(historyPath)}
+                                                                    style={{
+                                                                        display: 'flex',
+                                                                        alignItems: 'center',
+                                                                        justifyContent: 'center',
+                                                                        gap: '6px',
+                                                                        padding: '9px 14px',
+                                                                        background: 'linear-gradient(135deg, #4f46e5 0%, #3b82f6 100%)',
+                                                                        color: '#ffffff',
+                                                                        border: 'none',
+                                                                        borderRadius: '8px',
+                                                                        fontSize: '0.84rem',
+                                                                        fontWeight: 700,
+                                                                        cursor: 'pointer',
+                                                                        boxShadow: '0 2px 8px rgba(79, 70, 229, 0.25)',
+                                                                        transition: 'all 0.2s ease'
+                                                                    }}
+                                                                >
+                                                                    <ExternalLink size={15} /> Open Site History & Page ➔
+                                                                </button>
+                                                            );
+                                                        })()}
                                                     </div>
                                                 )}
                                             </div>

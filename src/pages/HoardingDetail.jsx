@@ -38,6 +38,17 @@ const HoardingDetail = ({ hoardings, setHoardings }) => {
     const [copySuccess, setCopySuccess] = React.useState(false);
     const [previewImage, setPreviewImage] = React.useState('');
     
+    React.useEffect(() => {
+        if (window.location.hash === '#history' || window.location.hash === '#site-history') {
+            setTimeout(() => {
+                const el = document.getElementById('site-history') || document.getElementById('history');
+                if (el) {
+                    el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                }
+            }, 300);
+        }
+    }, []);
+    
     const scriptUrl = 'https://script.google.com/macros/s/AKfycbwmtW7Y71md_XoIk8A0JWrsWKSN-YuFgCcdahe5R56mADlGtH-t9Pj98YhPt3-Z1DoI5g/exec';
 
 
@@ -604,7 +615,7 @@ const HoardingDetail = ({ hoardings, setHoardings }) => {
                         </section>
 
                         {hoarding.History && hoarding.History.length > 0 && (
-                            <section className="execution-gallery animate-in" style={{ marginTop: '56px' }}>
+                            <section id="site-history" className="execution-gallery animate-in" style={{ marginTop: '56px' }}>
                                 <div className="gallery-header" style={{ marginBottom: '24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                                     <div>
                                         <h3 style={{ fontSize: '1.4rem', color: 'var(--text-dark)', fontWeight: '800' }}>Live Verification Updates</h3>
