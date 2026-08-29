@@ -437,38 +437,52 @@ export const parsePptx = async (arrayBuffer, sites = [], onProgress = null) => {
           console.warn('Base64 conversion notice for slide AI:', e);
         }
 
-        // 1. Primary: Run Google Gemini 3.7 Flash Multimodal Vision & OCR
-        try {
-          const { analyzePptSlideWithGeminiVision } = await import('../services/geminiService');
-          const aiResult = await analyzePptSlideWithGeminiVision(imageBase64, slide.text, topCandidates);
-          if (aiResult) {
-            slide.aiData = aiResult;
-            if (aiResult.matchedSite) {
-              slide.suggestedSiteId = aiResult.matchedSite._SiteID || aiResult.matchedSite.UniqueID || aiResult.matchedSite.ID || '';
-              slide.confidence = aiResult.confidence || 'HIGH';
-              slide.status = 'MATCHED';
-              slide.aiReason = aiResult.reason;
-            } else if (aiResult.locationName) {
-              slide.aiReason = `Extracted by Gemini 3.7 Flash: ${aiResult.locationName} (${aiResult.facing || aiResult.city || 'Identified'})`;
-            }
-          }
-        } catch (geminiErr) {
-          console.warn('[Gemini 3.7 Flash Engine Step Notice]:', geminiErr);
-        }
-
-        // 2. Secondary: Groq Semantic Matcher (if Gemini didn't match a site)
-        if (!slide.suggestedSiteId && slide.text && slide.text.length > 10) {
+        // 1. Primary: Groq Semantic Parsing (Extremely fast and accurate text extraction for file naming)
+        if (slide.text && slide.text.trim().length > 5) {
           try {
-            const { matchSlideToInventoryWithGroq } = await import('../services/groqService');
+            const { parseSlideWithGroq, matchSlideToInventoryWithGroq } = await import('../services/groqService');
+            const parsedData = await parseSlideWithGroq(slide.text);
+            if (parsedData) {
+              slide.aiData = slide.aiData || {};
+              slide.aiData.locationName = parsedData.location || slide.aiData.locationName;
+              slide.aiData.city = parsedData.city || slide.aiData.city;
+              slide.aiData.facing = parsedData.facing || slide.aiData.facing;
+              slide.aiData.size = (parsedData.width && parsedData.height) ? `${parsedData.width}x${parsedData.height}` : slide.aiData.size;
+              if (parsedData.latitude && parsedData.longitude) {
+                slide.aiData.gpsStamp = `${parsedData.latitude},${parsedData.longitude}`;
+              }
+            }
+            // Run Matcher in parallel
             const groqMatch = await matchSlideToInventoryWithGroq(slide.text, topCandidates);
             if (groqMatch && groqMatch.site) {
               slide.suggestedSiteId = groqMatch.site._SiteID || groqMatch.site.UniqueID || groqMatch.site.ID || '';
               slide.confidence = groqMatch.confidence || 'HIGH';
               slide.status = 'MATCHED';
-              slide.aiReason = groqMatch.reason;
+              slide.aiReason = groqMatch.reason || 'Matched by Groq AI';
             }
           } catch (groqErr) {
-            console.warn('[Groq Engine Step Notice]:', groqErr);
+            console.warn('[Groq Text Engine Step Notice]:', groqErr);
+          }
+        }
+
+        // 2. Secondary: Run Google Gemini 3.7 Flash Multimodal Vision (if no Groq match or no text)
+        if (!slide.suggestedSiteId) {
+          try {
+            const { analyzePptSlideWithGeminiVision } = await import('../services/geminiService');
+            const aiResult = await analyzePptSlideWithGeminiVision(imageBase64, slide.text, topCandidates);
+            if (aiResult) {
+              slide.aiData = { ...(slide.aiData || {}), ...aiResult };
+              if (aiResult.matchedSite) {
+                slide.suggestedSiteId = aiResult.matchedSite._SiteID || aiResult.matchedSite.UniqueID || aiResult.matchedSite.ID || '';
+                slide.confidence = aiResult.confidence || 'HIGH';
+                slide.status = 'MATCHED';
+                slide.aiReason = aiResult.reason;
+              } else if (aiResult.locationName && !slide.aiReason) {
+                slide.aiReason = `Extracted by Gemini 3.7 Flash: ${aiResult.locationName} (${aiResult.facing || aiResult.city || 'Identified'})`;
+              }
+            }
+          } catch (geminiErr) {
+            console.warn('[Gemini 3.7 Flash Engine Step Notice]:', geminiErr);
           }
         }
       }

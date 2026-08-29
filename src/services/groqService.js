@@ -8,10 +8,10 @@ const GK_PARTS = ['gsk_', '0WOqI42zpoYm1', 'QzGHGDFWGdyb3', 'FY7mIZHC8pHa', 'AY9
 const DEFAULT_KEY = GK_PARTS.join('');
 
 const GROQ_MODELS = [
-  'openai/gpt-oss-120b',
-  'openai/gpt-oss-20b',
-  'qwen/qwen3.8-27b',
-  'groq/compound'
+  'llama-3.3-70b-versatile',
+  'llama3-8b-8192',
+  'mixtral-8x7b-32768',
+  'gemma2-9b-it'
 ];
 
 export const getGroqApiKey = () => {

@@ -679,7 +679,7 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                 }
 
                 updateFileProcessing({ 
-                    phase: `✨ Gemini 3.7 Flash AI extracted ${processableSlides.length} slides! Syncing photos to Google Sheet...`, 
+                    phase: `✨ Groq & Gemini AI extracted ${processableSlides.length} slides! Syncing photos to Google Sheet...`,
                     progress: 45 
                 });
 
@@ -718,7 +718,7 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                         const latLongClean = latLongValue ? latLongValue.replace(/\s+/g, '').replace(/[/[\\]?%*:|"<>]/g, '-') : '';
                         const sizeClean = matchedSite?.Width && matchedSite?.Height ? `${matchedSite.Width}x${matchedSite.Height}` : (ai.size ? ai.size.replace(/[/[\\]?%*:|"<>]/g, '-') : '');
 
-                        const descriptiveFileName = [city, locClean, facingClean, latLongClean, sizeClean].filter(Boolean).join('_') + '.jpg';
+                        const descriptiveFileName = [city, locClean, facingClean, latLongClean].filter(Boolean).join('_') + '.jpg';
 
                         let pureBase64 = '';
                         try {
