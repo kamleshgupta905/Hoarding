@@ -29,7 +29,11 @@ const xmlText = (node) => typeof node === 'string' ? node : String(node?.['#text
 const getImageDimensions = async (blob) => {
   try {
     if (typeof createImageBitmap === 'function') {
-      const bitmap = await createImageBitmap(blob);
+      // Add a timeout to createImageBitmap just in case
+      const bitmap = await Promise.race([
+        createImageBitmap(blob),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 2000))
+      ]);
       const dimensions = { width: bitmap.width, height: bitmap.height };
       bitmap.close();
       return dimensions;
@@ -42,15 +46,25 @@ const getImageDimensions = async (blob) => {
     try {
       const url = URL.createObjectURL(blob);
       const dimensions = await new Promise((resolve) => {
+        let timer;
         const img = new Image();
         img.onload = () => {
+          clearTimeout(timer);
           URL.revokeObjectURL(url);
           resolve({ width: img.naturalWidth || img.width || 0, height: img.naturalHeight || img.height || 0 });
         };
         img.onerror = () => {
+          clearTimeout(timer);
           URL.revokeObjectURL(url);
           resolve({ width: 0, height: 0 });
         };
+        // 3-second timeout for image loading to prevent freezing on invalid media files (e.g. mp4, emf)
+        timer = setTimeout(() => {
+          img.src = ''; 
+          URL.revokeObjectURL(url);
+          resolve({ width: 0, height: 0 });
+        }, 3000);
+        
         img.src = url;
       });
       return dimensions;
@@ -202,11 +216,14 @@ const scoreSite = (text, site) => {
 /**
  * 📦 PARSE PPTX PRESENTATIONS WITH ZERO-LOSS EXTRACTION & GEMINI 3.7 FLASH
  */
-export const parsePptx = async (arrayBuffer, sites = []) => {
+export const parsePptx = async (arrayBuffer, sites = [], onProgress = null) => {
+  if (onProgress) onProgress(5, "Loading presentation archive...");
   const zip = await JSZip.loadAsync(arrayBuffer);
   const slidePaths = Object.keys(zip.files)
     .filter((path) => /^ppt\/slides\/slide\d+\.xml$/i.test(path))
     .sort((left, right) => slideNumber(left) - slideNumber(right));
+
+  if (onProgress) onProgress(15, `Found ${slidePaths.length} slides, analyzing structure...`);
 
   // Collect all media files present in the PPT archive
   const allMediaPaths = Object.keys(zip.files)
@@ -220,11 +237,22 @@ export const parsePptx = async (arrayBuffer, sites = []) => {
   const slides = [];
   const hashUsage = new Map();
   const assignedMediaPaths = new Set();
+  
+  // Cache to avoid extracting and hashing the same image multiple times (fixes hanging on large PPTs)
+  const mediaCache = new Map(); 
 
-  for (const slidePath of slidePaths) {
+  for (let i = 0; i < slidePaths.length; i++) {
+    const slidePath = slidePaths[i];
+    if (onProgress) {
+        // yield to unblock the thread
+        await new Promise(r => setTimeout(r, 0));
+        onProgress(15 + Math.round((i / slidePaths.length) * 35), `Extracting slide ${i + 1} of ${slidePaths.length}...`);
+    }
+
     const number = slideNumber(slidePath);
     const xml = xmlParser.parse(await zip.file(slidePath).async('text'));
     const text = collectXmlNodes(xml, 't').map(xmlText).join(' ').trim();
+
     const relationshipPath = `ppt/slides/_rels/slide${number}.xml.rels`;
     const relationshipFile = zip.file(relationshipPath);
     const relationships = relationshipFile ? xmlParser.parse(await relationshipFile.async('text')) : null;
@@ -260,19 +288,31 @@ export const parsePptx = async (arrayBuffer, sites = []) => {
       if (!match) continue;
 
       assignedMediaPaths.add(match.path);
-      const blob = await match.file.async('blob');
-      const hash = await hashBlob(blob);
-      const dimensions = await getImageDimensions(blob);
-      hashUsage.set(hash, (hashUsage.get(hash) || 0) + 1);
+      
+      let cached = mediaCache.get(match.path);
+      if (!cached) {
+          try {
+              const blob = await match.file.async('blob');
+              const hash = await hashBlob(blob);
+              const dimensions = await getImageDimensions(blob);
+              cached = { blob, hash, dimensions, size: blob.size, mediaName: match.filename };
+              mediaCache.set(match.path, cached);
+          } catch(e) {
+              console.warn("Failed to extract media:", match.path, e);
+              continue;
+          }
+      }
+      
+      hashUsage.set(cached.hash, (hashUsage.get(cached.hash) || 0) + 1);
 
       images.push({
-        id: `${number}-${match.filename}`,
-        mediaName: match.filename,
-        blob,
-        hash,
-        size: blob.size,
-        width: dimensions.width,
-        height: dimensions.height,
+        id: `${number}-${cached.mediaName}`,
+        mediaName: cached.mediaName,
+        blob: cached.blob,
+        hash: cached.hash,
+        size: cached.size,
+        width: cached.dimensions.width,
+        height: cached.dimensions.height,
         previewUrl: ''
       });
     }
@@ -286,6 +326,8 @@ export const parsePptx = async (arrayBuffer, sites = []) => {
     slides.push({ number, text, images, candidates });
   }
 
+  if (onProgress) onProgress(55, `Processing unlinked media files...`);
+
   // 🛡️ Zero-Loss Fallback 1: If any slide has 0 images, match with available PPT media by slide index
   for (let i = 0; i < slides.length; i++) {
     const slide = slides[i];
@@ -293,19 +335,32 @@ export const parsePptx = async (arrayBuffer, sites = []) => {
       const candidatePath = allMediaPaths[i] || allMediaPaths[slide.number - 1];
       if (candidatePath && zip.file(candidatePath)) {
         assignedMediaPaths.add(candidatePath);
-        const file = zip.file(candidatePath);
-        const blob = await file.async('blob');
-        const hash = await hashBlob(blob);
-        const dimensions = await getImageDimensions(blob);
-        hashUsage.set(hash, (hashUsage.get(hash) || 0) + 1);
+        
+        let cached = mediaCache.get(candidatePath);
+        if (!cached) {
+            try {
+                const file = zip.file(candidatePath);
+                const blob = await file.async('blob');
+                const hash = await hashBlob(blob);
+                const dimensions = await getImageDimensions(blob);
+                cached = { blob, hash, dimensions, size: blob.size, mediaName: candidatePath.split('/').pop() };
+                mediaCache.set(candidatePath, cached);
+            } catch(e) {
+                console.warn("Failed fallback media:", candidatePath, e);
+                continue;
+            }
+        }
+        
+        hashUsage.set(cached.hash, (hashUsage.get(cached.hash) || 0) + 1);
+
         slide.images.push({
           id: `${slide.number}-fallback`,
-          mediaName: candidatePath.split('/').pop(),
-          blob,
-          hash,
-          size: blob.size,
-          width: dimensions.width,
-          height: dimensions.height,
+          mediaName: cached.mediaName,
+          blob: cached.blob,
+          hash: cached.hash,
+          size: cached.size,
+          width: cached.dimensions.width,
+          height: cached.dimensions.height,
           previewUrl: ''
         });
       }
