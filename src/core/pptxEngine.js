@@ -419,8 +419,11 @@ export const parsePptx = async (arrayBuffer, sites = [], onProgress = null) => {
 
   // 🌟 LATEST AI ENGINE: Gemini 3.7 Flash Multimodal Vision + Groq Semantic Fallback
   // Process in batches of 20 to speed up analysis and prevent timeouts on large files (e.g. 87MB+ files)
-  const AI_BATCH_SIZE = 20;
+  const AI_BATCH_SIZE = 3;
   for (let i = 0; i < slides.length; i += AI_BATCH_SIZE) {
+    if (onProgress) {
+        onProgress(60 + Math.round((i / slides.length) * 35), `Running AI Vision & Semantic Analysis... Slide ${i + 1} of ${slides.length}`);
+    }
     const slideBatch = slides.slice(i, i + AI_BATCH_SIZE);
     
     await Promise.all(slideBatch.map(async (slide) => {

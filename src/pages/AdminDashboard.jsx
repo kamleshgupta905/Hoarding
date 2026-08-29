@@ -686,9 +686,13 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                 let completed = 0;
                 let syncedCount = 0;
                 
-                // Implement chunking mechanism: process slides in batches of 20 to prevent Apps Script timeouts
-                const BATCH_SIZE = 20;
+                // Implement chunking mechanism: process slides in batches of 5 to prevent Apps Script timeouts
+                const BATCH_SIZE = 5;
                 for (let i = 0; i < processableSlides.length; i += BATCH_SIZE) {
+                    updateFileProcessing({ 
+                        phase: `Syncing photos to Google Drive... (${i + 1} to ${Math.min(i + BATCH_SIZE, processableSlides.length)} of ${processableSlides.length})`, 
+                        progress: 45 + Math.round((i / processableSlides.length) * 50) 
+                    });
                     const chunk = processableSlides.slice(i, i + BATCH_SIZE);
                     
                     await Promise.all(chunk.map(async (slide) => {
@@ -762,7 +766,7 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                         completed++;
                         const percent = Math.round(45 + (completed / processableSlides.length) * 50);
                         updateFileProcessing({
-                            phase: `⚡ Gemini 3.7 Flash Sync: ${completed}/${processableSlides.length} slides (${syncedCount} photos synced)...`,
+                            phase: `⚡ Groq & Gemini AI Sync: ${completed}/${processableSlides.length} slides (${syncedCount} photos synced)...`,
                             progress: percent
                         });
                     }));
@@ -777,7 +781,7 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                 await wait(1200);
                 const freshData = await fetchHoardings();
                 if (freshData?.length) setHoardings(freshData);
-                completeBackgroundUpload('completed', `PPT processing complete! ${syncedCount} of ${processableSlides.length} slide photos uploaded and synced via Gemini 3.7 Flash AI.`);
+                completeBackgroundUpload('completed', `PPT processing complete! ${syncedCount} of ${processableSlides.length} slide photos uploaded and synced via Groq & Gemini AI.`);
             } catch (error) {
                 completeBackgroundUpload('error', type === 'excel' ? `Excel preview failed: ${error.message}` : `PPT failed: ${error.message}`);
             }
