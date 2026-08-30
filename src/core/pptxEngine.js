@@ -254,7 +254,12 @@ export const parsePptx = async (arrayBuffer, sites = [], onProgress = null) => {
     const text = collectXmlNodes(xml, 't').map(xmlText).join(' ').trim();
 
     const relationshipPath = `ppt/slides/_rels/slide${number}.xml.rels`;
-    const relationshipFile = zip.file(relationshipPath);
+    let relationshipFile = zip.file(relationshipPath);
+    if (!relationshipFile) {
+      const lowerRelPath = relationshipPath.toLowerCase();
+      const foundRelKey = Object.keys(zip.files).find(k => k.toLowerCase() === lowerRelPath);
+      if (foundRelKey) relationshipFile = zip.file(foundRelKey);
+    }
     const relationships = relationshipFile ? xmlParser.parse(await relationshipFile.async('text')) : null;
     const relationshipMap = new Map();
     const slideMediaTargets = new Set();
@@ -263,11 +268,10 @@ export const parsePptx = async (arrayBuffer, sites = [], onProgress = null) => {
       collectXmlNodes(relationships, 'relationship').forEach((node) => {
         const id = node?.['@_Id'] || node?.['@_id'] || node?.['Id'] || node?.['id'];
         const target = node?.['@_Target'] || node?.['@_target'] || node?.['Target'] || node?.['target'];
-        const type = node?.['@_Type'] || node?.['@_type'] || node?.['Type'] || '';
         if (id && target) {
           relationshipMap.set(id, target);
         }
-        if (target && /\.(png|jpe?g|webp|bmp|gif|jfif)$/i.test(target)) {
+        if (target && /\.(png|jpe?g|webp|bmp|gif|jfif|tiff?|avif)$/i.test(target)) {
           slideMediaTargets.add(target);
         }
       });
@@ -279,7 +283,7 @@ export const parsePptx = async (arrayBuffer, sites = [], onProgress = null) => {
       const embedId = node?.['@_embed'] || node?.['@_link'] || node?.['@_r:embed'] || node?.['@_r:link'] || node?.embed || node?.link;
       if (embedId && relationshipMap.has(embedId)) {
         const target = relationshipMap.get(embedId);
-        if (/\.(png|jpe?g|webp|bmp|gif|jfif)$/i.test(target)) {
+        if (/\.(png|jpe?g|webp|bmp|gif|jfif|tiff?|avif)$/i.test(target)) {
             slideMediaTargets.add(target);
         }
       }
@@ -331,17 +335,13 @@ export const parsePptx = async (arrayBuffer, sites = [], onProgress = null) => {
 
   if (onProgress) onProgress(55, `Processing unlinked media files...`);
 
-  // 🛡️ Zero-Loss Fallback 1: If any genuine hoarding slide has 0 images, match with unassigned PPT media
+  // 🛡️ Zero-Loss Guarantee 1: If any slide has 0 images, match with slide-indexed or unassigned media
   for (let i = 0; i < slides.length; i++) {
     const slide = slides[i];
-    const isCoverOrNonSiteSlide = /^(presentation|media\s*plan|proposal|thank\s*you|about\s*us|contact\s*us|heera\s*advertising\s*profile|profile|index|agenda)$/i.test((slide.text || '').trim())
-      && !/(latitude|longitude|\d+\.\d{3,}|\d+\s*[xX*]\s*\d+|sq\.?\s*ft|facing|unipole|billboard|gantry|b-board|road|chowk|bypass|marg|nagar|cantt|bridge)/i.test(slide.text || '');
+    if (slide.images.length === 0 && allMediaPaths.length > 0) {
+      const candidatePath = allMediaPaths[i] || allMediaPaths[slide.number - 1] || allMediaPaths.find(p => !assignedMediaPaths.has(p));
 
-    if (slide.images.length === 0 && allMediaPaths.length > 0 && !isCoverOrNonSiteSlide) {
-      const candidatePath = allMediaPaths[i] || allMediaPaths[slide.number - 1];
-      const isLogoPath = /(logo|watermark|icon|badge|header|footer|bullet|arrow|stamp|button|shape|symbol|vector)/i.test(candidatePath || '');
-
-      if (candidatePath && !isLogoPath && zip.file(candidatePath)) {
+      if (candidatePath && zip.file(candidatePath)) {
         assignedMediaPaths.add(candidatePath);
         
         let cached = mediaCache.get(candidatePath);
@@ -359,8 +359,7 @@ export const parsePptx = async (arrayBuffer, sites = [], onProgress = null) => {
             }
         }
 
-        // Assign if not an empty/corrupted file
-        if (cached && cached.size >= 8000) {
+        if (cached && cached.size >= 500) {
             hashUsage.set(cached.hash, (hashUsage.get(cached.hash) || 0) + 1);
 
             slide.images.push({
@@ -378,12 +377,9 @@ export const parsePptx = async (arrayBuffer, sites = [], onProgress = null) => {
     }
   }
 
-  // 🏷️ Ultra-Accurate Agency Logo & Watermark Identification
+  // 🏷️ Photo Candidate Selection with ZERO-LOSS GUARANTEE
   const totalSlides = slides.length;
   slides.forEach((slide) => {
-    const isCoverOrNonSiteSlide = /^(presentation|media\s*plan|proposal|thank\s*you|about\s*us|contact\s*us|heera\s*advertising\s*profile|profile|index|agenda)$/i.test((slide.text || '').trim())
-      && !/(latitude|longitude|\d+\.\d{3,}|\d+\s*[xX*]\s*\d+|sq\.?\s*ft|facing|unipole|billboard|gantry|b-board|road|chowk|bypass|marg|nagar|cantt|bridge)/i.test(slide.text || '');
-
     const maxArea = Math.max(1, ...slide.images.map((image) => (image.width || 1) * (image.height || 1)));
 
     slide.images = slide.images.map((image) => {
@@ -391,43 +387,32 @@ export const parsePptx = async (arrayBuffer, sites = [], onProgress = null) => {
       const area = (image.width || 0) * (image.height || 0);
       const relativeArea = maxArea > 0 ? area / maxArea : 1;
       
-      // 1. Repeated across 3 or more slides (or >30% of total slides) = Template Logo/Watermark
-      const isRepeatedAcrossSlides = totalSlides >= 4 ? count >= 3 : count >= totalSlides;
-      
-      // 2. Keyword matching for brand/logo assets
+      // Repeated across slides (e.g. template logo appearing on majority of slides)
+      const isRepeatedAcrossSlides = totalSlides >= 4 && count >= Math.max(3, Math.floor(totalSlides * 0.6));
       const hasLogoKeyword = /(logo|watermark|icon|badge|header|footer|bullet|arrow|stamp|button|shape|symbol|vector)/i.test(image.mediaName || '');
+      const isSmallGraphic = (relativeArea < 0.20 || image.size < 12000) && slide.images.length > 1;
       
-      // 3. Small size / low resolution graphic when slide has multiple images
-      const isSmallGraphic = (relativeArea < 0.25 || image.size < 25000) && slide.images.length > 1;
-      const isTinyDimensions = (image.width > 0 && image.width < 180) || (image.height > 0 && image.height < 140);
-      const isAspectLogo = (image.width > 0 && image.height > 0) && ((image.width / image.height > 3.5) || (image.height / image.width > 3.5)) && image.size < 60000 && slide.images.length > 1;
-      
-      let logoCandidate = isRepeatedAcrossSlides || (slide.images.length > 1 && (hasLogoKeyword || isSmallGraphic || isTinyDimensions || isAspectLogo)) || (isCoverOrNonSiteSlide && isTinyDimensions);
+      let logoCandidate = slide.images.length > 1 && (isRepeatedAcrossSlides || hasLogoKeyword || isSmallGraphic);
 
       return { ...image, repeated: isRepeatedAcrossSlides, logoCandidate };
     });
 
-    // Pick ONLY genuine billboard photos
-    let validPhotos = slide.images.filter((image) => !image.logoCandidate && image.size >= 8000);
+    // 1. Pick genuine billboard photos
+    let validPhotos = slide.images.filter((image) => !image.logoCandidate && image.size >= 500);
 
-    // 🛡️ Zero-Loss Guarantee: If filtering was too aggressive and slide has images, pick the largest image that is not the repeated deck logo
-    if (validPhotos.length === 0 && slide.images.length > 0 && !isCoverOrNonSiteSlide) {
-      const nonDeckLogoImages = slide.images.filter(img => !img.repeated && img.size >= 8000);
-      if (nonDeckLogoImages.length > 0) {
-        validPhotos = nonDeckLogoImages;
-      } else {
-        validPhotos = slide.images.filter(img => img.size >= 8000);
-      }
+    // 2. Zero-Loss Guarantee: If all were filtered out but slide has images, pick the largest image
+    if (validPhotos.length === 0 && slide.images.length > 0) {
+      const nonRepeated = slide.images.filter(img => !img.repeated && img.size >= 500);
+      validPhotos = nonRepeated.length > 0 ? nonRepeated : slide.images;
     }
 
-    if (validPhotos.length > 0 && !isCoverOrNonSiteSlide) {
-      // Sort to get the highest quality main billboard photo
+    // 3. Guarantee: Every slide with any image MUST have a photoCandidate
+    if (validPhotos.length > 0) {
       validPhotos.sort((a, b) => {
         const areaA = (a.width || 0) * (a.height || 0);
         const areaB = (b.width || 0) * (b.height || 0);
         return (areaB - areaA) || (b.size - a.size);
       });
-      // Pick the single best primary billboard photo for this slide
       slide.photoCandidates = [validPhotos[0]];
     } else {
       slide.photoCandidates = [];

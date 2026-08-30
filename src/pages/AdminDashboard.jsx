@@ -17,7 +17,7 @@ import ImageLightbox from '../components/ImageLightbox';
 import { clearAdminSession, getAdminSession, getStaffUploadLink } from '../services/secureApi';
 import { isInternalHeader } from '../core/hoardingSchema';
 import { blobToDataUrl, prepareImageOrientation } from '../core/imageOrientation';
-import { parsePptx, releasePptxPreviews } from '../core/pptxEngine';
+import { parsePptx, releasePptxPreviews, blobToBase64 } from '../core/pptxEngine';
 import { HIRA_LOGO } from '../assets/hiraLogoData';
 import { 
     AnimatedCounter, 
@@ -745,15 +745,25 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                         if (!coordPart) {
                             coordPart = `Slide_${slide.number}`;
                         }
-
                         const descriptiveFileName = `${city}_${loc}_${facingPart}_${coordPart}.jpg`;
 
                         let pureBase64 = '';
                         try {
                             const compressedDataUrl = await compressImage(photoCandidate.blob, 1280, 960, 0.78);
-                            pureBase64 = compressedDataUrl.replace(/^data:image\/[a-z]+;base64,/, '');
+                            pureBase64 = compressedDataUrl ? compressedDataUrl.replace(/^data:image\/[a-z0-9+-]+;base64,/, '') : '';
                         } catch (compErr) {
                             console.warn(`[Compression Fallback] Slide ${slide.number}:`, compErr);
+                        }
+
+                        if (!pureBase64 && photoCandidate.blob) {
+                            try {
+                                const directBase64 = await blobToBase64(photoCandidate.blob);
+                                if (directBase64) {
+                                    pureBase64 = directBase64.replace(/^data:image\/[a-z0-9+-]+;base64,/, '');
+                                }
+                            } catch (fallbackErr) {
+                                console.warn(`[Direct Base64 Fallback] Slide ${slide.number}:`, fallbackErr);
+                            }
                         }
 
                         let success = false;
