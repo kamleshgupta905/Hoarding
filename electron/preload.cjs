@@ -17,5 +17,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
     },
     onUpdateDownloaded: (callback) => {
         ipcRenderer.on('update-downloaded', (_event, value) => callback(value));
+    },
+    extractPptxNative: (params) => ipcRenderer.invoke('extract-pptx-native', params),
+    onPptxProgress: (callback) => {
+        const handler = (_event, value) => callback(value);
+        ipcRenderer.on('pptx-progress', handler);
+        return () => ipcRenderer.removeListener('pptx-progress', handler);
     }
 });

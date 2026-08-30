@@ -171,6 +171,8 @@ autoUpdater.on('update-downloaded', (info) => {
     }
 });
 
+const { extractPptxNative } = require('./pptxNative.cjs');
+
 // IPC Handlers
 ipcMain.on('check-for-updates', () => {
     checkForUpdatesManually();
@@ -182,6 +184,27 @@ ipcMain.on('install-update-now', () => {
 
 ipcMain.handle('get-app-version', () => {
     return app.getVersion();
+});
+
+ipcMain.handle('extract-pptx-native', async (event, params) => {
+    try {
+        const { filePath, fileBuffer, sites, groqApiKey } = params || {};
+        const result = await extractPptxNative({
+            filePath,
+            fileBuffer: fileBuffer ? Buffer.from(fileBuffer) : null,
+            sites: sites || [],
+            groqApiKey: groqApiKey || '',
+            onProgress: (progressData) => {
+                if (mainWindow && !mainWindow.isDestroyed()) {
+                    mainWindow.webContents.send('pptx-progress', progressData);
+                }
+            }
+        });
+        return { success: true, slides: result };
+    } catch (err) {
+        console.error('[Native PPTX Error]:', err);
+        return { success: false, error: err.message || String(err) };
+    }
 });
 
 app.whenReady().then(createWindow);

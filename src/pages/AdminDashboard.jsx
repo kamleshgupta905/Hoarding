@@ -662,12 +662,48 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                     return;
                 }
 
-                // PPT Upload — Fast Client-Side Slide & Photo Extraction (100% Reliable, Zero Cloud Quotas)
-                updateFileProcessing({ phase: `Reading PPT file (${fileSizeMB.toFixed(1)}MB)...`, progress: 15 });
-                const arrayBuffer = await file.arrayBuffer();
+                // PPT Upload — High-Speed Native Desktop Engine with Fast Web Fallback
+                let slides = [];
+                const isElectron = Boolean(window.electronAPI && window.electronAPI.isElectron && typeof window.electronAPI.extractPptxNative === 'function');
 
-                updateFileProcessing({ phase: 'Analyzing slides and extracting high-res photos...', progress: 35 });
-                const slides = await parsePptx(arrayBuffer, hoardings, (progress, phase) => updateFileProcessing({ phase, progress }));
+                if (isElectron) {
+                    updateFileProcessing({ phase: `⚡ Desktop Native Engine: Processing PPT (${fileSizeMB.toFixed(1)}MB)...`, progress: 10 });
+                    const removeListener = window.electronAPI.onPptxProgress 
+                        ? window.electronAPI.onPptxProgress((p) => {
+                            if (p && p.phase) {
+                                updateFileProcessing({ phase: p.phase, progress: p.progress || 25 });
+                            }
+                        })
+                        : null;
+
+                    try {
+                        const arrayBuffer = await file.arrayBuffer();
+                        const nativeRes = await window.electronAPI.extractPptxNative({
+                            filePath: file.path || '',
+                            fileBuffer: arrayBuffer,
+                            sites: hoardings || [],
+                            groqApiKey: localStorage.getItem('adh_groq_api_key') || ''
+                        });
+
+                        if (removeListener) removeListener();
+                        if (!nativeRes || !nativeRes.success || !nativeRes.slides) {
+                            throw new Error(nativeRes?.error || 'Native extraction error');
+                        }
+                        slides = nativeRes.slides;
+                    } catch (nativeErr) {
+                        if (removeListener) removeListener();
+                        console.warn('[Desktop Native Fallback to Web Engine]:', nativeErr);
+                        updateFileProcessing({ phase: `Reading PPT file (${fileSizeMB.toFixed(1)}MB)...`, progress: 15 });
+                        const arrayBuffer = await file.arrayBuffer();
+                        slides = await parsePptx(arrayBuffer, hoardings, (progress, phase) => updateFileProcessing({ phase, progress }));
+                    }
+                } else {
+                    updateFileProcessing({ phase: `Reading PPT file (${fileSizeMB.toFixed(1)}MB)...`, progress: 15 });
+                    const arrayBuffer = await file.arrayBuffer();
+
+                    updateFileProcessing({ phase: 'Analyzing slides and extracting high-res photos...', progress: 35 });
+                    slides = await parsePptx(arrayBuffer, hoardings, (progress, phase) => updateFileProcessing({ phase, progress }));
+                }
 
                 if (!slides || slides.length === 0) {
                     throw new Error('No valid slides could be found in the PPT.');
@@ -679,15 +715,15 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                 }
 
                 updateFileProcessing({ 
-                    phase: `✨ Groq & Gemini AI extracted ${processableSlides.length} slides! Syncing photos to Google Sheet...`,
+                    phase: `✨ Extracted ${processableSlides.length} slides! Syncing photos to Google Sheet...`,
                     progress: 45 
                 });
 
                 let completed = 0;
                 let syncedCount = 0;
                 
-                // Process photo sync in parallel batches for maximum speed and Drive reliability
-                const BATCH_SIZE = 5;
+                // Process photo sync in controlled batches for maximum speed and Drive reliability
+                const BATCH_SIZE = 4;
                 for (let i = 0; i < processableSlides.length; i += BATCH_SIZE) {
                     updateFileProcessing({ 
                         phase: `Syncing photos to Google Drive... (${i + 1} to ${Math.min(i + BATCH_SIZE, processableSlides.length)} of ${processableSlides.length})`, 
@@ -697,7 +733,7 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                     
                     await Promise.all(chunk.map(async (slide) => {
                         const photoCandidate = slide.photoCandidates?.[0];
-                        if (!photoCandidate || !photoCandidate.blob) {
+                        if (!photoCandidate || (!photoCandidate.blob && !photoCandidate.base64)) {
                             completed++;
                             return;
                         }
@@ -747,22 +783,24 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                         }
                         const descriptiveFileName = `${city}_${loc}_${facingPart}_${coordPart}.jpg`;
 
-                        let pureBase64 = '';
-                        try {
-                            const compressedDataUrl = await compressImage(photoCandidate.blob, 1280, 960, 0.78);
-                            pureBase64 = compressedDataUrl ? compressedDataUrl.replace(/^data:image\/[a-z0-9+-]+;base64,/, '') : '';
-                        } catch (compErr) {
-                            console.warn(`[Compression Fallback] Slide ${slide.number}:`, compErr);
-                        }
-
+                        let pureBase64 = photoCandidate.base64 || '';
                         if (!pureBase64 && photoCandidate.blob) {
                             try {
-                                const directBase64 = await blobToBase64(photoCandidate.blob);
-                                if (directBase64) {
-                                    pureBase64 = directBase64.replace(/^data:image\/[a-z0-9+-]+;base64,/, '');
+                                const compressedDataUrl = await compressImage(photoCandidate.blob, 1280, 960, 0.78);
+                                pureBase64 = compressedDataUrl ? compressedDataUrl.replace(/^data:image\/[a-z0-9+-]+;base64,/, '') : '';
+                            } catch (compErr) {
+                                console.warn(`[Compression Fallback] Slide ${slide.number}:`, compErr);
+                            }
+
+                            if (!pureBase64) {
+                                try {
+                                    const directBase64 = await blobToBase64(photoCandidate.blob);
+                                    if (directBase64) {
+                                        pureBase64 = directBase64.replace(/^data:image\/[a-z0-9+-]+;base64,/, '');
+                                    }
+                                } catch (fallbackErr) {
+                                    console.warn(`[Direct Base64 Fallback] Slide ${slide.number}:`, fallbackErr);
                                 }
-                            } catch (fallbackErr) {
-                                console.warn(`[Direct Base64 Fallback] Slide ${slide.number}:`, fallbackErr);
                             }
                         }
 
@@ -779,7 +817,7 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                     status: ai.status || matchedSite?.STATUS || 'Available',
                                     fileName: descriptiveFileName,
                                     fileData: pureBase64,
-                                    mimeType: 'image/jpeg'
+                                    mimeType: photoCandidate.mimeType || 'image/jpeg'
                                 });
 
                                 if (res && res.success !== false) {
@@ -800,14 +838,14 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                         completed++;
                         const percent = Math.round(45 + (completed / processableSlides.length) * 50);
                         updateFileProcessing({
-                            phase: `⚡ Groq AI Sync: ${completed}/${processableSlides.length} slides (${syncedCount} photos synced)...`,
+                            phase: `⚡ AI Sync: ${completed}/${processableSlides.length} slides (${syncedCount} photos synced)...`,
                             progress: percent
                         });
                     }));
                     
                     // Smooth breathing delay between batches
                     if (i + BATCH_SIZE < processableSlides.length) {
-                        await wait(250);
+                        await wait(350);
                     }
                 }
                 releasePptxPreviews(slides);
