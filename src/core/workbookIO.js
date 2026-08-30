@@ -21,7 +21,7 @@ export const readWorkbook = async (arrayBuffer, fileName = '') => {
   const extension = String(fileName).toLowerCase().split('.').pop();
   if (extension === 'csv') return readCsv(arrayBuffer);
   if (extension === 'xls') {
-    throw new Error('Legacy .xls is not imported locally. Save it as .xlsx, or use the Google Drive conversion fallback.');
+    throw new Error('Legacy .xls is not imported locally. Save it as .xlsx, or use the Google Cloud conversion fallback.');
   }
 
   const file = new Blob([arrayBuffer], {

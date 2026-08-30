@@ -526,12 +526,12 @@ async function extractPptxNative({ filePath, fileBuffer, sites = [], groqApiKey 
           : 'SKIPPED';
   });
 
-  // ⚡ Groq AI Site Matching in Fast Parallel Batches
-  const AI_BATCH_SIZE = 8;
+  // ⚡ Claude AI Site Matching in Fast Parallel Batches
+  const AI_BATCH_SIZE = 16;
   for (let i = 0; i < slides.length; i += AI_BATCH_SIZE) {
     if (onProgress) {
       onProgress({
-        phase: `⚡ Groq AI Auto-Matching: Slide ${i + 1} to ${Math.min(i + AI_BATCH_SIZE, slides.length)} of ${slides.length}...`,
+        phase: `⚡ Claude AI Auto-Matching: Slide ${i + 1} to ${Math.min(i + AI_BATCH_SIZE, slides.length)} of ${slides.length}...`,
         progress: 60 + Math.round((i / slides.length) * 35)
       });
     }
@@ -583,18 +583,18 @@ async function extractPptxNative({ filePath, fileBuffer, sites = [], groqApiKey 
                   '';
                 slide.confidence = groqRes.confidence || 'HIGH';
                 slide.status = 'MATCHED';
-                slide.aiReason = groqRes.reason || 'Matched by Groq AI';
+                slide.aiReason = groqRes.reason || 'Matched by Claude AI';
               }
             }
           } catch (e) {
-            // Groq fallback handled
+            // AI fallback handled
           }
         }
       })
     );
   }
 
-  if (onProgress) onProgress({ phase: 'Native extraction complete!', progress: 100 });
+  if (onProgress) onProgress({ phase: 'Claude AI extraction complete!', progress: 100 });
   return slides;
 }
 

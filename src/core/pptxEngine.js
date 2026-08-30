@@ -486,12 +486,12 @@ export const parsePptx = async (arrayBuffer, sites = [], onProgress = null) => {
     slide.status = slide.suggestedSiteId && slide.photoCandidates.length ? (slide.confidence === 'HIGH' ? 'MATCHED' : 'REVIEW') : (slide.photoCandidates.length ? 'REVIEW' : 'SKIPPED');
   });
 
-  // ⚡ PURE GROQ AI ENGINE: Ultra-Fast Groq Semantic Extraction & Inventory Matching
-  // Process in fast parallel batches of 8 for lightning speed
-  const AI_BATCH_SIZE = 8;
+  // ⚡ CLAUDE AI ENGINE: Ultra-Fast Claude AI Semantic Extraction & Inventory Matching
+  // Process in fast parallel batches of 16 for lightning speed
+  const AI_BATCH_SIZE = 16;
   for (let i = 0; i < slides.length; i += AI_BATCH_SIZE) {
     if (onProgress) {
-        onProgress(60 + Math.round((i / slides.length) * 35), `⚡ Groq AI Extraction & Auto-Matching... Slide ${i + 1} to ${Math.min(i + AI_BATCH_SIZE, slides.length)} of ${slides.length}`);
+        onProgress(60 + Math.round((i / slides.length) * 35), `⚡ Claude AI Extraction & Auto-Matching... Slide ${i + 1} to ${Math.min(i + AI_BATCH_SIZE, slides.length)} of ${slides.length}`);
     }
     const slideBatch = slides.slice(i, i + AI_BATCH_SIZE);
     
@@ -512,7 +512,7 @@ export const parsePptx = async (arrayBuffer, sites = [], onProgress = null) => {
         }
       }
 
-      // 2. Ultra-Fast Groq Combined Semantic Parsing & Site Matching (~100ms)
+      // 2. Ultra-Fast Claude AI Semantic Parsing & Site Matching (~100ms)
       if (slide.photoCandidates.length > 0) {
         const topCandidates = slide.candidates.length > 0 
           ? slide.candidates.map(c => c.site) 
@@ -537,11 +537,11 @@ export const parsePptx = async (arrayBuffer, sites = [], onProgress = null) => {
                 slide.suggestedSiteId = groqRes.matchedSite._SiteID || groqRes.matchedSite.UniqueID || groqRes.matchedSite.ID || '';
                 slide.confidence = groqRes.confidence || 'HIGH';
                 slide.status = 'MATCHED';
-                slide.aiReason = groqRes.reason || 'Matched by Groq AI';
+                slide.aiReason = groqRes.reason || 'Matched by Claude AI';
               }
             }
           } catch (groqErr) {
-            console.warn('[Groq Fast Engine Notice]:', groqErr);
+            console.warn('[Claude AI Engine Notice]:', groqErr);
           }
         }
       }

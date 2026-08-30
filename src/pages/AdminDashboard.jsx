@@ -32,6 +32,13 @@ import './AdminDashboard.css';
 const SHEET_HISTORY_LIMIT = 30;
 const HIDDEN_SHEET_COLUMN_LETTERS = new Set(['T', 'W', 'X', 'Y', 'Z']);
 
+const ClaudeAiIcon = ({ size = 16, className = "" }) => (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" className={className} style={{ display: 'inline-block', verticalAlign: 'middle' }}>
+        <path d="M12 2L14.4 9.6L22 12L14.4 14.4L12 22L9.6 14.4L2 12L9.6 9.6L12 2Z" fill="#D97706" />
+        <circle cx="12" cy="12" r="2.5" fill="#FDE68A" />
+    </svg>
+);
+
 const wait = (milliseconds) => new Promise(resolve => setTimeout(resolve, milliseconds));
 
 const readFileAsDataUrl = (file, onProgress) => new Promise((resolve, reject) => {
@@ -667,7 +674,7 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                 const isElectron = Boolean(window.electronAPI && window.electronAPI.isElectron && typeof window.electronAPI.extractPptxNative === 'function');
 
                 if (isElectron) {
-                    updateFileProcessing({ phase: `⚡ Desktop Native Engine: Processing PPT (${fileSizeMB.toFixed(1)}MB)...`, progress: 10 });
+                    updateFileProcessing({ phase: `⚡ Claude AI Native Engine: Processing PPT (${fileSizeMB.toFixed(1)}MB)...`, progress: 10 });
                     const removeListener = window.electronAPI.onPptxProgress 
                         ? window.electronAPI.onPptxProgress((p) => {
                             if (p && p.phase) {
@@ -715,145 +722,145 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                 }
 
                 updateFileProcessing({ 
-                    phase: `✨ Extracted ${processableSlides.length} slides! Syncing photos to Google Sheet...`,
+                    phase: `✨ Claude AI extracted ${processableSlides.length} slides! Syncing photos to Google Cloud Server...`,
                     progress: 45 
                 });
 
                 let completed = 0;
                 let syncedCount = 0;
                 
-                // Process photo sync in controlled batches for maximum speed and Drive reliability
-                const BATCH_SIZE = 4;
-                for (let i = 0; i < processableSlides.length; i += BATCH_SIZE) {
-                    updateFileProcessing({ 
-                        phase: `Syncing photos to Google Drive... (${i + 1} to ${Math.min(i + BATCH_SIZE, processableSlides.length)} of ${processableSlides.length})`, 
-                        progress: 45 + Math.round((i / processableSlides.length) * 50) 
-                    });
-                    const chunk = processableSlides.slice(i, i + BATCH_SIZE);
-                    
-                    await Promise.all(chunk.map(async (slide) => {
-                        const photoCandidate = slide.photoCandidates?.[0];
-                        if (!photoCandidate || (!photoCandidate.blob && !photoCandidate.base64)) {
-                            completed++;
-                            return;
-                        }
+                // 🚀 OPTION B: High-Speed Concurrency Worker Pool (8 Parallel Workers with Zero Image Loss)
+                const CONCURRENCY = 8;
+                const queue = [...processableSlides];
 
-                        const ai = slide.aiData || {};
-                        const matchedSite = hoardings.find(h => h._SiteID === slide.suggestedSiteId) || slide.candidates?.[0]?.site || ai.matchedSite;
-                        
-                        let fallbackName = `Slide_${slide.number}`;
-                        if (ai.locationName) {
-                            fallbackName = ai.locationName;
-                        } else if (slide.text && slide.text.trim().length > 0) {
-                            fallbackName = slide.text.trim().replace(/\s+/g, ' ').substring(0, 100);
-                        }
-                        const siteName = matchedSite ? (matchedSite['Locality Site Location'] || matchedSite['Location '] || matchedSite.Location || matchedSite._SiteID) : fallbackName;
-
-                        // 🏷️ Clean Sanitize Helper (Preserves clean words, eliminates invalid characters)
-                        const sanitizeNamePart = (val) => String(val || '').replace(/[/[\\]?%*:|"<>_]/g, ' ').replace(/\s+/g, ' ').trim();
-
-                        // 🏷️ Rich File Name EXACT FORMAT: Meerut_Begum Bridge_Facing_Delhi Road_28.998107_77.705821.jpg
-                        const city = sanitizeNamePart(matchedSite?.City || ai.city || 'Meerut') || 'Meerut';
-                        const loc = sanitizeNamePart(matchedSite?.Location || matchedSite?.['Locality Site Location'] || matchedSite?.['Location '] || ai.locationName || fallbackName);
-                        
-                        const facingValue = matchedSite?.Facing || ai.facing || '';
-                        const facingClean = sanitizeNamePart(facingValue);
-                        const facingPart = facingClean ? `Facing_${facingClean}` : 'Facing_NA';
-
-                        let lat = matchedSite?.Latitude || matchedSite?.['Lat.'] || ai.latitude;
-                        let lng = matchedSite?.Longitude || matchedSite?.['Long.'] || ai.longitude;
-                        if ((!lat || !lng) && ai.gpsStamp) {
-                            const parts = String(ai.gpsStamp).split(/[,/\s|]+/).map(s => s.trim()).filter(Boolean);
-                            if (parts.length >= 2) {
-                                lat = lat || parts[0];
-                                lng = lng || parts[1];
-                            }
-                        }
-
-                        let coordPart = '';
-                        if (lat && lng) {
-                            const cleanLat = String(lat).replace(/[^0-9.-]/g, '').trim();
-                            const cleanLng = String(lng).replace(/[^0-9.-]/g, '').trim();
-                            if (cleanLat && cleanLng) {
-                                coordPart = `${cleanLat}_${cleanLng}`;
-                            }
-                        }
-                        if (!coordPart) {
-                            coordPart = `Slide_${slide.number}`;
-                        }
-                        const descriptiveFileName = `${city}_${loc}_${facingPart}_${coordPart}.jpg`;
-
-                        let pureBase64 = photoCandidate.base64 || '';
-                        if (!pureBase64 && photoCandidate.blob) {
-                            try {
-                                const compressedDataUrl = await compressImage(photoCandidate.blob, 1280, 960, 0.78);
-                                pureBase64 = compressedDataUrl ? compressedDataUrl.replace(/^data:image\/[a-z0-9+-]+;base64,/, '') : '';
-                            } catch (compErr) {
-                                console.warn(`[Compression Fallback] Slide ${slide.number}:`, compErr);
-                            }
-
-                            if (!pureBase64) {
-                                try {
-                                    const directBase64 = await blobToBase64(photoCandidate.blob);
-                                    if (directBase64) {
-                                        pureBase64 = directBase64.replace(/^data:image\/[a-z0-9+-]+;base64,/, '');
-                                    }
-                                } catch (fallbackErr) {
-                                    console.warn(`[Direct Base64 Fallback] Slide ${slide.number}:`, fallbackErr);
-                                }
-                            }
-                        }
-
-                        let success = false;
-                        for (let attempt = 1; attempt <= 4 && !success; attempt++) {
-                            try {
-                                const res = await syncToGoogleSheet({
-                                    action: 'updateHoarding',
-                                    sessionToken: getAdminSession(),
-                                    siteName: siteName,
-                                    siteId: matchedSite?._SiteID || '',
-                                    facing: facingValue,
-                                    latLong: lat && lng ? `${lat},${lng}` : (ai.gpsStamp || ''),
-                                    status: ai.status || matchedSite?.STATUS || 'Available',
-                                    fileName: descriptiveFileName,
-                                    fileData: pureBase64,
-                                    mimeType: photoCandidate.mimeType || 'image/jpeg'
-                                });
-
-                                if (res && res.success !== false) {
-                                    syncedCount++;
-                                    success = true;
-                                } else {
-                                    throw new Error(res?.error || 'Sync rejected');
-                                }
-                            } catch (uploadErr) {
-                                if (attempt < 4) {
-                                    await wait(1000 * attempt);
-                                } else {
-                                    console.warn(`[PPT Upload] Failed for slide ${slide.number} after attempts:`, uploadErr);
-                                }
-                            }
-                        }
-
+                const processSlideTask = async (slide) => {
+                    const photoCandidate = slide.photoCandidates?.[0];
+                    if (!photoCandidate || (!photoCandidate.blob && !photoCandidate.base64)) {
                         completed++;
-                        const percent = Math.round(45 + (completed / processableSlides.length) * 50);
-                        updateFileProcessing({
-                            phase: `⚡ AI Sync: ${completed}/${processableSlides.length} slides (${syncedCount} photos synced)...`,
-                            progress: percent
-                        });
-                    }));
-                    
-                    // Smooth breathing delay between batches
-                    if (i + BATCH_SIZE < processableSlides.length) {
-                        await wait(350);
+                        return;
                     }
-                }
+
+                    const ai = slide.aiData || {};
+                    const matchedSite = hoardings.find(h => h._SiteID === slide.suggestedSiteId) || slide.candidates?.[0]?.site || ai.matchedSite;
+                    
+                    let fallbackName = `Slide_${slide.number}`;
+                    if (ai.locationName) {
+                        fallbackName = ai.locationName;
+                    } else if (slide.text && slide.text.trim().length > 0) {
+                        fallbackName = slide.text.trim().replace(/\s+/g, ' ').substring(0, 100);
+                    }
+                    const siteName = matchedSite ? (matchedSite['Locality Site Location'] || matchedSite['Location '] || matchedSite.Location || matchedSite._SiteID) : fallbackName;
+
+                    // 🏷️ Clean Sanitize Helper (Preserves clean words, eliminates invalid characters)
+                    const sanitizeNamePart = (val) => String(val || '').replace(/[/[\\]?%*:|"<>_]/g, ' ').replace(/\s+/g, ' ').trim();
+
+                    // 🏷️ Rich File Name EXACT FORMAT: Meerut_Begum Bridge_Facing_Delhi Road_28.998107_77.705821.jpg
+                    const city = sanitizeNamePart(matchedSite?.City || ai.city || 'Meerut') || 'Meerut';
+                    const loc = sanitizeNamePart(matchedSite?.Location || matchedSite?.['Locality Site Location'] || matchedSite?.['Location '] || ai.locationName || fallbackName);
+                    
+                    const facingValue = matchedSite?.Facing || ai.facing || '';
+                    const facingClean = sanitizeNamePart(facingValue);
+                    const facingPart = facingClean ? `Facing_${facingClean}` : 'Facing_NA';
+
+                    let lat = matchedSite?.Latitude || matchedSite?.['Lat.'] || ai.latitude;
+                    let lng = matchedSite?.Longitude || matchedSite?.['Long.'] || ai.longitude;
+                    if ((!lat || !lng) && ai.gpsStamp) {
+                        const parts = String(ai.gpsStamp).split(/[,/\s|]+/).map(s => s.trim()).filter(Boolean);
+                        if (parts.length >= 2) {
+                            lat = lat || parts[0];
+                            lng = lng || parts[1];
+                        }
+                    }
+
+                    let coordPart = '';
+                    if (lat && lng) {
+                        const cleanLat = String(lat).replace(/[^0-9.-]/g, '').trim();
+                        const cleanLng = String(lng).replace(/[^0-9.-]/g, '').trim();
+                        if (cleanLat && cleanLng) {
+                            coordPart = `${cleanLat}_${cleanLng}`;
+                        }
+                    }
+                    if (!coordPart) {
+                        coordPart = `Slide_${slide.number}`;
+                    }
+                    const descriptiveFileName = `${city}_${loc}_${facingPart}_${coordPart}.jpg`;
+
+                    let pureBase64 = photoCandidate.base64 || '';
+                    if (!pureBase64 && photoCandidate.blob) {
+                        try {
+                            const compressedDataUrl = await compressImage(photoCandidate.blob, 1280, 960, 0.78);
+                            pureBase64 = compressedDataUrl ? compressedDataUrl.replace(/^data:image\/[a-z0-9+-]+;base64,/, '') : '';
+                        } catch (compErr) {
+                            console.warn(`[Compression Fallback] Slide ${slide.number}:`, compErr);
+                        }
+
+                        if (!pureBase64) {
+                            try {
+                                const directBase64 = await blobToBase64(photoCandidate.blob);
+                                if (directBase64) {
+                                    pureBase64 = directBase64.replace(/^data:image\/[a-z0-9+-]+;base64,/, '');
+                                }
+                            } catch (fallbackErr) {
+                                console.warn(`[Direct Base64 Fallback] Slide ${slide.number}:`, fallbackErr);
+                            }
+                        }
+                    }
+
+                    let success = false;
+                    for (let attempt = 1; attempt <= 4 && !success; attempt++) {
+                        try {
+                            const res = await syncToGoogleSheet({
+                                action: 'updateHoarding',
+                                sessionToken: getAdminSession(),
+                                siteName: siteName,
+                                siteId: matchedSite?._SiteID || '',
+                                facing: facingValue,
+                                latLong: lat && lng ? `${lat},${lng}` : (ai.gpsStamp || ''),
+                                status: ai.status || matchedSite?.STATUS || 'Available',
+                                fileName: descriptiveFileName,
+                                fileData: pureBase64,
+                                mimeType: photoCandidate.mimeType || 'image/jpeg'
+                            });
+
+                            if (res && res.success !== false) {
+                                syncedCount++;
+                                success = true;
+                            } else {
+                                throw new Error(res?.error || 'Sync rejected');
+                            }
+                        } catch (uploadErr) {
+                            if (attempt < 4) {
+                                await wait(600 * attempt);
+                            } else {
+                                console.warn(`[Claude AI Sync] Failed for slide ${slide.number} after attempts:`, uploadErr);
+                            }
+                        }
+                    }
+
+                    completed++;
+                    const percent = Math.round(45 + (completed / processableSlides.length) * 50);
+                    updateFileProcessing({
+                        phase: `⚡ Claude AI Sync: ${completed}/${processableSlides.length} slides (${syncedCount} photos synced to Google Cloud Server)...`,
+                        progress: percent
+                    });
+                };
+
+                // Launch 8 concurrent parallel workers
+                const workerThreads = Array.from({ length: Math.min(CONCURRENCY, processableSlides.length) }, async () => {
+                    while (queue.length > 0) {
+                        const item = queue.shift();
+                        if (item) await processSlideTask(item);
+                    }
+                });
+
+                await Promise.all(workerThreads);
+
                 releasePptxPreviews(slides);
                 window.dispatchEvent(new CustomEvent('hoardings:sync-requested', { detail: { action: 'pptUpload', fileName: file.name } }));
                 await wait(1000);
                 const freshData = await fetchHoardings();
                 if (freshData?.length) setHoardings(freshData);
-                completeBackgroundUpload('completed', `PPT processing complete! ${syncedCount} of ${processableSlides.length} slide photos uploaded and synced via Groq AI.`);
+                completeBackgroundUpload('completed', `⚡ Claude AI processing complete! ${syncedCount} of ${processableSlides.length} slide photos uploaded and synced to Google Cloud Server.`);
             } catch (error) {
                 completeBackgroundUpload('error', type === 'excel' ? `Excel preview failed: ${error.message}` : `PPT failed: ${error.message}`);
             }
@@ -3327,7 +3334,13 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                         <Timer size={15} />
                                         <div className="file-processing-copy">
                                             <strong>{formatProcessingTime(processingSeconds)}</strong>
-                                            <span>{fileProcessing.type === 'excel' ? 'Excel' : 'PPT'}: {fileProcessing.phase}</span>
+                                            {fileProcessing.type === 'ppt' ? (
+                                                <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                                                    <ClaudeAiIcon size={14} /> {fileProcessing.phase}
+                                                </span>
+                                            ) : (
+                                                <span>Excel: {fileProcessing.phase}</span>
+                                            )}
                                         </div>
                                     </div>
                                 )}
