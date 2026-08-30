@@ -686,8 +686,8 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                 let completed = 0;
                 let syncedCount = 0;
                 
-                // Process photo sync in parallel batches of 2 for maximum Google Apps Script & Drive reliability
-                const BATCH_SIZE = 2;
+                // Process photo sync in parallel batches for maximum speed and Drive reliability
+                const BATCH_SIZE = 5;
                 for (let i = 0; i < processableSlides.length; i += BATCH_SIZE) {
                     updateFileProcessing({ 
                         phase: `Syncing photos to Google Drive... (${i + 1} to ${Math.min(i + BATCH_SIZE, processableSlides.length)} of ${processableSlides.length})`, 
@@ -713,16 +713,40 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                         }
                         const siteName = matchedSite ? (matchedSite['Locality Site Location'] || matchedSite['Location '] || matchedSite.Location || matchedSite._SiteID) : fallbackName;
 
-                        // 🏷️ Rich File Name with City, Location, Facing, Lat-Long, Dimensions
-                        const city = matchedSite?.City || ai.city || 'Meerut';
-                        const locClean = (matchedSite?.Location || matchedSite?.['Locality Site Location'] || matchedSite?.['Location '] || ai.locationName || siteName).replace(/[/[\\]?%*:|"<>]/g, '-').trim();
-                        const facingValue = matchedSite?.Facing || ai.facing || '';
-                        const facingClean = facingValue ? `Facing_${facingValue.replace(/[/[\\]?%*:|"<>]/g, '-').trim()}` : '';
-                        const latLongValue = matchedSite?.['Lat-Long'] || (matchedSite?.Latitude && matchedSite?.Longitude ? `${matchedSite.Latitude},${matchedSite.Longitude}` : '') || ai.gpsStamp || '';
-                        const latLongClean = latLongValue ? latLongValue.replace(/\s+/g, '').replace(/[/[\\]?%*:|"<>]/g, '-') : '';
-                        const sizeClean = matchedSite?.Width && matchedSite?.Height ? `${matchedSite.Width}x${matchedSite.Height}` : (ai.size ? ai.size.replace(/[/[\\]?%*:|"<>]/g, '-') : '');
+                        // 🏷️ Clean Sanitize Helper (Preserves clean words, eliminates invalid characters)
+                        const sanitizeNamePart = (val) => String(val || '').replace(/[/[\\]?%*:|"<>_]/g, ' ').replace(/\s+/g, ' ').trim();
 
-                        const descriptiveFileName = [city, locClean, facingClean, latLongClean].filter(Boolean).join('_') + '.jpg';
+                        // 🏷️ Rich File Name EXACT FORMAT: Meerut_Begum Bridge_Facing_Delhi Road_28.998107_77.705821.jpg
+                        const city = sanitizeNamePart(matchedSite?.City || ai.city || 'Meerut') || 'Meerut';
+                        const loc = sanitizeNamePart(matchedSite?.Location || matchedSite?.['Locality Site Location'] || matchedSite?.['Location '] || ai.locationName || fallbackName);
+                        
+                        const facingValue = matchedSite?.Facing || ai.facing || '';
+                        const facingClean = sanitizeNamePart(facingValue);
+                        const facingPart = facingClean ? `Facing_${facingClean}` : 'Facing_NA';
+
+                        let lat = matchedSite?.Latitude || matchedSite?.['Lat.'] || ai.latitude;
+                        let lng = matchedSite?.Longitude || matchedSite?.['Long.'] || ai.longitude;
+                        if ((!lat || !lng) && ai.gpsStamp) {
+                            const parts = String(ai.gpsStamp).split(/[,/\s|]+/).map(s => s.trim()).filter(Boolean);
+                            if (parts.length >= 2) {
+                                lat = lat || parts[0];
+                                lng = lng || parts[1];
+                            }
+                        }
+
+                        let coordPart = '';
+                        if (lat && lng) {
+                            const cleanLat = String(lat).replace(/[^0-9.-]/g, '').trim();
+                            const cleanLng = String(lng).replace(/[^0-9.-]/g, '').trim();
+                            if (cleanLat && cleanLng) {
+                                coordPart = `${cleanLat}_${cleanLng}`;
+                            }
+                        }
+                        if (!coordPart) {
+                            coordPart = `Slide_${slide.number}`;
+                        }
+
+                        const descriptiveFileName = `${city}_${loc}_${facingPart}_${coordPart}.jpg`;
 
                         let pureBase64 = '';
                         try {
@@ -733,7 +757,7 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                         }
 
                         let success = false;
-                        for (let attempt = 1; attempt <= 5 && !success; attempt++) {
+                        for (let attempt = 1; attempt <= 4 && !success; attempt++) {
                             try {
                                 const res = await syncToGoogleSheet({
                                     action: 'updateHoarding',
@@ -741,7 +765,7 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                     siteName: siteName,
                                     siteId: matchedSite?._SiteID || '',
                                     facing: facingValue,
-                                    latLong: latLongValue,
+                                    latLong: lat && lng ? `${lat},${lng}` : (ai.gpsStamp || ''),
                                     status: ai.status || matchedSite?.STATUS || 'Available',
                                     fileName: descriptiveFileName,
                                     fileData: pureBase64,
@@ -755,10 +779,10 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                     throw new Error(res?.error || 'Sync rejected');
                                 }
                             } catch (uploadErr) {
-                                if (attempt < 5) {
-                                    await wait(1500 * attempt);
+                                if (attempt < 4) {
+                                    await wait(1000 * attempt);
                                 } else {
-                                    console.warn(`[PPT Upload] Failed for slide ${slide.number} after 5 attempts:`, uploadErr);
+                                    console.warn(`[PPT Upload] Failed for slide ${slide.number} after attempts:`, uploadErr);
                                 }
                             }
                         }
@@ -771,14 +795,14 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                         });
                     }));
                     
-                    // Smooth breathing delay between batches to ensure Drive & Apps Script lock safety
+                    // Smooth breathing delay between batches
                     if (i + BATCH_SIZE < processableSlides.length) {
-                        await wait(500);
+                        await wait(250);
                     }
                 }
                 releasePptxPreviews(slides);
                 window.dispatchEvent(new CustomEvent('hoardings:sync-requested', { detail: { action: 'pptUpload', fileName: file.name } }));
-                await wait(1200);
+                await wait(1000);
                 const freshData = await fetchHoardings();
                 if (freshData?.length) setHoardings(freshData);
                 completeBackgroundUpload('completed', `PPT processing complete! ${syncedCount} of ${processableSlides.length} slide photos uploaded and synced via Groq AI.`);

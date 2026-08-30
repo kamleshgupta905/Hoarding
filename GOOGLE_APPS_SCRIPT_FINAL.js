@@ -77,6 +77,8 @@ function doPost(e) {
     }
 
     // 🌟 ADD / EDIT / DELETE OPERATIONS
+    if (p.action === 'syncDrivePhotosByGpsAndFacing' || p.action === 'syncDrivePhotos') return syncDrivePhotosByGpsAndFacing_(p);
+    if (p.action === 'mapExistingImages') return syncDrivePhotosByGpsAndFacing_(p);
     if (p.action === 'updateHoarding') return updateHoardingDetails(p);
     if (p.action === 'addHoarding') return addHoardingDetails(p);
     if (p.action === 'deleteHoarding') return deleteHoardingDetails(p);
@@ -2546,12 +2548,18 @@ function cleanEmptyRowsAndNotify() {
   SpreadsheetApp.getActiveSpreadsheet().toast('✅ ' + count + ' empty blank rows removed!', 'Clean Complete', 5);
 }
 
-function mapExistingImagesToSheet() {
+/**
+ * 🎯 ULTRA-FAST AUTO-SYNC DRIVE PHOTOS TO INVENTORY BY GPS LAT-LONG, FACING & LOCATION
+ * Parses standardized filenames: "Meerut_Begum Bridge_Facing_Delhi Road_28.998107_77.705821.jpg"
+ * Matches against Google Sheet inventory and bulk updates ImageURL in ~5 seconds.
+ */
+function syncDrivePhotosByGpsAndFacing_(data) {
   cleanEmptySheetRows();
   var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(CONFIG.SHEET_NAME);
-  if (!sheet) return;
-  var data = sheet.getDataRange().getValues();
-  var headers = data[0];
+  if (!sheet) return res({ success: false, error: 'Sheet "' + CONFIG.SHEET_NAME + '" not found.' });
+
+  var values = sheet.getDataRange().getValues();
+  var headers = values[0];
 
   var idxSite = findSiteColumn(headers);
   var idxImg = findImageColumn(headers);
@@ -2559,14 +2567,14 @@ function mapExistingImagesToSheet() {
   var idxLat = headers.findIndex(function(h) { return cleanFull(h) === 'latitude' || cleanFull(h) === 'lat' || cleanFull(h) === 'lat.'; });
   var idxLng = headers.findIndex(function(h) { return cleanFull(h) === 'longitude' || cleanFull(h) === 'long' || cleanFull(h) === 'long.' || cleanFull(h) === 'lng'; });
   var idxLatLong = headers.findIndex(function(h) { return cleanFull(h).indexOf('lat') !== -1 && cleanFull(h).indexOf('long') !== -1; });
-  
+
   if (idxImg === -1) {
     var newColIndex = sheet.getLastColumn() + 1;
     sheet.getRange(1, newColIndex).setValue('ImageURL');
     headers = getAllHeaders(sheet);
     idxImg = newColIndex - 1;
   }
-  if (idxSite === -1) return;
+  if (idxSite === -1) return res({ success: false, error: 'Site Name column not found.' });
 
   var imageList = [];
   var seenIds = {};
@@ -2575,15 +2583,45 @@ function mapExistingImagesToSheet() {
     var id = f.getId();
     if (seenIds[id]) return;
     seenIds[id] = true;
+
+    var fullName = f.getName();
+    if (!/\.(png|jpg|jpeg|webp)$/i.test(fullName)) return;
+
+    var cleanName = fullName.replace(/\.(png|jpg|jpeg|webp)$/i, "");
     
-    var rawName = f.getName().replace(/\.(png|jpg|jpeg|webp)$/i, "");
-    var cleanWithoutTimestamp = rawName.replace(/_\d{10,}$/, "").replace(/^\d+[\s._-]+/, "").trim();
+    // 1. Extract GPS Coordinates from filename (e.g. 28.998107_77.705821 or 28.998107-77.705821)
+    var coordMatch = cleanName.match(/([0-3]?\d\.\d{3,9})[_,-\s]+([0-9]{2,3}\.\d{3,9})/);
+    var fileLat = coordMatch ? parseFloat(coordMatch[1]) : null;
+    var fileLng = coordMatch ? parseFloat(coordMatch[2]) : null;
+
+    // 2. Extract Facing from filename (e.g. Facing_Delhi Road or Facing_Modipuram)
+    var facingMatch = cleanName.match(/facing[_-]([^_-]+)/i);
+    var fileFacing = facingMatch ? cleanFull(facingMatch[1]) : '';
+
+    // 3. Extract Slide Number (e.g. Slide_5 or Slide 5)
+    var slideMatch = cleanName.match(/(?:slide|slide_|\b)(\d+)\b/i);
+    var fileSlideNum = slideMatch ? parseInt(slideMatch[1], 10) : null;
+
+    var cleanWithoutTimestamp = cleanName.replace(/_\d{10,}$/, "").replace(/^\d+[\s._-]+/, "").trim();
     var key = cleanFull(cleanWithoutTimestamp);
-    var rawKey = cleanFull(rawName);
-    imageList.push({ key: key, rawKey: rawKey, name: rawName, file: f, id: id });
+    var rawKey = cleanFull(cleanName);
+
+    imageList.push({
+      file: f,
+      id: id,
+      name: fullName,
+      cleanName: cleanName,
+      key: key,
+      rawKey: rawKey,
+      lat: fileLat,
+      lng: fileLng,
+      facing: fileFacing,
+      slideNum: fileSlideNum,
+      url: "https://lh3.googleusercontent.com/d/" + id
+    });
   }
 
-  // 1. Check known folders
+  // 1. Check configured folders
   var folderIds = [
     CONFIG.IMAGE_FOLDER_ID,
     CONFIG.INPUT_FOLDER_ID,
@@ -2600,7 +2638,7 @@ function mapExistingImagesToSheet() {
   });
 
   // 2. Search named folders
-  var namedFolders = ["Hoarding2", "Hoarding_Project_Images", "Hoarding", "Hoardings"];
+  var namedFolders = ["Hoarding_Project_Images", "Hoarding2", "Hoarding", "Hoardings"];
   namedFolders.forEach(function(name) {
     try {
       var folders = DriveApp.getFoldersByName(name);
@@ -2612,34 +2650,32 @@ function mapExistingImagesToSheet() {
     } catch (e) {}
   });
 
-  // 3. Fallback: Search all recent images in Drive
-  if (imageList.length === 0) {
-    try {
-      var searchFiles = DriveApp.searchFiles("mimeType contains 'image/' and trashed = false");
-      var count = 0;
-      while (searchFiles.hasNext() && count < 200) {
-        addFile(searchFiles.next());
-        count++;
-      }
-    } catch (e) {}
-  }
+  logDebug("DRIVE GPS SYNC | Loaded " + imageList.length + " candidate images from Drive.");
 
-  var updates = [];
   var mappedCount = 0;
   var usedFileIds = {};
 
-  for (var i = 1; i < data.length; i++) {
-    var site = cleanFull(data[i][idxSite]);
+  for (var i = 1; i < values.length; i++) {
+    var site = cleanFull(values[i][idxSite]);
     if (!site) continue;
 
-    var rowNum = i + 1; // 1-indexed row in sheet (Row 2 = Slide 1)
-    var expectedSlideNum = i; // Slide 1 corresponds to Row 2
+    var rowNum = i + 1;
+    var expectedSlideNum = i; // Row 2 corresponds to Slide 1
 
-    var facing = idxFacing !== -1 ? cleanFull(data[i][idxFacing]) : '';
-    var latStr = idxLat !== -1 ? String(data[i][idxLat] || '').replace(/[^0-9.]/g, '') : '';
-    var lngStr = idxLng !== -1 ? String(data[i][idxLng] || '').replace(/[^0-9.]/g, '') : '';
-    var latPrefix = latStr.length >= 5 ? latStr.substring(0, 5) : '';
-    var lngPrefix = lngStr.length >= 5 ? lngStr.substring(0, 5) : '';
+    var facing = idxFacing !== -1 ? cleanFull(values[i][idxFacing]) : '';
+    
+    // Parse site GPS
+    var siteLat = null;
+    var siteLng = null;
+    if (idxLat !== -1 && values[i][idxLat]) siteLat = parseFloat(String(values[i][idxLat]).replace(/[^0-9.]/g, ''));
+    if (idxLng !== -1 && values[i][idxLng]) siteLng = parseFloat(String(values[i][idxLng]).replace(/[^0-9.]/g, ''));
+    if ((!siteLat || !siteLng) && idxLatLong !== -1 && values[i][idxLatLong]) {
+      var parts = String(values[i][idxLatLong]).match(/([0-3]?\d\.\d{3,9})[_,-\s/|]+([0-9]{2,3}\.\d{3,9})/);
+      if (parts) {
+        siteLat = parseFloat(parts[1]);
+        siteLng = parseFloat(parts[2]);
+      }
+    }
 
     var bestFile = null;
     var bestScore = 0;
@@ -2650,55 +2686,74 @@ function mapExistingImagesToSheet() {
 
       var score = 0;
 
-      // 1. Slide Number matching (e.g. Slide_1.jpg, Slide 1, 1_Begum Bridge, etc.)
-      var slideMatch = item.name.match(/(?:slide|slide_|\b)(\d+)\b/i);
-      if (slideMatch) {
-        var num = parseInt(slideMatch[1], 10);
-        if (num === expectedSlideNum) {
+      // 🎯 1. GPS Proximity Matching (Ultra-High Precision)
+      if (siteLat && siteLng && item.lat && item.lng) {
+        var latDiff = Math.abs(siteLat - item.lat);
+        var lngDiff = Math.abs(siteLng - item.lng);
+        if (latDiff < 0.0006 && lngDiff < 0.0006) { // <= 60 meters pinpoint match
           score += 10000;
+        } else if (latDiff < 0.0025 && lngDiff < 0.0025) { // <= 250 meters corridor match
+          score += 8000;
+        } else if (latDiff < 0.008 && lngDiff < 0.008) { // <= 800 meters area match
+          score += 5000;
         }
       }
 
-      // 2. Coordinate matching
-      if (latPrefix && lngPrefix && item.rawKey.indexOf(latPrefix) !== -1 && item.rawKey.indexOf(lngPrefix) !== -1) {
-        score += 8000;
+      // 🎯 2. Facing / Direction Match
+      if (facing && item.facing) {
+        if (item.facing.indexOf(facing) !== -1 || facing.indexOf(item.facing) !== -1) {
+          score += 3500;
+        }
+      } else if (facing && item.rawKey.indexOf(facing) !== -1) {
+        score += 2500;
       }
 
-      // 3. Location matching
+      // 🎯 3. Location Name Match
       var nameScore = siteMatchScore(item.key, site);
       if (nameScore === 0) nameScore = siteMatchScore(item.rawKey, site);
       if (nameScore > 0) score += nameScore;
 
-      // Substring check
       if (item.rawKey.indexOf(site) !== -1 || site.indexOf(item.key) !== -1) {
         score += 3000;
       }
 
-      // 4. Facing boost
-      if (facing && item.rawKey.indexOf(facing) !== -1) {
-        score += 1200;
+      // 🎯 4. Slide Number Matching
+      if (item.slideNum === expectedSlideNum) {
+        score += 2000;
       }
 
-      if (score > bestScore && score >= 100) {
+      if (score > bestScore && score >= 4000) {
         bestScore = score;
-        bestFile = item.file;
+        bestFile = item;
       }
     }
 
     if (bestFile) {
-      usedFileIds[bestFile.getId()] = true;
-      try { bestFile.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW); } catch(e) {}
-      var url = "https://lh3.googleusercontent.com/d/" + bestFile.getId();
-      updates.push([rowNum, idxImg + 1, url]);
+      usedFileIds[bestFile.id] = true;
+      try { bestFile.file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW); } catch(e) {}
+      values[i][idxImg] = bestFile.url;
       mappedCount++;
     }
   }
 
-  updates.forEach(function(u) {
-    sheet.getRange(u[0], u[1]).setValue(u[2]);
-  });
+  // Single Bulk Write (Instant update of all 300+ rows)
+  sheet.getRange(1, 1, values.length, headers.length).setValues(values);
   SpreadsheetApp.flush();
-  SpreadsheetApp.getActiveSpreadsheet().toast('✅ ' + mappedCount + ' images mapped from Hoarding2 to Google Sheet!', 'Image Mapping Complete', 6);
+
+  logDebug("DRIVE GPS SYNC COMPLETE | Matched & synced " + mappedCount + " photos to Google Sheet.");
+  return res({
+    success: true,
+    matchedCount: mappedCount,
+    totalImagesInDrive: imageList.length,
+    message: "Successfully matched " + mappedCount + " Drive photos to Google Sheet inventory."
+  });
+}
+
+function mapExistingImagesToSheet() {
+  var result = syncDrivePhotosByGpsAndFacing_({});
+  var count = (result && typeof result.getContent === 'function') ? (JSON.parse(result.getContent()).matchedCount || 0) : 0;
+  SpreadsheetApp.getActiveSpreadsheet().toast('✅ ' + count + ' images mapped from Drive to Google Sheet!', 'Image Mapping Complete', 6);
+  return count;
 }
 
 /* ================= PPT ================= */

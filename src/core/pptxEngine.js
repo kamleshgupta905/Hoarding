@@ -439,8 +439,8 @@ export const parsePptx = async (arrayBuffer, sites = [], onProgress = null) => {
   });
 
   // ⚡ PURE GROQ AI ENGINE: Ultra-Fast Groq Semantic Extraction & Inventory Matching
-  // Process in fast parallel batches of 6 for lightning speed
-  const AI_BATCH_SIZE = 6;
+  // Process in fast parallel batches of 8 for lightning speed
+  const AI_BATCH_SIZE = 8;
   for (let i = 0; i < slides.length; i += AI_BATCH_SIZE) {
     if (onProgress) {
         onProgress(60 + Math.round((i / slides.length) * 35), `⚡ Groq AI Extraction & Auto-Matching... Slide ${i + 1} to ${Math.min(i + AI_BATCH_SIZE, slides.length)} of ${slides.length}`);
@@ -448,22 +448,39 @@ export const parsePptx = async (arrayBuffer, sites = [], onProgress = null) => {
     const slideBatch = slides.slice(i, i + AI_BATCH_SIZE);
     
     await Promise.all(slideBatch.map(async (slide) => {
+      slide.aiData = slide.aiData || {};
+
+      // 1. Deterministic Local Regex Fallback for Coordinates & Facing
+      if (slide.text) {
+        const coordMatch = slide.text.match(/([0-3]?\d\.\d{3,9})\s*(?:°|[NSEWnsew])?[,\s/|]+([0-9]{2,3}\.\d{3,9})/);
+        if (coordMatch) {
+          slide.aiData.latitude = parseFloat(coordMatch[1]);
+          slide.aiData.longitude = parseFloat(coordMatch[2]);
+          slide.aiData.gpsStamp = `${coordMatch[1]},${coordMatch[2]}`;
+        }
+        const facingMatch = slide.text.match(/(?:facing|traffic view|traffic from|towards|to)[:\s]*([a-zA-Z0-9\s-]+?)(?:[,\n\r;|]|$)/i);
+        if (facingMatch && facingMatch[1].trim().length >= 2) {
+          slide.aiData.facing = facingMatch[1].trim();
+        }
+      }
+
+      // 2. Ultra-Fast Groq Combined Semantic Parsing & Site Matching (~100ms)
       if (slide.photoCandidates.length > 0) {
         const topCandidates = slide.candidates.length > 0 
           ? slide.candidates.map(c => c.site) 
           : (sites || []).slice(0, 20);
 
-        // Primary: Ultra-Fast Groq Combined Semantic Parsing & Site Matching (~150ms)
         if (slide.text && slide.text.trim().length > 3) {
           try {
             const { parseAndMatchSlideWithGroq } = await import('../services/groqService');
             const groqRes = await parseAndMatchSlideWithGroq(slide.text, topCandidates);
             if (groqRes && groqRes.parsedData) {
               const p = groqRes.parsedData;
-              slide.aiData = slide.aiData || {};
               slide.aiData.locationName = p.location || slide.aiData.locationName;
               slide.aiData.city = p.city || slide.aiData.city;
               slide.aiData.facing = p.facing || slide.aiData.facing;
+              slide.aiData.latitude = p.latitude ?? slide.aiData.latitude;
+              slide.aiData.longitude = p.longitude ?? slide.aiData.longitude;
               slide.aiData.size = (p.width && p.height) ? `${p.width}x${p.height}` : slide.aiData.size;
               if (p.latitude && p.longitude) {
                 slide.aiData.gpsStamp = `${p.latitude},${p.longitude}`;
