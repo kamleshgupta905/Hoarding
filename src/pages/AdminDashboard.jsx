@@ -26,16 +26,20 @@ import {
 } from '../components/ExecutiveCharts';
 import { motion, AnimatePresence } from 'motion/react';
 import SystemGuide from './SystemGuide';
-import ProposalBuilder from '../components/ProposalBuilder';
+import krishnaAvatar from '../assets/krishna_avatar.jpg';
 import './AdminDashboard.css';
 
 const SHEET_HISTORY_LIMIT = 30;
 const HIDDEN_SHEET_COLUMN_LETTERS = new Set(['T', 'W', 'X', 'Y', 'Z']);
 
-const ClaudeAiIcon = ({ size = 16, className = "" }) => (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" className={className} style={{ display: 'inline-block', verticalAlign: 'middle' }}>
-        <path d="M12 2L14.4 9.6L22 12L14.4 14.4L12 22L9.6 14.4L2 12L9.6 9.6L12 2Z" fill="#D97706" />
-        <circle cx="12" cy="12" r="2.5" fill="#FDE68A" />
+/**
+ * 🌟 Official Anthropic Claude AI Logo (Warm Terracotta/Coral Starburst)
+ */
+const ClaudeAiIcon = ({ size = 18, className = "" }) => (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" className={className} style={{ display: 'inline-block', verticalAlign: 'middle', flexShrink: 0 }}>
+        <rect width="24" height="24" rx="6" fill="#CC785C" />
+        <path d="M12 4.5L13.7 9.8L19.5 12L13.7 14.2L12 19.5L10.3 14.2L4.5 12L10.3 9.8L12 4.5Z" fill="#FAF5F0" />
+        <circle cx="12" cy="12" r="1.8" fill="#F3D5C8" />
     </svg>
 );
 
@@ -3378,7 +3382,7 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                 boxShadow: '0 2px 6px rgba(0, 0, 0, 0.08)'
                             }}>
                                 <img 
-                                    src="/krishna_avatar.jpg" 
+                                    src={krishnaAvatar} 
                                     alt="Hare Krishna" 
                                     style={{ width: '100%', height: '100%', objectFit: 'cover' }}
                                 />

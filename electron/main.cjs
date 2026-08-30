@@ -117,15 +117,25 @@ function createApplicationMenu() {
     Menu.setApplicationMenu(menu);
 }
 
-// 🚀 Auto-Updater Logic
+// 🚀 Zero-Touch Automated Silent Background Updater (GitHub Releases)
 function checkForUpdatesSilently() {
     autoUpdater.autoDownload = true;
     autoUpdater.autoInstallOnAppQuit = true;
+    autoUpdater.allowPrerelease = false;
+
+    // Check silently on startup after 2.5s
     setTimeout(() => {
-        autoUpdater.checkForUpdates().catch(err => {
-            console.log('Silent update check error:', err.message);
+        autoUpdater.checkForUpdatesAndNotify().catch(err => {
+            console.log('[AutoUpdater Startup Notice]:', err.message);
         });
     }, 2500);
+
+    // Continuous background check every 15 minutes
+    setInterval(() => {
+        autoUpdater.checkForUpdatesAndNotify().catch(err => {
+            console.log('[AutoUpdater Periodic Notice]:', err.message);
+        });
+    }, 15 * 60 * 1000);
 }
 
 function checkForUpdatesManually() {
@@ -135,7 +145,7 @@ function checkForUpdatesManually() {
             dialog.showMessageBox(mainWindow, {
                 type: 'info',
                 title: 'No Updates',
-                message: 'You are on the latest version of AdHoardings Admin (' + app.getVersion() + ').'
+                message: 'You are on the latest version of Heera Advertising Admin (' + app.getVersion() + ').'
             });
         }
     }).catch(err => {
@@ -148,25 +158,25 @@ function checkForUpdatesManually() {
 }
 
 autoUpdater.on('checking-for-update', () => {
-    if (mainWindow) {
+    if (mainWindow && !mainWindow.isDestroyed()) {
         mainWindow.webContents.send('update-checking');
     }
 });
 
 autoUpdater.on('update-available', (info) => {
-    if (mainWindow) {
+    if (mainWindow && !mainWindow.isDestroyed()) {
         mainWindow.webContents.send('update-available', info);
     }
 });
 
 autoUpdater.on('download-progress', (progressObj) => {
-    if (mainWindow) {
+    if (mainWindow && !mainWindow.isDestroyed()) {
         mainWindow.webContents.send('update-progress', progressObj);
     }
 });
 
 autoUpdater.on('update-downloaded', (info) => {
-    if (mainWindow) {
+    if (mainWindow && !mainWindow.isDestroyed()) {
         mainWindow.webContents.send('update-downloaded', info);
     }
 });

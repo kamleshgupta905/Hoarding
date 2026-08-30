@@ -25,8 +25,8 @@ jobs:
       - name: 📦 Install Dependencies
         run: npm install --legacy-peer-deps
 
-      - name: ⚡ Build Web App & Package Windows Desktop App (.exe)
-        run: npm run electron:build
+      - name: ⚡ Build Web App & Publish Windows Desktop Release (.exe)
+        run: npm run electron:release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           ELECTRON_BUILD: 'true'
