@@ -3497,16 +3497,7 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                         Re-Sync {missedPptSlides.length} Missed
                                     </button>
                                 )}
-                                <button 
-                                    className="btn-primary-admin" 
-                                    style={{ background: '#4f46e5', borderColor: '#4f46e5', color: 'white', cursor: 'pointer', padding: '7px 14px', fontSize: '0.82rem', display: 'flex', alignItems: 'center', gap: '6px' }}
-                                    onClick={handleAutoMapCloudPhotos}
-                                    disabled={isAutoMappingCloudPhotos || Boolean(fileProcessing)}
-                                    title="Scan Google Cloud Server and auto-link all photos to inventory by GPS & Facing"
-                                >
-                                    <Zap size={15} />
-                                    {isAutoMappingCloudPhotos ? 'Mapping...' : 'Auto-Map Photos'}
-                                </button>
+
                                 <label className="btn-primary-admin" style={{ cursor: 'pointer', padding: '7px 14px', fontSize: '0.82rem' }}>
                                     <Download size={16} />
                                     Excel Sync
