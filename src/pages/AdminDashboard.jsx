@@ -829,6 +829,7 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                 let completed = 0;
                 let syncedCount = 0;
                 const failedSlidesList = [];
+                const batchUpdates = [];
                 
                 // 🚀 OPTION B: High-Speed Concurrency Worker Pool (8 Parallel Workers with Zero Image Loss)
                 const CONCURRENCY = 8;
@@ -910,45 +911,39 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                     let success = false;
                     for (let attempt = 1; attempt <= 4 && !success; attempt++) {
                         try {
+                            // 🚀 Phase 1: Fast Pure Cloud Upload (No Google Sheet Lock)
                             let res = await syncToGoogleSheet({
-                                action: 'updateHoarding',
+                                action: 'pureUpload',
                                 sessionToken: getAdminSession(),
-                                siteName: siteName,
-                                siteId: matchedSite?._SiteID || '',
-                                facing: facingValue,
-                                latLong: lat && lng ? `${lat},${lng}` : (ai.gpsStamp || ''),
-                                status: ai.status || matchedSite?.STATUS || 'Available',
                                 fileName: descriptiveFileName,
                                 fileData: pureBase64,
                                 mimeType: photoCandidate.mimeType || 'image/jpeg'
                             });
 
-                            // 🛡️ Fallback: If site was not found in Sheet, upload directly to Drive so photo is never lost!
-                            if (res && res.success === false && res.error && res.error.includes('not found')) {
-                                try {
-                                    res = await syncToGoogleSheet({
-                                        action: 'uploadInputFile',
-                                        sessionToken: getAdminSession(),
-                                        fileName: descriptiveFileName,
-                                        fileData: pureBase64,
-                                        mimeType: photoCandidate.mimeType || 'image/jpeg'
-                                    });
-                                } catch (driveUploadErr) {
-                                    console.warn('[Direct Drive Fallback Error]:', driveUploadErr);
-                                }
-                            }
-
-                            if (res && res.success !== false) {
+                            if (res && res.success !== false && res.url) {
+                                // Add to Phase 2 Atomic Batch
+                                batchUpdates.push({
+                                    siteId: matchedSite?._SiteID || '',
+                                    siteName: siteName,
+                                    facing: facingValue,
+                                    url: res.url,
+                                    status: ai.status || matchedSite?.STATUS || 'Available',
+                                    newSiteData: !matchedSite ? {
+                                        siteName: siteName,
+                                        facing: facingValue,
+                                        latLong: lat && lng ? `${lat},${lng}` : (ai.gpsStamp || '')
+                                    } : undefined
+                                });
                                 syncedCount++;
                                 success = true;
                             } else {
-                                throw new Error(res?.error || 'Sync rejected');
+                                throw new Error(res?.error || 'Pure upload rejected');
                             }
                         } catch (uploadErr) {
                             if (attempt < 4) {
                                 await wait(600 * attempt);
                             } else {
-                                console.warn(`[Claude AI Sync] Failed for slide ${slide.number} after attempts:`, uploadErr);
+                                console.warn(`[Claude AI Sync] Failed pure upload for slide ${slide.number}:`, uploadErr);
                                 failedSlidesList.push({
                                     slide,
                                     descriptiveFileName,
@@ -978,6 +973,21 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                 });
 
                 await Promise.all(workerThreads);
+
+                // 🚀 Phase 2: Atomic Batch Sync to Google Sheet
+                if (batchUpdates.length > 0) {
+                    updateFileProcessing({ phase: '⚡ Phase 2: Atomic Batch Syncing to Google Sheet (1 sec)...', progress: 95 });
+                    try {
+                        const batchRes = await syncToGoogleSheet({
+                            action: 'batchUpdateSheet',
+                            sessionToken: getAdminSession(),
+                            updates: batchUpdates
+                        });
+                        console.log('[Batch Sync Result]:', batchRes);
+                    } catch (batchErr) {
+                        console.error('[Batch Sync Failed]:', batchErr);
+                    }
+                }
 
                 releasePptxPreviews(slides);
                 window.dispatchEvent(new CustomEvent('hoardings:sync-requested', { detail: { action: 'pptUpload', fileName: file.name } }));

@@ -77,6 +77,12 @@ function doPost(e) {
     }
 
     // 🌟 ADD / EDIT / DELETE OPERATIONS
+    if (p.action === 'pureUpload') {
+      var url = uploadImageToDrive(p);
+      if (url) return res({ success: true, url: url });
+      return res({ success: false, error: 'Upload failed' });
+    }
+    if (p.action === 'batchUpdateSheet') return batchUpdateSheet_(p);
     if (p.action === 'syncDrivePhotosByGpsAndFacing' || p.action === 'syncDrivePhotos') return syncDrivePhotosByGpsAndFacing_(p);
     if (p.action === 'mapExistingImages') return syncDrivePhotosByGpsAndFacing_(p);
     if (p.action === 'updateHoarding') return updateHoardingDetails(p);
@@ -1249,6 +1255,137 @@ function processAllFiles() {
     processPPTs();
   } finally {
     lock.releaseLock();
+  }
+}
+
+/**
+ * ⚡ ATOMIC BATCH UPDATE (Phase 2 Sync)
+ */
+function batchUpdateSheet_(data) {
+  try {
+    if (!data.updates || !Array.isArray(data.updates)) return res({ success: false, error: 'updates array is required' });
+    if (data.updates.length === 0) return res({ success: true, updated: 0, newSites: 0 });
+    
+    var lock = LockService.getScriptLock();
+    var hasLock = false;
+    try { if (lock.tryLock(15000)) hasLock = true; } catch (e) {}
+
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var sheet = ss.getSheetByName(CONFIG.SHEET_NAME);
+    if (!sheet) {
+      if (hasLock) lock.releaseLock();
+      return res({ success: false, error: 'Sheet not found' });
+    }
+
+    var headers = getAllHeaders(sheet);
+    var rows = sheet.getDataRange().getValues(); // Full sheet memory read
+    var maxRow = sheet.getLastRow();
+    
+    var idxImg = findImageColumn(headers);
+    var idxSiteId = headers.indexOf('_SiteID');
+    var idxRowVersion = headers.indexOf('_RowVersion');
+    var idxUpdatedAt = headers.indexOf('_UpdatedAt');
+    var idxStatus = headers.findIndex(function(h) { return cleanFull(h) === 'status'; });
+    var idxFacing = headers.findIndex(function(h) { return cleanFull(h) === 'facing' || cleanFull(h) === 'trafficview'; });
+    var idxLatLong = headers.findIndex(function(h) { return cleanFull(h).indexOf('lat') !== -1 && cleanFull(h).indexOf('long') !== -1; });
+    var idxSite = findSiteColumn(headers);
+
+    // Build fast lookup maps
+    var siteIdMap = {};
+    var siteNameMap = {};
+    if (idxSiteId !== -1) {
+      for (var r = 1; r < rows.length; r++) {
+        var sid = String(rows[r][idxSiteId]).trim().toLowerCase();
+        if (sid) siteIdMap[sid] = r; // Store the 0-based array index!
+      }
+    }
+    if (idxSite !== -1) {
+      for (var r = 1; r < rows.length; r++) {
+        var sname = cleanFull(rows[r][idxSite]);
+        if (sname) {
+          if (!siteNameMap[sname]) siteNameMap[sname] = [];
+          siteNameMap[sname].push({ idx: r, facing: cleanFull(rows[r][idxFacing]) });
+        }
+      }
+    }
+
+    var newRowsBuffer = [];
+    var countUpdated = 0;
+    var countNew = 0;
+
+    for (var i = 0; i < data.updates.length; i++) {
+      var up = data.updates[i];
+      var r = -1; // -1 means not found
+
+      // Try Site ID Match
+      if (up.siteId && idxSiteId !== -1) {
+        var tgt = String(up.siteId).trim().toLowerCase();
+        if (siteIdMap[tgt] !== undefined) r = siteIdMap[tgt];
+      }
+
+      // Try exact Site Name + Facing Match
+      if (r === -1 && up.siteName && idxSite !== -1) {
+        var tgtName = cleanFull(up.siteName);
+        var tgtFacing = cleanFull(up.facing || '');
+        var candidates = siteNameMap[tgtName];
+        if (candidates) {
+          for (var c = 0; c < candidates.length; c++) {
+            if (candidates[c].facing === tgtFacing) {
+              r = candidates[c].idx;
+              break;
+            }
+          }
+          if (r === -1 && candidates.length > 0) {
+            r = candidates[0].idx; // Fallback to first match of siteName
+          }
+        }
+      }
+
+      if (r !== -1) {
+        // Safe existing row update (r is already 0-based index of rows array)
+        if (idxImg !== -1) rows[r][idxImg] = up.url;
+        if (idxStatus !== -1 && up.status) rows[r][idxStatus] = up.status;
+        if (idxRowVersion !== -1) {
+          var currV = rows[r][idxRowVersion];
+          rows[r][idxRowVersion] = (parseInt(currV) || 0) + 1;
+        }
+        if (idxUpdatedAt !== -1) rows[r][idxUpdatedAt] = new Date().toISOString();
+        countUpdated++;
+      } else if (up.newSiteData) {
+        // Brand new site
+        var newRow = new Array(headers.length);
+        for (var c = 0; c < headers.length; c++) newRow[c] = "";
+        if (idxSite !== -1) newRow[idxSite] = up.newSiteData.siteName || "Unknown Site";
+        if (idxImg !== -1) newRow[idxImg] = up.url;
+        if (idxStatus !== -1) newRow[idxStatus] = up.status || 'Available';
+        if (idxSiteId !== -1) newRow[idxSiteId] = Utilities.getUuid();
+        if (idxRowVersion !== -1) newRow[idxRowVersion] = 1;
+        if (idxUpdatedAt !== -1) newRow[idxUpdatedAt] = new Date().toISOString();
+        if (idxFacing !== -1 && up.newSiteData.facing) newRow[idxFacing] = up.newSiteData.facing;
+        if (idxLatLong !== -1 && up.newSiteData.latLong) newRow[idxLatLong] = up.newSiteData.latLong;
+        
+        newRowsBuffer.push(newRow);
+        countNew++;
+      }
+    }
+
+    // Write all existing rows back in ONE blast
+    if (countUpdated > 0) {
+      sheet.getRange(1, 1, rows.length, headers.length).setValues(rows);
+    }
+    
+    // Append all new rows in ONE blast
+    if (newRowsBuffer.length > 0) {
+      sheet.getRange(maxRow + 1, 1, newRowsBuffer.length, headers.length).setValues(newRowsBuffer);
+    }
+    
+    SpreadsheetApp.flush();
+    if (hasLock) lock.releaseLock();
+    bumpChangeVersion_('batch_update', '');
+    
+    return res({ success: true, updated: countUpdated, newSites: countNew });
+  } catch (err) {
+    return res({ success: false, error: err.toString() });
   }
 }
 
