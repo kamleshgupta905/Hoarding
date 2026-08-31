@@ -1433,6 +1433,20 @@ function updateHoardingDetails(data) {
         var newRow = new Array(headers.length);
         for (var c = 0; c < headers.length; c++) newRow[c] = "";
         newRow[idxSite] = siteSearchTerm;
+        
+        var idxSiteId = headers.indexOf('_SiteID');
+        if (idxSiteId !== -1) newRow[idxSiteId] = Utilities.getUuid();
+        var idxRowVersion = headers.indexOf('_RowVersion');
+        if (idxRowVersion !== -1) newRow[idxRowVersion] = 1;
+        var idxUpdatedAt = headers.indexOf('_UpdatedAt');
+        if (idxUpdatedAt !== -1) newRow[idxUpdatedAt] = new Date().toISOString();
+        var idxStatus = headers.findIndex(function(h) { return cleanFull(h) === 'status'; });
+        if (idxStatus !== -1) newRow[idxStatus] = data.status || 'Available';
+        var idxFacing = headers.findIndex(function(h) { return cleanFull(h) === 'facing' || cleanFull(h) === 'trafficview'; });
+        if (idxFacing !== -1 && data.facing) newRow[idxFacing] = data.facing;
+        var idxLatLong = headers.findIndex(function(h) { return cleanFull(h).indexOf('lat') !== -1 && cleanFull(h).indexOf('long') !== -1; });
+        if (idxLatLong !== -1 && data.latLong) newRow[idxLatLong] = data.latLong;
+
         sheet.appendRow(newRow);
         SpreadsheetApp.flush();
         rowIndex = sheet.getLastRow();

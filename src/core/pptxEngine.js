@@ -191,10 +191,96 @@ const findZipMedia = (zip, target) => {
   return null;
 };
 
+// 🌐 Universal GPS Coordinate Decoder (Decimal, DMS, Google Maps links, Labels)
+export const parseCoordinatesUniversal = (text) => {
+  if (!text) return null;
+  
+  // 1. Google Maps URL e.g. maps.google.com/?q=28.998107,77.705821
+  const mapUrlMatch = text.match(/(?:maps\.google\.com[^\s]*[?&]q=|goo\.gl\/maps\/|maps\.app\.goo\.gl\/|@)([0-3]?\d\.\d{3,9})[,\s/]+([0-9]{2,3}\.\d{3,9})/i);
+  if (mapUrlMatch) {
+    return {
+      lat: parseFloat(mapUrlMatch[1]),
+      lng: parseFloat(mapUrlMatch[2]),
+      stamp: `${mapUrlMatch[1]},${mapUrlMatch[2]}`
+    };
+  }
+
+  // 2. Degrees Minutes Seconds (DMS) e.g. 28°59'53.2"N 77°42'20.9"E
+  const dmsMatch = text.match(/([0-3]?\d)\s*°\s*(\d{1,2})\s*['′]\s*(\d{1,2}(?:\.\d+)?)\s*["″]?\s*([NSEWnsew])[,\s/|]+([0-9]{2,3})\s*°\s*(\d{1,2})\s*['′]\s*(\d{1,2}(?:\.\d+)?)\s*["″]?\s*([NSEWnsew])/);
+  if (dmsMatch) {
+    let lat = parseInt(dmsMatch[1], 10) + (parseInt(dmsMatch[2], 10) / 60) + (parseFloat(dmsMatch[3]) / 3600);
+    if (/s/i.test(dmsMatch[4])) lat = -lat;
+    let lng = parseInt(dmsMatch[5], 10) + (parseInt(dmsMatch[6], 10) / 60) + (parseFloat(dmsMatch[7]) / 3600);
+    if (/w/i.test(dmsMatch[8])) lng = -lng;
+    return {
+      lat: parseFloat(lat.toFixed(6)),
+      lng: parseFloat(lng.toFixed(6)),
+      stamp: `${lat.toFixed(6)},${lng.toFixed(6)}`
+    };
+  }
+
+  // 3. Explicit Lat / Long labels e.g. Lat: 28.998107 | Long: 77.705821
+  const labelMatch = text.match(/(?:lat|latitude)[:\s]*([0-3]?\d\.\d{3,9})[^\d]+(?:long|lng|longitude)[:\s]*([0-9]{2,3}\.\d{3,9})/i);
+  if (labelMatch) {
+    return {
+      lat: parseFloat(labelMatch[1]),
+      lng: parseFloat(labelMatch[2]),
+      stamp: `${labelMatch[1]},${labelMatch[2]}`
+    };
+  }
+
+  // 4. Standard Decimal e.g. 28.998107, 77.705821 or 28.998107 / 77.705821
+  const decimalMatch = text.match(/([0-3]?\d\.\d{3,9})\s*(?:°|[NSEWnsew])?[,\s/|]+([0-9]{2,3}\.\d{3,9})/);
+  if (decimalMatch) {
+    return {
+      lat: parseFloat(decimalMatch[1]),
+      lng: parseFloat(decimalMatch[2]),
+      stamp: `${decimalMatch[1]},${decimalMatch[2]}`
+    };
+  }
+
+  return null;
+};
+
+// 🔤 Smart Synonym & Landmark Normalizer
+export const expandSmartSynonyms = (text) => {
+  if (!text) return '';
+  return String(text)
+    .replace(/\b(nr|near by|nr\.)\b/gi, 'near')
+    .replace(/\b(opp|opposite to|opp\.)\b/gi, 'opposite')
+    .replace(/\b(f\/o|f\.o\.|fly over)\b/gi, 'flyover')
+    .replace(/\b(byp|by-pass|by pass)\b/gi, 'bypass')
+    .replace(/\b(cant|cnt|cntt)\b/gi, 'cantt')
+    .replace(/\b(p\/p|p\.p\.|petrol pump)\b/gi, 'petrol pump')
+    .replace(/\b(chwk|chwk\.|chowk)\b/gi, 'chowk')
+    .replace(/\b(rd|rd\.)\b/gi, 'road')
+    .replace(/\b(stn|stn\.)\b/gi, 'station')
+    .replace(/\b(b\.\s*bridge|b\s*bridge)\b/gi, 'begum bridge')
+    .replace(/\b(fcng|fcing)\b/gi, 'facing')
+    .replace(/\s+/g, ' ')
+    .trim();
+};
+
+// 📍 Haversine GPS Distance Calculation in Meters
+const calculateDistanceMeters = (lat1, lon1, lat2, lon2) => {
+  if (!lat1 || !lon1 || !lat2 || !lon2) return null;
+  const R = 6371e3; // metres
+  const φ1 = lat1 * Math.PI / 180;
+  const φ2 = lat2 * Math.PI / 180;
+  const Δφ = (lat2 - lat1) * Math.PI / 180;
+  const Δλ = (lon2 - lon1) * Math.PI / 180;
+  const a = Math.sin(Δφ/2) * Math.sin(Δφ/2) +
+            Math.cos(φ1) * Math.cos(φ2) *
+            Math.sin(Δλ/2) * Math.sin(Δλ/2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+  return R * c;
+};
+
 const scoreSite = (text, site) => {
-  const normalized = normalizeText(text);
+  const expandedText = expandSmartSynonyms(text);
+  const normalized = normalizeText(expandedText);
   const siteId = normalizeText(site._SiteID);
-  const siteLoc = normalizeText(site.Location || site['Location '] || site['Locality Site Location']);
+  const siteLoc = normalizeText(expandSmartSynonyms(site.Location || site['Location '] || site['Locality Site Location']));
   const siteFacing = normalizeText(site.Facing || site['Traffic View']);
   const siteFrom = normalizeText(site['Traffic From']);
   const siteTo = normalizeText(site['Traffic To']);
@@ -205,7 +291,25 @@ const scoreSite = (text, site) => {
   // 1. Unique ID Match
   if (siteId && normalized.includes(siteId)) score += 10000;
 
-  // 2. Lat-Long Match (Exact or 4-5 digit prefix match)
+  // 2. Ultra-Accurate GPS Distance Matching (100m Radius = +10,000 Points)
+  const slideCoords = parseCoordinatesUniversal(text);
+  const siteLat = parseFloat(site.Latitude || site['Lat.'] || (site['Lat-Long'] ? String(site['Lat-Long']).split(/[,/\s]+/)[0] : ''));
+  const siteLng = parseFloat(site.Longitude || site['Long.'] || (site['Lat-Long'] ? String(site['Lat-Long']).split(/[,/\s]+/)[1] : ''));
+  
+  if (slideCoords && !isNaN(siteLat) && !isNaN(siteLng)) {
+    const distMeters = calculateDistanceMeters(slideCoords.lat, slideCoords.lng, siteLat, siteLng);
+    if (distMeters !== null) {
+      if (distMeters <= 50) {
+        score += 10000; // Exact GPS Spot
+      } else if (distMeters <= 150) {
+        score += 8000; // Same Junction / Road Section
+      } else if (distMeters <= 350) {
+        score += 5000; // Same Locality Radius
+      }
+    }
+  }
+
+  // 3. Exact Lat-Long String Match
   const latMatch = String(site.Latitude || '').trim();
   const lngMatch = String(site.Longitude || '').trim();
   if (latMatch && lngMatch) {
@@ -220,12 +324,12 @@ const scoreSite = (text, site) => {
     score += 8000;
   }
 
-  // 3. Exact Location Name Match
+  // 4. Exact Location Name Match
   if (siteLoc && normalized.includes(siteLoc)) {
     score += 5000 + siteLoc.length * 10;
   }
 
-  // 4. Facing & Traffic Flow Match (Essential for distinguishing sites at the same junction)
+  // 5. Facing & Traffic Flow Match
   if (siteFacing && siteFacing.length >= 3 && normalized.includes(siteFacing)) {
     score += 3500;
   }
@@ -236,7 +340,7 @@ const scoreSite = (text, site) => {
     score += 1500;
   }
 
-  // 5. Intelligent Token Overlap for Locations (with synonym/phonetic tolerance)
+  // 6. Intelligent Token Overlap for Locations (with synonym tolerance)
   if (siteLoc) {
     const ignored = new Set(['road', 'near', 'site', 'main', 'facing', 'opposite', 'towards', 'the', 'and', 'for']);
     const tokens = siteLoc.split(' ').filter((token) => token.length >= 3 && !ignored.has(token));
@@ -245,7 +349,6 @@ const scoreSite = (text, site) => {
       if (normalized.includes(token)) {
         tokenHits++;
       } else {
-        // Tolerant matching (e.g. bacha vs bachha, eves vs evez, mulchand vs moolchand)
         const simplified = token.replace(/hh/g, 'h').replace(/z/g, 's').replace(/oo/g, 'u');
         const normSimp = normalized.replace(/hh/g, 'h').replace(/z/g, 's').replace(/oo/g, 'u');
         if (normSimp.includes(simplified)) {
@@ -258,13 +361,13 @@ const scoreSite = (text, site) => {
     }
   }
 
-  // 6. City & Locality/Area Boost
+  // 7. City & Locality/Area Boost
   const city = normalizeText(site.City);
   const locality = normalizeText(site.Area || site.Locality);
   if (city && normalized.includes(city)) score += 200;
   if (locality && locality.length >= 3 && normalized.includes(locality)) score += 1200;
 
-  // 7. Dimension Match
+  // 8. Dimension Match
   const width = Math.round(Number(site.Width || 0));
   const height = Math.round(Number(site.Height || 0));
   if (width && height && (normalized.includes(`${width}x${height}`) || normalized.includes(`${height}x${width}`) || normalized.includes(`${width} x ${height}`))) {
