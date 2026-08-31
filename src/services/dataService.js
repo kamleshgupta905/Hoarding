@@ -127,9 +127,7 @@ export const getHoardingImageCandidates = (hoarding = {}) => {
     hoarding.ImageURL,
     hoarding.imageurl,
     hoarding['Image URL'],
-    hoarding.Photo,
-    ...imageValuesFromHistory(hoarding.History),
-    ...imageValuesFromHistory(hoarding.ExecutionHistory)
+    hoarding.Photo
   ];
 
   return [...new Set(values
