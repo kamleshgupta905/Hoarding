@@ -40,7 +40,9 @@ var ADMIN_ACTIONS = {
   saveSheetGrid: true,
   importCommit: true,
   uploadInputFile: true,
-  analyzeImageOrientation: true
+  analyzeImageOrientation: true,
+  pureUpload: true,
+  batchUpdateSheet: true
 };
 
 /* ================= WEB ================= */
@@ -77,12 +79,7 @@ function doPost(e) {
     }
 
     // 🌟 ADD / EDIT / DELETE OPERATIONS
-    if (p.action === 'pureUpload') {
-      var url = uploadImageToDrive(p);
-      if (url) return res({ success: true, url: url });
-      return res({ success: false, error: 'Upload failed' });
-    }
-    if (p.action === 'batchUpdateSheet') return batchUpdateSheet_(p);
+    // pureUpload and batchUpdateSheet are now handled via ADMIN_ACTIONS
     if (p.action === 'syncDrivePhotosByGpsAndFacing' || p.action === 'syncDrivePhotos') return syncDrivePhotosByGpsAndFacing_(p);
     if (p.action === 'mapExistingImages') return syncDrivePhotosByGpsAndFacing_(p);
     if (p.action === 'updateHoarding') return updateHoardingDetails(p);
@@ -512,6 +509,12 @@ function dispatchAdminOperation_(type, payload) {
   if (type === 'importCommit') return commitImportRecords_(payload);
   if (type === 'uploadInputFile') return uploadInputFile_(payload);
   if (type === 'analyzeImageOrientation') return analyzeImageOrientation_(payload);
+  if (type === 'pureUpload') {
+    var url = uploadImageToDrive(payload);
+    if (url) return res({ success: true, url: url });
+    return res({ success: false, error: 'Upload failed' });
+  }
+  if (type === 'batchUpdateSheet') return batchUpdateSheet_(payload);
   return res({ success: false, error: 'Unsupported operation: ' + type });
 }
 

@@ -774,7 +774,7 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                 const isElectron = Boolean(window.electronAPI && window.electronAPI.isElectron && typeof window.electronAPI.extractPptxNative === 'function');
 
                 if (isElectron) {
-                    updateFileProcessing({ phase: `⚡ Claude AI Native Engine: Processing PPT (${fileSizeMB.toFixed(1)}MB)...`, progress: 10 });
+                    updateFileProcessing({ phase: `Claude AI Native Engine: Processing PPT (${fileSizeMB.toFixed(1)}MB)...`, progress: 10 });
                     const removeListener = window.electronAPI.onPptxProgress 
                         ? window.electronAPI.onPptxProgress((p) => {
                             if (p && p.phase) {
@@ -822,7 +822,7 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                 }
 
                 updateFileProcessing({ 
-                    phase: `✨ Claude AI extracted ${processableSlides.length} slides! Syncing photos to Google Cloud Server...`,
+                    phase: `Claude AI extracted ${processableSlides.length} slides! Syncing photos to Google Cloud Server...`,
                     progress: 45 
                 });
 
@@ -959,7 +959,7 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                     completed++;
                     const percent = Math.round(45 + (completed / processableSlides.length) * 50);
                     updateFileProcessing({
-                        phase: `⚡ Claude AI Sync: ${completed}/${processableSlides.length} slides (${syncedCount} photos synced to Google Cloud Server)...`,
+                        phase: `Claude AI Sync: ${completed}/${processableSlides.length} slides (${syncedCount} photos synced to Google Cloud Server)...`,
                         progress: percent
                     });
                 };
@@ -997,10 +997,10 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
 
                 if (failedSlidesList.length > 0) {
                     setMissedPptSlides(failedSlidesList);
-                    completeBackgroundUpload('completed', `⚡ Claude AI processed ${syncedCount} of ${processableSlides.length} photos. ${failedSlidesList.length} photos require re-sync.`);
+                    completeBackgroundUpload('completed', `Claude AI processed ${syncedCount} of ${processableSlides.length} photos. ${failedSlidesList.length} photos require re-sync.`);
                 } else {
                     setMissedPptSlides([]);
-                    completeBackgroundUpload('completed', `⚡ Claude AI processing complete! All ${syncedCount} slide photos uploaded and synced to Google Cloud Server.`);
+                    completeBackgroundUpload('completed', `Claude AI processing complete! All ${syncedCount} slide photos uploaded and synced to Google Cloud Server.`);
                 }
             } catch (error) {
                 completeBackgroundUpload('error', type === 'excel' ? `Excel preview failed: ${error.message}` : `PPT failed: ${error.message}`);
@@ -5728,7 +5728,13 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                         <div className="upload-notice-copy">
                             <strong>{uploadNotice.fileName || 'Background upload'}</strong>
                             <span>{uploadNotice.message}</span>
-                            {fileProcessing && <small>{formatProcessingTime(processingSeconds)} elapsed: {fileProcessing.phase}</small>}
+                            {fileProcessing && (
+                                <small style={{ display: 'flex', alignItems: 'center', gap: '4px', marginTop: '4px' }}>
+                                    {formatProcessingTime(processingSeconds)} elapsed: 
+                                    {String(fileProcessing.phase).includes('Claude AI') && <ClaudeAiIcon size={12} />}
+                                    {fileProcessing.phase}
+                                </small>
+                            )}
                         </div>
                         <button type="button" onClick={() => setUploadNotice(null)} title="Close notification" aria-label="Close notification"><X size={18} /></button>
                     </aside>
