@@ -335,6 +335,8 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
     const [excelImportToken, setExcelImportToken] = useState('');
     const [isExcelImportOpen, setIsExcelImportOpen] = useState(false);
     const [isExcelApproving, setIsExcelApproving] = useState(false);
+    const [missedPptSlides, setMissedPptSlides] = useState([]);
+    const [isAutoMappingCloudPhotos, setIsAutoMappingCloudPhotos] = useState(false);
     const [sheetHeaders, setSheetHeaders] = useState([]);
     const [sheetRows, setSheetRows] = useState([]);
     const [sheetSearch, setSheetSearch] = useState('');
@@ -620,6 +622,101 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
         }
     };
 
+    // ⚡ 1-Click Auto-Map Photos from Google Cloud Server to Inventory
+    const handleAutoMapCloudPhotos = async () => {
+        setIsAutoMappingCloudPhotos(true);
+        showToast('Scanning Google Cloud Server photos and auto-mapping to inventory...', 'info');
+        try {
+            const res = await syncToGoogleSheet({
+                action: 'syncDrivePhotosByGpsAndFacing',
+                sessionToken: getAdminSession()
+            });
+            if (res && res.success) {
+                const count = res.matchedCount || 0;
+                showToast(`✨ Auto-mapped ${count} photos from Google Cloud Server to inventory!`, 'success');
+                const freshData = await fetchHoardings();
+                if (freshData?.length) setHoardings(freshData);
+            } else {
+                throw new Error(res?.error || 'Auto-mapping failed');
+            }
+        } catch (err) {
+            showToast(`Auto-mapping failed: ${err.message}`, 'error');
+        } finally {
+            setIsAutoMappingCloudPhotos(false);
+        }
+    };
+
+    // 🔄 1-Click Re-Sync for Any Missed PPT Photos
+    const handleResyncMissedSlides = async () => {
+        if (!missedPptSlides || missedPptSlides.length === 0) return;
+        const slidesToSync = [...missedPptSlides];
+        setFileProcessing({
+            type: 'ppt',
+            fileName: 'Missed Photos Re-Sync',
+            phase: `Re-syncing ${slidesToSync.length} missed photos to Google Cloud Server...`,
+            progress: 10,
+            startedAt: Date.now()
+        });
+        
+        let reSynced = 0;
+        const remainingMissed = [];
+
+        for (let i = 0; i < slidesToSync.length; i++) {
+            const item = slidesToSync[i];
+            updateFileProcessing({
+                phase: `⚡ Re-syncing photo ${i + 1} of ${slidesToSync.length} to Google Cloud Server...`,
+                progress: Math.round(((i + 1) / slidesToSync.length) * 100)
+            });
+
+            let success = false;
+            try {
+                // First try updateHoarding
+                let res = await syncToGoogleSheet({
+                    action: 'updateHoarding',
+                    sessionToken: getAdminSession(),
+                    siteName: item.siteName || item.descriptiveFileName,
+                    siteId: item.matchedSiteId || '',
+                    fileName: item.descriptiveFileName,
+                    fileData: item.pureBase64,
+                    mimeType: item.mimeType || 'image/jpeg'
+                });
+
+                // If not found in sheet, upload directly to Drive folder
+                if (!res || res.success === false) {
+                    res = await syncToGoogleSheet({
+                        action: 'uploadInputFile',
+                        sessionToken: getAdminSession(),
+                        fileName: item.descriptiveFileName,
+                        fileData: item.pureBase64,
+                        mimeType: item.mimeType || 'image/jpeg'
+                    });
+                }
+
+                if (res && res.success !== false) {
+                    reSynced++;
+                    success = true;
+                }
+            } catch (e) {
+                console.warn('[Re-sync Error]:', e);
+            }
+
+            if (!success) {
+                remainingMissed.push(item);
+            }
+            await wait(300);
+        }
+
+        setMissedPptSlides(remainingMissed);
+        setFileProcessing(null);
+
+        if (reSynced > 0) {
+            showToast(`✅ Successfully uploaded ${reSynced} missed photos to Google Cloud Server!`, 'success');
+            await handleAutoMapCloudPhotos();
+        } else {
+            showToast(`Could not re-sync photos. Please check internet connection.`, 'error');
+        }
+    };
+
     const handleFileUpload = (e, type) => {
         const file = e.target.files[0];
         if (!file) return;
@@ -732,6 +829,7 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
 
                 let completed = 0;
                 let syncedCount = 0;
+                const failedSlidesList = [];
                 
                 // 🚀 OPTION B: High-Speed Concurrency Worker Pool (8 Parallel Workers with Zero Image Loss)
                 const CONCURRENCY = 8;
@@ -813,7 +911,7 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                     let success = false;
                     for (let attempt = 1; attempt <= 4 && !success; attempt++) {
                         try {
-                            const res = await syncToGoogleSheet({
+                            let res = await syncToGoogleSheet({
                                 action: 'updateHoarding',
                                 sessionToken: getAdminSession(),
                                 siteName: siteName,
@@ -826,6 +924,21 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                 mimeType: photoCandidate.mimeType || 'image/jpeg'
                             });
 
+                            // 🛡️ Fallback: If site was not found in Sheet, upload directly to Drive so photo is never lost!
+                            if (res && res.success === false && res.error && res.error.includes('not found')) {
+                                try {
+                                    res = await syncToGoogleSheet({
+                                        action: 'uploadInputFile',
+                                        sessionToken: getAdminSession(),
+                                        fileName: descriptiveFileName,
+                                        fileData: pureBase64,
+                                        mimeType: photoCandidate.mimeType || 'image/jpeg'
+                                    });
+                                } catch (driveUploadErr) {
+                                    console.warn('[Direct Drive Fallback Error]:', driveUploadErr);
+                                }
+                            }
+
                             if (res && res.success !== false) {
                                 syncedCount++;
                                 success = true;
@@ -837,6 +950,14 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                 await wait(600 * attempt);
                             } else {
                                 console.warn(`[Claude AI Sync] Failed for slide ${slide.number} after attempts:`, uploadErr);
+                                failedSlidesList.push({
+                                    slide,
+                                    descriptiveFileName,
+                                    pureBase64,
+                                    mimeType: photoCandidate.mimeType || 'image/jpeg',
+                                    siteName,
+                                    matchedSiteId: matchedSite?._SiteID || ''
+                                });
                             }
                         }
                     }
@@ -864,7 +985,14 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                 await wait(1000);
                 const freshData = await fetchHoardings();
                 if (freshData?.length) setHoardings(freshData);
-                completeBackgroundUpload('completed', `⚡ Claude AI processing complete! ${syncedCount} of ${processableSlides.length} slide photos uploaded and synced to Google Cloud Server.`);
+
+                if (failedSlidesList.length > 0) {
+                    setMissedPptSlides(failedSlidesList);
+                    completeBackgroundUpload('completed', `⚡ Claude AI processed ${syncedCount} of ${processableSlides.length} photos. ${failedSlidesList.length} photos require re-sync.`);
+                } else {
+                    setMissedPptSlides([]);
+                    completeBackgroundUpload('completed', `⚡ Claude AI processing complete! All ${syncedCount} slide photos uploaded and synced to Google Cloud Server.`);
+                }
             } catch (error) {
                 completeBackgroundUpload('error', type === 'excel' ? `Excel preview failed: ${error.message}` : `PPT failed: ${error.message}`);
             }
@@ -3348,6 +3476,28 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                         </div>
                                     </div>
                                 )}
+                                {missedPptSlides.length > 0 && (
+                                    <button 
+                                        className="btn-primary-admin" 
+                                        style={{ background: '#ef4444', borderColor: '#ef4444', color: 'white', cursor: 'pointer', padding: '7px 14px', fontSize: '0.82rem', display: 'flex', alignItems: 'center', gap: '6px' }}
+                                        onClick={handleResyncMissedSlides}
+                                        disabled={Boolean(fileProcessing)}
+                                        title="Re-upload missed photos directly to Google Cloud Server"
+                                    >
+                                        <RefreshCw size={15} />
+                                        Re-Sync {missedPptSlides.length} Missed
+                                    </button>
+                                )}
+                                <button 
+                                    className="btn-primary-admin" 
+                                    style={{ background: '#4f46e5', borderColor: '#4f46e5', color: 'white', cursor: 'pointer', padding: '7px 14px', fontSize: '0.82rem', display: 'flex', alignItems: 'center', gap: '6px' }}
+                                    onClick={handleAutoMapCloudPhotos}
+                                    disabled={isAutoMappingCloudPhotos || Boolean(fileProcessing)}
+                                    title="Scan Google Cloud Server and auto-link all photos to inventory by GPS & Facing"
+                                >
+                                    <Zap size={15} />
+                                    {isAutoMappingCloudPhotos ? 'Mapping...' : 'Auto-Map Photos'}
+                                </button>
                                 <label className="btn-primary-admin" style={{ cursor: 'pointer', padding: '7px 14px', fontSize: '0.82rem' }}>
                                     <Download size={16} />
                                     Excel Sync
