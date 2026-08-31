@@ -14,7 +14,7 @@ import {
 import { analyzeHoardingImage, extractSiteCoordinates } from '../services/aiService';
 import { fetchHoardings, compressImage, syncToGoogleSheet, exportProposalExcel, PROPOSAL_COLUMNS, getImageUrl, downloadHoardingImage, fetchStaffUploads, reviewStaffPhoto, detectStaffPhotoOrientation, fetchSheetGrid, saveSheetGrid, addDeletedSite, parseHistoryString } from '../services/dataService';
 import ImageLightbox from '../components/ImageLightbox';
-import { clearAdminSession, getAdminSession, getStaffUploadLink } from '../services/secureApi';
+import { clearAdminSession, getAdminSession, getStaffUploadLink, postDirect } from '../services/secureApi';
 import { isInternalHeader } from '../core/hoardingSchema';
 import { blobToDataUrl, prepareImageOrientation } from '../core/imageOrientation';
 import { parsePptx, releasePptxPreviews, blobToBase64 } from '../core/pptxEngine';
@@ -659,39 +659,31 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
         
         let reSynced = 0;
         const remainingMissed = [];
+        const batchUpdates = [];
 
         for (let i = 0; i < slidesToSync.length; i++) {
             const item = slidesToSync[i];
             updateFileProcessing({
-                phase: `⚡ Re-syncing photo ${i + 1} of ${slidesToSync.length} to Google Cloud Server...`,
-                progress: Math.round(((i + 1) / slidesToSync.length) * 100)
+                phase: `Re-syncing photo ${i + 1} of ${slidesToSync.length} to Google Cloud Server...`,
+                progress: Math.round(((i + 1) / slidesToSync.length) * 85)
             });
 
             let success = false;
             try {
-                // First try updateHoarding
-                let res = await syncToGoogleSheet({
-                    action: 'updateHoarding',
+                const res = await postDirect({
+                    action: 'pureUpload',
                     sessionToken: getAdminSession(),
-                    siteName: item.siteName || item.descriptiveFileName,
-                    siteId: item.matchedSiteId || '',
                     fileName: item.descriptiveFileName,
                     fileData: item.pureBase64,
                     mimeType: item.mimeType || 'image/jpeg'
                 });
 
-                // If not found in sheet, upload directly to Drive folder
-                if (!res || res.success === false) {
-                    res = await syncToGoogleSheet({
-                        action: 'uploadInputFile',
-                        sessionToken: getAdminSession(),
-                        fileName: item.descriptiveFileName,
-                        fileData: item.pureBase64,
-                        mimeType: item.mimeType || 'image/jpeg'
+                if (res && res.success && res.url) {
+                    batchUpdates.push({
+                        siteId: item.matchedSiteId || '',
+                        siteName: item.siteName,
+                        url: res.url
                     });
-                }
-
-                if (res && res.success !== false) {
                     reSynced++;
                     success = true;
                 }
@@ -702,15 +694,28 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
             if (!success) {
                 remainingMissed.push(item);
             }
-            await wait(300);
+        }
+
+        if (batchUpdates.length > 0) {
+            updateFileProcessing({ phase: 'Syncing re-uploaded photos to Google Sheet...', progress: 95 });
+            try {
+                await postDirect({
+                    action: 'batchUpdateSheet',
+                    sessionToken: getAdminSession(),
+                    updates: batchUpdates
+                });
+            } catch (err) {
+                console.warn('[Re-sync batch update error]:', err);
+            }
         }
 
         setMissedPptSlides(remainingMissed);
         setFileProcessing(null);
 
         if (reSynced > 0) {
-            showToast(`✅ Successfully uploaded ${reSynced} missed photos to Google Cloud Server!`, 'success');
-            await handleAutoMapCloudPhotos();
+            showToast(`✅ Successfully uploaded and synced ${reSynced} photos!`, 'success');
+            const freshData = await fetchHoardings();
+            if (freshData?.length) setHoardings(freshData);
         } else {
             showToast(`Could not re-sync photos. Please check internet connection.`, 'error');
         }
@@ -909,10 +914,10 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                     }
 
                     let success = false;
-                    for (let attempt = 1; attempt <= 4 && !success; attempt++) {
+                    for (let attempt = 1; attempt <= 2 && !success; attempt++) {
                         try {
-                            // 🚀 Phase 1: Fast Pure Cloud Upload (No Google Sheet Lock)
-                            let res = await syncToGoogleSheet({
+                            // 🚀 Phase 1: Fast Direct Cloud Upload (Zero Lock Contention)
+                            const res = await postDirect({
                                 action: 'pureUpload',
                                 sessionToken: getAdminSession(),
                                 fileName: descriptiveFileName,
@@ -920,7 +925,7 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                 mimeType: photoCandidate.mimeType || 'image/jpeg'
                             });
 
-                            if (res && res.success !== false && res.url) {
+                            if (res && res.success && res.url) {
                                 // Add to Phase 2 Atomic Batch
                                 batchUpdates.push({
                                     siteId: matchedSite?._SiteID || '',
@@ -937,11 +942,11 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                 syncedCount++;
                                 success = true;
                             } else {
-                                throw new Error(res?.error || 'Pure upload rejected');
+                                throw new Error(res?.error || 'Upload failed');
                             }
                         } catch (uploadErr) {
-                            if (attempt < 4) {
-                                await wait(600 * attempt);
+                            if (attempt < 2) {
+                                await wait(1000);
                             } else {
                                 console.warn(`[Claude AI Sync] Failed pure upload for slide ${slide.number}:`, uploadErr);
                                 failedSlidesList.push({
@@ -976,9 +981,9 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
 
                 // 🚀 Phase 2: Atomic Batch Sync to Google Sheet
                 if (batchUpdates.length > 0) {
-                    updateFileProcessing({ phase: '⚡ Phase 2: Atomic Batch Syncing to Google Sheet (1 sec)...', progress: 95 });
+                    updateFileProcessing({ phase: 'Phase 2: Atomic Batch Syncing to Google Sheet (1 sec)...', progress: 95 });
                     try {
-                        const batchRes = await syncToGoogleSheet({
+                        const batchRes = await postDirect({
                             action: 'batchUpdateSheet',
                             sessionToken: getAdminSession(),
                             updates: batchUpdates

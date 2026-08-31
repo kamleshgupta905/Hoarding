@@ -54,6 +54,16 @@ const postOpaque = async (payload) => {
   }, 60000);
 };
 
+export const postDirect = async (payload, timeoutMs = 60000) => {
+  const response = await fetchWithTimeout(APPS_SCRIPT_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'text/plain' },
+    body: JSON.stringify(payload)
+  }, timeoutMs);
+  if (!response.ok) throw new Error(`Network request failed (${response.status})`);
+  return response.json();
+};
+
 export const loginAdmin = async (adminId, password) => {
   if (!adminId || !password) {
     throw new Error('Please enter both Admin ID and Password.');

@@ -40,16 +40,20 @@ var ADMIN_ACTIONS = {
   saveSheetGrid: true,
   importCommit: true,
   uploadInputFile: true,
-  analyzeImageOrientation: true,
-  pureUpload: true,
-  batchUpdateSheet: true
+  analyzeImageOrientation: true
 };
 
 /* ================= WEB ================= */
 
 function doPost(e) {
   try {
-    var p = JSON.parse(e.postData.contents);
+    // 🚀 ULTRA-FAST DIRECT HANDLERS (Direct Cloud I/O without Sheet locks)
+    if (p.action === 'pureUpload') {
+      var url = uploadImageToDrive(p);
+      if (url) return res({ success: true, url: url });
+      return res({ success: false, error: 'Upload failed' });
+    }
+    if (p.action === 'batchUpdateSheet') return batchUpdateSheet_(p);
 
     if (p.action === 'login') return requestAdminLogin_(p);
     if (p.action === 'refreshSession') return refreshAdminSession_(p);
@@ -1414,6 +1418,14 @@ function uploadImageToDrive(data) {
     var rawName = data.fileName || ((data.siteName || "Site") + "_" + new Date().getTime() + ".jpg");
     var cleanName = rawName.replace(/[/\\?%*:|"<>]/g, '-').trim();
     if (!/\.(jpg|jpeg|png|webp)$/i.test(cleanName)) cleanName += '.jpg';
+
+    // 🛡️ Deduplication Guard: Check if file with exact cleanName already exists in Drive
+    var existingFiles = folder.getFilesByName(cleanName);
+    if (existingFiles.hasNext()) {
+      var existingFile = existingFiles.next();
+      return "https://lh3.googleusercontent.com/d/" + existingFile.getId();
+    }
+
     var blob = Utilities.newBlob(decoded, data.mimeType || 'image/jpeg', cleanName);
     var file = folder.createFile(blob);
     file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
