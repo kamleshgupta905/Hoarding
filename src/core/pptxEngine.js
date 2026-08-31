@@ -276,7 +276,7 @@ const calculateDistanceMeters = (lat1, lon1, lat2, lon2) => {
   return R * c;
 };
 
-const scoreSite = (text, site) => {
+const scoreSite = (text, site, slideNumber = 0, siteIndex = -1) => {
   const expandedText = expandSmartSynonyms(text);
   const normalized = normalizeText(expandedText);
   const siteId = normalizeText(site._SiteID);
@@ -288,7 +288,19 @@ const scoreSite = (text, site) => {
 
   let score = 0;
 
-  // 1. Unique ID Match
+  // 🎯 1. Ultra Priority: Slide Number == Serial No. / Sr No. in Google Sheet
+  const rawSrNo = site['Sr No'] || site['S.No'] || site['S. No.'] || site['Sr. No.'] || site['Serial No'] || site['S No'] || site['Sr.'] || site['No.'] || site.ID;
+  const parsedSrNo = parseInt(String(rawSrNo || '').replace(/[^0-9]/g, ''), 10);
+  
+  if (slideNumber > 0) {
+    if (!isNaN(parsedSrNo) && parsedSrNo === slideNumber) {
+      score += 25000; // 🌟 100% Lock: Slide Number EXACTLY equals Sheet Sr. No.!
+    } else if (siteIndex >= 0 && (siteIndex + 1) === slideNumber) {
+      score += 20000; // 🌟 Sequence Match: Slide N equals Row N in Sheet!
+    }
+  }
+
+  // 2. Unique ID Match
   if (siteId && normalized.includes(siteId)) score += 10000;
 
   // 2. Ultra-Accurate GPS Distance Matching (100m Radius = +10,000 Points)
@@ -490,7 +502,7 @@ export const parsePptx = async (arrayBuffer, sites = [], onProgress = null) => {
     }
 
     const candidates = sites
-      .map((site) => ({ site, score: scoreSite(text, site) }))
+      .map((site, sIdx) => ({ site, score: scoreSite(text, site, number, sIdx) }))
       .filter((item) => item.score > 0)
       .sort((left, right) => right.score - left.score)
       .slice(0, 8);
