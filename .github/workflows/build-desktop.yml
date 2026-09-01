@@ -31,6 +31,17 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           ELECTRON_BUILD: 'true'
 
+      - name: 🚀 Ensure GitHub Release is Published (Non-Draft)
+        if: success()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: pwsh
+        run: |
+          $pkg = Get-Content -Raw -Path package.json | ConvertFrom-Json
+          $tag = "v" + $pkg.version
+          Write-Host "Publishing release $tag from draft if needed..."
+          gh release edit $tag --draft=false || true
+
       - name: 🚀 Upload Windows Setup & Portable .exe Artifacts
         uses: actions/upload-artifact@v4
         with:

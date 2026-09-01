@@ -142,18 +142,15 @@ function checkForUpdatesManually() {
     autoUpdater.autoDownload = true;
     autoUpdater.checkForUpdates().then(result => {
         if (!result || !result.updateInfo) {
-            dialog.showMessageBox(mainWindow, {
-                type: 'info',
-                title: 'No Updates',
-                message: 'You are on the latest version of Heera Advertising Admin (' + app.getVersion() + ').'
-            });
+            if (mainWindow && !mainWindow.isDestroyed()) {
+                mainWindow.webContents.send('update-not-available', null);
+            }
         }
     }).catch(err => {
-        dialog.showMessageBox(mainWindow, {
-            type: 'error',
-            title: 'Update Check Failed',
-            message: 'Unable to check for updates: ' + err.message
-        });
+        console.error('[Update Check Error]:', err);
+        if (mainWindow && !mainWindow.isDestroyed()) {
+            mainWindow.webContents.send('update-error', err.message || 'Unable to check for updates.');
+        }
     });
 }
 
@@ -166,6 +163,19 @@ autoUpdater.on('checking-for-update', () => {
 autoUpdater.on('update-available', (info) => {
     if (mainWindow && !mainWindow.isDestroyed()) {
         mainWindow.webContents.send('update-available', info);
+    }
+});
+
+autoUpdater.on('update-not-available', (info) => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('update-not-available', info);
+    }
+});
+
+autoUpdater.on('error', (err) => {
+    console.error('[AutoUpdater Error]:', err);
+    if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('update-error', err?.message || String(err));
     }
 });
 

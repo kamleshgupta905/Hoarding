@@ -81,66 +81,179 @@ function PageLoader() {
 function AutoUpdateBar() {
   const [updateState, setUpdateState] = useState(null);
   const countdownTimerRef = useRef(null);
+  const checkTimeoutRef = useRef(null);
 
   useEffect(() => {
     if (!window.electronAPI) return;
 
+    window.electronAPI.onUpdateChecking?.(() => {
+      setUpdateState(prev => {
+        if (prev?.status === 'downloading' || prev?.status === 'ready') return prev;
+        return { status: 'checking', version: '', percent: 0 };
+      });
+      if (checkTimeoutRef.current) clearTimeout(checkTimeoutRef.current);
+      checkTimeoutRef.current = setTimeout(() => {
+        setUpdateState(prev => prev?.status === 'checking' ? null : prev);
+      }, 4000);
+    });
+
     window.electronAPI.onUpdateAvailable?.((info) => {
-      setUpdateState({ status: 'downloading', version: info?.version || '', percent: 0, countdown: 5 });
+      if (checkTimeoutRef.current) clearTimeout(checkTimeoutRef.current);
+      setUpdateState({ 
+        status: 'downloading', 
+        version: info?.version || '', 
+        percent: 0,
+        transferred: 0,
+        total: 0,
+        bytesPerSecond: 0,
+        countdown: 5 
+      });
+    });
+
+    window.electronAPI.onUpdateNotAvailable?.(() => {
+      if (checkTimeoutRef.current) clearTimeout(checkTimeoutRef.current);
+      setUpdateState({ status: 'up-to-date', version: '', percent: 100 });
+      setTimeout(() => setUpdateState(null), 4000);
+    });
+
+    window.electronAPI.onUpdateError?.((err) => {
+      if (checkTimeoutRef.current) clearTimeout(checkTimeoutRef.current);
+      setUpdateState({ status: 'error', error: err || 'Update check failed' });
+      setTimeout(() => setUpdateState(null), 6000);
     });
 
     window.electronAPI.onUpdateProgress?.((p) => {
-      setUpdateState(prev => prev ? { ...prev, percent: Math.min(100, Math.round(p.percent || 0)) } : null);
+      if (checkTimeoutRef.current) clearTimeout(checkTimeoutRef.current);
+      const pct = Math.min(100, Math.round((p?.percent || 0) * 10) / 10);
+      setUpdateState(prev => ({
+        status: 'downloading',
+        version: prev?.version || '',
+        percent: pct,
+        transferred: p?.transferred || 0,
+        total: p?.total || 0,
+        bytesPerSecond: p?.bytesPerSecond || 0,
+        countdown: 5
+      }));
     });
 
     window.electronAPI.onUpdateDownloaded?.((info) => {
+      if (checkTimeoutRef.current) clearTimeout(checkTimeoutRef.current);
       setUpdateState({ status: 'ready', version: info?.version || '', percent: 100, countdown: 5 });
       let count = 5;
       countdownTimerRef.current = setInterval(() => {
         count -= 1;
-        if (count <= 0) { clearInterval(countdownTimerRef.current); window.electronAPI?.installUpdate?.(); }
-        else setUpdateState(prev => prev ? { ...prev, countdown: count } : null);
+        if (count <= 0) { 
+          clearInterval(countdownTimerRef.current); 
+          window.electronAPI?.installUpdate?.(); 
+        } else {
+          setUpdateState(prev => prev ? { ...prev, countdown: count } : null);
+        }
       }, 1000);
     });
 
-    return () => { if (countdownTimerRef.current) clearInterval(countdownTimerRef.current); };
+    return () => { 
+      if (countdownTimerRef.current) clearInterval(countdownTimerRef.current); 
+      if (checkTimeoutRef.current) clearTimeout(checkTimeoutRef.current);
+    };
   }, []);
 
   if (!updateState) return null;
 
+  const formatMB = (bytes) => {
+    if (!bytes || isNaN(bytes)) return '0 MB';
+    return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+  };
+
+  const formatSpeed = (bytesPerSec) => {
+    if (!bytesPerSec || isNaN(bytesPerSec)) return '';
+    const kb = bytesPerSec / 1024;
+    if (kb > 1024) return (kb / 1024).toFixed(1) + ' MB/s';
+    return Math.round(kb) + ' KB/s';
+  };
+
   return (
     <div style={{
-      position: 'fixed', top: '18px', right: '24px', zIndex: 999999,
-      background: 'rgba(15, 23, 42, 0.96)', backdropFilter: 'blur(16px)',
-      border: updateState.status === 'ready' ? '1px solid rgba(16, 185, 129, 0.4)' : '1px solid rgba(59, 130, 246, 0.4)',
-      borderRadius: '16px', padding: '16px 20px',
-      boxShadow: '0 20px 40px rgba(0, 0, 0, 0.5)', color: '#fff',
-      display: 'flex', flexDirection: 'column', gap: '10px', minWidth: '340px'
+      position: 'fixed', bottom: '24px', right: '24px', zIndex: 999999,
+      background: 'linear-gradient(135deg, rgba(15, 23, 42, 0.98), rgba(30, 41, 59, 0.98))',
+      backdropFilter: 'blur(16px)',
+      border: updateState.status === 'ready'
+        ? '1px solid rgba(16, 185, 129, 0.6)'
+        : updateState.status === 'error'
+        ? '1px solid rgba(239, 68, 68, 0.5)'
+        : '1px solid rgba(99, 102, 241, 0.5)',
+      borderRadius: '16px', padding: '18px 22px',
+      boxShadow: '0 20px 45px rgba(0, 0, 0, 0.55), 0 0 25px rgba(99, 102, 241, 0.2)',
+      color: '#fff', display: 'flex', flexDirection: 'column', gap: '12px',
+      minWidth: '360px', maxWidth: '420px', fontFamily: "'Inter', sans-serif"
     }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-          <span style={{ fontSize: '20px' }}>{updateState.status === 'ready' ? '🎉' : '🚀'}</span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+          <div style={{
+            width: '38px', height: '38px', borderRadius: '10px',
+            background: updateState.status === 'ready' ? 'rgba(16, 185, 129, 0.2)' : 'rgba(99, 102, 241, 0.2)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '20px'
+          }}>
+            {updateState.status === 'ready' ? '🎉' : updateState.status === 'checking' ? '🔍' : updateState.status === 'up-to-date' ? '✅' : updateState.status === 'error' ? '⚠️' : '⚡'}
+          </div>
           <div>
-            <div style={{ fontSize: '14px', fontWeight: '700' }}>
-              {updateState.status === 'ready' ? `Update Ready (v${updateState.version})` : `Downloading v${updateState.version}`}
+            <div style={{ fontSize: '14px', fontWeight: '700', letterSpacing: '-0.2px' }}>
+              {updateState.status === 'ready' && `Update Ready (v${updateState.version})`}
+              {updateState.status === 'downloading' && `Downloading Update v${updateState.version}`}
+              {updateState.status === 'checking' && 'Checking for Updates...'}
+              {updateState.status === 'up-to-date' && 'App is Up to Date'}
+              {updateState.status === 'error' && 'Update Notice'}
             </div>
-            <div style={{ fontSize: '12px', color: '#94a3b8' }}>
-              {updateState.status === 'ready' ? `Restarting in ${updateState.countdown}s...` : 'Background download...'}
+            <div style={{ fontSize: '12px', color: '#94a3b8', marginTop: '2px' }}>
+              {updateState.status === 'ready' && `Restarting to apply in ${updateState.countdown}s...`}
+              {updateState.status === 'downloading' && 'Downloading in background...'}
+              {updateState.status === 'checking' && 'Connecting to GitHub...'}
+              {updateState.status === 'up-to-date' && 'You have the latest version installed.'}
+              {updateState.status === 'error' && updateState.error}
             </div>
           </div>
         </div>
-        <button onClick={() => { if (countdownTimerRef.current) clearInterval(countdownTimerRef.current); setUpdateState(null); }}
-          style={{ background: 'none', border: 'none', color: '#64748b', cursor: 'pointer', padding: '4px' }}>✕</button>
+        <button 
+          onClick={() => { if (countdownTimerRef.current) clearInterval(countdownTimerRef.current); setUpdateState(null); }}
+          style={{ background: 'none', border: 'none', color: '#94a3b8', cursor: 'pointer', padding: '4px', fontSize: '16px', lineHeight: 1 }}
+        >✕</button>
       </div>
+
       {updateState.status === 'downloading' && (
-        <div style={{ width: '100%', height: '6px', background: 'rgba(255,255,255,0.1)', borderRadius: '3px', overflow: 'hidden' }}>
-          <div style={{ width: `${updateState.percent}%`, height: '100%', background: '#10b981', transition: 'width 0.3s ease' }} />
-        </div>
+        <>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', fontSize: '12px' }}>
+            <span style={{ color: '#cbd5e1', fontWeight: '500' }}>
+              {updateState.total > 0 ? `${formatMB(updateState.transferred)} / ${formatMB(updateState.total)}` : 'Preparing...'}
+            </span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              {updateState.bytesPerSecond > 0 && (
+                <span style={{ color: '#64748b', fontSize: '11px' }}>{formatSpeed(updateState.bytesPerSecond)}</span>
+              )}
+              <span style={{ color: '#38bdf8', fontWeight: '800', fontSize: '15px' }}>
+                {updateState.percent}%
+              </span>
+            </div>
+          </div>
+          <div style={{ width: '100%', height: '8px', background: 'rgba(255,255,255,0.08)', borderRadius: '6px', overflow: 'hidden', position: 'relative' }}>
+            <div style={{
+              width: `${updateState.percent}%`, height: '100%',
+              background: 'linear-gradient(90deg, #6366f1, #06b6d4, #10b981)',
+              borderRadius: '6px', transition: 'width 0.25s ease'
+            }} />
+          </div>
+        </>
       )}
+
       {updateState.status === 'ready' && (
-        <button onClick={() => { if (countdownTimerRef.current) clearInterval(countdownTimerRef.current); window.electronAPI?.installUpdate?.(); }}
-          style={{ padding: '8px', background: '#10b981', color: '#fff', border: 'none', borderRadius: '8px', fontWeight: '700', fontSize: '13px', cursor: 'pointer' }}>
-          Restart Now
+        <button 
+          onClick={() => { if (countdownTimerRef.current) clearInterval(countdownTimerRef.current); window.electronAPI?.installUpdate?.(); }}
+          style={{
+            padding: '10px 16px', background: 'linear-gradient(135deg, #10b981, #059669)',
+            color: '#fff', border: 'none', borderRadius: '10px', fontWeight: '700',
+            fontSize: '13px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
+            boxShadow: '0 4px 12px rgba(16, 185, 129, 0.4)'
+          }}
+        >
+          <span>Restart & Install Now</span>
         </button>
       )}
     </div>
