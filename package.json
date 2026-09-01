@@ -1,7 +1,7 @@
 {
   "name": "hoarding-discovery",
   "private": true,
-  "version": "1.3.5",
+  "version": "1.3.6",
   "type": "module",
   "engines": {
     "node": ">=20"
@@ -69,6 +69,7 @@
     "lucide-react": "^0.562.0",
     "motion": "^13.1.1",
     "papaparse": "^5.5.3",
+    "pptxgenjs": "^4.0.1",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
     "react-helmet-async": "^2.0.5",

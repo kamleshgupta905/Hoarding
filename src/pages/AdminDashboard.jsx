@@ -9,10 +9,12 @@ import {
     MessageSquare, Mail, User, Users, Package, ShoppingBag, BarChart2, FolderTree, Calendar, CheckSquare,
     MoreVertical, ExternalLink, ShieldCheck, Menu, X, UploadCloud, RefreshCw, Zap, XCircle, Share2, Trash2, Camera, Table2, Save, Undo2, Redo2, FileDown, Copy, Timer, Clock3, PanelLeftClose, PanelLeftOpen, Maximize2, Minimize2,
     BarChart3, PieChart, Activity, Sparkles, ArrowUpRight, Layers, Compass, DollarSign, Award, Flame, Check, ChevronRight, ChevronDown, Monitor, QrCode, Printer, BookOpen,
-    Radio, Signal, Globe, Crosshair, CheckCircle2, Navigation
+    Radio, Signal, Globe, Crosshair, CheckCircle2, Navigation,
+    Star, FileSpreadsheet, Presentation, Loader2
 } from 'lucide-react';
 import { analyzeHoardingImage, extractSiteCoordinates } from '../services/aiService';
 import { fetchHoardings, compressImage, syncToGoogleSheet, exportProposalExcel, PROPOSAL_COLUMNS, getImageUrl, downloadHoardingImage, fetchStaffUploads, reviewStaffPhoto, detectStaffPhotoOrientation, fetchSheetGrid, saveSheetGrid, addDeletedSite, parseHistoryString } from '../services/dataService';
+import { generateMasterMediaPlanPptx } from '../services/presentationService';
 import ImageLightbox from '../components/ImageLightbox';
 import { clearAdminSession, getAdminSession, getStaffUploadLink, postDirect } from '../services/secureApi';
 import { isInternalHeader } from '../core/hoardingSchema';
@@ -325,6 +327,28 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
     const [bulkDeleteConfirmText, setBulkDeleteConfirmText] = useState('');
     const [selectedProposalKeys, setSelectedProposalKeys] = useState([]);
     const [selectedProposalHeaders, setSelectedProposalHeaders] = useState(PROPOSAL_COLUMNS.map(([label]) => label));
+
+    // ⭐ Star-Marked / Shortlisted Sites State (Persists across reloads)
+    const [starredSiteKeys, setStarredSiteKeys] = useState(() => {
+        try {
+            const saved = localStorage.getItem('starred_hoarding_keys');
+            return saved ? JSON.parse(saved) : [];
+        } catch {
+            return [];
+        }
+    });
+    const [showOnlyStarred, setShowOnlyStarred] = useState(false);
+    const [isPptGenerating, setIsPptGenerating] = useState(false);
+    const [pptProgressText, setPptProgressText] = useState('');
+
+    useEffect(() => {
+        try {
+            localStorage.setItem('starred_hoarding_keys', JSON.stringify(starredSiteKeys));
+        } catch (e) {
+            console.warn('Failed to save starred sites:', e);
+        }
+    }, [starredSiteKeys]);
+
     const [previewHoarding, setPreviewHoarding] = useState(null);
     const [staffUploads, setStaffUploads] = useState([]);
     const [staffUploadLink, setStaffUploadLink] = useState('/staff/upload');
@@ -2112,9 +2136,74 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
             if (inventoryPriceFilter === '50k-100k') matchPrice = price > 50000 && price <= 100000;
             if (inventoryPriceFilter === '100k+') matchPrice = price > 100000;
 
+            if (showOnlyStarred) {
+                const siteKey = String(h.SL || h.UniqueID || h['Unique ID'] || `${h.City || ''}_${h['Location '] || h.Location || ''}_${h.Facing || ''}`).trim();
+                if (!Array.isArray(starredSiteKeys) || !starredSiteKeys.includes(siteKey)) {
+                    return false;
+                }
+            }
+
             return matchPrice;
         });
-    }, [hoardings, searchTerm, inventorySearchCategory, inventoryCityFilter, inventoryStatusFilter, filterStartDate, filterEndDate, inventoryLocalityFilter, inventoryMediaFilter, inventorySizeFilter, inventoryCategoryFilter, inventoryPriceFilter]);
+    }, [hoardings, searchTerm, inventorySearchCategory, inventoryCityFilter, inventoryStatusFilter, filterStartDate, filterEndDate, inventoryLocalityFilter, inventoryMediaFilter, inventorySizeFilter, inventoryCategoryFilter, inventoryPriceFilter, showOnlyStarred, starredSiteKeys]);
+
+    const getSiteStableKey = useCallback((h) => {
+        if (!h) return '';
+        return String(h.SL || h.UniqueID || h['Unique ID'] || `${h.City || ''}_${h['Location '] || h.Location || ''}_${h.Facing || ''}`).trim();
+    }, []);
+
+    const isSiteStarred = useCallback((h) => {
+        const key = getSiteStableKey(h);
+        return Array.isArray(starredSiteKeys) && starredSiteKeys.includes(key);
+    }, [starredSiteKeys, getSiteStableKey]);
+
+    const toggleStarSite = useCallback((h) => {
+        const key = getSiteStableKey(h);
+        setStarredSiteKeys(prev => {
+            const list = Array.isArray(prev) ? prev : [];
+            return list.includes(key) ? list.filter(k => k !== key) : [...list, key];
+        });
+    }, [getSiteStableKey]);
+
+    const starredSites = useMemo(() => {
+        return (Array.isArray(hoardings) ? hoardings : []).filter(h => isSiteStarred(h));
+    }, [hoardings, isSiteStarred]);
+
+    const handleStarAllFiltered = () => {
+        const filteredKeys = filteredInventory.map(h => getSiteStableKey(h)).filter(Boolean);
+        setStarredSiteKeys(prev => [...new Set([...(Array.isArray(prev) ? prev : []), ...filteredKeys])]);
+    };
+
+    const handleClearAllStarred = () => {
+        setStarredSiteKeys([]);
+    };
+
+    const handleDownloadStarredExcel = () => {
+        if (starredSites.length === 0) return;
+        const dateStr = new Date().toISOString().slice(0, 10);
+        exportProposalExcel(starredSites, `Heera_Media_Plan_Shortlisted_${dateStr}.xls`, selectedProposalHeaders);
+    };
+
+    const handleDownloadStarredPpt = async () => {
+        if (starredSites.length === 0 || isPptGenerating) return;
+        setIsPptGenerating(true);
+        setPptProgressText(`0/${starredSites.length}`);
+        try {
+            const dateStr = new Date().toISOString().slice(0, 10);
+            await generateMasterMediaPlanPptx(starredSites, {
+                fileName: `Heera_Media_Plan_Master_${dateStr}.pptx`,
+                onProgress: (curr, total, msg) => {
+                    setPptProgressText(`${curr}/${total}`);
+                }
+            });
+        } catch (err) {
+            console.error('PPT Generation Failed:', err);
+            alert(`PPT Generation Failed: ${err.message}`);
+        } finally {
+            setIsPptGenerating(false);
+            setPptProgressText('');
+        }
+    };
 
     const getProposalKey = (h, index = 0) => [
         h["Location "],
@@ -5221,7 +5310,7 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                         }}>
                                             <Plus size={18} /> Add New Asset
                                         </button>
-                                        <button className="btn-icon" title="Export Inventory" onClick={() => exportProposalExcel(hoardings)}><Download size={18} /></button>
+                                        <button className="btn-icon" title="Export Full Inventory" onClick={() => exportProposalExcel(hoardings)}><Download size={18} /></button>
                                         <button
                                             className={`btn-icon ${isInventoryFilterOpen ? 'active-accent' : ''}`}
                                             onClick={() => setIsInventoryFilterOpen(!isInventoryFilterOpen)}
@@ -5229,13 +5318,39 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                         >
                                             <Filter size={18} />
                                         </button>
+
+                                        {/* ⭐ Starred Sites Filter Toggle */}
                                         <button
-                                            className="btn-primary-admin proposal-download-btn"
-                                            disabled={selectedProposalSites.length === 0}
-                                            onClick={handleDownloadProposal}
-                                            title={selectedProposalSites.length === 0 ? 'Select sites first' : 'Download selected proposal'}
+                                            className={`star-filter-toggle-btn ${showOnlyStarred ? 'active' : ''}`}
+                                            onClick={() => setShowOnlyStarred(!showOnlyStarred)}
+                                            title={showOnlyStarred ? "Show all inventory assets" : "Show only star-marked shortlisted sites"}
                                         >
-                                            <Download size={18} /> Proposal ({selectedProposalSites.length})
+                                            <Star size={16} fill={showOnlyStarred ? "#f59e0b" : "none"} color={showOnlyStarred ? "#f59e0b" : "#64748b"} />
+                                            <span>Starred ({starredSites.length})</span>
+                                        </button>
+
+                                        {/* 📥 1-Click Excel Download for Starred */}
+                                        <button
+                                            className="btn-primary-admin starred-excel-btn"
+                                            disabled={starredSites.length === 0}
+                                            onClick={handleDownloadStarredExcel}
+                                            title={starredSites.length === 0 ? "Star some sites first to download Excel" : "1-Click Download Starred Sites Excel"}
+                                            style={{ background: '#059669', opacity: starredSites.length === 0 ? 0.5 : 1 }}
+                                        >
+                                            <FileSpreadsheet size={16} />
+                                            <span>Excel ({starredSites.length})</span>
+                                        </button>
+
+                                        {/* 📊 1-Click PPT Download for Starred (87MB Master PPT Format) */}
+                                        <button
+                                            className="btn-primary-admin starred-ppt-btn"
+                                            disabled={starredSites.length === 0 || isPptGenerating}
+                                            onClick={handleDownloadStarredPpt}
+                                            title={starredSites.length === 0 ? "Star some sites first to download PPT" : "1-Click Download Starred Sites PPT (Master 4:3 format)"}
+                                            style={{ background: '#ea580c', opacity: (starredSites.length === 0 || isPptGenerating) ? 0.6 : 1 }}
+                                        >
+                                            {isPptGenerating ? <Loader2 size={16} className="spin-animate" /> : <Presentation size={16} />}
+                                            <span>{isPptGenerating ? (pptProgressText || 'Packaging...') : `PPT (${starredSites.length})`}</span>
                                         </button>
                                     </div>
                                 </div>
@@ -5363,6 +5478,84 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                         }}>
                                             {filteredInventory.length} found
                                         </span>
+                                    )}
+                                </div>
+
+                                {/* ⭐ Starred Selection & Bulk Actions Ribbon */}
+                                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '10px', marginTop: '2px', width: '100%' }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                        {showOnlyStarred ? (
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '5px 12px', background: '#fef3c7', borderRadius: '8px', border: '1px solid #fde68a', fontSize: '0.82rem', color: '#92400e' }}>
+                                                <Star size={14} fill="#f59e0b" color="#f59e0b" />
+                                                <span>Viewing <strong>{starredSites.length}</strong> Starred Sites</span>
+                                                <button 
+                                                    type="button"
+                                                    onClick={() => setShowOnlyStarred(false)}
+                                                    style={{ marginLeft: '6px', background: 'none', border: 'none', color: '#b45309', fontWeight: 600, cursor: 'pointer', textDecoration: 'underline' }}
+                                                >
+                                                    Show All Sites
+                                                </button>
+                                                {starredSites.length > 0 && (
+                                                    <button 
+                                                        type="button"
+                                                        onClick={handleClearAllStarred}
+                                                        style={{ marginLeft: '6px', background: 'none', border: 'none', color: '#ef4444', fontWeight: 600, cursor: 'pointer', textDecoration: 'underline' }}
+                                                    >
+                                                        Clear Stars
+                                                    </button>
+                                                )}
+                                            </div>
+                                        ) : (
+                                            starredSites.length > 0 && (
+                                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.82rem', color: '#64748b' }}>
+                                                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', color: '#b45309', fontWeight: 600 }}>
+                                                        <Star size={14} fill="#f59e0b" color="#f59e0b" /> {starredSites.length} Starred
+                                                    </span>
+                                                    <span>•</span>
+                                                    <button 
+                                                        type="button"
+                                                        onClick={() => setShowOnlyStarred(true)}
+                                                        style={{ background: 'none', border: 'none', color: '#4f46e5', fontWeight: 600, cursor: 'pointer', textDecoration: 'underline' }}
+                                                    >
+                                                        View Starred Only
+                                                    </button>
+                                                    <span>•</span>
+                                                    <button 
+                                                        type="button"
+                                                        onClick={handleClearAllStarred}
+                                                        style={{ background: 'none', border: 'none', color: '#94a3b8', cursor: 'pointer' }}
+                                                        title="Clear all stars"
+                                                    >
+                                                        Clear
+                                                    </button>
+                                                </div>
+                                            )
+                                        )}
+                                    </div>
+
+                                    {/* Star all currently filtered sites action */}
+                                    {filteredInventory.length > 0 && !showOnlyStarred && (
+                                        <button
+                                            type="button"
+                                            onClick={handleStarAllFiltered}
+                                            style={{
+                                                background: '#ffffff',
+                                                border: '1px solid #cbd5e1',
+                                                borderRadius: '7px',
+                                                padding: '4px 10px',
+                                                fontSize: '0.78rem',
+                                                fontWeight: 600,
+                                                color: '#334155',
+                                                cursor: 'pointer',
+                                                display: 'inline-flex',
+                                                alignItems: 'center',
+                                                gap: '5px'
+                                            }}
+                                            title="Star all sites in the current filter"
+                                        >
+                                            <Star size={13} fill="#f59e0b" color="#f59e0b" />
+                                            <span>Star All Filtered ({filteredInventory.length})</span>
+                                        </button>
                                     )}
                                 </div>
                             </div>
@@ -5513,6 +5706,9 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                                     aria-label="Select all filtered sites"
                                                 />
                                             </th>
+                                            <th className="star-col" style={{ width: '40px', textAlign: 'center' }} title="Star Mark / Shortlist">
+                                                <Star size={16} fill="#f59e0b" color="#f59e0b" />
+                                            </th>
                                             <th className="image-col">Image</th>
                                             <th>Media Asset Details</th>
                                             <th>Market / Region</th>
@@ -5531,6 +5727,23 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                                         onChange={() => toggleProposalSelection(getProposalKey(h, i))}
                                                         aria-label={`Select ${h["Location "]}`}
                                                     />
+                                                </td>
+                                                <td className="star-col" style={{ width: '40px', textAlign: 'center' }}>
+                                                    <button
+                                                        type="button"
+                                                        className={`star-mark-btn ${isSiteStarred(h) ? 'starred' : ''}`}
+                                                        onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            toggleStarSite(h);
+                                                        }}
+                                                        title={isSiteStarred(h) ? "Remove from starred shortlist" : "Star mark (shortlist for 1-click Excel/PPT download)"}
+                                                    >
+                                                        <Star
+                                                            size={18}
+                                                            fill={isSiteStarred(h) ? "#f59e0b" : "none"}
+                                                            color={isSiteStarred(h) ? "#f59e0b" : "#94a3b8"}
+                                                        />
+                                                    </button>
                                                 </td>
                                                 <td className="image-col">
                                                     <img

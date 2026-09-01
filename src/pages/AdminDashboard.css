@@ -5422,3 +5422,91 @@
         font-size: 0.7rem;
     }
 }
+
+/* ⭐ Star Mark & Shortlist Actions */
+.star-mark-btn {
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 6px;
+    border-radius: 6px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    transition: transform 0.15s cubic-bezier(0.16, 1, 0.3, 1), background-color 0.15s ease;
+}
+.star-mark-btn:hover {
+    background-color: rgba(245, 158, 11, 0.14);
+    transform: scale(1.22);
+}
+.star-mark-btn.starred {
+    transform: scale(1.08);
+}
+.star-mark-btn.starred:hover {
+    transform: scale(1.25);
+}
+
+.star-filter-toggle-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 14px;
+    border-radius: 9px;
+    font-size: 0.82rem;
+    font-weight: 600;
+    cursor: pointer;
+    border: 1.5px solid #e2e8f0;
+    background: #ffffff;
+    color: #475569;
+    transition: all 0.2s ease;
+}
+.star-filter-toggle-btn:hover {
+    border-color: #f59e0b;
+    color: #b45309;
+    background: #fffbeb;
+}
+.star-filter-toggle-btn.active {
+    background: #fef3c7;
+    border-color: #f59e0b;
+    color: #92400e;
+    box-shadow: 0 1px 4px rgba(245, 158, 11, 0.25);
+}
+
+.starred-excel-btn,
+.starred-ppt-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 14px;
+    font-size: 0.82rem;
+    font-weight: 600;
+    border-radius: 9px;
+    color: #ffffff;
+    border: none;
+    cursor: pointer;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.08);
+    transition: all 0.18s ease;
+}
+.starred-excel-btn:hover:not(:disabled) {
+    background: #047857 !important;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 8px rgba(5, 150, 105, 0.3);
+}
+.starred-ppt-btn:hover:not(:disabled) {
+    background: #c2410c !important;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 8px rgba(234, 88, 12, 0.3);
+}
+.starred-excel-btn:disabled,
+.starred-ppt-btn:disabled {
+    cursor: not-allowed;
+    box-shadow: none;
+}
+
+.spin-animate {
+    animation: spinRotate 1s linear infinite;
+}
+@keyframes spinRotate {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+}
