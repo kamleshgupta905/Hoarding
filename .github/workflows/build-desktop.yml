@@ -31,7 +31,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           ELECTRON_BUILD: 'true'
 
-      - name: 🚀 Ensure GitHub Release is Published (Non-Draft)
+      - name: 🚀 Ensure GitHub Release is Published with All Assets
         if: success()
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -41,6 +41,10 @@ jobs:
           $tag = "v" + $pkg.version
           Write-Host "Publishing release $tag from draft if needed..."
           gh release edit $tag --draft=false || true
+          Write-Host "Ensuring all binaries and latest.yml are attached to release $tag..."
+          Get-ChildItem dist_electron -Filter *.exe | ForEach-Object { gh release upload $tag $_.FullName --clobber }
+          Get-ChildItem dist_electron -Filter latest.yml | ForEach-Object { gh release upload $tag $_.FullName --clobber }
+          Get-ChildItem dist_electron -Filter *.blockmap | ForEach-Object { gh release upload $tag $_.FullName --clobber }
 
       - name: 🚀 Upload Windows Setup & Portable .exe Artifacts
         uses: actions/upload-artifact@v4
