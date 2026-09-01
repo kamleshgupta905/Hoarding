@@ -227,46 +227,31 @@ export const matchDailyExecutionProofWithAI = async (imageBase64, inventoryList)
   const parsed = parseBase64(imageBase64);
   if (!parsed) throw new Error('Invalid image data.');
 
-  // Concise inventory mapping with robust coordinate extraction
-  const inventoryText = inventoryList.slice(0, 100).map((item, index) => {
-    const loc = item["Location "] || item["Locality Site Location"] || item.Location || item.site_name || `Site ${index}`;
-    const city = item.City || item.city || '';
-    const area = item.Locality || item.Area || '';
-    const lat = item.Latitude || item.Lat || item['Lat.'] || (item['Lat-Long'] ? item['Lat-Long'].split(',')[0] : '');
-    const lng = item.Longitude || item.Long || item['Long.'] || (item['Lat-Long'] ? item['Lat-Long'].split(',')[1] : '');
-    const latLng = lat && lng ? ` [GPS: ${lat}, ${lng}]` : '';
-    const traffic = [item["Traffic From"], item["Traffic To"]].filter(Boolean).join(' to ');
-    return `[Index ${index}]: "${loc}" | City: "${city}" | Area: "${area}"${traffic ? ` | Traffic: "${traffic}"` : ''}${latLng}`;
-  }).join('\n');
+  const prompt = `You are an expert Billboard & Hoarding Proof of Execution Analyzer.
+Carefully examine this photograph of an outdoor billboard / hoarding.
 
-  const prompt = `
-You are an expert Billboard & Hoarding Execution Verification AI.
-Analyze this Daily Proof of Execution photo and match it against our Master Inventory List.
+LOOK CLOSELY FOR CAMERA WATERMARKS & GPS OVERLAYS:
+Most inspection photos contain an on-screen camera stamp or watermark (such as "GPS Camera - PinPoint", "GPS Map Camera", "NoteCam", "Timestamp Camera") in the corners or bottom.
+Extract:
+1. "latitude": numeric decimal degrees (e.g. 29.0490666) if stamped on the image, or null
+2. "longitude": numeric decimal degrees (e.g. 77.7075798) if stamped on the image, or null
+3. "address": exact stamped location text, street name, or highway (e.g. "Low Floor Bus Station, NH 58, Modipuram, Meerut")
+4. "city": city name (e.g. "Meerut")
+5. "adBrand": brand name displayed on the billboard advertisement (e.g. "SENCO Gold & Diamonds")
+6. "status": "Occupied" if a commercial advertisement/brand flex is mounted, or "Available" if blank/white/torn/"To-Let" advertisement
 
-MASTER INVENTORY SITES:
-${inventoryText}
-
-INSTRUCTIONS:
-1. 📍 DETECT GPS STAMP / WATERMARK:
-   - Check if there is an on-image GPS stamp, coordinate text (e.g. Latitude: 28.9845, Longitude: 77.7064), camera watermark, or location address stamped at the bottom or corners.
-   - If GPS coordinates are found, calculate which inventory site has the nearest matching Lat/Long.
-2. 👁️ VISUAL & LANDMARK RECOGNITION:
-   - Read any road signs, shop boards, flyovers, intersections, or landmarks visible in the photo.
-   - Match the site name, area, or locality with the Master Inventory.
-3. 🏷️ STATUS DETECTION:
-   - "Occupied": Active brand/commercial flex ad is mounted.
-   - "Available": Blank, white sheet, torn flex, or "To-Let" advertisement.
-4. Output ONLY valid JSON:
+Output ONLY a single valid JSON object:
 {
-  "matchedIndex": 0,
-  "matchedSiteName": "Exact Location Name from inventory",
+  "latitude": 29.0490666,
+  "longitude": 77.7075798,
+  "address": "Stamped location address",
+  "city": "Meerut",
+  "adBrand": "Mounted brand name",
   "status": "Occupied",
-  "confidence": 0.95,
-  "reasoning": "Details of match (e.g. GPS stamp 28.984, 77.706 matches Begum Bridge or landmark detected)",
-  "gpsStampDetected": "28.9845, 77.7064"
+  "confidence": 0.98,
+  "reasoning": "Detected GPS stamp and active brand"
 }
-If no reliable match is found, return "matchedIndex": -1.
-`;
+If no GPS coordinates are stamped on the image, set "latitude": null, "longitude": null.`;
 
   const payload = {
     contents: [
@@ -293,19 +278,29 @@ If no reliable match is found, return "matchedIndex": -1.
     const rawResponse = await callGeminiVision(payload);
     const cleanJson = rawResponse.replace(/```json\s*/i, '').replace(/```\s*$/i, '').trim();
     const jsonMatch = cleanJson.match(/\{[\s\S]*\}/);
-    if (!jsonMatch) throw new Error('Invalid JSON response.');
+    if (!jsonMatch) throw new Error('Invalid JSON response from Vision AI.');
     
     const result = JSON.parse(jsonMatch[0]);
-    const idx = parseInt(result.matchedIndex, 10);
-    const matchedHoarding = (!isNaN(idx) && idx >= 0 && idx < inventoryList.length) ? inventoryList[idx] : null;
+    let lat = result.latitude != null ? parseFloat(result.latitude) : null;
+    let lng = result.longitude != null ? parseFloat(result.longitude) : null;
+    if (lat !== null && lng !== null && (isNaN(lat) || isNaN(lng) || (lat === 0 && lng === 0))) {
+      lat = null;
+      lng = null;
+    }
+
+    const gpsCoord = (lat !== null && lng !== null) ? { lat, lng } : null;
 
     return {
-      matchedIndex: matchedHoarding ? idx : -1,
-      matchedSiteName: matchedHoarding ? (matchedHoarding["Location "] || matchedHoarding["Locality Site Location"] || matchedHoarding.Location) : (result.matchedSiteName || null),
+      gpsCoord,
+      gpsStampDetected: gpsCoord ? `${gpsCoord.lat.toFixed(6)}, ${gpsCoord.lng.toFixed(6)}` : null,
+      address: result.address || '',
+      city: result.city || '',
+      adBrand: result.adBrand || '',
       status: result.status === 'Occupied' ? 'Occupied' : 'Available',
-      confidence: typeof result.confidence === 'number' ? result.confidence : 0.9,
-      reasoning: result.reasoning || 'Matched with Smart Vision AI.',
-      gpsStampDetected: result.gpsStampDetected || null
+      confidence: typeof result.confidence === 'number' ? result.confidence : 0.95,
+      reasoning: result.reasoning || (gpsCoord ? `GPS detected: ${gpsCoord.lat}, ${gpsCoord.lng}` : 'Landmarks detected'),
+      matchedIndex: -1,
+      matchedSiteName: null
     };
   } catch (err) {
     console.warn('matchDailyExecutionProofWithAI notice:', err);

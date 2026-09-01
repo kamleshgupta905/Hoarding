@@ -437,8 +437,8 @@ export const matchHoardingByGps = (coord, locationList) => {
         };
     }
 
-    // 🎯 Threshold 5: <= 1500m (1.5 km) is an Area Proximity Match (70% confidence)
-    if (closest.distanceM <= 1500) {
+    // 🎯 Threshold 5: <= 2500m (2.5 km) is an Area Proximity Match (70% confidence)
+    if (closest.distanceM <= 2500) {
         return {
             index: closest.index,
             site: closest.site,
@@ -460,7 +460,7 @@ const loadImage = (source) => new Promise((resolve, reject) => {
     image.src = source;
 });
 
-const cropStampRegion = async (source, region = 'bottom') => {
+const cropStampRegion = async (source, region = 'bottom-right') => {
     const image = await loadImage(source);
     const canvas = document.createElement('canvas');
     const origW = image.naturalWidth || 800;
@@ -472,7 +472,16 @@ const cropStampRegion = async (source, region = 'bottom') => {
     const w = Math.round(origW * scale);
     const h = Math.round(origH * scale);
 
-    if (region === 'bottom') {
+    if (region === 'bottom-right') {
+        // Specifically for GPS Camera - PinPoint, NoteCam, Timestamp cameras in bottom-right corner
+        const startX = Math.floor(w * 0.40);
+        const startY = Math.floor(h * 0.60);
+        canvas.width = w - startX;
+        canvas.height = h - startY;
+        const ctx = canvas.getContext('2d', { willReadFrequently: true });
+        ctx.filter = 'contrast(1.4) grayscale(0.8)';
+        ctx.drawImage(image, Math.floor(origW * 0.40), Math.floor(origH * 0.60), origW - Math.floor(origW * 0.40), origH - Math.floor(origH * 0.60), 0, 0, canvas.width, canvas.height);
+    } else if (region === 'bottom') {
         const startY = Math.floor(h * 0.55);
         canvas.width = w;
         canvas.height = h - startY;
@@ -530,8 +539,8 @@ export const initializeAI = () => undefined;
 /**
  * 🚀 MAIN AUTO-ANALYSIS PIPELINE
  * 1. Hardware EXIF GPS extraction (< 5ms)
- * 2. OCR GPS Stamp extraction (Tesseract)
- * 3. Vision AI / Gemini Matcher
+ * 2. OCR GPS Stamp extraction (Tesseract - bottom-right & bottom banner)
+ * 3. Vision AI / Gemini Matcher (Full precision GPS watermark extraction)
  * 4. Fuzzy Text / Landmark Matcher
  */
 export const analyzeHoardingImage = async (base64Image, locationList, rawFile = null) => {
@@ -563,24 +572,35 @@ export const analyzeHoardingImage = async (base64Image, locationList, rawFile = 
         }
     }
 
-    // ─── STAGE 2: OCR GPS Stamp Extraction (Bottom & Top Banners) ───────────
+    // ─── STAGE 2: OCR GPS Stamp Extraction (Bottom-Right Pinpoint & Bottom Banners) ───────────
     let detectedOcrText = '';
     try {
         const worker = await getOcrWorker();
-        const crop = await cropStampRegion(base64Image, 'bottom');
-        const { data } = await worker.recognize(crop);
-        detectedOcrText = String(data?.text || '').replace(/\s+/g, ' ').trim();
+        // 1. Try bottom-right corner first (standard for GPS Camera - PinPoint, NoteCam)
+        const brCrop = await cropStampRegion(base64Image, 'bottom-right');
+        const brResult = await worker.recognize(brCrop);
+        detectedOcrText = String(brResult?.data?.text || '').replace(/\s+/g, ' ').trim();
 
-        // If bottom banner had very little text, also scan top banner
-        if (detectedOcrText.length < 15) {
+        let ocrCoord = extractCoordinatesFromText(detectedOcrText);
+
+        // 2. If bottom-right didn't yield valid GPS, try entire bottom banner
+        if (!ocrCoord) {
+            const bottomCrop = await cropStampRegion(base64Image, 'bottom');
+            const bottomResult = await worker.recognize(bottomCrop);
+            const bottomText = String(bottomResult?.data?.text || '').replace(/\s+/g, ' ').trim();
+            detectedOcrText += ' ' + bottomText;
+            ocrCoord = extractCoordinatesFromText(detectedOcrText);
+        }
+
+        // 3. If still not found, try top banner
+        if (!ocrCoord) {
             const topCrop = await cropStampRegion(base64Image, 'top');
             const topResult = await worker.recognize(topCrop);
             const topText = String(topResult?.data?.text || '').replace(/\s+/g, ' ').trim();
             detectedOcrText += ' ' + topText;
+            ocrCoord = extractCoordinatesFromText(detectedOcrText);
         }
 
-        // Try extracting GPS coordinates from OCR text
-        const ocrCoord = extractCoordinatesFromText(detectedOcrText);
         if (ocrCoord && isValidLatLng(ocrCoord.lat, ocrCoord.lng)) {
             const gpsMatch = matchHoardingByGps(ocrCoord, locationList);
             if (gpsMatch) {
@@ -604,30 +624,70 @@ export const analyzeHoardingImage = async (base64Image, locationList, rawFile = 
     // ─── STAGE 3: Gemini Vision AI (with high-accuracy GPS & Stamp detection) ───
     try {
         const aiResult = await matchDailyExecutionProofWithAI(base64Image, locationList);
-        if (aiResult && aiResult.matchedIndex >= 0 && aiResult.matchedSiteName) {
-            let extractedGps = null;
-            let distanceM = null;
-            if (aiResult.gpsStampDetected) {
+        if (aiResult) {
+            let extractedGps = aiResult.gpsCoord || null;
+            if (!extractedGps && aiResult.gpsStampDetected) {
                 const parsedCoord = extractCoordinatesFromText(aiResult.gpsStampDetected);
                 if (parsedCoord && isValidLatLng(parsedCoord.lat, parsedCoord.lng)) {
                     extractedGps = parsedCoord;
-                    const siteCoord = extractSiteCoordinates(locationList[aiResult.matchedIndex]);
-                    if (siteCoord) {
-                        distanceM = Math.round(calculateDistanceMeters(parsedCoord.lat, parsedCoord.lng, siteCoord.lat, siteCoord.lng));
-                    }
                 }
             }
 
-            return {
-                matchedIndex: aiResult.matchedIndex,
-                matchedLocation: aiResult.matchedSiteName,
-                status: aiResult.status || 'Available',
-                confidence: Math.round((aiResult.confidence || 0.95) * 100),
-                reasoning: aiResult.reasoning || 'Vision AI matched GPS stamp & visual landmarks.',
-                analysis: aiResult.gpsStampDetected ? `Stamp GPS: ${aiResult.gpsStampDetected}` : 'Landmark and area matching',
-                gpsCoord: extractedGps,
-                distanceM: distanceM
-            };
+            // 🎯 PRIORITY 1: If Vision AI found GPS, do full mathematical inventory search across ALL sites!
+            if (extractedGps && isValidLatLng(extractedGps.lat, extractedGps.lng)) {
+                const gpsMatch = matchHoardingByGps(extractedGps, locationList);
+                if (gpsMatch) {
+                    return {
+                        matchedIndex: gpsMatch.index,
+                        matchedLocation: gpsMatch.siteName,
+                        status: aiResult.status || 'Available',
+                        confidence: gpsMatch.confidence,
+                        reasoning: `🛰️ Vision AI GPS Stamp: ${gpsMatch.reasoning}`,
+                        analysis: `Watermark GPS: ${extractedGps.lat.toFixed(6)}, ${extractedGps.lng.toFixed(6)}`,
+                        gpsCoord: extractedGps,
+                        distanceM: gpsMatch.distanceM
+                    };
+                }
+            }
+
+            // 🎯 PRIORITY 2: If Vision AI matched index directly
+            if (aiResult.matchedIndex >= 0 && aiResult.matchedSiteName) {
+                return {
+                    matchedIndex: aiResult.matchedIndex,
+                    matchedLocation: aiResult.matchedSiteName,
+                    status: aiResult.status || 'Available',
+                    confidence: Math.round((aiResult.confidence || 0.95) * 100),
+                    reasoning: aiResult.reasoning || 'Vision AI matched landmarks & inventory.',
+                    analysis: aiResult.address ? `Detected: ${aiResult.address}` : 'Landmark matching',
+                    gpsCoord: extractedGps,
+                    distanceM: aiResult.distanceM
+                };
+            }
+
+            // 🎯 PRIORITY 3: If Vision AI detected an address, try matching by address across all sites
+            if (aiResult.address && aiResult.address.length >= 4) {
+                const fullText = `${aiResult.address} ${aiResult.city || ''}`;
+                const candidates = locationList
+                    .map((location, index) => ({
+                        location,
+                        index,
+                        siteName: location["Locality Site Location"] || location["Location "] || location.Location || '',
+                        score: scoreLocationByText(fullText, location)
+                    }))
+                    .sort((a, b) => b.score - a.score);
+
+                const best = candidates[0];
+                if (best && best.score >= 50) {
+                    return {
+                        matchedIndex: best.index,
+                        matchedLocation: best.siteName,
+                        status: aiResult.status || 'Available',
+                        confidence: best.score,
+                        reasoning: `🔤 Vision AI Address Match: ${best.siteName} (${best.score}% confidence)`,
+                        analysis: `Watermark Address: "${aiResult.address}"`
+                    };
+                }
+            }
         }
     } catch (aiErr) {
         console.warn('Vision AI notice:', aiErr);
