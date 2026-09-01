@@ -167,6 +167,15 @@ export const normalizeHoarding = (item) => {
   const parsedHistory = parseHistoryString(item['ExecutionHistory'] || item['History'] || item['execution_history'] || '');
   const siteCategory = item['Site Category'] || item['Category'] || 'Commercial';
 
+  const siteKey = String(sl || item.UniqueID || item['Unique ID'] || `${city}_${siteLocation}_${facing}`).trim().toLowerCase();
+  const localBookings = typeof window !== 'undefined' ? getLocalBookings() : {};
+  const localBooking = localBookings[siteKey] || (sl ? localBookings[String(sl).trim().toLowerCase()] : null);
+
+  const status = (localBooking && localBooking.STATUS) || item.STATUS || item.status || 'Available';
+  const bookedBy = (localBooking && localBooking.BookedBy) || item.BookedBy || item.bookedBy || item['Booked By'] || item['Client Name'] || item.ClientName || '';
+  const bookingStart = (localBooking && localBooking.BookingStart) || item.BookingStart || item.bookingStart || '';
+  const bookingEnd = (localBooking && localBooking.BookingEnd) || item.BookingEnd || item.bookingEnd || '';
+
   return {
     ...item,
     'SL': sl,
@@ -205,8 +214,48 @@ export const normalizeHoarding = (item) => {
     'History': parsedHistory,
     'ExecutionHistory': item['ExecutionHistory'] || (parsedHistory.length > 0 ? parsedHistory.map(h => `${h.url}|${h.timestamp}${h.gps ? '|' + h.gps : ''}`).join(',') : ''),
     'Site Category': siteCategory,
-    'STATUS': item.STATUS || item.status || 'Available'
+    'STATUS': status,
+    'BookedBy': bookedBy,
+    'BookingStart': bookingStart,
+    'BookingEnd': bookingEnd
   };
+};
+
+export const getLocalBookings = () => {
+  if (typeof window === 'undefined') return {};
+  try {
+    const raw = localStorage.getItem('adh_local_bookings');
+    return raw ? JSON.parse(raw) : {};
+  } catch {
+    return {};
+  }
+};
+
+export const saveLocalBooking = (siteKey, bookingData) => {
+  if (!siteKey || !bookingData || typeof window === 'undefined') return;
+  try {
+    const clean = String(siteKey).trim().toLowerCase();
+    const current = getLocalBookings();
+    current[clean] = {
+      ...bookingData,
+      updatedAt: Date.now()
+    };
+    localStorage.setItem('adh_local_bookings', JSON.stringify(current));
+  } catch (err) {
+    console.warn('saveLocalBooking notice:', err);
+  }
+};
+
+export const clearLocalBooking = (siteKey) => {
+  if (!siteKey || typeof window === 'undefined') return;
+  try {
+    const clean = String(siteKey).trim().toLowerCase();
+    const current = getLocalBookings();
+    delete current[clean];
+    localStorage.setItem('adh_local_bookings', JSON.stringify(current));
+  } catch (err) {
+    console.warn('clearLocalBooking notice:', err);
+  }
 };
 
 /**

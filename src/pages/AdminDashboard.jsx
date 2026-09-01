@@ -13,7 +13,7 @@ import {
     Star, FileSpreadsheet, Presentation, Loader2
 } from 'lucide-react';
 import { analyzeHoardingImage, extractSiteCoordinates } from '../services/aiService';
-import { fetchHoardings, compressImage, syncToGoogleSheet, exportProposalExcel, PROPOSAL_COLUMNS, getImageUrl, downloadHoardingImage, fetchStaffUploads, reviewStaffPhoto, detectStaffPhotoOrientation, fetchSheetGrid, saveSheetGrid, addDeletedSite, parseHistoryString } from '../services/dataService';
+import { fetchHoardings, compressImage, syncToGoogleSheet, exportProposalExcel, PROPOSAL_COLUMNS, getImageUrl, downloadHoardingImage, fetchStaffUploads, reviewStaffPhoto, detectStaffPhotoOrientation, fetchSheetGrid, saveSheetGrid, addDeletedSite, parseHistoryString, saveLocalBooking, clearLocalBooking } from '../services/dataService';
 import { generateMasterMediaPlanPptx } from '../services/presentationService';
 import ImageLightbox from '../components/ImageLightbox';
 import { clearAdminSession, getAdminSession, getStaffUploadLink, postDirect } from '../services/secureApi';
@@ -1505,6 +1505,11 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
             return next;
         });
 
+        const siteKey = String(targetSL || targetId || `${targetSite.City || ''}_${targetLoc}_${targetFacing}`).trim().toLowerCase();
+        saveLocalBooking(siteKey, bookingUpdates);
+        if (targetSL) saveLocalBooking(String(targetSL).trim().toLowerCase(), bookingUpdates);
+        if (targetId) saveLocalBooking(String(targetId).trim().toLowerCase(), bookingUpdates);
+
         setQuickBookingTarget(null);
         showToast(`Site Booked for ${clientName}!`, "success");
 
@@ -1527,6 +1532,11 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
         const targetFacing = String(targetSite.Facing || targetSite["Traffic View"] || '').trim().toLowerCase();
         const targetLat = String(targetSite.Latitude || '').trim();
         const targetLng = String(targetSite.Longitude || '').trim();
+
+        const siteKey = String(targetSL || targetId || `${targetSite.City || ''}_${targetLoc}_${targetFacing}`).trim().toLowerCase();
+        clearLocalBooking(siteKey);
+        if (targetSL) clearLocalBooking(String(targetSL).trim().toLowerCase());
+        if (targetId) clearLocalBooking(String(targetId).trim().toLowerCase());
 
         const availableUpdates = {
             STATUS: 'Available',
@@ -5706,8 +5716,11 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                                     aria-label="Select all filtered sites"
                                                 />
                                             </th>
-                                            <th className="star-col" style={{ width: '40px', textAlign: 'center' }} title="Star Mark / Shortlist">
-                                                <Star size={16} fill="#f59e0b" color="#f59e0b" />
+                                            <th className="star-col" style={{ width: '56px', textAlign: 'center', padding: '14px 8px' }} title="Star Mark / Shortlist for 1-Click Excel & PPT">
+                                                <div style={{ display: 'inline-flex', alignItems: 'center', gap: '3px', color: '#b45309', fontWeight: 700, fontSize: '0.75rem' }}>
+                                                    <Star size={15} fill="#f59e0b" color="#f59e0b" />
+                                                    <span>STAR</span>
+                                                </div>
                                             </th>
                                             <th className="image-col">Image</th>
                                             <th>Media Asset Details</th>
@@ -5728,7 +5741,7 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                                         aria-label={`Select ${h["Location "]}`}
                                                     />
                                                 </td>
-                                                <td className="star-col" style={{ width: '40px', textAlign: 'center' }}>
+                                                <td className="star-col" style={{ width: '56px', textAlign: 'center', padding: '12px 8px' }}>
                                                     <button
                                                         type="button"
                                                         className={`star-mark-btn ${isSiteStarred(h) ? 'starred' : ''}`}
@@ -5736,12 +5749,13 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                                             e.stopPropagation();
                                                             toggleStarSite(h);
                                                         }}
-                                                        title={isSiteStarred(h) ? "Remove from starred shortlist" : "Star mark (shortlist for 1-click Excel/PPT download)"}
+                                                        title={isSiteStarred(h) ? "⭐ Click to Remove Star" : "☆ Click to Star Mark (Add to Shortlist)"}
                                                     >
                                                         <Star
                                                             size={18}
-                                                            fill={isSiteStarred(h) ? "#f59e0b" : "none"}
-                                                            color={isSiteStarred(h) ? "#f59e0b" : "#94a3b8"}
+                                                            fill={isSiteStarred(h) ? "#f59e0b" : "#f1f5f9"}
+                                                            color={isSiteStarred(h) ? "#f59e0b" : "#64748b"}
+                                                            strokeWidth={isSiteStarred(h) ? 2 : 1.75}
                                                         />
                                                     </button>
                                                 </td>
