@@ -269,7 +269,9 @@ const isOlderThan2Days = (time) => {
 const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
     const navigate = useNavigate();
     const [activeTab, setActiveTabState] = useState(() => {
-        return localStorage.getItem('adhoardings_active_tab') || 'inventory';
+        const saved = localStorage.getItem('adhoardings_active_tab');
+        if (!saved || saved === 'proposal-builder') return 'inventory';
+        return saved;
     });
     const setActiveTab = (tab) => {
         setActiveTabState(tab);
@@ -3488,10 +3490,6 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                         <Users size={18} />
                         <span>Clients & Booking</span>
                     </button>
-                    <button className={`nav-item ${activeTab === 'proposal-builder' ? 'active' : ''}`} onClick={() => setActiveTab('proposal-builder')}>
-                        <FileText size={18} />
-                        <span>Proposal Builder</span>
-                    </button>
                     <button className={`nav-item ${activeTab === 'daily-update' ? 'active' : ''}`} onClick={() => setActiveTab('daily-update')}>
                         <Zap size={18} />
                         <span>Daily Updates</span>
@@ -4870,17 +4868,6 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                     </motion.div>
                 )}
 
-                {activeTab === 'proposal-builder' && (
-                    <motion.div 
-                        initial={{ opacity: 0, y: 12 }} 
-                        animate={{ opacity: 1, y: 0 }} 
-                        exit={{ opacity: 0, y: -8 }} 
-                        transition={{ duration: 0.28, ease: [0.16, 1, 0.3, 1] }} 
-                        className="dashboard-view"
-                    >
-                        <ProposalBuilder hoardings={safeHoardings} />
-                    </motion.div>
-                )}
 
                 {activeTab === 'daily-update' && (
                     <motion.div 
