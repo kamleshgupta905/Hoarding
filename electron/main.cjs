@@ -23,10 +23,10 @@ function createWindow() {
     });
 
     if (isDev) {
-        mainWindow.loadURL('http://localhost:5173/admin/dashboard');
+        mainWindow.loadURL('http://localhost:3000/admin/dashboard');
     } else {
         // Load production built index.html
-        mainWindow.loadFile(path.join(__dirname, '../dist/index.html'), { hash: 'admin/dashboard' });
+        mainWindow.loadFile(path.join(__dirname, '../dist/index.html'), { hash: '/admin/dashboard' });
     }
 
     mainWindow.once('ready-to-show', () => {

@@ -2062,14 +2062,15 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
             }
             if (!matchSearch) return false;
 
-            const hCity = (h.City || "").trim().toLowerCase();
+            const hCity = String(h.City || "").trim().toLowerCase();
             const isAllCity = !inventoryCityFilter || inventoryCityFilter.length === 0 || inventoryCityFilter.includes('All');
-            const matchCity = isAllCity || inventoryCityFilter.some(c => c.toLowerCase() === hCity);
+            const matchCity = isAllCity || (Array.isArray(inventoryCityFilter) && inventoryCityFilter.some(c => String(c).toLowerCase() === hCity));
             if (!matchCity) return false;
 
             // Status & Date Range Availability Filter
             let matchStatus = true;
-            const isBooked = (h.STATUS || '').toLowerCase() === 'booked' || (h.STATUS || '').toLowerCase() === 'occupied';
+            const statusStr = String(h.STATUS || h.Status || '').toLowerCase();
+            const isBooked = statusStr === 'booked' || statusStr === 'occupied';
             const isAvailable = !isBooked;
 
             if (filterStartDate || filterEndDate) {
@@ -2082,24 +2083,24 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
             }
             if (!matchStatus) return false;
 
-            const siteLocality = (h["Locality"] || h["Area"] || "").trim().toLowerCase();
+            const siteLocality = String(h["Locality"] || h["Area"] || "").trim().toLowerCase();
             const isAllLocality = !inventoryLocalityFilter || inventoryLocalityFilter.length === 0 || inventoryLocalityFilter.includes('All');
-            const matchLocality = isAllLocality || inventoryLocalityFilter.some(l => l.toLowerCase() === siteLocality);
+            const matchLocality = isAllLocality || (Array.isArray(inventoryLocalityFilter) && inventoryLocalityFilter.some(l => String(l).toLowerCase() === siteLocality));
             if (!matchLocality) return false;
 
-            const hMedia = (h["Media Format (Front Lit / Back Lit / Non Lit)"] || h["Media Format"] || h["Media Type"] || h.Media || '');
+            const hMedia = String(h["Media Format (Front Lit / Back Lit / Non Lit)"] || h["Media Format"] || h["Media Type"] || h.Media || '');
             const isAllMedia = !inventoryMediaFilter || inventoryMediaFilter.length === 0 || inventoryMediaFilter.includes('All');
-            const matchMedia = isAllMedia || inventoryMediaFilter.includes(hMedia);
+            const matchMedia = isAllMedia || (Array.isArray(inventoryMediaFilter) && inventoryMediaFilter.includes(hMedia));
             if (!matchMedia) return false;
 
-            const hSize = (h["Size (Large/Medium/Small)"] || h["Size"] || (h.Width && h.Height ? `${h.Width}x${h.Height}` : ''));
+            const hSize = String(h["Size (Large/Medium/Small)"] || h["Size"] || (h.Width && h.Height ? `${h.Width}x${h.Height}` : ''));
             const isAllSize = !inventorySizeFilter || inventorySizeFilter.length === 0 || inventorySizeFilter.includes('All');
-            const matchSize = isAllSize || inventorySizeFilter.includes(hSize);
+            const matchSize = isAllSize || (Array.isArray(inventorySizeFilter) && inventorySizeFilter.includes(hSize));
             if (!matchSize) return false;
 
-            const hCat = (h["Site Category"] || h["Category"] || '');
+            const hCat = String(h["Site Category"] || h["Category"] || '');
             const isAllCat = !inventoryCategoryFilter || inventoryCategoryFilter.length === 0 || inventoryCategoryFilter.includes('All');
-            const matchCategory = isAllCat || inventoryCategoryFilter.includes(hCat);
+            const matchCategory = isAllCat || (Array.isArray(inventoryCategoryFilter) && inventoryCategoryFilter.includes(hCat));
             if (!matchCategory) return false;
 
             const price = Number(h["Avg Monthly Cost (INR)"] || h["Rental Per Month"] || 0);
@@ -2125,45 +2126,47 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
 
     const filteredInventoryKeys = filteredInventory.map((h, i) => getProposalKey(h, i));
     const selectedProposalSites = filteredInventory.filter((h, i) =>
-        selectedProposalKeys.includes(getProposalKey(h, i))
+        Array.isArray(selectedProposalKeys) && selectedProposalKeys.includes(getProposalKey(h, i))
     );
     const isAllFilteredSelected = filteredInventory.length > 0 &&
-        filteredInventoryKeys.every(key => selectedProposalKeys.includes(key));
+        filteredInventoryKeys.every(key => Array.isArray(selectedProposalKeys) && selectedProposalKeys.includes(key));
 
     const toggleProposalSelection = (key) => {
         setSelectedProposalKeys(prev =>
-            prev.includes(key) ? prev.filter(item => item !== key) : [...prev, key]
+            Array.isArray(prev) ? (prev.includes(key) ? prev.filter(item => item !== key) : [...prev, key]) : [key]
         );
     };
 
     const toggleAllFilteredSelection = () => {
         setSelectedProposalKeys(prev => {
+            const list = Array.isArray(prev) ? prev : [];
             if (isAllFilteredSelected) {
-                return prev.filter(key => !filteredInventoryKeys.includes(key));
+                return list.filter(key => !filteredInventoryKeys.includes(key));
             }
-            return [...new Set([...prev, ...filteredInventoryKeys])];
+            return [...new Set([...list, ...filteredInventoryKeys])];
         });
     };
 
     const handleDownloadProposal = () => {
-        const cityPart = inventoryCityFilter === 'All' ? 'all-cities' : inventoryCityFilter;
-        const statusPart = inventoryStatusFilter === 'All' ? 'all-status' : inventoryStatusFilter;
+        const cityPart = inventoryCityFilter === 'All' ? 'all-cities' : (Array.isArray(inventoryCityFilter) ? inventoryCityFilter.join('-') : String(inventoryCityFilter));
+        const statusPart = inventoryStatusFilter === 'All' ? 'all-status' : String(inventoryStatusFilter);
         exportProposalExcel(selectedProposalSites, `proposal-${cityPart}-${statusPart}-${new Date().toISOString().slice(0, 10)}.xls`, selectedProposalHeaders);
     };
 
     const toggleProposalHeader = (label) => {
         setSelectedProposalHeaders(prev => {
-            if (prev.includes(label)) {
-                return prev.length === 1 ? prev : prev.filter(item => item !== label);
+            const list = Array.isArray(prev) ? prev : [];
+            if (list.includes(label)) {
+                return list.length === 1 ? list : list.filter(item => item !== label);
             }
-            return [...prev, label];
+            return [...list, label];
         });
     };
     const safeHoardings = Array.isArray(hoardings) ? hoardings : [];
     const safeStaffUploads = Array.isArray(staffUploads) ? staffUploads : [];
 
     const inventoryCities = ['All', ...new Set(safeHoardings.map(h => {
-        const city = h.City?.trim();
+        const city = String(h?.City || '').trim();
         if (!city) return null;
         return city.charAt(0).toUpperCase() + city.slice(1).toLowerCase();
     }).filter(Boolean))];
@@ -2171,8 +2174,8 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
     const isAllCityFilter = !inventoryCityFilter || inventoryCityFilter.length === 0 || inventoryCityFilter.includes('All');
     const inventoryTargetHoardings = isAllCityFilter
         ? safeHoardings
-        : safeHoardings.filter(h => inventoryCityFilter.some(c => c.toLowerCase() === (h.City || '').trim().toLowerCase()));
-    const inventoryLocalities = ['All', ...new Set(inventoryTargetHoardings.map(h => (h["Locality"] || h["Area"] || '').trim()).filter(Boolean))].sort((a, b) => a === 'All' ? -1 : b === 'All' ? 1 : a.localeCompare(b));
+        : safeHoardings.filter(h => Array.isArray(inventoryCityFilter) && inventoryCityFilter.some(c => String(c).toLowerCase() === String(h.City || '').trim().toLowerCase()));
+    const inventoryLocalities = ['All', ...new Set(inventoryTargetHoardings.map(h => String(h["Locality"] || h["Area"] || '').trim()).filter(Boolean))].sort((a, b) => a === 'All' ? -1 : b === 'All' ? 1 : a.localeCompare(b));
     const inventoryMediaFormats = ['All', ...new Set(safeHoardings.map(h => h["Media Format (Front Lit / Back Lit / Non Lit)"]).filter(Boolean))];
     const inventorySizes = ['All', ...new Set(safeHoardings.map(h => h["Size (Large/Medium/Small)"]).filter(Boolean))];
     const inventoryCategories = ['All', ...new Set(safeHoardings.map(h => h["Site Category"]).filter(Boolean))];
@@ -5472,11 +5475,11 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                         <button
                                             className="btn-danger-admin"
                                             style={{ padding: '8px 14px', fontSize: '0.84rem' }}
-                                            disabled={!inventoryCityFilter || inventoryCityFilter.length === 0 || inventoryCityFilter.includes('All')}
-                                            title={inventoryCityFilter.includes('All') ? 'Choose a city filter first' : `Delete selected city data`}
-                                            onClick={() => setBulkDeleteTarget({ type: 'city', city: inventoryCityFilter[0] })}
+                                            disabled={!Array.isArray(inventoryCityFilter) || inventoryCityFilter.length === 0 || inventoryCityFilter.includes('All')}
+                                            title={Array.isArray(inventoryCityFilter) && inventoryCityFilter.includes('All') ? 'Choose a city filter first' : `Delete selected city data`}
+                                            onClick={() => setBulkDeleteTarget({ type: 'city', city: Array.isArray(inventoryCityFilter) ? inventoryCityFilter[0] : '' })}
                                         >
-                                            <Trash2 size={15} /> Delete {inventoryCityFilter.includes('All') || inventoryCityFilter.length === 0 ? 'City' : inventoryCityFilter.join(', ')}
+                                            <Trash2 size={15} /> Delete {Array.isArray(inventoryCityFilter) ? (inventoryCityFilter.includes('All') || inventoryCityFilter.length === 0 ? 'City' : inventoryCityFilter.join(', ')) : 'City'}
                                         </button>
 
                                         <button

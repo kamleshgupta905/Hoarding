@@ -157,7 +157,9 @@ function AppContent({ hoardings, setHoardings }) {
   const isGuidePath = location.pathname === '/guide' || location.pathname === '/system-guide';
   const hideNav = isAdminPath || isClientPath || isStaffPath || isGuidePath;
 
-  const publicHoardings = hoardings.filter(h => h.STATUS && h.STATUS.toLowerCase() !== 'disabled');
+  const publicHoardings = Array.isArray(hoardings)
+    ? hoardings.filter(h => h && h.STATUS && String(h.STATUS).toLowerCase() !== 'disabled')
+    : [];
 
   if (isStaffMode && location.pathname === '/') {
     return (

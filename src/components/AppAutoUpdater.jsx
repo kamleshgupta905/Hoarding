@@ -4,6 +4,11 @@ import { checkForAppUpdates, performLiveAppUpdate } from '../services/appUpdater
 import './AppAutoUpdater.css';
 
 export default function AppAutoUpdater() {
+  // 🛡️ Native Electron desktop builds use electron-updater (AutoUpdateBar). Disable web auto-updater in Electron.
+  if (typeof window !== 'undefined' && window.electronAPI?.isElectron) {
+    return null;
+  }
+
   const [updateInfo, setUpdateInfo] = useState(null);
   const [isUpdating, setIsUpdating] = useState(false);
   const [progress, setProgress] = useState({ percent: 0, status: '' });
