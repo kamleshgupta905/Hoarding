@@ -47,6 +47,17 @@ var ADMIN_ACTIONS = {
 
 function doPost(e) {
   try {
+    var p = {};
+    if (e && e.postData && e.postData.contents) {
+      try {
+        p = JSON.parse(e.postData.contents);
+      } catch (parseErr) {
+        p = e.parameter || {};
+      }
+    } else if (e && e.parameter) {
+      p = e.parameter;
+    }
+
     // 🚀 ULTRA-FAST DIRECT HANDLERS (Direct Cloud I/O without Sheet locks)
     if (p.action === 'pureUpload') {
       var url = uploadImageToDrive(p);
@@ -3482,6 +3493,7 @@ function findImageColumn(headers) {
 }
 
 function cleanFull(h) {
+  if (h === null || h === undefined) return "";
   return String(h).toLowerCase().replace(/[^a-z0-9]/g, "");
 }
 

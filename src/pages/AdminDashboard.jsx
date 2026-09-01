@@ -8,7 +8,7 @@ import {
     Bell, HelpCircle, Plus, Filter, Download,
     MessageSquare, Mail, User, Users, Package, ShoppingBag, BarChart2, FolderTree, Calendar, CheckSquare,
     MoreVertical, ExternalLink, ShieldCheck, Menu, X, UploadCloud, RefreshCw, Zap, XCircle, Share2, Trash2, Camera, Table2, Save, Undo2, Redo2, FileDown, Copy, Timer, Clock3, PanelLeftClose, PanelLeftOpen, Maximize2, Minimize2,
-    BarChart3, PieChart, Activity, Sparkles, ArrowUpRight, Layers, Compass, DollarSign, Award, Flame, Check, ChevronRight, Monitor, QrCode, Printer, BookOpen,
+    BarChart3, PieChart, Activity, Sparkles, ArrowUpRight, Layers, Compass, DollarSign, Award, Flame, Check, ChevronRight, ChevronDown, Monitor, QrCode, Printer, BookOpen,
     Radio, Signal, Globe, Crosshair, CheckCircle2, Navigation
 } from 'lucide-react';
 import { analyzeHoardingImage, extractSiteCoordinates } from '../services/aiService';
@@ -277,6 +277,7 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
     };
     const [quickBookingTarget, setQuickBookingTarget] = useState(null); // { site, clientName, startDate, endDate }
     const [searchTerm, setSearchTerm] = useState('');
+    const [inventorySearchCategory, setInventorySearchCategory] = useState('all');
     const [inventoryCityFilter, setInventoryCityFilter] = useState(['All']);
     const [inventoryStatusFilter, setInventoryStatusFilter] = useState('All');
     const [filterStartDate, setFilterStartDate] = useState('');
@@ -645,7 +646,7 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
         }
     };
 
-    // 🔄 1-Click Re-Sync for Any Missed PPT Photos
+    // 🔄 1-Click Re-Sync for Any Missed PPT Photos (High-Speed Parallel Concurrency)
     const handleResyncMissedSlides = async () => {
         if (!missedPptSlides || missedPptSlides.length === 0) return;
         const slidesToSync = [...missedPptSlides];
@@ -658,43 +659,62 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
         });
         
         let reSynced = 0;
+        let completed = 0;
         const remainingMissed = [];
         const batchUpdates = [];
 
-        for (let i = 0; i < slidesToSync.length; i++) {
-            const item = slidesToSync[i];
-            updateFileProcessing({
-                phase: `Re-syncing photo ${i + 1} of ${slidesToSync.length} to Google Cloud Server...`,
-                progress: Math.round(((i + 1) / slidesToSync.length) * 85)
-            });
+        const CONCURRENCY = 8;
+        const queue = [...slidesToSync];
 
+        const processItem = async (item) => {
             let success = false;
-            try {
-                const res = await postDirect({
-                    action: 'pureUpload',
-                    sessionToken: getAdminSession(),
-                    fileName: item.descriptiveFileName,
-                    fileData: item.pureBase64,
-                    mimeType: item.mimeType || 'image/jpeg'
-                });
-
-                if (res && res.success && res.url) {
-                    batchUpdates.push({
-                        siteId: item.matchedSiteId || '',
-                        siteName: item.siteName,
-                        url: res.url
+            for (let attempt = 1; attempt <= 2 && !success; attempt++) {
+                try {
+                    const res = await postDirect({
+                        action: 'pureUpload',
+                        sessionToken: getAdminSession(),
+                        fileName: item.descriptiveFileName,
+                        fileData: item.pureBase64,
+                        mimeType: item.mimeType || 'image/jpeg'
                     });
-                    reSynced++;
-                    success = true;
+
+                    if (res && res.success && res.url) {
+                        batchUpdates.push({
+                            siteId: item.matchedSiteId || '',
+                            siteName: item.siteName,
+                            facing: item.facing || '',
+                            url: res.url,
+                            status: item.status || 'Available',
+                            newSiteData: item.newSiteData
+                        });
+                        reSynced++;
+                        success = true;
+                    }
+                } catch (e) {
+                    if (attempt < 2) await wait(1000);
+                    else console.warn('[Re-sync Error]:', e);
                 }
-            } catch (e) {
-                console.warn('[Re-sync Error]:', e);
             }
 
             if (!success) {
                 remainingMissed.push(item);
             }
-        }
+
+            completed++;
+            updateFileProcessing({
+                phase: `Re-syncing: ${completed}/${slidesToSync.length} photos (${reSynced} saved to Google Cloud)...`,
+                progress: Math.round(10 + (completed / slidesToSync.length) * 80)
+            });
+        };
+
+        const workers = Array.from({ length: Math.min(CONCURRENCY, slidesToSync.length) }, async () => {
+            while (queue.length > 0) {
+                const item = queue.shift();
+                if (item) await processItem(item);
+            }
+        });
+
+        await Promise.all(workers);
 
         if (batchUpdates.length > 0) {
             updateFileProcessing({ phase: 'Syncing re-uploaded photos to Google Sheet...', progress: 95 });
@@ -717,7 +737,7 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
             const freshData = await fetchHoardings();
             if (freshData?.length) setHoardings(freshData);
         } else {
-            showToast(`Could not re-sync photos. Please check internet connection.`, 'error');
+            showToast(`Could not re-sync photos. Please update your Google Apps Script deployment.`, 'error');
         }
     };
 
@@ -955,7 +975,14 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                     pureBase64,
                                     mimeType: photoCandidate.mimeType || 'image/jpeg',
                                     siteName,
-                                    matchedSiteId: matchedSite?._SiteID || ''
+                                    matchedSiteId: matchedSite?._SiteID || '',
+                                    facing: facingValue,
+                                    status: ai.status || matchedSite?.STATUS || 'Available',
+                                    newSiteData: !matchedSite ? {
+                                        siteName: siteName,
+                                        facing: facingValue,
+                                        latLong: lat && lng ? `${lat},${lng}` : (ai.gpsStamp || '')
+                                    } : undefined
                                 });
                             }
                         }
@@ -1967,35 +1994,71 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
         return hoardings.filter(h => {
             if (!h) return false;
 
-            // 🔍 Universal multi-field search: Matches location, city, client name, facing, traffic, or ANY field
+            // 🔍 Category-specific or Universal search
             let matchSearch = true;
             if (cleanSearch) {
                 const searchKeywords = cleanSearch.split(/\s+/).filter(Boolean);
 
-                const siteTitle = String(h["Locality Site Location"] || h["Location "] || h["Location"] || "").toLowerCase();
-                const siteLocality = String(h["Locality"] || h["Area"] || "").toLowerCase();
-                const city = String(h.City || "").toLowerCase();
-                const facing = String(h.Facing || h["Traffic View"] || "").toLowerCase();
-                const bookedBy = String(h.BookedBy || h.ClientName || h["Client Name"] || h.Customer || "").toLowerCase();
-                const trafficFrom = String(h["Traffic From"] || "").toLowerCase();
-                const trafficTo = String(h["Traffic To"] || "").toLowerCase();
-                const media = String(h.Media || h["Media Format"] || h.Type || "").toLowerCase();
-                const status = String(h.STATUS || h.Status || "").toLowerCase();
-                const sl = String(h.SL || h["S. No."] || h["SL NO"] || "").toLowerCase();
-                const dimensions = `${h.Width || ''} ${h.Height || ''} ${h["Total SQ.ft"] || ''} ${h.Size || ''}`.toLowerCase();
-                const price = String(h["Rental Per Month"] || h["Avg Monthly Cost (INR)"] || "").toLowerCase();
+                let targetText = '';
+                switch (inventorySearchCategory) {
+                    case 'location':
+                        targetText = String(h["Locality Site Location"] || h["Location "] || h["Location"] || "");
+                        break;
+                    case 'city':
+                        targetText = String(h.City || "");
+                        break;
+                    case 'locality':
+                        targetText = String(h["Locality"] || h["Area"] || "");
+                        break;
+                    case 'client':
+                        targetText = String(h.BookedBy || h.ClientName || h["Client Name"] || h.Customer || "");
+                        break;
+                    case 'media':
+                        targetText = String(h["Media Format (Front Lit / Back Lit / Non Lit)"] || h["Media Format"] || h["Media Type"] || h.Media || h["Type of Site (Unipole/Billboard)"] || h.Type || "");
+                        break;
+                    case 'facing':
+                        targetText = `${h.Facing || ''} ${h["Traffic View"] || ''} ${h["Traffic From"] || ''} ${h["Traffic To"] || ''}`;
+                        break;
+                    case 'size':
+                        targetText = `${h.Width || ''} ${h.Height || ''} ${h["Total SQ.ft"] || ''} ${h["Total Sq. Ft"] || ''} ${h["Size (Large/Medium/Small)"] || ''} ${h.Size || ''}`;
+                        break;
+                    case 'price':
+                        targetText = String(h["Rental Per Month"] || h["Avg Monthly Cost (INR)"] || "");
+                        break;
+                    case 'status':
+                        targetText = String(h.STATUS || h.Status || "");
+                        break;
+                    case 'sl':
+                        targetText = String(h.SL || h["S. No."] || h["SL NO"] || "");
+                        break;
+                    case 'all':
+                    default: {
+                        const siteTitle = String(h["Locality Site Location"] || h["Location "] || h["Location"] || "");
+                        const siteLocality = String(h["Locality"] || h["Area"] || "");
+                        const city = String(h.City || "");
+                        const facing = String(h.Facing || h["Traffic View"] || "");
+                        const bookedBy = String(h.BookedBy || h.ClientName || h["Client Name"] || h.Customer || "");
+                        const trafficFrom = String(h["Traffic From"] || "");
+                        const trafficTo = String(h["Traffic To"] || "");
+                        const media = String(h.Media || h["Media Format"] || h.Type || "");
+                        const status = String(h.STATUS || h.Status || "");
+                        const sl = String(h.SL || h["S. No."] || h["SL NO"] || "");
+                        const dimensions = `${h.Width || ''} ${h.Height || ''} ${h["Total SQ.ft"] || ''} ${h.Size || ''}`;
+                        const price = String(h["Rental Per Month"] || h["Avg Monthly Cost (INR)"] || "");
 
-                // Concatenate all searchable text for deep search
-                const allFieldValues = Object.entries(h)
-                    .filter(([k]) => !k.startsWith('_') && k !== 'ImageURL' && k !== 'driveUrl')
-                    .map(([, v]) => String(v || ''))
-                    .join(' ')
-                    .toLowerCase();
+                        const allFieldValues = Object.entries(h)
+                            .filter(([k]) => !k.startsWith('_') && k !== 'ImageURL' && k !== 'driveUrl')
+                            .map(([, v]) => String(v || ''))
+                            .join(' ');
 
-                const combinedText = `${allFieldValues} ${siteTitle} ${siteLocality} ${city} ${facing} ${bookedBy} ${trafficFrom} ${trafficTo} ${media} ${status} ${sl} ${dimensions} ${price}`;
+                        targetText = `${allFieldValues} ${siteTitle} ${siteLocality} ${city} ${facing} ${bookedBy} ${trafficFrom} ${trafficTo} ${media} ${status} ${sl} ${dimensions} ${price}`;
+                        break;
+                    }
+                }
 
-                // All typed keywords must match somewhere in the hoarding info
-                matchSearch = searchKeywords.every(keyword => combinedText.includes(keyword));
+                const lowerTarget = targetText.toLowerCase();
+                // All typed keywords must match somewhere in the selected target text
+                matchSearch = searchKeywords.every(keyword => lowerTarget.includes(keyword));
             }
             if (!matchSearch) return false;
 
@@ -2048,7 +2111,7 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
 
             return matchPrice;
         });
-    }, [hoardings, searchTerm, inventoryCityFilter, inventoryStatusFilter, filterStartDate, filterEndDate, inventoryLocalityFilter, inventoryMediaFilter, inventorySizeFilter, inventoryCategoryFilter, inventoryPriceFilter]);
+    }, [hoardings, searchTerm, inventorySearchCategory, inventoryCityFilter, inventoryStatusFilter, filterStartDate, filterEndDate, inventoryLocalityFilter, inventoryMediaFilter, inventorySizeFilter, inventoryCategoryFilter, inventoryPriceFilter]);
 
     const getProposalKey = (h, index = 0) => [
         h["Location "],
@@ -5187,42 +5250,129 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                     </div>
                                 </div>
 
-                                {/* 🔍 Universal Multi-field Search Bar */}
+                                {/* 🔍 Category-Aware Multi-Field Search Bar */}
                                 <div style={{
-                                    background: '#f3f4f6',
-                                    borderRadius: '9999px',
-                                    padding: '10px 20px',
+                                    background: '#ffffff',
+                                    borderRadius: '12px',
+                                    padding: '5px 12px 5px 6px',
                                     display: 'flex',
                                     alignItems: 'center',
-                                    gap: '12px',
+                                    gap: '8px',
                                     width: '100%',
-                                    maxWidth: '680px',
-                                    marginTop: '4px',
-                                    border: '1px solid #e5e7eb'
+                                    maxWidth: '720px',
+                                    marginTop: '6px',
+                                    border: '1.5px solid #e2e8f0',
+                                    boxShadow: '0 1px 4px rgba(0, 0, 0, 0.04)',
+                                    transition: 'border-color 0.2s ease, box-shadow 0.2s ease'
                                 }}>
-                                    <Search size={18} color="#9ca3af" />
-                                    <input 
-                                        type="text"
-                                        placeholder="Search location, city, client name, facing, area, size or any keyword..."
-                                        value={searchTerm}
-                                        onChange={(e) => setSearchTerm(e.target.value)}
-                                        style={{
-                                            background: 'transparent',
-                                            border: 'none',
-                                            outline: 'none',
-                                            width: '100%',
-                                            fontSize: '0.92rem',
-                                            color: '#111827',
-                                            fontWeight: 500
-                                        }}
-                                    />
-                                    {searchTerm && (
-                                        <button 
-                                            onClick={() => setSearchTerm('')} 
-                                            style={{ color: '#9ca3af', fontSize: '0.85rem', fontWeight: 700, cursor: 'pointer', background: 'transparent', border: 'none' }}
+                                    {/* Category Dropdown Selector */}
+                                    <div style={{ position: 'relative', display: 'flex', alignItems: 'center', flexShrink: 0 }}>
+                                        <select 
+                                            value={inventorySearchCategory}
+                                            onChange={(e) => setInventorySearchCategory(e.target.value)}
+                                            style={{
+                                                appearance: 'none',
+                                                WebkitAppearance: 'none',
+                                                background: '#f1f5f9',
+                                                border: '1px solid #e2e8f0',
+                                                borderRadius: '8px',
+                                                padding: '7px 28px 7px 10px',
+                                                fontSize: '0.82rem',
+                                                fontWeight: 600,
+                                                color: '#334155',
+                                                cursor: 'pointer',
+                                                outline: 'none',
+                                                transition: 'all 0.15s ease'
+                                            }}
+                                            aria-label="Select search category"
+                                            title="Search specifically by field"
                                         >
-                                            ✕
-                                        </button>
+                                            <option value="all">🔍 All Fields</option>
+                                            <option value="location">📍 Site / Location</option>
+                                            <option value="city">🏙️ City / Market</option>
+                                            <option value="locality">📌 Locality / Area</option>
+                                            <option value="client">👤 Client / Booked By</option>
+                                            <option value="media">🖼️ Media Format</option>
+                                            <option value="facing">🧭 Facing / Direction</option>
+                                            <option value="size">📐 Size / Dimension</option>
+                                            <option value="price">💰 Rental Price</option>
+                                            <option value="status">🟢 Status</option>
+                                            <option value="sl">🔢 S.No / ID</option>
+                                        </select>
+                                        <ChevronDown size={14} color="#64748b" style={{ position: 'absolute', right: '9px', pointerEvents: 'none' }} />
+                                    </div>
+
+                                    {/* Search Input Box */}
+                                    <div style={{ display: 'flex', alignItems: 'center', flex: 1, gap: '8px', padding: '0 4px', minWidth: 0 }}>
+                                        <Search size={16} color="#94a3b8" style={{ flexShrink: 0 }} />
+                                        <input 
+                                            type="text"
+                                            placeholder={
+                                                inventorySearchCategory === 'location' ? 'Search by site name or location (e.g. Delhi Road)...' :
+                                                inventorySearchCategory === 'city' ? 'Search by city / market (e.g. Meerut, Delhi)...' :
+                                                inventorySearchCategory === 'locality' ? 'Search by locality or area...' :
+                                                inventorySearchCategory === 'client' ? 'Search by client name / booked by...' :
+                                                inventorySearchCategory === 'media' ? 'Search by media format (e.g. Unipole, Billboard)...' :
+                                                inventorySearchCategory === 'facing' ? 'Search by facing or traffic direction...' :
+                                                inventorySearchCategory === 'size' ? 'Search by dimensions or size (e.g. 20x10)...' :
+                                                inventorySearchCategory === 'price' ? 'Search by monthly rental / cost...' :
+                                                inventorySearchCategory === 'status' ? 'Search by status (Available, Booked)...' :
+                                                inventorySearchCategory === 'sl' ? 'Search by serial no. or ID...' :
+                                                'Search location, city, client, facing, area, size or any keyword...'
+                                            }
+                                            value={searchTerm}
+                                            onChange={(e) => setSearchTerm(e.target.value)}
+                                            style={{
+                                                background: 'transparent',
+                                                border: 'none',
+                                                outline: 'none',
+                                                width: '100%',
+                                                fontSize: '0.88rem',
+                                                color: '#0f172a',
+                                                fontWeight: 500
+                                            }}
+                                        />
+                                        {searchTerm && (
+                                            <button 
+                                                onClick={() => setSearchTerm('')} 
+                                                title="Clear search"
+                                                style={{
+                                                    color: '#94a3b8',
+                                                    fontSize: '0.75rem',
+                                                    fontWeight: 700,
+                                                    cursor: 'pointer',
+                                                    background: '#f1f5f9',
+                                                    border: 'none',
+                                                    borderRadius: '50%',
+                                                    width: '20px',
+                                                    height: '20px',
+                                                    display: 'flex',
+                                                    alignItems: 'center',
+                                                    justifyContent: 'center',
+                                                    padding: 0,
+                                                    flexShrink: 0
+                                                }}
+                                            >
+                                                ✕
+                                            </button>
+                                        )}
+                                    </div>
+
+                                    {/* Match Count Badge */}
+                                    {searchTerm && (
+                                        <span style={{
+                                            fontSize: '0.75rem',
+                                            fontWeight: 600,
+                                            color: '#4f46e5',
+                                            background: '#eef2ff',
+                                            padding: '3px 8px',
+                                            borderRadius: '9999px',
+                                            whiteSpace: 'nowrap',
+                                            border: '1px solid #c7d2fe',
+                                            flexShrink: 0
+                                        }}>
+                                            {filteredInventory.length} found
+                                        </span>
                                     )}
                                 </div>
                             </div>
@@ -5313,6 +5463,7 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                                 setInventoryCategoryFilter(['All']);
                                                 setInventoryPriceFilter('All');
                                                 setSearchTerm('');
+                                                setInventorySearchCategory('all');
                                             }}
                                         >
                                             Reset Filters
