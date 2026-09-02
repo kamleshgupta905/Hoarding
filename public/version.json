@@ -1,12 +1,12 @@
 {
-  "version": "1.3.9",
-  "buildTimestamp": 1756855100000,
-  "buildDate": "2026-09-03T04:50:00Z",
-  "releaseTag": "v1.3.9",
+  "version": "1.4.0",
+  "buildTimestamp": 1756857400000,
+  "buildDate": "2026-09-03T05:20:00Z",
+  "releaseTag": "v1.4.0",
   "apkUrl": "https://github.com/kamleshgupta905/Hoarding/releases/download/staff-apk-latest/heera-staff-camera.apk",
   "features": [
-    "Fix booking persistence and client details auto-reversion",
-    "Unified multi-key local booking authority",
-    "Enhanced Google Sheets sync preservation"
+    "Strict isolation of hoarding bookings by direction/facing to prevent same-location collisions",
+    "Fix Google Apps Script getChangeVersionValue_ error",
+    "Automatic cleanup of stale generic location booking keys"
   ]
 }
