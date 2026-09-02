@@ -8,7 +8,7 @@ import Navbar from './components/Navbar';
 import Footer from './components/Footer';
 import AdminLogin from './pages/AdminLogin';
 import AppAutoUpdater from './components/AppAutoUpdater';
-import { fetchHoardings } from './services/dataService';
+import { fetchHoardings, getLocalBookings, getSiteBookingKeys } from './services/dataService';
 import { HelmetProvider } from 'react-helmet-async';
 
 // Lazy-loaded pages for code splitting
@@ -369,6 +369,46 @@ function App() {
       });
     }
 
+    // Overlay active local bookings so remote CDN caching cannot clobber fresh local bookings
+    try {
+      const localBookings = getLocalBookings();
+      if (localBookings && Object.keys(localBookings).length > 0) {
+        for (let i = 0; i < mergedList.length; i++) {
+          const item = mergedList[i];
+          const keys = getSiteBookingKeys(item);
+          for (const k of keys) {
+            const lb = localBookings[k];
+            if (lb) {
+              if (lb.STATUS === 'Available') {
+                mergedList[i] = {
+                  ...mergedList[i],
+                  STATUS: 'Available',
+                  status: 'Available',
+                  Status: 'Available',
+                  BookedBy: '',
+                  BookingStart: '',
+                  BookingEnd: ''
+                };
+              } else if (lb.STATUS === 'Booked' || lb.STATUS === 'Occupied') {
+                mergedList[i] = {
+                  ...mergedList[i],
+                  STATUS: lb.STATUS,
+                  status: lb.STATUS,
+                  Status: lb.STATUS,
+                  BookedBy: lb.BookedBy || mergedList[i].BookedBy || '',
+                  BookingStart: lb.BookingStart || mergedList[i].BookingStart || '',
+                  BookingEnd: lb.BookingEnd || mergedList[i].BookingEnd || ''
+                };
+              }
+              break;
+            }
+          }
+        }
+      }
+    } catch (lbErr) {
+      console.warn('Local booking overlay error in App.jsx:', lbErr);
+    }
+
     try {
       localStorage.setItem('local_added_sites_cache', JSON.stringify(remainingLocal));
       localStorage.setItem('hoardings_cache', JSON.stringify(mergedList));
@@ -389,11 +429,23 @@ function App() {
 
   useEffect(() => {
     let focusTimer = null;
+    let syncTimer = null;
     const scheduleRefresh = () => { if (focusTimer) clearTimeout(focusTimer); focusTimer = setTimeout(refreshHoardings, 2000); };
+    const scheduleSyncRefresh = () => {
+      // Allow Google Apps Script enough time to persist changes before re-fetching
+      if (syncTimer) clearTimeout(syncTimer);
+      syncTimer = setTimeout(() => refreshHoardings(true), 4000);
+    };
     const intervalId = setInterval(refreshHoardings, LIVE_REFRESH_INTERVAL_MS);
-    window.addEventListener('hoardings:sync-requested', () => refreshHoardings(true));
+    window.addEventListener('hoardings:sync-requested', scheduleSyncRefresh);
     window.addEventListener('focus', scheduleRefresh);
-    return () => { clearInterval(intervalId); if (focusTimer) clearTimeout(focusTimer); };
+    return () => {
+      clearInterval(intervalId);
+      if (focusTimer) clearTimeout(focusTimer);
+      if (syncTimer) clearTimeout(syncTimer);
+      window.removeEventListener('hoardings:sync-requested', scheduleSyncRefresh);
+      window.removeEventListener('focus', scheduleRefresh);
+    };
   }, [refreshHoardings]);
 
   useEffect(() => {

@@ -2,7 +2,7 @@ import React from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import { ChevronLeft, MapPin, Maximize2, Layers, Zap, Info, Calendar, Phone, Share2, Heart, ShieldCheck, Edit3, Trash2, X, Upload, Camera, Copy, Check, Download } from 'lucide-react';
 import { Helmet } from 'react-helmet-async';
-import { getImageUrl, compressImage, syncToGoogleSheet, downloadHoardingImage } from '../services/dataService';
+import { getImageUrl, compressImage, syncToGoogleSheet, downloadHoardingImage, recordSiteBooking, removeSiteBooking } from '../services/dataService';
 import ImageLightbox from '../components/ImageLightbox';
 import './HoardingDetail.css';
 
@@ -114,20 +114,37 @@ const HoardingDetail = ({ hoardings, setHoardings }) => {
                 "Media Format (Front Lit / Back Lit / Non Lit)": mediaFormat,
                 "Media Format": mediaFormat,
                 "Media Type": mediaFormat,
-                STATUS: formData.STATUS || 'Available',
-                BookedBy: formData.BookedBy || '',
-                BookingStart: formData.BookingStart || '',
-                BookingEnd: formData.BookingEnd || '',
+                STATUS: (formData.STATUS === 'Occupied' || formData.STATUS === 'Booked') ? 'Booked' : (formData.STATUS || 'Available'),
+                status: (formData.STATUS === 'Occupied' || formData.STATUS === 'Booked') ? 'Booked' : (formData.STATUS || 'Available'),
+                Status: (formData.STATUS === 'Occupied' || formData.STATUS === 'Booked') ? 'Booked' : (formData.STATUS || 'Available'),
+                BookedBy: (formData.STATUS === 'Occupied' || formData.STATUS === 'Booked') ? (formData.BookedBy || '') : '',
+                BookingStart: (formData.STATUS === 'Occupied' || formData.STATUS === 'Booked') ? (formData.BookingStart || '') : '',
+                BookingEnd: (formData.STATUS === 'Occupied' || formData.STATUS === 'Booked') ? (formData.BookingEnd || '') : '',
                 Latitude: formData.Latitude || '',
                 Longitude: formData.Longitude || '',
                 ImageURL: updatedImageURL
             };
 
+            const isBooked = (fullUpdatedFields.STATUS === 'Booked' || fullUpdatedFields.STATUS === 'Occupied');
+            if (isBooked) {
+                recordSiteBooking(hoarding, fullUpdatedFields);
+            } else if (fullUpdatedFields.STATUS === 'Available') {
+                removeSiteBooking(hoarding);
+            }
+
+            const targetSL = hoarding.SL || hoarding["S. No."] || hoarding["SL NO"] || formData.SL || '';
+            const targetId = hoarding.UniqueID || hoarding["Unique ID"] || hoarding.ID || hoarding._SiteID || '';
+
             await syncToGoogleSheet({
                 action: 'updateHoarding',
                 siteName: hoarding["Locality Site Location"] || hoarding["Location "] || hoarding.Location,
-                siteId: hoarding.UniqueID || hoarding["Unique ID"] || hoarding.ID || hoarding._SiteID || '',
-                fields: fullUpdatedFields,
+                siteId: targetId,
+                sl: targetSL,
+                fields: {
+                    ...fullUpdatedFields,
+                    SL: targetSL,
+                    _SiteID: targetId
+                },
                 fileData: fileData,
                 mimeType: mimeType
             });
@@ -136,7 +153,8 @@ const HoardingDetail = ({ hoardings, setHoardings }) => {
                 const targetKey = String(hoarding["Location "] || hoarding.Location || hoarding["Locality Site Location"] || '').trim().toLowerCase();
                 const next = prev.map(h => {
                     const hKey = String(h["Location "] || h.Location || h["Locality Site Location"] || '').trim().toLowerCase();
-                    return hKey === targetKey ? { ...h, ...fullUpdatedFields } : h;
+                    const isMatch = (h === hoarding) || (targetId && (h._SiteID === targetId || h.UniqueID === targetId)) || (targetSL && h.SL === targetSL) || (targetKey && hKey === targetKey);
+                    return isMatch ? { ...h, ...fullUpdatedFields } : h;
                 });
                 try {
                     localStorage.setItem('hoardings_cache', JSON.stringify(next));

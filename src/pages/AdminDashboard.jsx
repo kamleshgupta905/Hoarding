@@ -13,7 +13,7 @@ import {
     Star, FileSpreadsheet, Presentation, Loader2
 } from 'lucide-react';
 import { analyzeHoardingImage, extractSiteCoordinates } from '../services/aiService';
-import { fetchHoardings, compressImage, syncToGoogleSheet, exportProposalExcel, PROPOSAL_COLUMNS, getImageUrl, downloadHoardingImage, fetchStaffUploads, reviewStaffPhoto, detectStaffPhotoOrientation, fetchSheetGrid, saveSheetGrid, addDeletedSite, parseHistoryString, saveLocalBooking, clearLocalBooking } from '../services/dataService';
+import { fetchHoardings, compressImage, syncToGoogleSheet, exportProposalExcel, PROPOSAL_COLUMNS, getImageUrl, downloadHoardingImage, fetchStaffUploads, reviewStaffPhoto, detectStaffPhotoOrientation, fetchSheetGrid, saveSheetGrid, addDeletedSite, parseHistoryString, saveLocalBooking, clearLocalBooking, recordSiteBooking, removeSiteBooking } from '../services/dataService';
 import { generateMasterMediaPlanPptx } from '../services/presentationService';
 import ImageLightbox from '../components/ImageLightbox';
 import { clearAdminSession, getAdminSession, getStaffUploadLink, postDirect } from '../services/secureApi';
@@ -1468,6 +1468,8 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
 
         const bookingUpdates = {
             STATUS: 'Booked',
+            status: 'Booked',
+            Status: 'Booked',
             BookedBy: clientName.trim(),
             BookingStart: startDate,
             BookingEnd: endDate
@@ -1505,10 +1507,7 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
             return next;
         });
 
-        const siteKey = String(targetSL || targetId || `${targetSite.City || ''}_${targetLoc}_${targetFacing}`).trim().toLowerCase();
-        saveLocalBooking(siteKey, bookingUpdates);
-        if (targetSL) saveLocalBooking(String(targetSL).trim().toLowerCase(), bookingUpdates);
-        if (targetId) saveLocalBooking(String(targetId).trim().toLowerCase(), bookingUpdates);
+        recordSiteBooking(targetSite, bookingUpdates);
 
         setQuickBookingTarget(null);
         showToast(`Site Booked for ${clientName}!`, "success");
@@ -1518,9 +1517,15 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
             action: 'updateHoarding',
             siteName: targetSite["Locality Site Location"] || targetSite["Location "] || targetSite.Location,
             siteId: targetId || '',
+            sl: targetSL || '',
             fields: {
                 ...targetSite,
-                ...bookingUpdates
+                ...bookingUpdates,
+                SL: targetSL || targetSite.SL || '',
+                _SiteID: targetId || targetSite._SiteID || '',
+                status: 'Booked',
+                Status: 'Booked',
+                STATUS: 'Booked'
             }
         }).catch(err => console.warn("Booking background sync:", err));
     };
@@ -1533,13 +1538,12 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
         const targetLat = String(targetSite.Latitude || '').trim();
         const targetLng = String(targetSite.Longitude || '').trim();
 
-        const siteKey = String(targetSL || targetId || `${targetSite.City || ''}_${targetLoc}_${targetFacing}`).trim().toLowerCase();
-        clearLocalBooking(siteKey);
-        if (targetSL) clearLocalBooking(String(targetSL).trim().toLowerCase());
-        if (targetId) clearLocalBooking(String(targetId).trim().toLowerCase());
+        removeSiteBooking(targetSite);
 
         const availableUpdates = {
             STATUS: 'Available',
+            status: 'Available',
+            Status: 'Available',
             BookedBy: '',
             BookingStart: '',
             BookingEnd: ''
@@ -1583,9 +1587,15 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
             action: 'updateHoarding',
             siteName: targetSite["Locality Site Location"] || targetSite["Location "] || targetSite.Location,
             siteId: targetId || '',
+            sl: targetSL || '',
             fields: {
                 ...targetSite,
-                ...availableUpdates
+                ...availableUpdates,
+                SL: targetSL || targetSite.SL || '',
+                _SiteID: targetId || targetSite._SiteID || '',
+                status: 'Available',
+                Status: 'Available',
+                STATUS: 'Available'
             }
         }).catch(err => console.warn("Available background sync:", err));
     };
@@ -1769,6 +1779,7 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                 UniqueID: autoUniqueId,
                 "Unique ID": autoUniqueId,
                 ID: autoUniqueId,
+                _SiteID: autoUniqueId,
                 "Locality Site Location": siteLocationName,
                 "Location ": siteLocationName,
                 Location: siteLocationName,
@@ -1787,11 +1798,13 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                 "Media Format": mediaFormat,
                 "Media Type": mediaFormat,
                 STATUS: formData.STATUS || 'Available',
+                status: formData.STATUS || 'Available',
+                Status: formData.STATUS || 'Available',
                 Latitude: formData.Latitude || '',
                 Longitude: formData.Longitude || '',
-                BookedBy: formData.BookedBy || '',
-                BookingStart: formData.BookingStart || '',
-                BookingEnd: formData.BookingEnd || '',
+                BookedBy: (formData.STATUS === 'Booked' || formData.STATUS === 'Occupied') ? (formData.BookedBy || '') : '',
+                BookingStart: (formData.STATUS === 'Booked' || formData.STATUS === 'Occupied') ? (formData.BookingStart || '') : '',
+                BookingEnd: (formData.STATUS === 'Booked' || formData.STATUS === 'Occupied') ? (formData.BookingEnd || '') : '',
                 ImageURL: updatedImageURL
             };
 
@@ -1800,10 +1813,16 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
             const targetId = String(targetSite.UniqueID || targetSite["Unique ID"] || targetSite.ID || targetSite._SiteID || '').trim().toLowerCase();
 
             // 1. Instantly update UI state & cache with precision targeting (matching SL, Facing, Lat-Long)
-            const targetSL = targetSite.SL || targetSite["S. No."] || targetSite["SL NO"];
+            const targetSL = targetSite.SL || targetSite["S. No."] || targetSite["SL NO"] || formData.SL;
             const targetFacing = String(targetSite.Facing || targetSite["Traffic View"] || '').trim().toLowerCase();
             const targetLat = String(targetSite.Latitude || '').trim();
             const targetLng = String(targetSite.Longitude || '').trim();
+
+            if (formData.STATUS === 'Booked' || formData.STATUS === 'Occupied') {
+                recordSiteBooking(targetSite, fullUpdatedFields);
+            } else if (formData.STATUS === 'Available') {
+                removeSiteBooking(targetSite);
+            }
 
             setHoardings(prev => {
                 const next = prev.map(h => {
@@ -1836,7 +1855,15 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                 action: 'updateHoarding',
                 siteName: targetSite["Locality Site Location"] || targetSite["Location "] || targetSite.Location,
                 siteId: targetSite.UniqueID || targetSite["Unique ID"] || targetSite.ID || targetSite._SiteID || '',
-                fields: fullUpdatedFields,
+                sl: targetSL || '',
+                fields: {
+                    ...fullUpdatedFields,
+                    SL: targetSL || fullUpdatedFields.SL || '',
+                    _SiteID: targetId || fullUpdatedFields._SiteID || '',
+                    status: fullUpdatedFields.STATUS,
+                    Status: fullUpdatedFields.STATUS,
+                    STATUS: fullUpdatedFields.STATUS
+                },
                 fileData: fileData,
                 mimeType: mimeType
             }).catch(err => console.warn("Update background sync notice:", err));

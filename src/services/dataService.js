@@ -167,14 +167,43 @@ export const normalizeHoarding = (item) => {
   const parsedHistory = parseHistoryString(item['ExecutionHistory'] || item['History'] || item['execution_history'] || '');
   const siteCategory = item['Site Category'] || item['Category'] || 'Commercial';
 
-  const siteKey = String(sl || item.UniqueID || item['Unique ID'] || `${city}_${siteLocation}_${facing}`).trim().toLowerCase();
-  const localBookings = typeof window !== 'undefined' ? getLocalBookings() : {};
-  const localBooking = localBookings[siteKey] || (sl ? localBookings[String(sl).trim().toLowerCase()] : null);
+  const candidateKeys = getSiteBookingKeys({
+    ...item,
+    'SL': sl,
+    'City': city,
+    'Location': siteLocation,
+    'Locality Site Location': siteLocation,
+    'Facing': facing,
+    _SiteID: item._SiteID || item.UniqueID || item['Unique ID'] || item.ID
+  });
 
-  const status = (localBooking && localBooking.STATUS) || item.STATUS || item.status || 'Available';
-  const bookedBy = (localBooking && localBooking.BookedBy) || item.BookedBy || item.bookedBy || item['Booked By'] || item['Client Name'] || item.ClientName || '';
-  const bookingStart = (localBooking && localBooking.BookingStart) || item.BookingStart || item.bookingStart || '';
-  const bookingEnd = (localBooking && localBooking.BookingEnd) || item.BookingEnd || item.bookingEnd || '';
+  const localBookings = typeof window !== 'undefined' ? getLocalBookings() : {};
+  let localBooking = null;
+  for (const k of candidateKeys) {
+    if (localBookings[k]) {
+      localBooking = localBookings[k];
+      break;
+    }
+  }
+
+  let status = item.STATUS || item.status || 'Available';
+  let bookedBy = item.BookedBy || item.bookedBy || item['Booked By'] || item['Client Name'] || item.ClientName || '';
+  let bookingStart = item.BookingStart || item.bookingStart || '';
+  let bookingEnd = item.BookingEnd || item.bookingEnd || '';
+
+  if (localBooking) {
+    if (localBooking.STATUS === 'Available') {
+      status = 'Available';
+      bookedBy = '';
+      bookingStart = '';
+      bookingEnd = '';
+    } else if (localBooking.STATUS === 'Booked' || localBooking.STATUS === 'Occupied') {
+      status = localBooking.STATUS;
+      bookedBy = localBooking.BookedBy || bookedBy;
+      bookingStart = localBooking.BookingStart || bookingStart;
+      bookingEnd = localBooking.BookingEnd || bookingEnd;
+    }
+  }
 
   return {
     ...item,
@@ -221,6 +250,36 @@ export const normalizeHoarding = (item) => {
   };
 };
 
+export const getSiteBookingKeys = (site = {}) => {
+  if (!site || typeof site !== 'object') return [];
+  const keys = new Set();
+
+  const sl = site.SL || site['S. No.'] || site['S.No'] || site['SL NO'] || site.sl;
+  if (sl !== undefined && sl !== null && String(sl).trim() !== '') {
+    keys.add(String(sl).trim().toLowerCase());
+  }
+
+  const id = site._SiteID || site.UniqueID || site['Unique ID'] || site.ID || site._siteid;
+  if (id !== undefined && id !== null && String(id).trim() !== '') {
+    keys.add(String(id).trim().toLowerCase());
+  }
+
+  const loc = String(site['Locality Site Location'] || site['Location '] || site.Location || site['Site Name'] || site.site_name || '').trim().toLowerCase();
+  const city = String(site.City || site.city || '').trim().toLowerCase();
+  const facing = String(site.Facing || site['Traffic View'] || site.facing || '').trim().toLowerCase();
+
+  if (loc) {
+    keys.add(loc);
+    if (city) {
+      keys.add(`${city}_${loc}`);
+      if (facing) keys.add(`${city}_${loc}_${facing}`);
+    }
+    if (facing) keys.add(`${loc}_${facing}`);
+  }
+
+  return Array.from(keys);
+};
+
 export const getLocalBookings = () => {
   if (typeof window === 'undefined') return {};
   try {
@@ -231,10 +290,58 @@ export const getLocalBookings = () => {
   }
 };
 
-export const saveLocalBooking = (siteKey, bookingData) => {
-  if (!siteKey || !bookingData || typeof window === 'undefined') return;
+export const recordSiteBooking = (site, bookingData = {}) => {
+  if (!site || typeof window === 'undefined') return;
   try {
-    const clean = String(siteKey).trim().toLowerCase();
+    const keys = getSiteBookingKeys(site);
+    if (keys.length === 0) return;
+    const current = getLocalBookings();
+    const payload = {
+      STATUS: bookingData.STATUS || 'Booked',
+      BookedBy: String(bookingData.BookedBy || site.BookedBy || '').trim(),
+      BookingStart: bookingData.BookingStart || site.BookingStart || '',
+      BookingEnd: bookingData.BookingEnd || site.BookingEnd || '',
+      updatedAt: Date.now()
+    };
+    keys.forEach(k => {
+      current[k] = payload;
+    });
+    localStorage.setItem('adh_local_bookings', JSON.stringify(current));
+  } catch (err) {
+    console.warn('recordSiteBooking notice:', err);
+  }
+};
+
+export const removeSiteBooking = (site) => {
+  if (!site || typeof window === 'undefined') return;
+  try {
+    const keys = getSiteBookingKeys(site);
+    if (keys.length === 0) return;
+    const current = getLocalBookings();
+    const tombstone = {
+      STATUS: 'Available',
+      BookedBy: '',
+      BookingStart: '',
+      BookingEnd: '',
+      updatedAt: Date.now()
+    };
+    keys.forEach(k => {
+      current[k] = tombstone;
+    });
+    localStorage.setItem('adh_local_bookings', JSON.stringify(current));
+  } catch (err) {
+    console.warn('removeSiteBooking notice:', err);
+  }
+};
+
+export const saveLocalBooking = (siteKeyOrSite, bookingData) => {
+  if (!siteKeyOrSite) return;
+  if (typeof siteKeyOrSite === 'object') {
+    return recordSiteBooking(siteKeyOrSite, bookingData);
+  }
+  if (!bookingData || typeof window === 'undefined') return;
+  try {
+    const clean = String(siteKeyOrSite).trim().toLowerCase();
     const current = getLocalBookings();
     current[clean] = {
       ...bookingData,
@@ -246,12 +353,22 @@ export const saveLocalBooking = (siteKey, bookingData) => {
   }
 };
 
-export const clearLocalBooking = (siteKey) => {
-  if (!siteKey || typeof window === 'undefined') return;
+export const clearLocalBooking = (siteKeyOrSite) => {
+  if (!siteKeyOrSite) return;
+  if (typeof siteKeyOrSite === 'object') {
+    return removeSiteBooking(siteKeyOrSite);
+  }
+  if (typeof window === 'undefined') return;
   try {
-    const clean = String(siteKey).trim().toLowerCase();
+    const clean = String(siteKeyOrSite).trim().toLowerCase();
     const current = getLocalBookings();
-    delete current[clean];
+    current[clean] = {
+      STATUS: 'Available',
+      BookedBy: '',
+      BookingStart: '',
+      BookingEnd: '',
+      updatedAt: Date.now()
+    };
     localStorage.setItem('adh_local_bookings', JSON.stringify(current));
   } catch (err) {
     console.warn('clearLocalBooking notice:', err);

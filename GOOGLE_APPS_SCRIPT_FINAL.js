@@ -1543,6 +1543,18 @@ function updateHoardingDetails(data) {
       }
     }
 
+    // 1b. Match by SL if present
+    var targetSL = String((data.fields && (data.fields.SL || data.fields['S. No.'] || data.fields['SL NO'])) || data.sl || '').trim();
+    var idxSL = headers.findIndex(function(h) { return cleanFull(h) === 'sl' || cleanFull(h) === 'sno'; });
+    if (rowIndex === -1 && targetSL && idxSL !== -1) {
+      for (var i = 1; i < rows.length; i++) {
+        if (String(rows[i][idxSL]).trim() === targetSL) {
+          rowIndex = i + 1;
+          break;
+        }
+      }
+    }
+
     // 2. Match by Lat-Long if present
     var targetLatLong = cleanFull(data.latLong || (data.fields && (data.fields['Lat-Long'] || data.fields.LatLong)) || '');
     var idxLatLong = headers.findIndex(function(h) { return cleanFull(h).indexOf('lat') !== -1 && cleanFull(h).indexOf('long') !== -1; });
@@ -1626,6 +1638,7 @@ function updateHoardingDetails(data) {
 
     // 2. Update specified fields (General Edit)
     if (data.fields) {
+      var updatedIndices = {};
       for (var fKey in data.fields) {
         var fieldKey = cleanFull(fKey);
         
@@ -1659,7 +1672,7 @@ function updateHoardingDetails(data) {
           idx = newColIndex - 1;
         }
 
-        if (idx !== -1) {
+        if (idx !== -1 && !updatedIndices[idx]) {
           var newVal = data.fields[fKey];
           // 🛡️ SAFETY CHECK: DO NOT erase a Drive link with an empty update
           if (idx === idxImg && (!newVal || newVal === "")) {
@@ -1670,6 +1683,7 @@ function updateHoardingDetails(data) {
             }
           }
           sheet.getRange(rowIndex, idx + 1).setValue(newVal);
+          updatedIndices[idx] = true;
         }
       }
     }
