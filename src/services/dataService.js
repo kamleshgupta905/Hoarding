@@ -268,13 +268,14 @@ export const getSiteBookingKeys = (site = {}) => {
   const city = String(site.City || site.city || '').trim().toLowerCase();
   const facing = String(site.Facing || site['Traffic View'] || site.facing || '').trim().toLowerCase();
 
-  if (loc) {
-    keys.add(loc);
+  // 🛡️ CRITICAL: Only composite keys WITH facing are unique. Multiple hoardings exist at the exact same location
+  // (e.g. Begum Bridge Metro Station with Facing Modipuram vs Soti Ganj). Adding generic 'loc' without facing
+  // causes all sites at that location to inherit the same booking!
+  if (loc && facing) {
+    keys.add(`${loc}_${facing}`);
     if (city) {
-      keys.add(`${city}_${loc}`);
-      if (facing) keys.add(`${city}_${loc}_${facing}`);
+      keys.add(`${city}_${loc}_${facing}`);
     }
-    if (facing) keys.add(`${loc}_${facing}`);
   }
 
   return Array.from(keys);
@@ -284,7 +285,20 @@ export const getLocalBookings = () => {
   if (typeof window === 'undefined') return {};
   try {
     const raw = localStorage.getItem('adh_local_bookings');
-    return raw ? JSON.parse(raw) : {};
+    if (!raw) return {};
+    const current = JSON.parse(raw);
+    let mutated = false;
+    // Clean up any historical generic keys that didn't include facing and caused cross-site collisions
+    Object.keys(current).forEach(k => {
+      if (k.includes(' ') && !k.includes('_')) {
+        delete current[k];
+        mutated = true;
+      }
+    });
+    if (mutated) {
+      localStorage.setItem('adh_local_bookings', JSON.stringify(current));
+    }
+    return current;
   } catch {
     return {};
   }

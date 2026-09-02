@@ -848,6 +848,15 @@ function bumpChangeVersion_(reason, operationId) {
   return next;
 }
 
+function getChangeVersionValue_() {
+  try {
+    var properties = PropertiesService.getScriptProperties();
+    return Number(properties.getProperty(CONFIG.CHANGE_VERSION_PROPERTY) || 0);
+  } catch (e) {
+    return 0;
+  }
+}
+
 function getChangeVersion_() {
   var properties = PropertiesService.getScriptProperties();
   return res({

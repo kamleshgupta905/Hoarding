@@ -1485,14 +1485,14 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                 if (!isMatch && targetSL && (h.SL || h["S. No."] || h["SL NO"])) {
                     isMatch = String(h.SL || h["S. No."] || h["SL NO"]).trim() === String(targetSL).trim();
                 }
-                if (!isMatch && targetLoc) {
+                if (!isMatch && targetLoc && targetFacing) {
                     const hLoc = String(h["Locality Site Location"] || h["Location "] || h.Location || '').trim().toLowerCase();
                     const hFacing = String(h.Facing || h["Traffic View"] || '').trim().toLowerCase();
                     const hLat = String(h.Latitude || '').trim();
                     const hLng = String(h.Longitude || '').trim();
                     
                     isMatch = (hLoc === targetLoc) && 
-                              (!targetFacing || hFacing === targetFacing) && 
+                              (hFacing === targetFacing) && 
                               (!targetLat || hLat === targetLat) && 
                               (!targetLng || hLng === targetLng);
                 }
@@ -1558,14 +1558,14 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                 if (!isMatch && targetSL && (h.SL || h["S. No."] || h["SL NO"])) {
                     isMatch = String(h.SL || h["S. No."] || h["SL NO"]).trim() === String(targetSL).trim();
                 }
-                if (!isMatch && targetLoc) {
+                if (!isMatch && targetLoc && targetFacing) {
                     const hLoc = String(h["Locality Site Location"] || h["Location "] || h.Location || '').trim().toLowerCase();
                     const hFacing = String(h.Facing || h["Traffic View"] || '').trim().toLowerCase();
                     const hLat = String(h.Latitude || '').trim();
                     const hLng = String(h.Longitude || '').trim();
                     
                     isMatch = (hLoc === targetLoc) && 
-                              (!targetFacing || hFacing === targetFacing) && 
+                              (hFacing === targetFacing) && 
                               (!targetLat || hLat === targetLat) && 
                               (!targetLng || hLng === targetLng);
                 }
@@ -1830,8 +1830,8 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                         (targetId && String(h.UniqueID || h["Unique ID"] || h.ID || h._SiteID || '').trim().toLowerCase() === targetId) ||
                         (targetSL && String(h.SL || h["S. No."] || h["SL NO"]).trim() === String(targetSL).trim()) ||
                         (
-                            targetKey && String(h["Location "] || h.Location || h["Locality Site Location"] || '').trim().toLowerCase() === targetKey &&
-                            (!targetFacing || String(h.Facing || h["Traffic View"] || '').trim().toLowerCase() === targetFacing) &&
+                            targetKey && targetFacing && String(h["Location "] || h.Location || h["Locality Site Location"] || '').trim().toLowerCase() === targetKey &&
+                            String(h.Facing || h["Traffic View"] || '').trim().toLowerCase() === targetFacing &&
                             (!targetLat || String(h.Latitude || '').trim() === targetLat) &&
                             (!targetLng || String(h.Longitude || '').trim() === targetLng)
                         );
