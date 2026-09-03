@@ -5839,7 +5839,29 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                                     </span>
                                                     {(h.STATUS === 'Booked' || h.STATUS === 'Occupied') && (
                                                         <div className="table-booking-info" style={{ fontSize: '10px', marginTop: '4px', color: '#808191' }}>
-                                                            {h.BookedBy && <div title="Client Name">👤 {h.BookedBy}</div>}
+                                                            {h.BookedBy && (
+                                                                <div title="Client Name" style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '3px' }}>
+                                                                    <div style={{
+                                                                        width: '20px',
+                                                                        height: '20px',
+                                                                        borderRadius: '50%',
+                                                                        backgroundColor: ['#ffd5dc', '#ffdfbf', '#b6e3f4', '#c0aede', '#d1d4f9', '#fed7aa', '#fbcfe8', '#e9d5ff'][(h.BookedBy.length + (parseInt(h.SL, 10) || 0)) % 8],
+                                                                        overflow: 'hidden',
+                                                                        display: 'inline-flex',
+                                                                        alignItems: 'center',
+                                                                        justifyContent: 'center',
+                                                                        flexShrink: 0,
+                                                                        boxShadow: '0 1px 3px rgba(0,0,0,0.08)'
+                                                                    }}>
+                                                                        <img 
+                                                                            src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(h.BookedBy)}`} 
+                                                                            alt={h.BookedBy}
+                                                                            style={{ width: '100%', height: '100%', objectFit: 'contain' }}
+                                                                        />
+                                                                    </div>
+                                                                    <span style={{ fontWeight: 700, color: '#111827' }}>{h.BookedBy}</span>
+                                                                </div>
+                                                            )}
                                                             {h.BookingStart && <div title="Start Date">Start: {new Date(h.BookingStart).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}</div>}
                                                             {h.BookingEnd && <div title="Expiry Date">📅 {new Date(h.BookingEnd).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}</div>}
                                                         </div>
@@ -6035,7 +6057,7 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                             filteredSites.map((h, idx) => {
                                                 const clientName = String(h.BookedBy).trim();
                                                 const avatarBg = avatarBgs[idx % avatarBgs.length];
-                                                const avatarUrl = `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(clientName)}&backgroundColor=${avatarBg.replace('#', '')}&textColor=000000`;
+                                                const avatarUrl = `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(clientName)}`;
                                                 const location = String(h['Location '] || h.Location || 'Unknown Location');
                                                 const city = String(h.City || 'Unknown');
                                                 const price = Number(h['Rental Per Month'] || h['Avg Monthly Cost (INR)'] || 0) || 0;
@@ -6056,13 +6078,18 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                                         <td style={{ padding: '16px' }}>
                                                             <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                                                                 <div style={{
-                                                                    width: '38px', height: '38px', borderRadius: '50%', backgroundColor: avatarBg, overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0
+                                                                    width: '42px', height: '42px', borderRadius: '50%', backgroundColor: avatarBg, overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, boxShadow: '0 2px 6px rgba(0,0,0,0.06)'
                                                                 }}>
-                                                                    <img src={avatarUrl} alt={clientName} style={{ width: '100%', height: '100%', objectFit: 'cover' }} onError={(e) => e.currentTarget.style.display = 'none'} />
+                                                                    <img src={avatarUrl} alt={clientName} style={{ width: '100%', height: '100%', objectFit: 'contain' }} onError={(e) => e.currentTarget.style.display = 'none'} />
                                                                 </div>
-                                                                <span style={{ fontSize: '0.875rem', fontWeight: 600, color: '#111827' }}>
-                                                                    {clientName}
-                                                                </span>
+                                                                <div>
+                                                                    <div style={{ fontSize: '0.9rem', fontWeight: 700, color: '#111827' }}>
+                                                                        {clientName}
+                                                                    </div>
+                                                                    <div style={{ fontSize: '0.75rem', color: '#6b7280', fontWeight: 500 }}>
+                                                                        SL #{h.SL || idx + 1}
+                                                                    </div>
+                                                                </div>
                                                             </div>
                                                         </td>
 
@@ -6717,13 +6744,37 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
 
                             <form onSubmit={handleConfirmQuickBooking} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
                                 <div>
-                                    <label style={{ display: 'block', fontSize: '0.84rem', fontWeight: 700, color: '#334155', marginBottom: '6px' }}>
-                                        Client Name <span style={{ color: '#ef4444' }}>*</span>
-                                    </label>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                                        <label style={{ fontSize: '0.84rem', fontWeight: 700, color: '#334155' }}>
+                                            Client Name <span style={{ color: '#ef4444' }}>*</span>
+                                        </label>
+                                        {quickBookingTarget.clientName.trim() && (
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.78rem', color: '#059669', fontWeight: 600 }}>
+                                                <div style={{
+                                                    width: '24px',
+                                                    height: '24px',
+                                                    borderRadius: '50%',
+                                                    backgroundColor: '#ffd5dc',
+                                                    overflow: 'hidden',
+                                                    display: 'flex',
+                                                    alignItems: 'center',
+                                                    justifyContent: 'center',
+                                                    boxShadow: '0 1px 3px rgba(0,0,0,0.1)'
+                                                }}>
+                                                    <img 
+                                                        src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(quickBookingTarget.clientName.trim())}`}
+                                                        alt="avatar"
+                                                        style={{ width: '100%', height: '100%', objectFit: 'contain' }}
+                                                    />
+                                                </div>
+                                                <span>Avatar Preview</span>
+                                            </div>
+                                        )}
+                                    </div>
                                     <input
                                         type="text"
                                         required
-                                        placeholder="e.g. Tata Motors, Samsung, Local Brand"
+                                        placeholder="e.g. Tata Motors, Samsung, Krishna"
                                         value={quickBookingTarget.clientName}
                                         onChange={(e) => setQuickBookingTarget({ ...quickBookingTarget, clientName: e.target.value })}
                                         style={{ width: '100%', padding: '10px 14px', borderRadius: '10px', border: '1px solid #cbd5e1', fontSize: '0.9rem', outline: 'none' }}
