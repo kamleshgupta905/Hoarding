@@ -1909,11 +1909,31 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
             const targetLat = String(targetSite.Latitude || '').trim();
             const targetLng = String(targetSite.Longitude || '').trim();
 
-            if (formData.STATUS === 'Booked' || formData.STATUS === 'Occupied') {
-                recordSiteBooking(targetSite, fullUpdatedFields);
-            } else if (formData.STATUS === 'Available') {
+            // Preserve existing multi-slot schedules
+            let existingSlots = getSiteBookingSlots(targetSite);
+            if (formData.STATUS === 'Available') {
+                existingSlots = [];
+                saveSiteBookingSlots(targetSite, []);
                 removeSiteBooking(targetSite);
+            } else if (formData.BookedBy && formData.BookingStart && formData.BookingEnd) {
+                // If a slot with these dates doesn't already exist, merge it
+                const alreadyExists = existingSlots.some(s => s.client === formData.BookedBy && s.start === formData.BookingStart && s.end === formData.BookingEnd);
+                if (!alreadyExists) {
+                    const conflict = checkBookingConflict(existingSlots, formData.BookingStart, formData.BookingEnd);
+                    if (!conflict.conflict) {
+                        existingSlots = [...existingSlots, {
+                            id: 'slot-' + Date.now(),
+                            client: formData.BookedBy.trim(),
+                            start: formData.BookingStart,
+                            end: formData.BookingEnd,
+                            status: 'Booked'
+                        }].sort((a, b) => a.start.localeCompare(b.start));
+                        saveSiteBookingSlots(targetSite, existingSlots);
+                    }
+                }
+                recordSiteBooking(targetSite, fullUpdatedFields);
             }
+            fullUpdatedFields.BookingSchedule = existingSlots;
 
             setHoardings(prev => {
                 const next = prev.map(h => {
@@ -3356,15 +3376,50 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                     </div>
                                 </div>
 
-                                <div className="form-row three-cols booking-section animate-in" style={{ 
-                                    background: 'rgba(108, 93, 211, 0.05)', 
-                                    padding: '15px', 
-                                    borderRadius: '12px',
-                                    border: '1px solid rgba(108, 93, 211, 0.1)',
+                                <div style={{ 
+                                    background: 'rgba(108, 93, 211, 0.06)', 
+                                    padding: '16px', 
+                                    borderRadius: '14px',
+                                    border: '1px solid rgba(108, 93, 211, 0.2)',
                                     marginBottom: '20px'
                                 }}>
-                                    <div className="form-group">
-                                        <label>STATUS</label>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px', flexWrap: 'wrap', gap: '8px' }}>
+                                        <div>
+                                            <div style={{ fontWeight: 700, fontSize: '13px', color: '#4338ca', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                                <Calendar size={15} /> Multi-Slot Date Booking & Schedules
+                                            </div>
+                                            <div style={{ fontSize: '11px', color: '#64748b', marginTop: '2px' }}>
+                                                Manage non-overlapping client campaigns & conflict prevention
+                                            </div>
+                                        </div>
+                                        {selectedHoarding && (
+                                            <button 
+                                                type="button"
+                                                onClick={() => {
+                                                    const target = selectedHoarding;
+                                                    setIsEditModalOpen(false);
+                                                    handleStatusClick(target);
+                                                }}
+                                                style={{
+                                                    background: 'linear-gradient(135deg, #6366f1, #8b5cf6)',
+                                                    color: '#fff',
+                                                    border: 'none',
+                                                    padding: '7px 14px',
+                                                    borderRadius: '8px',
+                                                    fontSize: '11px',
+                                                    fontWeight: 700,
+                                                    cursor: 'pointer',
+                                                    boxShadow: '0 2px 6px rgba(99, 102, 241, 0.3)'
+                                                }}
+                                            >
+                                                ⚡ Open Multi-Slot Scheduler
+                                            </button>
+                                        )}
+                                    </div>
+
+                                    <div className="form-row three-cols booking-section animate-in" style={{ padding: 0, margin: 0, border: 'none', background: 'transparent' }}>
+                                        <div className="form-group">
+                                            <label>STATUS</label>
                                         <select 
                                             value={(formData.STATUS === 'Booked' || formData.STATUS === 'Occupied') ? 'Booked' : 'Available'} 
                                             onChange={e => setFormData({...formData, STATUS: e.target.value})}
@@ -3406,6 +3461,7 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                             </div>
                                         </>
                                     )}
+                                    </div>
                                 </div>
 
                                 <div className="form-row">
@@ -6002,14 +6058,14 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                                         <button 
                                                             className="btn-icon-small edit" 
                                                             onClick={() => openEditModal(h)}
-                                                            title="Edit Details"
+                                                            title="Edit Site Details (Location, Size, Price, Photo)"
                                                         >
                                                             <Settings size={16} />
                                                         </button>
                                                         <button
                                                             className={`btn-icon-small ${(h.STATUS === 'Booked' || h.STATUS === 'Occupied') ? 'occupied-btn' : 'available-btn'}`}
                                                             onClick={() => handleStatusClick(h)}
-                                                            title={(h.STATUS === 'Booked' || h.STATUS === 'Occupied') ? 'Click to Mark Available' : 'Click to Book Site'}
+                                                            title="📅 Multi-Slot Date Booking & Schedule Manager"
                                                         >
                                                             {(h.STATUS === 'Booked' || h.STATUS === 'Occupied') ? <CheckCircle size={16} /> : <Calendar size={16} />}
                                                         </button>

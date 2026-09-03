@@ -1,12 +1,12 @@
 {
-  "version": "1.5.2",
-  "buildTimestamp": 1756866000000,
-  "buildDate": "2026-09-03T08:05:00Z",
-  "releaseTag": "v1.5.2",
+  "version": "1.5.3",
+  "buildTimestamp": 1756866600000,
+  "buildDate": "2026-09-03T08:30:00Z",
+  "releaseTag": "v1.5.3",
   "apkUrl": "https://github.com/kamleshgupta905/Hoarding/releases/download/staff-apk-latest/heera-staff-camera.apk",
   "features": [
-    "Fix desktop release binary naming to prevent 404 download errors during auto-update",
-    "Sanitize desktop updater error messages to prevent exposing technical URLs",
-    "Multi-Slot Date Range Booking Engine with Conflict Prevention and Pro-Rata Billing (v1.5.0)"
+    "Bridge Edit Asset modal with Multi-Slot Booking Engine: prevent accidental schedule deletion during site edits",
+    "Add direct Multi-Slot Scheduler launcher button inside Edit Asset modal",
+    "Clarify table button tooltips for Edit Site Details vs Multi-Slot Date Booking"
   ]
 }
