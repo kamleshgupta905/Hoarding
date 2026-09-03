@@ -6033,7 +6033,7 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                         <tr style={{ borderBottom: '1px solid #f3f4f6' }}>
                                             <th style={{ padding: '14px 16px', fontSize: '0.75rem', fontWeight: 600, color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.05em', width: '220px' }}>CLIENT / ADVERTISER</th>
                                             <th style={{ padding: '14px 16px', fontSize: '0.75rem', fontWeight: 600, color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.05em', width: '250px' }}>SITE LOCATION</th>
-                                            <th style={{ padding: '14px 16px', fontSize: '0.75rem', fontWeight: 600, color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.05em', width: '120px' }}>CITY</th>
+                                            <th style={{ padding: '14px 16px', fontSize: '0.75rem', fontWeight: 600, color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.05em', width: '130px' }}>FACING</th>
                                             <th style={{ padding: '14px 16px', fontSize: '0.75rem', fontWeight: 600, color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.05em', width: '130px' }}>RENTAL/MONTH</th>
                                             <th style={{ padding: '14px 16px', fontSize: '0.75rem', fontWeight: 600, color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.05em', width: '180px' }}>BOOKING DATES</th>
                                         </tr>
@@ -6100,16 +6100,16 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                                             </div>
                                                         </td>
 
-                                                        {/* SITE LOCATION, FACING & LAT-LONG */}
+                                                        {/* SITE LOCATION, CITY & LAT-LONG */}
                                                         <td style={{ padding: '16px' }}>
                                                             <div style={{ fontSize: '0.9rem', color: '#111827', fontWeight: 700, marginBottom: '4px' }}>
                                                                 {location}
                                                             </div>
                                                             
                                                             <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '6px', marginBottom: '6px' }}>
-                                                                {facing && (
-                                                                    <span style={{ fontSize: '0.72rem', color: '#4338ca', background: '#e0e7ff', padding: '2px 8px', borderRadius: '4px', fontWeight: 700, border: '1px solid #c7d2fe' }}>
-                                                                        Facing: {facing}
+                                                                {city && (
+                                                                    <span style={{ fontSize: '0.72rem', color: '#374151', background: '#f3f4f6', padding: '2px 8px', borderRadius: '4px', fontWeight: 600, border: '1px solid #e5e7eb' }}>
+                                                                        {city}
                                                                     </span>
                                                                 )}
                                                                 {trafficFlow && (
@@ -6149,10 +6149,10 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                                             )}
                                                         </td>
 
-                                                        {/* CITY */}
+                                                        {/* FACING (Swapped with City) */}
                                                         <td style={{ padding: '16px' }}>
-                                                            <span style={{ padding: '4px 10px', background: '#f3f4f6', borderRadius: '6px', fontSize: '0.75rem', fontWeight: 600, color: '#4b5563' }}>
-                                                                {city}
+                                                            <span style={{ padding: '4px 10px', background: '#e0e7ff', borderRadius: '6px', fontSize: '0.75rem', fontWeight: 700, color: '#4338ca', border: '1px solid #c7d2fe' }}>
+                                                                {facing || 'N/A'}
                                                             </span>
                                                         </td>
 

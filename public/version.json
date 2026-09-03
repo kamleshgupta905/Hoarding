@@ -1,12 +1,12 @@
 {
-  "version": "1.4.5",
-  "buildTimestamp": 1756864500000,
-  "buildDate": "2026-09-03T07:15:00Z",
-  "releaseTag": "v1.4.5",
+  "version": "1.4.6",
+  "buildTimestamp": 1756864800000,
+  "buildDate": "2026-09-03T07:20:00Z",
+  "releaseTag": "v1.4.6",
   "apkUrl": "https://github.com/kamleshgupta905/Hoarding/releases/download/staff-apk-latest/heera-staff-camera.apk",
   "features": [
+    "Swap City and Facing: Dedicated FACING column and City badge in Site Location",
     "Rename Export Proposal button to Export Data on Dashboard",
-    "Prevent Drive GPS photo sync automation from overwriting Bookings and Status in Google Sheets",
     "Display Facing, Traffic Flow, and Clickable Google Maps Lat-Long in Clients & Booking table"
   ]
 }
