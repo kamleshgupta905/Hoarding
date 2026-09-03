@@ -1,12 +1,12 @@
 {
-  "version": "1.4.3",
-  "buildTimestamp": 1756860000000,
-  "buildDate": "2026-09-03T06:00:00Z",
-  "releaseTag": "v1.4.3",
+  "version": "1.4.4",
+  "buildTimestamp": 1756863700000,
+  "buildDate": "2026-09-03T07:02:00Z",
+  "releaseTag": "v1.4.4",
   "apkUrl": "https://github.com/kamleshgupta905/Hoarding/releases/download/staff-apk-latest/heera-staff-camera.apk",
   "features": [
-    "Display Facing, Traffic Flow, and Clickable Google Maps Lat-Long in Clients & Booking table",
-    "QuickMart-style customer cartoon character avatars (DiceBear Avataaars)",
-    "Isolated bookings preventing cross-site collisions"
+    "Prevent Drive GPS photo sync automation from overwriting Bookings and Status in Google Sheets",
+    "Cell-level precision writes for ImageURL in Google Apps Script",
+    "Display Facing, Traffic Flow, and Clickable Google Maps Lat-Long in Clients & Booking table"
   ]
 }

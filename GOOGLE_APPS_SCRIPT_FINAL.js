@@ -2860,6 +2860,7 @@ function syncDrivePhotosByGpsAndFacing_(data) {
 
   var mappedCount = 0;
   var usedFileIds = {};
+  var changedImageRows = [];
 
   for (var i = 1; i < values.length; i++) {
     var site = cleanFull(values[i][idxSite]);
@@ -2937,14 +2938,22 @@ function syncDrivePhotosByGpsAndFacing_(data) {
     if (bestFile) {
       usedFileIds[bestFile.id] = true;
       try { bestFile.file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW); } catch(e) {}
-      values[i][idxImg] = bestFile.url;
-      mappedCount++;
+      var oldUrl = String(values[i][idxImg] || '').trim();
+      if (oldUrl !== bestFile.url) {
+        changedImageRows.push({ row: i + 1, url: bestFile.url });
+        mappedCount++;
+      }
     }
   }
 
-  // Single Bulk Write (Instant update of all 300+ rows)
-  sheet.getRange(1, 1, values.length, headers.length).setValues(values);
-  SpreadsheetApp.flush();
+  // 🛡️ CRITICAL FIX: Only update changed ImageURL cells!
+  // NEVER overwrite other columns (like BookedBy, STATUS, etc.) with stale values!
+  if (changedImageRows.length > 0 && idxImg !== -1) {
+    for (var k = 0; k < changedImageRows.length; k++) {
+      sheet.getRange(changedImageRows[k].row, idxImg + 1).setValue(changedImageRows[k].url);
+    }
+    SpreadsheetApp.flush();
+  }
 
   logDebug("DRIVE GPS SYNC COMPLETE | Matched & synced " + mappedCount + " photos to Google Sheet.");
   return res({
