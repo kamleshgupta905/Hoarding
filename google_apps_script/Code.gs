@@ -1675,12 +1675,13 @@ function updateHoardingDetails(data) {
           if (fieldKey === 'bookedby' && sheetKey === 'bookedby') return true;
           if (fieldKey === 'bookingstart' && sheetKey === 'bookingstart') return true;
           if (fieldKey === 'bookingend' && sheetKey === 'bookingend') return true;
+          if (fieldKey === 'bookingschedule' && sheetKey === 'bookingschedule') return true;
           return false;
         });
         
         // Auto-add missing column if not found
-        if (idx === -1 && (fieldKey === 'status' || fieldKey === 'bookedby' || fieldKey === 'bookingstart' || fieldKey === 'bookingend')) {
-          var colName = fKey === 'STATUS' ? 'STATUS' : (fKey === 'BookedBy' ? 'BookedBy' : (fKey === 'BookingStart' ? 'BookingStart' : 'BookingEnd'));
+        if (idx === -1 && (fieldKey === 'status' || fieldKey === 'bookedby' || fieldKey === 'bookingstart' || fieldKey === 'bookingend' || fieldKey === 'bookingschedule')) {
+          var colName = fKey === 'STATUS' ? 'STATUS' : (fKey === 'BookedBy' ? 'BookedBy' : (fKey === 'BookingStart' ? 'BookingStart' : (fKey === 'BookingEnd' ? 'BookingEnd' : 'BookingSchedule')));
           var newColIndex = sheet.getLastColumn() + 1;
           sheet.getRange(1, newColIndex).setValue(colName);
           headers = getAllHeaders(sheet);
