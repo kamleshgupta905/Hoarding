@@ -1,11 +1,12 @@
 {
-  "version": "1.5.1",
-  "buildTimestamp": 1756865600000,
-  "buildDate": "2026-09-03T07:55:00Z",
-  "releaseTag": "v1.5.1",
+  "version": "1.5.2",
+  "buildTimestamp": 1756866000000,
+  "buildDate": "2026-09-03T08:05:00Z",
+  "releaseTag": "v1.5.2",
   "apkUrl": "https://github.com/kamleshgupta905/Hoarding/releases/download/staff-apk-latest/heera-staff-camera.apk",
   "features": [
-    "Update desktop updater status text from 'Connecting to GitHub...' to 'Connecting to server...'",
+    "Fix desktop release binary naming to prevent 404 download errors during auto-update",
+    "Sanitize desktop updater error messages to prevent exposing technical URLs",
     "Multi-Slot Date Range Booking Engine with Conflict Prevention and Pro-Rata Billing (v1.5.0)"
   ]
 }

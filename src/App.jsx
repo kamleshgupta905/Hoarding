@@ -118,8 +118,17 @@ function AutoUpdateBar() {
 
     window.electronAPI.onUpdateError?.((err) => {
       if (checkTimeoutRef.current) clearTimeout(checkTimeoutRef.current);
-      setUpdateState({ status: 'error', error: err || 'Update check failed' });
-      setTimeout(() => setUpdateState(null), 6000);
+      let errorMsg = 'Update check failed';
+      const raw = String(err || '');
+      if (raw.includes('404')) {
+        errorMsg = 'Update package is synchronizing on server. Retrying soon...';
+      } else if (raw.includes('github') || raw.includes('Cannot download') || raw.includes('net::')) {
+        errorMsg = 'Connecting to update server... Retrying automatically.';
+      } else if (raw) {
+        errorMsg = raw.replace(/https?:\/\/[^\s]+/g, 'server');
+      }
+      setUpdateState({ status: 'error', error: errorMsg });
+      setTimeout(() => setUpdateState(null), 5000);
     });
 
     window.electronAPI.onUpdateProgress?.((p) => {

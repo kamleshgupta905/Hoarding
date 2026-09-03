@@ -42,6 +42,16 @@ jobs:
           Write-Host "Publishing release $tag from draft if needed..."
           gh release edit $tag --draft=false || true
           Write-Host "Ensuring all binaries and latest.yml are attached to release $tag..."
+          Get-ChildItem dist_electron -Filter *.exe | ForEach-Object {
+              $dotName = $_.Name -replace '-', '.' -replace '\.exe$', '.exe'
+              if ($dotName -ne $_.Name) {
+                  Copy-Item $_.FullName (Join-Path $_.DirectoryName $dotName) -Force
+              }
+              $hyphenName = $_.Name -replace '\.', '-' -replace '-exe$', '.exe'
+              if ($hyphenName -ne $_.Name) {
+                  Copy-Item $_.FullName (Join-Path $_.DirectoryName $hyphenName) -Force
+              }
+          }
           Get-ChildItem dist_electron -Filter *.exe | ForEach-Object { gh release upload $tag $_.FullName --clobber }
           Get-ChildItem dist_electron -Filter latest.yml | ForEach-Object { gh release upload $tag $_.FullName --clobber }
           Get-ChildItem dist_electron -Filter *.blockmap | ForEach-Object { gh release upload $tag $_.FullName --clobber }
