@@ -6060,6 +6060,13 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                                 const avatarUrl = `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(clientName)}`;
                                                 const location = String(h['Location '] || h.Location || 'Unknown Location');
                                                 const city = String(h.City || 'Unknown');
+                                                const facing = String(h.Facing || h['Traffic View'] || '').trim();
+                                                const trafficFrom = String(h['Traffic From'] || '').trim();
+                                                const trafficTo = String(h['Traffic To'] || '').trim();
+                                                const trafficFlow = (trafficFrom && trafficTo) ? `${trafficFrom} → ${trafficTo}` : (trafficFrom || trafficTo || '');
+                                                const lat = h.Latitude || '';
+                                                const lng = h.Longitude || '';
+                                                const latLong = String(h['Lat-Long'] || h['Lat Long (Concatenated)'] || (lat && lng ? `${lat}, ${lng}` : '')).trim();
                                                 const price = Number(h['Rental Per Month'] || h['Avg Monthly Cost (INR)'] || 0) || 0;
                                                 const start = h.BookingStart ? new Date(h.BookingStart).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' }) : 'Unknown';
                                                 const end = h.BookingEnd ? new Date(h.BookingEnd).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : 'Ongoing';
@@ -6093,14 +6100,53 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                                             </div>
                                                         </td>
 
-                                                        {/* SITE LOCATION */}
+                                                        {/* SITE LOCATION, FACING & LAT-LONG */}
                                                         <td style={{ padding: '16px' }}>
-                                                            <div style={{ fontSize: '0.875rem', color: '#374151', fontWeight: 500, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                                            <div style={{ fontSize: '0.9rem', color: '#111827', fontWeight: 700, marginBottom: '4px' }}>
                                                                 {location}
                                                             </div>
-                                                            <div style={{ fontSize: '0.75rem', color: '#9ca3af', fontWeight: 400, marginTop: '2px' }}>
-                                                                {h.Media || 'Unipole'} • {h.Dimensions || h.Width + 'x' + h.Height || ''}
+                                                            
+                                                            <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '6px', marginBottom: '6px' }}>
+                                                                {facing && (
+                                                                    <span style={{ fontSize: '0.72rem', color: '#4338ca', background: '#e0e7ff', padding: '2px 8px', borderRadius: '4px', fontWeight: 700, border: '1px solid #c7d2fe' }}>
+                                                                        Facing: {facing}
+                                                                    </span>
+                                                                )}
+                                                                {trafficFlow && (
+                                                                    <span style={{ fontSize: '0.72rem', color: '#4b5563', background: '#f3f4f6', padding: '2px 8px', borderRadius: '4px', fontWeight: 500 }}>
+                                                                        {trafficFlow}
+                                                                    </span>
+                                                                )}
+                                                                <span style={{ fontSize: '0.75rem', color: '#6b7280', fontWeight: 500 }}>
+                                                                    {h.Media || 'Unipole'} • {h.Dimensions || (h.Width && h.Height ? `${h.Width}×${h.Height} ft` : (h.Width || ''))}
+                                                                </span>
                                                             </div>
+
+                                                            {latLong && (
+                                                                <a 
+                                                                    href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(latLong)}`} 
+                                                                    target="_blank" 
+                                                                    rel="noopener noreferrer"
+                                                                    style={{ 
+                                                                        display: 'inline-flex', 
+                                                                        alignItems: 'center', 
+                                                                        gap: '4px', 
+                                                                        fontSize: '0.72rem', 
+                                                                        color: '#dc2626', 
+                                                                        background: '#fef2f2', 
+                                                                        padding: '2px 8px', 
+                                                                        borderRadius: '4px', 
+                                                                        textDecoration: 'none', 
+                                                                        fontWeight: 600,
+                                                                        border: '1px solid #fee2e2',
+                                                                        transition: 'all 0.15s ease'
+                                                                    }}
+                                                                    title="Open in Google Maps"
+                                                                >
+                                                                    <MapPin size={11} color="#dc2626" />
+                                                                    <span>{latLong}</span>
+                                                                </a>
+                                                            )}
                                                         </td>
 
                                                         {/* CITY */}
