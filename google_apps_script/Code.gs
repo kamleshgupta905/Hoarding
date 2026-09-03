@@ -667,7 +667,11 @@ function submitOperation_(data) {
   var operation = data.operation || {};
   var operationId = String(operation.operationId || Utilities.getUuid());
   var intakeLock = LockService.getScriptLock();
-  intakeLock.waitLock(30000);
+  var hasIntakeLock = false;
+  try {
+    if (intakeLock.tryLock(5000)) hasIntakeLock = true;
+  } catch (lockErr) {}
+
   try {
     var existing = findOperation_(operationId);
     if (existing) {
@@ -683,7 +687,9 @@ function submitOperation_(data) {
     ]);
     SpreadsheetApp.flush();
   } finally {
-    intakeLock.releaseLock();
+    if (hasIntakeLock) {
+      try { intakeLock.releaseLock(); } catch (e) {}
+    }
   }
 
   try {

@@ -1,13 +1,12 @@
 {
-  "version": "1.4.1",
-  "buildTimestamp": 1756858500000,
-  "buildDate": "2026-09-03T05:35:00Z",
-  "releaseTag": "v1.4.1",
+  "version": "1.4.2",
+  "buildTimestamp": 1756859000000,
+  "buildDate": "2026-09-03T05:42:00Z",
+  "releaseTag": "v1.4.2",
   "apkUrl": "https://github.com/kamleshgupta905/Hoarding/releases/download/staff-apk-latest/heera-staff-camera.apk",
   "features": [
-    "QuickMart-style illustrated cartoon character customer avatars (DiceBear Avataaars)",
-    "Customer character avatars in Clients & Booking tab and Master Inventory table",
-    "Live customer character avatar preview in Quick Booking modal",
-    "Strict isolation of bookings by direction/facing"
+    "Fix Google Apps Script Lock timeout to ensure Desktop bookings write directly to Google Sheets",
+    "Real-time cross-device sync between Desktop App and Website",
+    "QuickMart-style customer cartoon character avatars (DiceBear Avataaars)"
   ]
 }
