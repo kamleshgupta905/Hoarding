@@ -369,39 +369,50 @@ function App() {
       });
     }
 
-    // Overlay active local bookings so remote CDN caching cannot clobber fresh local bookings
+    // Overlay active local bookings and multi-slot schedules so remote CDN caching cannot clobber fresh local bookings
     try {
       const localBookings = getLocalBookings();
-      if (localBookings && Object.keys(localBookings).length > 0) {
-        for (let i = 0; i < mergedList.length; i++) {
-          const item = mergedList[i];
-          const keys = getSiteBookingKeys(item);
-          for (const k of keys) {
-            const lb = localBookings[k];
-            if (lb) {
-              if (lb.STATUS === 'Available') {
-                mergedList[i] = {
-                  ...mergedList[i],
-                  STATUS: 'Available',
-                  status: 'Available',
-                  Status: 'Available',
-                  BookedBy: '',
-                  BookingStart: '',
-                  BookingEnd: ''
-                };
-              } else if (lb.STATUS === 'Booked' || lb.STATUS === 'Occupied') {
-                mergedList[i] = {
-                  ...mergedList[i],
-                  STATUS: lb.STATUS,
-                  status: lb.STATUS,
-                  Status: lb.STATUS,
-                  BookedBy: lb.BookedBy || mergedList[i].BookedBy || '',
-                  BookingStart: lb.BookingStart || mergedList[i].BookingStart || '',
-                  BookingEnd: lb.BookingEnd || mergedList[i].BookingEnd || ''
-                };
-              }
-              break;
+      const rawSchedules = localStorage.getItem('adh_booking_schedules');
+      const localSchedules = rawSchedules ? JSON.parse(rawSchedules) : {};
+
+      for (let i = 0; i < mergedList.length; i++) {
+        const item = mergedList[i];
+        const keys = getSiteBookingKeys(item);
+        
+        // Overlay multi-slot schedule if present locally
+        for (const k of keys) {
+          if (Array.isArray(localSchedules[k]) && localSchedules[k].length > 0) {
+            mergedList[i].BookingSchedule = localSchedules[k];
+            break;
+          }
+        }
+
+        // Overlay primary status/dates
+        for (const k of keys) {
+          const lb = localBookings[k];
+          if (lb) {
+            if (lb.STATUS === 'Available') {
+              mergedList[i] = {
+                ...mergedList[i],
+                STATUS: 'Available',
+                status: 'Available',
+                Status: 'Available',
+                BookedBy: '',
+                BookingStart: '',
+                BookingEnd: ''
+              };
+            } else if (lb.STATUS === 'Booked' || lb.STATUS === 'Occupied') {
+              mergedList[i] = {
+                ...mergedList[i],
+                STATUS: lb.STATUS,
+                status: lb.STATUS,
+                Status: lb.STATUS,
+                BookedBy: lb.BookedBy || mergedList[i].BookedBy || '',
+                BookingStart: lb.BookingStart || mergedList[i].BookingStart || '',
+                BookingEnd: lb.BookingEnd || mergedList[i].BookingEnd || ''
+              };
             }
+            break;
           }
         }
       }

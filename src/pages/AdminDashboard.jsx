@@ -13,7 +13,7 @@ import {
     Star, FileSpreadsheet, Presentation, Loader2
 } from 'lucide-react';
 import { analyzeHoardingImage, extractSiteCoordinates } from '../services/aiService';
-import { fetchHoardings, compressImage, syncToGoogleSheet, exportProposalExcel, PROPOSAL_COLUMNS, getImageUrl, downloadHoardingImage, fetchStaffUploads, reviewStaffPhoto, detectStaffPhotoOrientation, fetchSheetGrid, saveSheetGrid, addDeletedSite, parseHistoryString, saveLocalBooking, clearLocalBooking, recordSiteBooking, removeSiteBooking } from '../services/dataService';
+import { fetchHoardings, compressImage, syncToGoogleSheet, exportProposalExcel, PROPOSAL_COLUMNS, getImageUrl, downloadHoardingImage, fetchStaffUploads, reviewStaffPhoto, detectStaffPhotoOrientation, fetchSheetGrid, saveSheetGrid, addDeletedSite, parseHistoryString, saveLocalBooking, clearLocalBooking, recordSiteBooking, removeSiteBooking, getSiteBookingSlots, checkBookingConflict, calculateProRataRental, resolveSiteLiveStatus, saveSiteBookingSlots } from '../services/dataService';
 import { generateMasterMediaPlanPptx } from '../services/presentationService';
 import ImageLightbox from '../components/ImageLightbox';
 import { clearAdminSession, getAdminSession, getStaffUploadLink, postDirect } from '../services/secureApi';
@@ -1428,20 +1428,82 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
 
     const handleStatusClick = (h) => {
         if (!h) return;
-        const isBooked = (h.STATUS || '').toLowerCase() === 'booked' || (h.STATUS || '').toLowerCase() === 'occupied';
-        if (isBooked) {
-            toggleStatusToAvailable(h);
-        } else {
-            const today = new Date().toISOString().split('T')[0];
-            // eslint-disable-next-line react-hooks/purity
-            const nextMonth = new Date(Date.now() + 30 * 86400000).toISOString().split('T')[0];
+        const today = new Date().toISOString().split('T')[0];
+        const nextMonth = new Date(Date.now() + 30 * 86400000).toISOString().split('T')[0];
+        setQuickBookingTarget({
+            site: h,
+            clientName: '',
+            startDate: today,
+            endDate: nextMonth
+        });
+    };
+
+    const handleRemoveSlot = (targetSite, slotId) => {
+        if (!targetSite || !slotId) return;
+        const currentSlots = getSiteBookingSlots(targetSite);
+        const updatedSlots = currentSlots.filter(s => s.id !== slotId);
+        
+        saveSiteBookingSlots(targetSite, updatedSlots);
+
+        const liveStatus = resolveSiteLiveStatus({ ...targetSite, BookingSchedule: updatedSlots });
+        const primarySlot = liveStatus.slot || updatedSlots[0];
+
+        const bookingUpdates = {
+            STATUS: liveStatus.status === 'Available' ? 'Available' : 'Booked',
+            status: liveStatus.status === 'Available' ? 'Available' : 'Booked',
+            Status: liveStatus.status === 'Available' ? 'Available' : 'Booked',
+            BookedBy: primarySlot ? primarySlot.client : '',
+            BookingStart: primarySlot ? primarySlot.start : '',
+            BookingEnd: primarySlot ? primarySlot.end : '',
+            BookingSchedule: updatedSlots
+        };
+
+        const targetSL = targetSite.SL || targetSite["S. No."] || targetSite["SL NO"];
+        const targetId = targetSite.UniqueID || targetSite["Unique ID"] || targetSite.ID || targetSite._SiteID;
+
+        setHoardings(prev => {
+            const next = prev.map(h => {
+                let isMatch = (h === targetSite);
+                if (!isMatch && targetId && (h.UniqueID || h["Unique ID"] || h.ID || h._SiteID)) {
+                    isMatch = String(h.UniqueID || h["Unique ID"] || h.ID || h._SiteID).trim().toLowerCase() === String(targetId).trim().toLowerCase();
+                }
+                if (!isMatch && targetSL && (h.SL || h["S. No."] || h["SL NO"])) {
+                    isMatch = String(h.SL || h["S. No."] || h["SL NO"]).trim() === String(targetSL).trim();
+                }
+                return isMatch ? { ...h, ...bookingUpdates } : h;
+            });
+            try {
+                localStorage.setItem('hoardings_cache', JSON.stringify(next));
+                localStorage.setItem('last_hoardings_update', Date.now().toString());
+            } catch {}
+            return next;
+        });
+
+        if (quickBookingTarget && (quickBookingTarget.site === targetSite || String(quickBookingTarget.site.SL) === String(targetSite.SL))) {
             setQuickBookingTarget({
-                site: h,
-                clientName: h.BookedBy || h.ClientName || h["Client Name"] || '',
-                startDate: h.BookingStart || today,
-                endDate: h.BookingEnd || nextMonth
+                ...quickBookingTarget,
+                site: { ...targetSite, ...bookingUpdates }
             });
         }
+
+        showToast("Booking slot released!", "info");
+
+        syncToGoogleSheet({
+            action: 'updateHoarding',
+            siteName: targetSite["Locality Site Location"] || targetSite["Location "] || targetSite.Location,
+            siteId: targetId || '',
+            sl: targetSL || '',
+            fields: {
+                ...targetSite,
+                ...bookingUpdates,
+                BookingSchedule: JSON.stringify(updatedSlots),
+                SL: targetSL || targetSite.SL || '',
+                _SiteID: targetId || targetSite._SiteID || '',
+                status: bookingUpdates.STATUS,
+                Status: bookingUpdates.STATUS,
+                STATUS: bookingUpdates.STATUS
+            }
+        }).catch(err => console.warn("Remove slot background sync:", err));
     };
 
     const handleConfirmQuickBooking = async (e) => {
@@ -1458,6 +1520,13 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
             return;
         }
 
+        const existingSlots = getSiteBookingSlots(site);
+        const conflict = checkBookingConflict(existingSlots, startDate, endDate);
+        if (conflict.conflict) {
+            showToast(`Cannot book: ${conflict.reason}`, "error");
+            return;
+        }
+
         const targetSite = site;
         const targetSL = targetSite.SL || targetSite["S. No."] || targetSite["SL NO"];
         const targetId = targetSite.UniqueID || targetSite["Unique ID"] || targetSite.ID || targetSite._SiteID;
@@ -1466,13 +1535,34 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
         const targetLat = String(targetSite.Latitude || '').trim();
         const targetLng = String(targetSite.Longitude || '').trim();
 
-        const bookingUpdates = {
-            STATUS: 'Booked',
+        const proRata = calculateProRataRental(targetSite['Rental Per Month'] || targetSite['Avg Monthly Cost (INR)'] || 0, startDate, endDate);
+
+        const newSlot = {
+            id: 'slot-' + Date.now(),
+            client: clientName.trim(),
+            start: startDate,
+            end: endDate,
+            days: proRata.days,
+            amount: proRata.total,
             status: 'Booked',
-            Status: 'Booked',
-            BookedBy: clientName.trim(),
-            BookingStart: startDate,
-            BookingEnd: endDate
+            createdAt: new Date().toISOString()
+        };
+
+        const updatedSlots = [...existingSlots, newSlot].sort((a, b) => a.start.localeCompare(b.start));
+
+        saveSiteBookingSlots(targetSite, updatedSlots);
+
+        const liveStatus = resolveSiteLiveStatus({ ...targetSite, BookingSchedule: updatedSlots });
+        const primarySlot = liveStatus.slot || updatedSlots[0];
+
+        const bookingUpdates = {
+            STATUS: liveStatus.status === 'Available' ? 'Available' : 'Booked',
+            status: liveStatus.status === 'Available' ? 'Available' : 'Booked',
+            Status: liveStatus.status === 'Available' ? 'Available' : 'Booked',
+            BookedBy: primarySlot ? primarySlot.client : '',
+            BookingStart: primarySlot ? primarySlot.start : '',
+            BookingEnd: primarySlot ? primarySlot.end : '',
+            BookingSchedule: updatedSlots
         };
 
         // 1. Instantly update React state & cache with precision targeting
@@ -1507,10 +1597,8 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
             return next;
         });
 
-        recordSiteBooking(targetSite, bookingUpdates);
-
         setQuickBookingTarget(null);
-        showToast(`Site Booked for ${clientName}!`, "success");
+        showToast(`Site Booked for ${clientName}! (${startDate} → ${endDate})`, "success");
 
         // 2. Background sync to Google Sheet
         syncToGoogleSheet({
@@ -1521,11 +1609,12 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
             fields: {
                 ...targetSite,
                 ...bookingUpdates,
+                BookingSchedule: JSON.stringify(updatedSlots),
                 SL: targetSL || targetSite.SL || '',
                 _SiteID: targetId || targetSite._SiteID || '',
-                status: 'Booked',
-                Status: 'Booked',
-                STATUS: 'Booked'
+                status: bookingUpdates.STATUS,
+                Status: bookingUpdates.STATUS,
+                STATUS: bookingUpdates.STATUS
             }
         }).catch(err => console.warn("Booking background sync:", err));
     };
@@ -1538,6 +1627,7 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
         const targetLat = String(targetSite.Latitude || '').trim();
         const targetLng = String(targetSite.Longitude || '').trim();
 
+        saveSiteBookingSlots(targetSite, []);
         removeSiteBooking(targetSite);
 
         const availableUpdates = {
@@ -1546,7 +1636,8 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
             Status: 'Available',
             BookedBy: '',
             BookingStart: '',
-            BookingEnd: ''
+            BookingEnd: '',
+            BookingSchedule: []
         };
 
         setHoardings(prev => {
@@ -1580,9 +1671,8 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
             return next;
         });
 
-        showToast("Site marked as Available!", "success");
+        showToast("Site released to Available!", "info");
 
-        // Background sync to Google Sheet
         syncToGoogleSheet({
             action: 'updateHoarding',
             siteName: targetSite["Locality Site Location"] || targetSite["Location "] || targetSite.Location,
@@ -1591,13 +1681,14 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
             fields: {
                 ...targetSite,
                 ...availableUpdates,
+                BookingSchedule: '[]',
                 SL: targetSL || targetSite.SL || '',
                 _SiteID: targetId || targetSite._SiteID || '',
                 status: 'Available',
                 Status: 'Available',
                 STATUS: 'Available'
             }
-        }).catch(err => console.warn("Available background sync:", err));
+        }).catch(err => console.warn("Reset available background sync:", err));
     };
 
     const handleAddAsset = async (e) => {
@@ -5834,38 +5925,69 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                                     )}
                                                 </td>
                                                 <td>
-                                                    <span className={`status-pill ${(h.STATUS === 'Booked' || h.STATUS === 'Occupied') ? 'occupied' : 'available'}`}>
-                                                        {(h.STATUS === 'Booked' || h.STATUS === 'Occupied') ? 'Booked' : 'Available'}
-                                                    </span>
-                                                    {(h.STATUS === 'Booked' || h.STATUS === 'Occupied') && (
-                                                        <div className="table-booking-info" style={{ fontSize: '10px', marginTop: '4px', color: '#808191' }}>
-                                                            {h.BookedBy && (
-                                                                <div title="Client Name" style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '3px' }}>
-                                                                    <div style={{
-                                                                        width: '20px',
-                                                                        height: '20px',
-                                                                        borderRadius: '50%',
-                                                                        backgroundColor: ['#ffd5dc', '#ffdfbf', '#b6e3f4', '#c0aede', '#d1d4f9', '#fed7aa', '#fbcfe8', '#e9d5ff'][(h.BookedBy.length + (parseInt(h.SL, 10) || 0)) % 8],
-                                                                        overflow: 'hidden',
+                                                    {(() => {
+                                                        const live = resolveSiteLiveStatus(h);
+                                                        return (
+                                                            <div>
+                                                                <span 
+                                                                    onClick={() => handleStatusClick(h)}
+                                                                    style={{
+                                                                        padding: '4px 10px',
+                                                                        borderRadius: '20px',
+                                                                        fontSize: '0.75rem',
+                                                                        fontWeight: 700,
+                                                                        color: live.badgeColor,
+                                                                        background: live.badgeBg,
+                                                                        border: `1px solid ${live.badgeBorder}`,
                                                                         display: 'inline-flex',
                                                                         alignItems: 'center',
-                                                                        justifyContent: 'center',
-                                                                        flexShrink: 0,
-                                                                        boxShadow: '0 1px 3px rgba(0,0,0,0.08)'
-                                                                    }}>
-                                                                        <img 
-                                                                            src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(h.BookedBy)}`} 
-                                                                            alt={h.BookedBy}
-                                                                            style={{ width: '100%', height: '100%', objectFit: 'contain' }}
-                                                                        />
+                                                                        gap: '5px',
+                                                                        cursor: 'pointer'
+                                                                    }}
+                                                                    title="Click to view schedules or book slot"
+                                                                >
+                                                                    <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: live.badgeColor }}></span>
+                                                                    {live.text}
+                                                                </span>
+
+                                                                {live.status === 'Booked' && live.slot && (
+                                                                    <div className="table-booking-info" style={{ fontSize: '10px', marginTop: '4px', color: '#808191' }}>
+                                                                        {live.slot.client && (
+                                                                            <div title="Client Name" style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '3px' }}>
+                                                                                <div style={{
+                                                                                    width: '20px',
+                                                                                    height: '20px',
+                                                                                    borderRadius: '50%',
+                                                                                    backgroundColor: ['#ffd5dc', '#ffdfbf', '#b6e3f4', '#c0aede', '#d1d4f9', '#fed7aa', '#fbcfe8', '#e9d5ff'][(live.slot.client.length + (parseInt(h.SL, 10) || 0)) % 8],
+                                                                                    overflow: 'hidden',
+                                                                                    display: 'inline-flex',
+                                                                                    alignItems: 'center',
+                                                                                    justifyContent: 'center',
+                                                                                    flexShrink: 0,
+                                                                                    boxShadow: '0 1px 3px rgba(0,0,0,0.08)'
+                                                                                }}>
+                                                                                    <img 
+                                                                                        src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(live.slot.client)}`} 
+                                                                                        alt={live.slot.client}
+                                                                                        style={{ width: '100%', height: '100%', objectFit: 'contain' }}
+                                                                                    />
+                                                                                </div>
+                                                                                <span style={{ fontWeight: 700, color: '#111827' }}>{live.slot.client}</span>
+                                                                            </div>
+                                                                        )}
+                                                                        {live.slot.start && <div title="Start Date">Start: {new Date(live.slot.start).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}</div>}
+                                                                        {live.slot.end && <div title="Expiry Date">📅 {new Date(live.slot.end).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}</div>}
                                                                     </div>
-                                                                    <span style={{ fontWeight: 700, color: '#111827' }}>{h.BookedBy}</span>
-                                                                </div>
-                                                            )}
-                                                            {h.BookingStart && <div title="Start Date">Start: {new Date(h.BookingStart).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}</div>}
-                                                            {h.BookingEnd && <div title="Expiry Date">📅 {new Date(h.BookingEnd).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}</div>}
-                                                        </div>
-                                                    )}
+                                                                )}
+
+                                                                {live.status === 'Upcoming' && live.slot && (
+                                                                    <div style={{ fontSize: '10px', marginTop: '4px', color: '#b45309', fontWeight: 600 }}>
+                                                                        ⏳ {live.subtext}
+                                                                    </div>
+                                                                )}
+                                                            </div>
+                                                        );
+                                                    })()}
                                                 </td>
                                                 <td>
                                                     <div className="action-row">
@@ -5969,16 +6091,44 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                 )}
 
                 {activeTab === 'clients' && (() => {
-                    const allBookedSites = hoardings.filter(h => h && h.BookedBy && String(h.BookedBy).trim() !== '');
+                    const allBookings = [];
+                    hoardings.forEach(h => {
+                        const slots = getSiteBookingSlots(h);
+                        slots.forEach(slot => {
+                            const proRata = calculateProRataRental(
+                                h['Rental Per Month'] || h['Avg Monthly Cost (INR)'] || 0,
+                                slot.start,
+                                slot.end
+                            );
+                            allBookings.push({
+                                site: h,
+                                slot: slot,
+                                clientName: String(slot.client || h.BookedBy || 'Client').trim(),
+                                location: String(h['Location '] || h.Location || h['Locality Site Location'] || 'Unknown Location'),
+                                city: String(h.City || 'Unknown'),
+                                facing: String(h.Facing || h['Traffic View'] || '').trim(),
+                                trafficFrom: String(h['Traffic From'] || '').trim(),
+                                trafficTo: String(h['Traffic To'] || '').trim(),
+                                trafficFlow: (h['Traffic From'] && h['Traffic To']) ? `${h['Traffic From']} → ${h['Traffic To']}` : (h['Traffic From'] || h['Traffic To'] || ''),
+                                latLong: String(h['Lat-Long'] || h['Lat Long (Concatenated)'] || (h.Latitude && h.Longitude ? `${h.Latitude}, ${h.Longitude}` : '')).trim(),
+                                monthlyPrice: Number(h['Rental Per Month'] || h['Avg Monthly Cost (INR)'] || 0) || 0,
+                                proRataAmount: slot.amount || proRata.total,
+                                proRataDays: slot.days || proRata.days,
+                                start: slot.start,
+                                end: slot.end
+                            });
+                        });
+                    });
 
                     // Search filter
-                    const filteredSites = allBookedSites.filter(h => {
+                    const filteredBookings = allBookings.filter(b => {
                         const search = clientSearchTerm.toLowerCase().trim();
                         if (!search) return true;
-                        const bookedBy = String(h.BookedBy || '').toLowerCase();
-                        const location = String(h['Location '] || h.Location || '').toLowerCase();
-                        const city = String(h.City || '').toLowerCase();
-                        return bookedBy.includes(search) || location.includes(search) || city.includes(search);
+                        const client = b.clientName.toLowerCase();
+                        const loc = b.location.toLowerCase();
+                        const city = b.city.toLowerCase();
+                        const facing = b.facing.toLowerCase();
+                        return client.includes(search) || loc.includes(search) || city.includes(search) || facing.includes(search);
                     });
 
                     // Avatar backgrounds from QuickMart palette
@@ -6005,7 +6155,7 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                     Clients & Booking
                                 </h1>
                                 <p style={{ color: '#6b7280', fontSize: '0.8125rem', margin: 0, fontWeight: 400 }}>
-                                    {allBookedSites.length} active bookings across all media locations
+                                    {allBookings.length} active & scheduled bookings across all media locations
                                 </p>
                             </div>
 
@@ -6014,7 +6164,7 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                 <div style={{ background: '#f3f4f6', borderRadius: '9999px', padding: '10px 20px', display: 'flex', alignItems: 'center', gap: '12px' }}>
                                     <Search size={18} color="#9ca3af" />
                                     <input 
-                                        type="text"
+                                        type="text" 
                                         placeholder="Search bookings by client, location or city..."
                                         value={clientSearchTerm}
                                         onChange={(e) => setClientSearchTerm(e.target.value)}
@@ -6028,20 +6178,21 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
 
                             {/* 📋 Bookings Table */}
                             <div style={{ background: '#ffffff', borderRadius: '16px', padding: '20px 24px', border: '1px solid #f3f4f6', boxShadow: '0 1px 3px rgba(0,0,0,0.03)', overflowX: 'auto' }}>
-                                <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', minWidth: '900px' }}>
+                                <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', minWidth: '940px' }}>
                                     <thead>
                                         <tr style={{ borderBottom: '1px solid #f3f4f6' }}>
-                                            <th style={{ padding: '14px 16px', fontSize: '0.75rem', fontWeight: 600, color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.05em', width: '220px' }}>CLIENT / ADVERTISER</th>
+                                            <th style={{ padding: '14px 16px', fontSize: '0.75rem', fontWeight: 600, color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.05em', width: '210px' }}>CLIENT / ADVERTISER</th>
                                             <th style={{ padding: '14px 16px', fontSize: '0.75rem', fontWeight: 600, color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.05em', width: '250px' }}>SITE LOCATION</th>
-                                            <th style={{ padding: '14px 16px', fontSize: '0.75rem', fontWeight: 600, color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.05em', width: '130px' }}>FACING</th>
-                                            <th style={{ padding: '14px 16px', fontSize: '0.75rem', fontWeight: 600, color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.05em', width: '130px' }}>RENTAL/MONTH</th>
+                                            <th style={{ padding: '14px 16px', fontSize: '0.75rem', fontWeight: 600, color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.05em', width: '110px' }}>FACING</th>
+                                            <th style={{ padding: '14px 16px', fontSize: '0.75rem', fontWeight: 600, color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.05em', width: '150px' }}>RENTAL / VALUE</th>
                                             <th style={{ padding: '14px 16px', fontSize: '0.75rem', fontWeight: 600, color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.05em', width: '180px' }}>BOOKING DATES</th>
+                                            <th style={{ padding: '14px 16px', fontSize: '0.75rem', fontWeight: 600, color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.05em', width: '90px', textAlign: 'center' }}>ACTION</th>
                                         </tr>
                                     </thead>
                                     <tbody>
-                                        {filteredSites.length === 0 ? (
+                                        {filteredBookings.length === 0 ? (
                                             <tr>
-                                                <td colSpan={5} style={{ padding: '60px 20px', textAlign: 'center' }}>
+                                                <td colSpan={6} style={{ padding: '60px 20px', textAlign: 'center' }}>
                                                     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '12px' }}>
                                                         <div style={{ width: '52px', height: '52px', borderRadius: '50%', background: '#f3f4f6', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#9ca3af' }}>
                                                             <Calendar size={24} />
@@ -6054,28 +6205,22 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                                 </td>
                                             </tr>
                                         ) : (
-                                            filteredSites.map((h, idx) => {
-                                                const clientName = String(h.BookedBy).trim();
+                                            filteredBookings.map((b, idx) => {
+                                                const clientName = b.clientName;
                                                 const avatarBg = avatarBgs[idx % avatarBgs.length];
                                                 const avatarUrl = `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(clientName)}`;
-                                                const location = String(h['Location '] || h.Location || 'Unknown Location');
-                                                const city = String(h.City || 'Unknown');
-                                                const facing = String(h.Facing || h['Traffic View'] || '').trim();
-                                                const trafficFrom = String(h['Traffic From'] || '').trim();
-                                                const trafficTo = String(h['Traffic To'] || '').trim();
-                                                const trafficFlow = (trafficFrom && trafficTo) ? `${trafficFrom} → ${trafficTo}` : (trafficFrom || trafficTo || '');
-                                                const lat = h.Latitude || '';
-                                                const lng = h.Longitude || '';
-                                                const latLong = String(h['Lat-Long'] || h['Lat Long (Concatenated)'] || (lat && lng ? `${lat}, ${lng}` : '')).trim();
-                                                const price = Number(h['Rental Per Month'] || h['Avg Monthly Cost (INR)'] || 0) || 0;
-                                                const start = h.BookingStart ? new Date(h.BookingStart).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' }) : 'Unknown';
-                                                const end = h.BookingEnd ? new Date(h.BookingEnd).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : 'Ongoing';
+                                                const start = b.start ? new Date(b.start).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' }) : 'Unknown';
+                                                const end = b.end ? new Date(b.end).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : 'Ongoing';
                                                 
+                                                const todayStr = new Date().toISOString().split('T')[0];
+                                                const isCurrent = b.start <= todayStr && b.end >= todayStr;
+                                                const isFuture = b.start > todayStr;
+
                                                 return (
                                                     <tr 
-                                                        key={idx}
+                                                        key={`${b.site.SL || idx}-${b.slot.id || idx}`}
                                                         style={{ 
-                                                            borderBottom: idx === filteredSites.length - 1 ? 'none' : '1px solid #f3f4f6',
+                                                            borderBottom: idx === filteredBookings.length - 1 ? 'none' : '1px solid #f3f4f6',
                                                             transition: 'background 0.15s ease'
                                                         }}
                                                         onMouseEnter={(e) => e.currentTarget.style.background = '#f9fafb'}
@@ -6094,7 +6239,7 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                                                         {clientName}
                                                                     </div>
                                                                     <div style={{ fontSize: '0.75rem', color: '#6b7280', fontWeight: 500 }}>
-                                                                        SL #{h.SL || idx + 1}
+                                                                        SL #{b.site.SL || idx + 1}
                                                                     </div>
                                                                 </div>
                                                             </div>
@@ -6103,28 +6248,28 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                                         {/* SITE LOCATION, CITY & LAT-LONG */}
                                                         <td style={{ padding: '16px' }}>
                                                             <div style={{ fontSize: '0.9rem', color: '#111827', fontWeight: 700, marginBottom: '4px' }}>
-                                                                {location}
+                                                                {b.location}
                                                             </div>
                                                             
                                                             <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '6px', marginBottom: '6px' }}>
-                                                                {city && (
+                                                                {b.city && (
                                                                     <span style={{ fontSize: '0.72rem', color: '#374151', background: '#f3f4f6', padding: '2px 8px', borderRadius: '4px', fontWeight: 600, border: '1px solid #e5e7eb' }}>
-                                                                        {city}
+                                                                        {b.city}
                                                                     </span>
                                                                 )}
-                                                                {trafficFlow && (
+                                                                {b.trafficFlow && (
                                                                     <span style={{ fontSize: '0.72rem', color: '#4b5563', background: '#f3f4f6', padding: '2px 8px', borderRadius: '4px', fontWeight: 500 }}>
-                                                                        {trafficFlow}
+                                                                        {b.trafficFlow}
                                                                     </span>
                                                                 )}
                                                                 <span style={{ fontSize: '0.75rem', color: '#6b7280', fontWeight: 500 }}>
-                                                                    {h.Media || 'Unipole'} • {h.Dimensions || (h.Width && h.Height ? `${h.Width}×${h.Height} ft` : (h.Width || ''))}
+                                                                    {b.site.Media || 'Unipole'} • {b.site.Dimensions || (b.site.Width && b.site.Height ? `${b.site.Width}×${b.site.Height} ft` : (b.site.Width || ''))}
                                                                 </span>
                                                             </div>
 
-                                                            {latLong && (
+                                                            {b.latLong && (
                                                                 <a 
-                                                                    href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(latLong)}`} 
+                                                                    href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(b.latLong)}`} 
                                                                     target="_blank" 
                                                                     rel="noopener noreferrer"
                                                                     style={{ 
@@ -6144,30 +6289,74 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                                                     title="Open in Google Maps"
                                                                 >
                                                                     <MapPin size={11} color="#dc2626" />
-                                                                    <span>{latLong}</span>
+                                                                    <span>{b.latLong}</span>
                                                                 </a>
                                                             )}
                                                         </td>
 
-                                                        {/* FACING (Swapped with City) */}
+                                                        {/* FACING */}
                                                         <td style={{ padding: '16px' }}>
                                                             <span style={{ padding: '4px 10px', background: '#e0e7ff', borderRadius: '6px', fontSize: '0.75rem', fontWeight: 700, color: '#4338ca', border: '1px solid #c7d2fe' }}>
-                                                                {facing || 'N/A'}
+                                                                {b.facing || 'N/A'}
                                                             </span>
                                                         </td>
 
-                                                        {/* RENTAL / MONTH */}
+                                                        {/* RENTAL / VALUE (Pro-Rata) */}
                                                         <td style={{ padding: '16px' }}>
-                                                            <span style={{ fontSize: '0.9375rem', fontWeight: 700, color: '#10b981' }}>
-                                                                ₹{price.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                                                            </span>
+                                                            <div style={{ fontSize: '0.9375rem', fontWeight: 700, color: '#10b981' }}>
+                                                                ₹{Number(b.proRataAmount).toLocaleString('en-IN')}
+                                                            </div>
+                                                            <div style={{ fontSize: '0.72rem', color: '#6b7280' }}>
+                                                                ₹{Number(b.monthlyPrice).toLocaleString('en-IN')}/mo • {b.proRataDays} days
+                                                            </div>
                                                         </td>
 
                                                         {/* BOOKING DATES */}
                                                         <td style={{ padding: '16px' }}>
-                                                            <div style={{ fontSize: '0.8125rem', color: '#4b5563', fontWeight: 500 }}>
+                                                            <div style={{ fontSize: '0.8125rem', color: '#1e293b', fontWeight: 600 }}>
                                                                 {start} → {end}
                                                             </div>
+                                                            <div style={{ marginTop: '3px' }}>
+                                                                {isCurrent ? (
+                                                                    <span style={{ fontSize: '0.68rem', padding: '1px 6px', background: '#fee2e2', color: '#b91c1c', borderRadius: '4px', fontWeight: 700 }}>
+                                                                        ● Active Today
+                                                                    </span>
+                                                                ) : isFuture ? (
+                                                                    <span style={{ fontSize: '0.68rem', padding: '1px 6px', background: '#fef3c7', color: '#b45309', borderRadius: '4px', fontWeight: 700 }}>
+                                                                        ⏳ Upcoming Slot
+                                                                    </span>
+                                                                ) : (
+                                                                    <span style={{ fontSize: '0.68rem', padding: '1px 6px', background: '#f1f5f9', color: '#64748b', borderRadius: '4px', fontWeight: 600 }}>
+                                                                        Completed
+                                                                    </span>
+                                                                )}
+                                                            </div>
+                                                        </td>
+
+                                                        {/* ACTION */}
+                                                        <td style={{ padding: '16px', textAlign: 'center' }}>
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => handleRemoveSlot(b.site, b.slot.id)}
+                                                                style={{
+                                                                    background: '#fee2e2',
+                                                                    border: 'none',
+                                                                    borderRadius: '6px',
+                                                                    padding: '5px 10px',
+                                                                    color: '#dc2626',
+                                                                    fontSize: '0.75rem',
+                                                                    fontWeight: 700,
+                                                                    cursor: 'pointer',
+                                                                    display: 'inline-flex',
+                                                                    alignItems: 'center',
+                                                                    gap: '4px',
+                                                                    transition: 'background 0.15s ease'
+                                                                }}
+                                                                title="Release this booking slot"
+                                                            >
+                                                                <Trash2 size={12} />
+                                                                <span>Release</span>
+                                                            </button>
                                                         </td>
                                                     </tr>
                                                 );
@@ -6736,144 +6925,231 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                 )}
 
                 {/* 📅 Quick Booking Modal (Centered Fixed Overlay) */}
-                {quickBookingTarget && (
-                    <div 
-                        className="modal-overlay" 
-                        style={{ 
-                            position: 'fixed', 
-                            top: 0, 
-                            left: 0, 
-                            right: 0, 
-                            bottom: 0, 
-                            width: '100vw', 
-                            height: '100vh', 
-                            zIndex: 99999, 
-                            background: 'rgba(15, 23, 42, 0.65)', 
-                            backdropFilter: 'blur(6px)', 
-                            display: 'flex', 
-                            alignItems: 'center', 
-                            justifyContent: 'center', 
-                            padding: '20px' 
-                        }} 
-                        onClick={() => setQuickBookingTarget(null)}
-                    >
+                {quickBookingTarget && (() => {
+                    const siteSlots = getSiteBookingSlots(quickBookingTarget.site);
+                    const conflict = checkBookingConflict(siteSlots, quickBookingTarget.startDate, quickBookingTarget.endDate);
+                    const monthlyRent = quickBookingTarget.site["Rental Per Month"] || quickBookingTarget.site["Avg Monthly Cost (INR)"] || 0;
+                    const proRata = calculateProRataRental(monthlyRent, quickBookingTarget.startDate, quickBookingTarget.endDate);
+
+                    return (
                         <div 
-                            className="modal-card" 
+                            className="admin-modal-overlay" 
                             style={{ 
-                                maxWidth: '460px', 
-                                width: '100%', 
-                                borderRadius: '20px', 
-                                padding: '26px', 
-                                background: '#ffffff', 
-                                boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.35)', 
-                                border: '1px solid #e2e8f0' 
+                                position: 'fixed', 
+                                top: 0, 
+                                left: 0, 
+                                width: '100vw', 
+                                height: '100vh', 
+                                zIndex: 99999, 
+                                background: 'rgba(15, 23, 42, 0.65)', 
+                                backdropFilter: 'blur(6px)', 
+                                display: 'flex', 
+                                alignItems: 'center', 
+                                justifyContent: 'center', 
+                                padding: '20px' 
                             }} 
-                            onClick={e => e.stopPropagation()}
+                            onClick={() => setQuickBookingTarget(null)}
                         >
-                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '18px' }}>
-                                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                                    <div style={{ background: '#fee2e2', color: '#ef4444', padding: '10px', borderRadius: '12px', display: 'flex' }}>
-                                        <Calendar size={22} />
+                            <div 
+                                className="modal-card" 
+                                style={{ 
+                                    maxWidth: '480px', 
+                                    width: '100%', 
+                                    borderRadius: '20px', 
+                                    padding: '24px 26px', 
+                                    background: '#ffffff', 
+                                    boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.35)', 
+                                    border: '1px solid #e2e8f0',
+                                    maxHeight: '90vh',
+                                    overflowY: 'auto'
+                                }} 
+                                onClick={e => e.stopPropagation()}
+                            >
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                                        <div style={{ background: '#fee2e2', color: '#ef4444', padding: '10px', borderRadius: '12px', display: 'flex' }}>
+                                            <Calendar size={22} />
+                                        </div>
+                                        <div>
+                                            <h3 style={{ margin: 0, fontSize: '1.18rem', fontWeight: 800, color: '#0f172a' }}>Schedule Hoarding Slot</h3>
+                                            <p style={{ margin: '3px 0 0', fontSize: '0.8rem', color: '#64748b', fontWeight: 500 }}>
+                                                {quickBookingTarget.site["Locality Site Location"] || quickBookingTarget.site["Location "] || quickBookingTarget.site.Location}
+                                                {quickBookingTarget.site.Facing ? ` • ${quickBookingTarget.site.Facing}` : ''}
+                                            </p>
+                                        </div>
                                     </div>
-                                    <div>
-                                        <h3 style={{ margin: 0, fontSize: '1.2rem', fontWeight: 800, color: '#0f172a' }}>Book Hoarding Site</h3>
-                                        <p style={{ margin: '3px 0 0', fontSize: '0.8rem', color: '#64748b', fontWeight: 500 }}>
-                                            {quickBookingTarget.site["Locality Site Location"] || quickBookingTarget.site["Location "] || quickBookingTarget.site.Location}
-                                            {quickBookingTarget.site.Facing ? ` • ${quickBookingTarget.site.Facing}` : ''}
-                                        </p>
-                                    </div>
+                                    <button type="button" onClick={() => setQuickBookingTarget(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#94a3b8', padding: '4px' }}>
+                                        <X size={20} />
+                                    </button>
                                 </div>
-                                <button type="button" onClick={() => setQuickBookingTarget(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#94a3b8', padding: '4px' }}>
-                                    <X size={20} />
-                                </button>
-                            </div>
 
-                            <form onSubmit={handleConfirmQuickBooking} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                                <div>
-                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
-                                        <label style={{ fontSize: '0.84rem', fontWeight: 700, color: '#334155' }}>
-                                            Client Name <span style={{ color: '#ef4444' }}>*</span>
-                                        </label>
-                                        {quickBookingTarget.clientName.trim() && (
-                                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.78rem', color: '#059669', fontWeight: 600 }}>
-                                                <div style={{
-                                                    width: '24px',
-                                                    height: '24px',
-                                                    borderRadius: '50%',
-                                                    backgroundColor: '#ffd5dc',
-                                                    overflow: 'hidden',
-                                                    display: 'flex',
-                                                    alignItems: 'center',
-                                                    justifyContent: 'center',
-                                                    boxShadow: '0 1px 3px rgba(0,0,0,0.1)'
-                                                }}>
-                                                    <img 
-                                                        src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(quickBookingTarget.clientName.trim())}`}
-                                                        alt="avatar"
-                                                        style={{ width: '100%', height: '100%', objectFit: 'contain' }}
-                                                    />
+                                {/* 📅 Existing Reserved Slots on This Site */}
+                                {siteSlots.length > 0 && (
+                                    <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '12px', marginBottom: '16px' }}>
+                                        <div style={{ fontSize: '0.72rem', fontWeight: 700, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                            <Calendar size={13} color="#64748b" />
+                                            Existing Reserved Slots ({siteSlots.length}):
+                                        </div>
+                                        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                                            {siteSlots.map(s => {
+                                                const sFmt = new Date(s.start).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
+                                                const eFmt = new Date(s.end).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
+                                                return (
+                                                    <div key={s.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '6px 10px' }}>
+                                                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                                            <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#ef4444', display: 'inline-block' }}></span>
+                                                            <strong style={{ fontSize: '0.82rem', color: '#0f172a' }}>{s.client}</strong>
+                                                            <span style={{ fontSize: '0.76rem', color: '#64748b' }}>({sFmt} → {eFmt})</span>
+                                                        </div>
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => handleRemoveSlot(quickBookingTarget.site, s.id)}
+                                                            style={{ background: '#fee2e2', border: 'none', borderRadius: '6px', padding: '3px 8px', color: '#b91c1c', fontSize: '0.72rem', fontWeight: 700, cursor: 'pointer' }}
+                                                            title="Release this booking slot"
+                                                        >
+                                                            Release
+                                                        </button>
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
+                                    </div>
+                                )}
+
+                                <form onSubmit={handleConfirmQuickBooking} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                                    <div>
+                                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                                            <label style={{ fontSize: '0.84rem', fontWeight: 700, color: '#334155' }}>
+                                                Client / Advertiser Name <span style={{ color: '#ef4444' }}>*</span>
+                                            </label>
+                                            {quickBookingTarget.clientName.trim() && (
+                                                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.78rem', color: '#059669', fontWeight: 600 }}>
+                                                    <div style={{
+                                                        width: '24px',
+                                                        height: '24px',
+                                                        borderRadius: '50%',
+                                                        backgroundColor: '#ffd5dc',
+                                                        overflow: 'hidden',
+                                                        display: 'flex',
+                                                        alignItems: 'center',
+                                                        justifyContent: 'center',
+                                                        boxShadow: '0 1px 3px rgba(0,0,0,0.1)'
+                                                    }}>
+                                                        <img 
+                                                            src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(quickBookingTarget.clientName.trim())}`}
+                                                            alt="avatar"
+                                                            style={{ width: '100%', height: '100%', objectFit: 'contain' }}
+                                                        />
+                                                    </div>
+                                                    <span>Character Avatar</span>
                                                 </div>
-                                                <span>Avatar Preview</span>
+                                            )}
+                                        </div>
+                                        <input
+                                            type="text"
+                                            required
+                                            placeholder="e.g. Tata Motors, Samsung, Krishna"
+                                            value={quickBookingTarget.clientName}
+                                            onChange={(e) => setQuickBookingTarget({ ...quickBookingTarget, clientName: e.target.value })}
+                                            style={{ width: '100%', padding: '10px 14px', borderRadius: '10px', border: '1px solid #cbd5e1', fontSize: '0.9rem', outline: 'none' }}
+                                            autoFocus
+                                        />
+                                    </div>
+
+                                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                                        <div>
+                                            <label style={{ display: 'block', fontSize: '0.84rem', fontWeight: 700, color: '#334155', marginBottom: '6px' }}>
+                                                Booking Start <span style={{ color: '#ef4444' }}>*</span>
+                                            </label>
+                                            <input
+                                                type="date"
+                                                required
+                                                value={quickBookingTarget.startDate}
+                                                onChange={(e) => setQuickBookingTarget({ ...quickBookingTarget, startDate: e.target.value })}
+                                                style={{ width: '100%', padding: '9px 12px', borderRadius: '10px', border: '1px solid #cbd5e1', fontSize: '0.86rem', outline: 'none' }}
+                                            />
+                                        </div>
+                                        <div>
+                                            <label style={{ display: 'block', fontSize: '0.84rem', fontWeight: 700, color: '#334155', marginBottom: '6px' }}>
+                                                Booking End <span style={{ color: '#ef4444' }}>*</span>
+                                            </label>
+                                            <input
+                                                type="date"
+                                                required
+                                                value={quickBookingTarget.endDate}
+                                                onChange={(e) => setQuickBookingTarget({ ...quickBookingTarget, endDate: e.target.value })}
+                                                style={{ width: '100%', padding: '9px 12px', borderRadius: '10px', border: '1px solid #cbd5e1', fontSize: '0.86rem', outline: 'none' }}
+                                            />
+                                        </div>
+                                    </div>
+
+                                    {/* ⚠️ Collision Error Alert */}
+                                    {conflict.conflict && (
+                                        <div style={{ background: '#fef2f2', border: '1px solid #fca5a5', borderRadius: '10px', padding: '10px 12px', display: 'flex', alignItems: 'flex-start', gap: '10px', color: '#991b1b' }}>
+                                            <div style={{ fontSize: '1.1rem', lineHeight: 1 }}>🚫</div>
+                                            <div>
+                                                <div style={{ fontWeight: 800, fontSize: '0.82rem' }}>Slot Collision Detected!</div>
+                                                <div style={{ fontSize: '0.76rem', marginTop: '2px', color: '#b91c1c' }}>
+                                                    {conflict.reason}. You can book dates before or after this reservation.
+                                                </div>
                                             </div>
-                                        )}
-                                    </div>
-                                    <input
-                                        type="text"
-                                        required
-                                        placeholder="e.g. Tata Motors, Samsung, Krishna"
-                                        value={quickBookingTarget.clientName}
-                                        onChange={(e) => setQuickBookingTarget({ ...quickBookingTarget, clientName: e.target.value })}
-                                        style={{ width: '100%', padding: '10px 14px', borderRadius: '10px', border: '1px solid #cbd5e1', fontSize: '0.9rem', outline: 'none' }}
-                                        autoFocus
-                                    />
-                                </div>
+                                        </div>
+                                    )}
 
-                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-                                    <div>
-                                        <label style={{ display: 'block', fontSize: '0.84rem', fontWeight: 700, color: '#334155', marginBottom: '6px' }}>
-                                            Booking Start <span style={{ color: '#ef4444' }}>*</span>
-                                        </label>
-                                        <input
-                                            type="date"
-                                            required
-                                            value={quickBookingTarget.startDate}
-                                            onChange={(e) => setQuickBookingTarget({ ...quickBookingTarget, startDate: e.target.value })}
-                                            style={{ width: '100%', padding: '9px 12px', borderRadius: '10px', border: '1px solid #cbd5e1', fontSize: '0.86rem', outline: 'none' }}
-                                        />
-                                    </div>
-                                    <div>
-                                        <label style={{ display: 'block', fontSize: '0.84rem', fontWeight: 700, color: '#334155', marginBottom: '6px' }}>
-                                            Booking End <span style={{ color: '#ef4444' }}>*</span>
-                                        </label>
-                                        <input
-                                            type="date"
-                                            required
-                                            value={quickBookingTarget.endDate}
-                                            onChange={(e) => setQuickBookingTarget({ ...quickBookingTarget, endDate: e.target.value })}
-                                            style={{ width: '100%', padding: '9px 12px', borderRadius: '10px', border: '1px solid #cbd5e1', fontSize: '0.86rem', outline: 'none' }}
-                                        />
-                                    </div>
-                                </div>
+                                    {/* 💰 Pro-Rata Rental Breakdown */}
+                                    {!conflict.conflict && quickBookingTarget.startDate && quickBookingTarget.endDate && (
+                                        <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: '10px', padding: '10px 14px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                            <div>
+                                                <div style={{ fontSize: '0.82rem', fontWeight: 700, color: '#166534' }}>
+                                                    {proRata.days} Days Campaign
+                                                </div>
+                                                <div style={{ fontSize: '0.74rem', color: '#15803d' }}>
+                                                    ₹{proRata.dayRate.toLocaleString('en-IN')}/day • ₹{Number(monthlyRent).toLocaleString('en-IN')}/mo
+                                                </div>
+                                            </div>
+                                            <div style={{ textAlign: 'right' }}>
+                                                <div style={{ fontSize: '1.05rem', fontWeight: 800, color: '#15803d' }}>
+                                                    ₹{proRata.total.toLocaleString('en-IN')}
+                                                </div>
+                                                <div style={{ fontSize: '0.7rem', color: '#16a34a', fontWeight: 600 }}>
+                                                    Pro-Rata Rental
+                                                </div>
+                                            </div>
+                                        </div>
+                                    )}
 
-                                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '8px', paddingTop: '16px', borderTop: '1px solid #f1f5f9' }}>
-                                    <button
-                                        type="button"
-                                        onClick={() => setQuickBookingTarget(null)}
-                                        style={{ padding: '10px 18px', borderRadius: '10px', border: '1px solid #cbd5e1', background: '#f8fafc', color: '#475569', fontSize: '0.86rem', fontWeight: 700, cursor: 'pointer' }}
-                                    >
-                                        Cancel
-                                    </button>
-                                    <button
-                                        type="submit"
-                                        style={{ padding: '10px 22px', borderRadius: '10px', border: 'none', background: '#ef4444', color: '#ffffff', fontSize: '0.86rem', fontWeight: 800, cursor: 'pointer', boxShadow: '0 4px 14px rgba(239, 68, 68, 0.35)' }}
-                                    >
-                                        Confirm Booking
-                                    </button>
-                                </div>
-                            </form>
+                                    <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '4px', paddingTop: '14px', borderTop: '1px solid #f1f5f9' }}>
+                                        <button
+                                            type="button"
+                                            onClick={() => setQuickBookingTarget(null)}
+                                            style={{ padding: '10px 18px', borderRadius: '10px', border: '1px solid #cbd5e1', background: '#f8fafc', color: '#475569', fontSize: '0.86rem', fontWeight: 700, cursor: 'pointer' }}
+                                        >
+                                            Cancel
+                                        </button>
+                                        <button
+                                            type="submit"
+                                            disabled={conflict.conflict || !quickBookingTarget.clientName.trim()}
+                                            style={{ 
+                                                padding: '10px 22px', 
+                                                borderRadius: '10px', 
+                                                border: 'none', 
+                                                background: conflict.conflict ? '#94a3b8' : '#ef4444', 
+                                                color: '#ffffff', 
+                                                fontSize: '0.86rem', 
+                                                fontWeight: 800, 
+                                                cursor: conflict.conflict ? 'not-allowed' : 'pointer', 
+                                                boxShadow: conflict.conflict ? 'none' : '0 4px 14px rgba(239, 68, 68, 0.35)',
+                                                opacity: conflict.conflict ? 0.7 : 1
+                                            }}
+                                        >
+                                            {conflict.conflict ? 'Cannot Book (Date Clash)' : 'Confirm Booking'}
+                                        </button>
+                                    </div>
+                                </form>
+                            </div>
                         </div>
-                    </div>
-                )}
+                    );
+                })()}
 
 
                 {/* 🍞 Floating Glassmorphic Toast Notifications */}

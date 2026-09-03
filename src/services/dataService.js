@@ -390,6 +390,195 @@ export const clearLocalBooking = (siteKeyOrSite) => {
 };
 
 /**
+ * 📅 MULTI-SLOT BOOKING & DATE CONFLICT MANAGEMENT ENGINE
+ */
+
+export const getSiteBookingSlots = (site = {}) => {
+  if (!site || typeof site !== 'object') return [];
+  let slots = [];
+
+  // 1. Try reading from site.BookingSchedule
+  if (site.BookingSchedule) {
+    if (Array.isArray(site.BookingSchedule)) {
+      slots = [...site.BookingSchedule];
+    } else if (typeof site.BookingSchedule === 'string' && site.BookingSchedule.trim().startsWith('[')) {
+      try {
+        slots = JSON.parse(site.BookingSchedule);
+      } catch {}
+    }
+  }
+
+  // 2. Check localStorage for local schedule overrides
+  if (typeof window !== 'undefined') {
+    try {
+      const rawSchedules = localStorage.getItem('adh_booking_schedules');
+      if (rawSchedules) {
+        const schedules = JSON.parse(rawSchedules);
+        const keys = getSiteBookingKeys(site);
+        for (const k of keys) {
+          if (Array.isArray(schedules[k]) && schedules[k].length > 0) {
+            slots = [...schedules[k]];
+            break;
+          }
+        }
+      }
+    } catch {}
+  }
+
+  // 3. Fallback: Synthesize from legacy single-slot fields (BookedBy, BookingStart, BookingEnd)
+  if (slots.length === 0) {
+    const isBooked = (site.STATUS || '').toLowerCase() === 'booked' || (site.STATUS || '').toLowerCase() === 'occupied';
+    const client = String(site.BookedBy || site.ClientName || '').trim();
+    if (isBooked || client) {
+      slots.push({
+        id: 'legacy-slot-1',
+        client: client || 'Occupied',
+        start: site.BookingStart || new Date().toISOString().split('T')[0],
+        end: site.BookingEnd || new Date(Date.now() + 30 * 86400000).toISOString().split('T')[0],
+        status: 'Booked'
+      });
+    }
+  }
+
+  // Normalize and sort slots chronologically
+  return slots
+    .filter(s => s && s.start && s.end)
+    .sort((a, b) => String(a.start).localeCompare(String(b.start)));
+};
+
+export const checkBookingConflict = (existingSlots = [], newStart, newEnd, ignoreSlotId = null) => {
+  if (!newStart || !newEnd) return { conflict: false, conflictingSlot: null };
+  const sStart = String(newStart).trim();
+  const sEnd = String(newEnd).trim();
+
+  if (sStart > sEnd) {
+    return { conflict: true, conflictingSlot: null, reason: 'Start date cannot be after End date.' };
+  }
+
+  for (const slot of existingSlots) {
+    if (ignoreSlotId && slot.id === ignoreSlotId) continue;
+    if (!slot.start || !slot.end) continue;
+    const existingStart = String(slot.start).trim();
+    const existingEnd = String(slot.end).trim();
+
+    // Standard Interval Overlap Condition: (S1 <= E2) and (E1 >= S2)
+    if (sStart <= existingEnd && sEnd >= existingStart) {
+      return {
+        conflict: true,
+        conflictingSlot: slot,
+        reason: `Clashes with ${slot.client || 'existing booking'} (${existingStart} → ${existingEnd})`
+      };
+    }
+  }
+
+  return { conflict: false, conflictingSlot: null };
+};
+
+export const calculateProRataRental = (monthlyRental, startDateStr, endDateStr) => {
+  const rent = Number(monthlyRental || 0);
+  if (!startDateStr || !endDateStr || rent <= 0) {
+    return { days: 30, total: rent, dayRate: Math.round(rent / 30) };
+  }
+  const s = new Date(startDateStr);
+  const e = new Date(endDateStr);
+  const diffTime = e - s;
+  const days = Math.max(1, Math.round(diffTime / (1000 * 60 * 60 * 24)) + 1);
+  const dayRate = rent / 30;
+  const total = Math.round(dayRate * days);
+  return { days, total, dayRate: Math.round(dayRate) };
+};
+
+export const resolveSiteLiveStatus = (site = {}, refDateStr = null) => {
+  const today = refDateStr || new Date().toISOString().split('T')[0];
+  const slots = getSiteBookingSlots(site);
+
+  // 1. Check if site is currently inside an active booking today
+  const activeSlot = slots.find(s => s.start && s.end && today >= s.start && today <= s.end);
+  if (activeSlot) {
+    const endFmt = new Date(activeSlot.end).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
+    return {
+      status: 'Booked',
+      badgeColor: '#ef4444',
+      badgeBg: '#fee2e2',
+      badgeBorder: '#fca5a5',
+      text: 'Booked',
+      client: activeSlot.client || 'Occupied',
+      subtext: `${activeSlot.client || 'Client'} • till ${endFmt}`,
+      slot: activeSlot,
+      allSlots: slots
+    };
+  }
+
+  // 2. Check if site is currently free, but has an upcoming future booking
+  const futureSlots = slots
+    .filter(s => s.start && s.start > today)
+    .sort((a, b) => a.start.localeCompare(b.start));
+
+  if (futureSlots.length > 0) {
+    const nextSlot = futureSlots[0];
+    const startFmt = new Date(nextSlot.start).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
+    const diffDays = Math.max(1, Math.round((new Date(nextSlot.start) - new Date(today)) / (1000 * 60 * 60 * 24)));
+    return {
+      status: 'Upcoming',
+      badgeColor: '#b45309',
+      badgeBg: '#fef3c7',
+      badgeBorder: '#fde68a',
+      text: 'Available Now',
+      client: nextSlot.client || 'Reserved',
+      subtext: `Booked from ${startFmt} (${diffDays}d free)`,
+      slot: nextSlot,
+      allSlots: slots
+    };
+  }
+
+  // 3. Completely available
+  return {
+    status: 'Available',
+    badgeColor: '#10b981',
+    badgeBg: '#dcfce7',
+    badgeBorder: '#86efac',
+    text: 'Available',
+    client: '',
+    subtext: '',
+    slot: null,
+    allSlots: slots
+  };
+};
+
+export const saveSiteBookingSlots = (site, updatedSlots = []) => {
+  if (!site || typeof window === 'undefined') return;
+  try {
+    const keys = getSiteBookingKeys(site);
+    if (keys.length === 0) return;
+
+    // Save schedules
+    const rawSchedules = localStorage.getItem('adh_booking_schedules');
+    const schedules = rawSchedules ? JSON.parse(rawSchedules) : {};
+    keys.forEach(k => {
+      schedules[k] = updatedSlots;
+    });
+    localStorage.setItem('adh_booking_schedules', JSON.stringify(schedules));
+
+    // Update active primary booking for legacy backwards compatibility
+    const today = new Date().toISOString().split('T')[0];
+    const activeOrNext = updatedSlots.find(s => today <= s.end) || updatedSlots[0];
+
+    if (activeOrNext) {
+      recordSiteBooking(site, {
+        STATUS: 'Booked',
+        BookedBy: activeOrNext.client,
+        BookingStart: activeOrNext.start,
+        BookingEnd: activeOrNext.end
+      });
+    } else {
+      removeSiteBooking(site);
+    }
+  } catch (err) {
+    console.warn('saveSiteBookingSlots notice:', err);
+  }
+};
+
+/**
  * 🚀 FETCH LIVE DATA
  * Syncs with the spreadsheet and maps columns precisely.
  */
