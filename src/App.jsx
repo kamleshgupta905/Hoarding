@@ -206,7 +206,7 @@ function AutoUpdateBar() {
             <div style={{ fontSize: '12px', color: '#94a3b8', marginTop: '2px' }}>
               {updateState.status === 'ready' && `Restarting to apply in ${updateState.countdown}s...`}
               {updateState.status === 'downloading' && 'Downloading in background...'}
-              {updateState.status === 'checking' && 'Connecting to GitHub...'}
+              {updateState.status === 'checking' && 'Connecting to server...'}
               {updateState.status === 'up-to-date' && 'You have the latest version installed.'}
               {updateState.status === 'error' && updateState.error}
             </div>

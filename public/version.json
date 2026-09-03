@@ -1,14 +1,11 @@
 {
-  "version": "1.5.0",
-  "buildTimestamp": 1756865200000,
-  "buildDate": "2026-09-03T07:45:00Z",
-  "releaseTag": "v1.5.0",
+  "version": "1.5.1",
+  "buildTimestamp": 1756865600000,
+  "buildDate": "2026-09-03T07:55:00Z",
+  "releaseTag": "v1.5.1",
   "apkUrl": "https://github.com/kamleshgupta905/Hoarding/releases/download/staff-apk-latest/heera-staff-camera.apk",
   "features": [
-    "Multi-Slot Date Range Booking Engine: Book multiple independent non-overlapping date slots per hoarding site",
-    "Real-Time Slot Collision Prevention: Automatically blocks overlapping booking dates with detailed clash explanation",
-    "Smart Live Status: Dynamically shows Booked (today), Available Now (booked in future), or Available (free)",
-    "Automatic Pro-Rata Rent Calculation: Computes daily rate and exact pro-rata campaign cost",
-    "Multi-Slot Clients & Booking View: Displays all scheduled client reservations with character avatars, facing, and release actions"
+    "Update desktop updater status text from 'Connecting to GitHub...' to 'Connecting to server...'",
+    "Multi-Slot Date Range Booking Engine with Conflict Prevention and Pro-Rata Billing (v1.5.0)"
   ]
 }
