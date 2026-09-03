@@ -1,12 +1,12 @@
 {
-  "version": "1.4.4",
-  "buildTimestamp": 1756863700000,
-  "buildDate": "2026-09-03T07:02:00Z",
-  "releaseTag": "v1.4.4",
+  "version": "1.4.5",
+  "buildTimestamp": 1756864500000,
+  "buildDate": "2026-09-03T07:15:00Z",
+  "releaseTag": "v1.4.5",
   "apkUrl": "https://github.com/kamleshgupta905/Hoarding/releases/download/staff-apk-latest/heera-staff-camera.apk",
   "features": [
+    "Rename Export Proposal button to Export Data on Dashboard",
     "Prevent Drive GPS photo sync automation from overwriting Bookings and Status in Google Sheets",
-    "Cell-level precision writes for ImageURL in Google Apps Script",
     "Display Facing, Traffic Flow, and Clickable Google Maps Lat-Long in Clients & Booking table"
   ]
 }

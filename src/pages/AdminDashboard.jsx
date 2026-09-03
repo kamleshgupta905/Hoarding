@@ -3770,8 +3770,8 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                     </p>
                                 </div>
                                 <div className="qm-header-controls">
-                                    <button className="qm-btn-secondary" onClick={() => exportProposalExcel(hoardings)} title="Export clean proposal deck for clients">
-                                        <FileDown size={15} /> Export Proposal
+                                    <button className="qm-btn-secondary" onClick={() => exportProposalExcel(hoardings)} title="Export complete inventory data to Excel">
+                                        <FileDown size={15} /> Export Data
                                     </button>
                                     <button className="qm-btn-primary" onClick={() => setIsAddModalOpen(true)}>
                                         <Plus size={16} /> Add Site
