@@ -1,12 +1,12 @@
 {
-  "version": "1.5.3",
-  "buildTimestamp": 1756866600000,
-  "buildDate": "2026-09-03T08:30:00Z",
-  "releaseTag": "v1.5.3",
+  "version": "1.5.4",
+  "buildTimestamp": 1756867000000,
+  "buildDate": "2026-09-03T08:35:00Z",
+  "releaseTag": "v1.5.4",
   "apkUrl": "https://github.com/kamleshgupta905/Hoarding/releases/download/staff-apk-latest/heera-staff-camera.apk",
   "features": [
-    "Bridge Edit Asset modal with Multi-Slot Booking Engine: prevent accidental schedule deletion during site edits",
-    "Add direct Multi-Slot Scheduler launcher button inside Edit Asset modal",
-    "Clarify table button tooltips for Edit Site Details vs Multi-Slot Date Booking"
+    "Interactive Active and Upcoming slot filter tabs with live count badges in Clients & Booking",
+    "Expanded Master Inventory Live Status filter supporting Active Booked and Upcoming (Future Booked)",
+    "Bridge Edit Asset modal with Multi-Slot Booking Engine to protect client schedules"
   ]
 }

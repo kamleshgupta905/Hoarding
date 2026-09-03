@@ -2243,17 +2243,17 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
 
             // Status & Date Range Availability Filter
             let matchStatus = true;
-            const statusStr = String(h.STATUS || h.Status || '').toLowerCase();
-            const isBooked = statusStr === 'booked' || statusStr === 'occupied';
-            const isAvailable = !isBooked;
+            const live = resolveSiteLiveStatus(h);
 
             if (filterStartDate || filterEndDate) {
                 const isAvailInDates = isSiteAvailableForDateRange(h, filterStartDate, filterEndDate);
                 if (inventoryStatusFilter === 'Available') matchStatus = isAvailInDates;
-                else if (inventoryStatusFilter === 'Booked') matchStatus = !isAvailInDates;
+                else if (inventoryStatusFilter === 'Booked' || inventoryStatusFilter === 'Active Booked') matchStatus = !isAvailInDates;
+                else if (inventoryStatusFilter === 'Upcoming (Future Booked)') matchStatus = (live.status === 'Upcoming');
             } else {
-                if (inventoryStatusFilter === 'Available') matchStatus = isAvailable;
-                else if (inventoryStatusFilter === 'Booked') matchStatus = isBooked;
+                if (inventoryStatusFilter === 'Available') matchStatus = (live.status === 'Available');
+                else if (inventoryStatusFilter === 'Booked' || inventoryStatusFilter === 'Active Booked') matchStatus = (live.status === 'Booked');
+                else if (inventoryStatusFilter === 'Upcoming (Future Booked)') matchStatus = (live.status === 'Upcoming');
             }
             if (!matchStatus) return false;
 
@@ -2409,7 +2409,7 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
         if (!city) return null;
         return city.charAt(0).toUpperCase() + city.slice(1).toLowerCase();
     }).filter(Boolean))];
-    const inventoryStatuses = ['All', 'Available', 'Booked'];
+    const inventoryStatuses = ['All', 'Available', 'Active Booked', 'Upcoming (Future Booked)'];
     const isAllCityFilter = !inventoryCityFilter || inventoryCityFilter.length === 0 || inventoryCityFilter.includes('All');
     const inventoryTargetHoardings = isAllCityFilter
         ? safeHoardings
@@ -6148,6 +6148,7 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
 
                 {activeTab === 'clients' && (() => {
                     const allBookings = [];
+                    const todayStr = new Date().toISOString().split('T')[0];
                     hoardings.forEach(h => {
                         const slots = getSiteBookingSlots(h);
                         slots.forEach(slot => {
@@ -6171,13 +6172,25 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                 proRataAmount: slot.amount || proRata.total,
                                 proRataDays: slot.days || proRata.days,
                                 start: slot.start,
-                                end: slot.end
+                                end: slot.end,
+                                isTodayActive: Boolean(slot.start && slot.end && slot.start <= todayStr && slot.end >= todayStr),
+                                isUpcoming: Boolean(slot.start && slot.start > todayStr),
+                                isCompleted: Boolean(slot.end && slot.end < todayStr)
                             });
                         });
                     });
 
-                    // Search filter
+                    const totalBookingsCount = allBookings.length;
+                    const activeBookingsCount = allBookings.filter(b => b.isTodayActive).length;
+                    const upcomingBookingsCount = allBookings.filter(b => b.isUpcoming).length;
+                    const completedBookingsCount = allBookings.filter(b => b.isCompleted).length;
+
+                    // Search & Slot Status filter
                     const filteredBookings = allBookings.filter(b => {
+                        if (clientStatusFilter === 'active' && !b.isTodayActive) return false;
+                        if (clientStatusFilter === 'upcoming' && !b.isUpcoming) return false;
+                        if (clientStatusFilter === 'completed' && !b.isCompleted) return false;
+
                         const search = clientSearchTerm.toLowerCase().trim();
                         if (!search) return true;
                         const client = b.clientName.toLowerCase();
@@ -6215,13 +6228,13 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                 </p>
                             </div>
 
-                            {/* 🔍 Search Box */}
-                            <div style={{ background: '#ffffff', borderRadius: '16px', padding: '16px 20px', marginBottom: '20px', border: '1px solid #f3f4f6', boxShadow: '0 1px 3px rgba(0,0,0,0.03)' }}>
+                            {/* 🔍 Search Box & Slot Status Filter Bar */}
+                            <div style={{ background: '#ffffff', borderRadius: '16px', padding: '16px 20px', marginBottom: '20px', border: '1px solid #f3f4f6', boxShadow: '0 1px 3px rgba(0,0,0,0.03)', display: 'flex', flexDirection: 'column', gap: '14px' }}>
                                 <div style={{ background: '#f3f4f6', borderRadius: '9999px', padding: '10px 20px', display: 'flex', alignItems: 'center', gap: '12px' }}>
                                     <Search size={18} color="#9ca3af" />
                                     <input 
                                         type="text" 
-                                        placeholder="Search bookings by client, location or city..."
+                                        placeholder="Search bookings by client, location, facing or city..."
                                         value={clientSearchTerm}
                                         onChange={(e) => setClientSearchTerm(e.target.value)}
                                         style={{ border: 'none', background: 'transparent', outline: 'none', width: '100%', fontSize: '0.9rem', color: '#111827', fontWeight: 500 }}
@@ -6229,6 +6242,120 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                     {clientSearchTerm && (
                                         <button onClick={() => setClientSearchTerm('')} style={{ color: '#9ca3af', fontSize: '0.85rem', fontWeight: 700, cursor: 'pointer', background: 'transparent', border: 'none' }}>✕</button>
                                     )}
+                                </div>
+
+                                {/* 🎛️ Slot Status Filter Chips */}
+                                <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center' }}>
+                                    <button
+                                        type="button"
+                                        onClick={() => setClientStatusFilter('All')}
+                                        style={{
+                                            padding: '7px 14px',
+                                            borderRadius: '20px',
+                                            fontSize: '0.8rem',
+                                            fontWeight: 600,
+                                            border: 'none',
+                                            cursor: 'pointer',
+                                            background: clientStatusFilter === 'All' ? '#111827' : '#f3f4f6',
+                                            color: clientStatusFilter === 'All' ? '#ffffff' : '#4b5563',
+                                            display: 'inline-flex',
+                                            alignItems: 'center',
+                                            gap: '7px',
+                                            transition: 'all 0.15s ease'
+                                        }}
+                                    >
+                                        <span>All Slots</span>
+                                        <span style={{ 
+                                            fontSize: '0.7rem', 
+                                            background: clientStatusFilter === 'All' ? 'rgba(255,255,255,0.2)' : 'rgba(0,0,0,0.06)',
+                                            padding: '2px 7px', 
+                                            borderRadius: '10px' 
+                                        }}>{totalBookingsCount}</span>
+                                    </button>
+
+                                    <button
+                                        type="button"
+                                        onClick={() => setClientStatusFilter('active')}
+                                        style={{
+                                            padding: '7px 14px',
+                                            borderRadius: '20px',
+                                            fontSize: '0.8rem',
+                                            fontWeight: 600,
+                                            border: clientStatusFilter === 'active' ? '1px solid #dc2626' : '1px solid #fee2e2',
+                                            cursor: 'pointer',
+                                            background: clientStatusFilter === 'active' ? '#ef4444' : '#fef2f2',
+                                            color: clientStatusFilter === 'active' ? '#ffffff' : '#b91c1c',
+                                            display: 'inline-flex',
+                                            alignItems: 'center',
+                                            gap: '7px',
+                                            transition: 'all 0.15s ease'
+                                        }}
+                                    >
+                                        <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: clientStatusFilter === 'active' ? '#fff' : '#ef4444' }}></span>
+                                        <span>Active Today</span>
+                                        <span style={{ 
+                                            fontSize: '0.7rem', 
+                                            background: clientStatusFilter === 'active' ? 'rgba(255,255,255,0.2)' : '#fee2e2',
+                                            padding: '2px 7px', 
+                                            borderRadius: '10px' 
+                                        }}>{activeBookingsCount}</span>
+                                    </button>
+
+                                    <button
+                                        type="button"
+                                        onClick={() => setClientStatusFilter('upcoming')}
+                                        style={{
+                                            padding: '7px 14px',
+                                            borderRadius: '20px',
+                                            fontSize: '0.8rem',
+                                            fontWeight: 600,
+                                            border: clientStatusFilter === 'upcoming' ? '1px solid #d97706' : '1px solid #fef3c7',
+                                            cursor: 'pointer',
+                                            background: clientStatusFilter === 'upcoming' ? '#f59e0b' : '#fffbeb',
+                                            color: clientStatusFilter === 'upcoming' ? '#ffffff' : '#b45309',
+                                            display: 'inline-flex',
+                                            alignItems: 'center',
+                                            gap: '7px',
+                                            transition: 'all 0.15s ease'
+                                        }}
+                                    >
+                                        <span>⏳</span>
+                                        <span>Upcoming Slots</span>
+                                        <span style={{ 
+                                            fontSize: '0.7rem', 
+                                            background: clientStatusFilter === 'upcoming' ? 'rgba(255,255,255,0.2)' : '#fef3c7',
+                                            padding: '2px 7px', 
+                                            borderRadius: '10px' 
+                                        }}>{upcomingBookingsCount}</span>
+                                    </button>
+
+                                    <button
+                                        type="button"
+                                        onClick={() => setClientStatusFilter('completed')}
+                                        style={{
+                                            padding: '7px 14px',
+                                            borderRadius: '20px',
+                                            fontSize: '0.8rem',
+                                            fontWeight: 600,
+                                            border: 'none',
+                                            cursor: 'pointer',
+                                            background: clientStatusFilter === 'completed' ? '#6b7280' : '#f3f4f6',
+                                            color: clientStatusFilter === 'completed' ? '#ffffff' : '#6b7280',
+                                            display: 'inline-flex',
+                                            alignItems: 'center',
+                                            gap: '7px',
+                                            transition: 'all 0.15s ease'
+                                        }}
+                                    >
+                                        <span>🏁</span>
+                                        <span>Completed</span>
+                                        <span style={{ 
+                                            fontSize: '0.7rem', 
+                                            background: clientStatusFilter === 'completed' ? 'rgba(255,255,255,0.2)' : 'rgba(0,0,0,0.06)',
+                                            padding: '2px 7px', 
+                                            borderRadius: '10px' 
+                                        }}>{completedBookingsCount}</span>
+                                    </button>
                                 </div>
                             </div>
 
