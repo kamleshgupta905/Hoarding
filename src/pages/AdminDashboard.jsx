@@ -6366,7 +6366,7 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                         <tr style={{ borderBottom: '1px solid #f3f4f6' }}>
                                             <th style={{ padding: '14px 16px', fontSize: '0.75rem', fontWeight: 600, color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.05em', width: '210px' }}>CLIENT / ADVERTISER</th>
                                             <th style={{ padding: '14px 16px', fontSize: '0.75rem', fontWeight: 600, color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.05em', width: '250px' }}>SITE LOCATION</th>
-                                            <th style={{ padding: '14px 16px', fontSize: '0.75rem', fontWeight: 600, color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.05em', width: '110px' }}>FACING</th>
+                                            <th style={{ padding: '14px 16px', fontSize: '0.75rem', fontWeight: 600, color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.05em', width: '170px' }}>FACING / TRAFFIC</th>
                                             <th style={{ padding: '14px 16px', fontSize: '0.75rem', fontWeight: 600, color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.05em', width: '150px' }}>RENTAL / VALUE</th>
                                             <th style={{ padding: '14px 16px', fontSize: '0.75rem', fontWeight: 600, color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.05em', width: '180px' }}>BOOKING DATES</th>
                                             <th style={{ padding: '14px 16px', fontSize: '0.75rem', fontWeight: 600, color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.05em', width: '90px', textAlign: 'center' }}>ACTION</th>
@@ -6440,11 +6440,6 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                                                         {b.city}
                                                                     </span>
                                                                 )}
-                                                                {b.trafficFlow && (
-                                                                    <span style={{ fontSize: '0.72rem', color: '#4b5563', background: '#f3f4f6', padding: '2px 8px', borderRadius: '4px', fontWeight: 500 }}>
-                                                                        {b.trafficFlow}
-                                                                    </span>
-                                                                )}
                                                                 <span style={{ fontSize: '0.75rem', color: '#6b7280', fontWeight: 500 }}>
                                                                     {b.site.Media || 'Unipole'} • {b.site.Dimensions || (b.site.Width && b.site.Height ? `${b.site.Width}×${b.site.Height} ft` : (b.site.Width || ''))}
                                                                 </span>
@@ -6477,11 +6472,30 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                                             )}
                                                         </td>
 
-                                                        {/* FACING */}
+                                                        {/* FACING & TRAFFIC FLOW */}
                                                         <td style={{ padding: '16px' }}>
-                                                            <span style={{ padding: '4px 10px', background: '#e0e7ff', borderRadius: '6px', fontSize: '0.75rem', fontWeight: 700, color: '#4338ca', border: '1px solid #c7d2fe' }}>
-                                                                {b.facing || 'N/A'}
-                                                            </span>
+                                                            <div style={{ display: 'flex', flexDirection: 'column', gap: '5px', alignItems: 'flex-start' }}>
+                                                                <span style={{ padding: '3px 9px', background: '#e0e7ff', borderRadius: '6px', fontSize: '0.75rem', fontWeight: 700, color: '#4338ca', border: '1px solid #c7d2fe' }}>
+                                                                    {b.facing || 'N/A'}
+                                                                </span>
+                                                                {b.trafficFlow && (
+                                                                    <div style={{ 
+                                                                        fontSize: '0.72rem', 
+                                                                        color: '#475569', 
+                                                                        background: '#f8fafc', 
+                                                                        padding: '3px 8px', 
+                                                                        borderRadius: '5px', 
+                                                                        border: '1px solid #e2e8f0', 
+                                                                        display: 'inline-flex', 
+                                                                        alignItems: 'center', 
+                                                                        gap: '4px',
+                                                                        fontWeight: 500,
+                                                                        lineHeight: 1.3
+                                                                    }}>
+                                                                        <span>{b.trafficFlow}</span>
+                                                                    </div>
+                                                                )}
+                                                            </div>
                                                         </td>
 
                                                         {/* RENTAL / VALUE (Pro-Rata) */}
