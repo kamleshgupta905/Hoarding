@@ -1180,30 +1180,45 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                     // 🧠 Run deep GPS extraction & multi-tier matching (EXIF -> OCR GPS -> Vision AI -> OCR Text)
                     const aiResult = await analyzeHoardingImage(base64Data, hoardings, updatedImages[i].file);
 
-                    // 🎯 Resolve Target Hoarding Site
+                    // 🎯 Resolve Target Hoarding Site with AI Twin-Site & Facing Awareness
                     let matchedData = null;
                     const idx = parseInt(aiResult.matchedIndex, 10);
-                    if (!isNaN(idx) && idx >= 0 && idx < hoardings.length) {
+                    if (aiResult.matchedSiteId) {
+                        matchedData = hoardings.find(h => (h._SiteID === aiResult.matchedSiteId || h.UniqueID === aiResult.matchedSiteId || h['Unique ID'] === aiResult.matchedSiteId));
+                    }
+                    if (!matchedData && !isNaN(idx) && idx >= 0 && idx < hoardings.length) {
                         matchedData = hoardings[idx];
-                    } else if (aiResult.matchedLocation) {
+                    } else if (!matchedData && aiResult.matchedLocation) {
                         const aiLoc = String(aiResult.matchedLocation).toLowerCase().trim();
                         matchedData = hoardings.find(h => {
                             const name1 = String(h["Locality Site Location"] || '').toLowerCase().trim();
                             const name2 = String(h["Location "] || '').toLowerCase().trim();
                             const name3 = String(h.Location || '').toLowerCase().trim();
-                            return name1 === aiLoc || name2 === aiLoc || name3 === aiLoc ||
+                            const matchesName = name1 === aiLoc || name2 === aiLoc || name3 === aiLoc ||
                                    (aiLoc.length > 5 && (name1.includes(aiLoc) || aiLoc.includes(name1)));
+                            if (!matchesName) return false;
+                            if (aiResult.facing) {
+                                const siteFacing = String(h.Facing || h['Traffic View'] || '').toLowerCase().trim();
+                                return siteFacing === String(aiResult.facing).toLowerCase().trim();
+                            }
+                            return true;
                         });
                     }
 
                     const finalLocation = matchedData ? (matchedData["Locality Site Location"] || matchedData["Location "] || matchedData.Location) : null;
+                    const resolvedFacing = aiResult.facing || matchedData?.Facing || matchedData?.['Traffic View'] || '';
+                    const resolvedSiteId = matchedData?._SiteID || matchedData?.UniqueID || matchedData?.['Unique ID'] || matchedData?.ID || '';
+                    const resolvedIndex = matchedData ? hoardings.indexOf(matchedData) : -1;
 
                     // Update the local item state
                     // eslint-disable-next-line react-hooks/immutability
                     updatedImages[i] = {
                         ...updatedImages[i],
-                        matchedIndex: matchedData ? (idx >= 0 ? idx : hoardings.indexOf(matchedData)) : -1,
+                        matchedIndex: resolvedIndex,
                         matchedLocation: finalLocation,
+                        matchedSiteId: resolvedSiteId,
+                        facing: resolvedFacing,
+                        twinCandidates: aiResult.twinCandidates || null,
                         status: aiResult.status || 'Available',
                         confidence: aiResult.confidence || 0,
                         reasoning: aiResult.reasoning || '',
@@ -1248,14 +1263,16 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
         try {
             const base64 = await compressImage(imageData.file);
 
-            // Find target site in hoardings list
+            // Find target site in hoardings list (strictly matching by siteId / index / facing)
             const targetHoarding = hoardings.find((h, hIdx) => {
+                if (imageData.matchedSiteId && (h._SiteID === imageData.matchedSiteId || h.UniqueID === imageData.matchedSiteId || h['Unique ID'] === imageData.matchedSiteId)) return true;
                 if (imageData.matchedIndex != null && imageData.matchedIndex >= 0 && hIdx === imageData.matchedIndex) return true;
                 const loc1 = String(h["Locality Site Location"] || '').trim().toLowerCase();
                 const loc2 = String(h["Location "] || '').trim().toLowerCase();
                 const loc3 = String(h.Location || '').trim().toLowerCase();
                 const target = String(imageData.matchedLocation || '').trim().toLowerCase();
-                return loc1 === target || loc2 === target || loc3 === target;
+                const facingMatch = !imageData.facing || String(h.Facing || h['Traffic View'] || '').trim().toLowerCase() === String(imageData.facing).trim().toLowerCase();
+                return (loc1 === target || loc2 === target || loc3 === target) && facingMatch;
             });
 
             const hasExistingMaster = targetHoarding && targetHoarding.ImageURL &&
@@ -1275,6 +1292,7 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                 date: new Date().toISOString(),
                 gps: gpsString,
                 source: 'Daily Execution Proof (GPS Auto-Match)',
+                facing: imageData.facing || targetHoarding?.Facing || '',
                 status: imageData.status || 'Available',
                 confidence: imageData.confidence,
                 reasoning: imageData.reasoning
@@ -1294,17 +1312,20 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
             }).join(',');
 
             const siteNameResolved = targetHoarding ? (targetHoarding["Locality Site Location"] || targetHoarding["Location "] || targetHoarding.Location) : imageData.matchedLocation;
-            const siteIdResolved = targetHoarding ? (targetHoarding.UniqueID || targetHoarding["Unique ID"] || targetHoarding.ID || targetHoarding._SiteID || '') : '';
+            const siteIdResolved = targetHoarding ? (targetHoarding.UniqueID || targetHoarding["Unique ID"] || targetHoarding.ID || targetHoarding._SiteID || '') : (imageData.matchedSiteId || '');
+            const facingResolved = imageData.facing || targetHoarding?.Facing || targetHoarding?.['Traffic View'] || '';
 
-            // ☁️ Sync to Google Sheets ExecutionHistory column
+            // ☁️ Sync to Google Sheets ExecutionHistory column with Facing Awareness
             await syncToGoogleSheet({
                 action: 'updateHoarding',
                 siteName: siteNameResolved,
                 siteId: siteIdResolved,
+                facing: facingResolved,
                 status: imageData.status || 'Available',
                 fields: { 
                     "ExecutionHistory": historyString,
-                    STATUS: imageData.status || 'Available'
+                    STATUS: imageData.status || 'Available',
+                    Facing: facingResolved
                 },
                 fileData: base64,
                 mimeType: 'image/jpeg',
@@ -1321,12 +1342,11 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                 return next;
             });
 
-            // 💾 Update Hoarding state and cache
+            // 💾 Update Hoarding state and cache (strictly targeting the resolved site to prevent twin-site collision)
             setHoardings(prev => {
                 const updatedList = prev.map((h, hIdx) => {
-                    const isTarget = (imageData.matchedIndex != null && imageData.matchedIndex >= 0 && hIdx === imageData.matchedIndex) ||
-                        [h["Locality Site Location"], h["Location "], h.Location].some(l => String(l || '').trim().toLowerCase() === String(imageData.matchedLocation || '').trim().toLowerCase()) ||
-                        (siteIdResolved && (h.UniqueID === siteIdResolved || h["Unique ID"] === siteIdResolved));
+                    const isTarget = (siteIdResolved && (h._SiteID === siteIdResolved || h.UniqueID === siteIdResolved || h['Unique ID'] === siteIdResolved)) ||
+                        (imageData.matchedIndex != null && imageData.matchedIndex >= 0 && hIdx === imageData.matchedIndex);
 
                     if (isTarget) {
                         const hasValidOldImage = h.ImageURL && h.ImageURL.trim() !== "" && !h.ImageURL.includes("unsplash.com");
@@ -1336,6 +1356,7 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                         return {
                             ...h,
                             STATUS: imageData.status || h.STATUS || 'Available',
+                            Facing: facingResolved || h.Facing,
                             ImageURL: hasValidOldImage ? h.ImageURL : base64,
                             History: newHist,
                             ExecutionHistory: historyString
@@ -5194,15 +5215,21 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                                     )}
                                                 </div>
 
-                                                {img.matchedLocation && (
-                                                    <div className="img-preview ref-image" title="Old Reference Image" style={{
-                                                        backgroundImage: `url(${hoardings.find(h => (h["Locality Site Location"] || h["Location "] || h.Location) === img.matchedLocation)?.ImageURL})`,
-                                                        backgroundSize: 'cover',
-                                                        backgroundPosition: 'center'
-                                                    }}>
-                                                        <span className="img-label ref">REF</span>
-                                                    </div>
-                                                )}
+                                                {img.matchedLocation && (() => {
+                                                    const refSite = (img.matchedSiteId && hoardings.find(h => (h._SiteID === img.matchedSiteId || h.UniqueID === img.matchedSiteId))) ||
+                                                                    (img.matchedIndex != null && img.matchedIndex >= 0 ? hoardings[img.matchedIndex] : null) ||
+                                                                    hoardings.find(h => (h["Locality Site Location"] || h["Location "] || h.Location) === img.matchedLocation);
+                                                    const refUrl = refSite?.ImageURL;
+                                                    return refUrl ? (
+                                                        <div className="img-preview ref-image" title={`Old Reference Image: ${refSite?.Facing ? `Facing ${refSite.Facing}` : 'Site'}`} style={{
+                                                            backgroundImage: `url(${refUrl})`,
+                                                            backgroundSize: 'cover',
+                                                            backgroundPosition: 'center'
+                                                        }}>
+                                                            <span className="img-label ref">REF {refSite?.Facing ? `(${refSite.Facing})` : ''}</span>
+                                                        </div>
+                                                    ) : null;
+                                                })()}
                                             </div>
 
                                              <div className="card-controls">
@@ -5210,7 +5237,8 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
                                                         <label style={{ margin: 0 }}>Location Match</label>
                                                         {img.matchedLocation && (() => {
-                                                            const site = hoardings.find(h => (h["Locality Site Location"] || h["Location "] || h.Location) === img.matchedLocation);
+                                                            const site = (img.matchedSiteId && hoardings.find(h => (h._SiteID === img.matchedSiteId || h.UniqueID === img.matchedSiteId))) ||
+                                                                         hoardings.find(h => (h["Locality Site Location"] || h["Location "] || h.Location) === img.matchedLocation);
                                                             const targetCity = site?.City || 'city';
                                                             const targetSiteName = site?.["Location "] || site?.Location || site?.["Locality Site Location"] || img.matchedLocation;
                                                             return (
@@ -5237,22 +5265,90 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                                         })()}
                                                     </div>
                                                     <select
-                                                        value={img.matchedLocation || ""}
+                                                        value={img.matchedIndex != null && img.matchedIndex >= 0 ? img.matchedIndex : (img.matchedLocation || "")}
                                                         onChange={(e) => {
+                                                            const selectedIdx = parseInt(e.target.value, 10);
                                                             const newImages = [...dailyImages];
-                                                            newImages[idx].matchedLocation = e.target.value;
+                                                            if (!isNaN(selectedIdx) && selectedIdx >= 0 && selectedIdx < hoardings.length) {
+                                                                const h = hoardings[selectedIdx];
+                                                                newImages[idx].matchedIndex = selectedIdx;
+                                                                newImages[idx].matchedLocation = h["Locality Site Location"] || h["Location "] || h.Location;
+                                                                newImages[idx].matchedSiteId = h._SiteID || h.UniqueID || h['Unique ID'] || h.ID || '';
+                                                                newImages[idx].facing = h.Facing || h['Traffic View'] || '';
+                                                                newImages[idx].matchFailed = false;
+                                                            } else {
+                                                                newImages[idx].matchedIndex = -1;
+                                                                newImages[idx].matchedLocation = '';
+                                                                newImages[idx].matchedSiteId = '';
+                                                                newImages[idx].facing = '';
+                                                            }
                                                             setDailyImages(newImages);
                                                         }}
                                                         disabled={img.uploaded}
                                                     >
-                                                        <option value="">-- Select Location --</option>
+                                                        <option value="">-- Select Location & Facing --</option>
                                                         {hoardings.map((h, i) => {
                                                             const siteName = h["Locality Site Location"] || h["Location "] || h.Location || `Site #${i + 1}`;
+                                                            const facing = h.Facing || h['Traffic View'] || '';
+                                                            const label = facing ? `${siteName} — [Facing: ${facing}]` : siteName;
                                                             return (
-                                                                <option key={i} value={siteName}>{siteName}</option>
+                                                                <option key={i} value={i}>{label}</option>
                                                             );
                                                         })}
                                                     </select>
+
+                                                    {/* 🧭 Twin-Site Facings: 1-Click Switch */}
+                                                    {img.twinCandidates && img.twinCandidates.length > 1 && (
+                                                        <div style={{ marginTop: '8px', marginBottom: '6px' }}>
+                                                            <div style={{ fontSize: '0.72rem', fontWeight: 700, color: '#4338ca', marginBottom: '5px', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                                                <span>🧭</span>
+                                                                <span>Twin-Site Facings (1-Click Switch):</span>
+                                                            </div>
+                                                            <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                                                                {img.twinCandidates.map((twin, tIdx) => {
+                                                                    const isSelected = (img.matchedSiteId && twin.siteId === img.matchedSiteId) ||
+                                                                                       (img.matchedIndex === twin.index) ||
+                                                                                       (!img.matchedSiteId && img.facing && String(img.facing).trim().toLowerCase() === String(twin.facing).trim().toLowerCase());
+                                                                    return (
+                                                                        <button
+                                                                            key={tIdx}
+                                                                            type="button"
+                                                                            disabled={img.uploaded}
+                                                                            onClick={() => {
+                                                                                const newImages = [...dailyImages];
+                                                                                const targetSite = hoardings[twin.index] || hoardings.find(h => (h._SiteID === twin.siteId || h.UniqueID === twin.siteId));
+                                                                                newImages[idx].matchedIndex = twin.index;
+                                                                                newImages[idx].matchedSiteId = twin.siteId;
+                                                                                newImages[idx].facing = twin.facing;
+                                                                                newImages[idx].matchedLocation = targetSite ? (targetSite["Locality Site Location"] || targetSite["Location "] || targetSite.Location) : twin.siteName;
+                                                                                newImages[idx].reasoning = `Manual switch to Facing: ${twin.facing}`;
+                                                                                newImages[idx].matchFailed = false;
+                                                                                setDailyImages(newImages);
+                                                                            }}
+                                                                            style={{
+                                                                                padding: '4px 10px',
+                                                                                borderRadius: '6px',
+                                                                                fontSize: '0.75rem',
+                                                                                fontWeight: 600,
+                                                                                cursor: img.uploaded ? 'default' : 'pointer',
+                                                                                border: isSelected ? '1.5px solid #4f46e5' : '1px solid #d1d5db',
+                                                                                background: isSelected ? '#e0e7ff' : '#ffffff',
+                                                                                color: isSelected ? '#3730a3' : '#4b5563',
+                                                                                display: 'inline-flex',
+                                                                                alignItems: 'center',
+                                                                                gap: '5px',
+                                                                                transition: 'all 0.15s ease'
+                                                                            }}
+                                                                            title={`Click to switch to Facing: ${twin.facing}`}
+                                                                        >
+                                                                            {isSelected && <span>✓</span>}
+                                                                            <span>Facing: {twin.facing}</span>
+                                                                        </button>
+                                                                    );
+                                                                })}
+                                                            </div>
+                                                        </div>
+                                                    )}
                                                 </div>
 
                                                 <div className="control-group">
@@ -5289,6 +5385,11 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                                         {img.distanceM != null && (
                                                             <span className="meta-pill" style={{ background: '#fef3c7', color: '#92400e', fontWeight: 600 }}>
                                                                 📏 {img.distanceM}m away
+                                                            </span>
+                                                        )}
+                                                        {img.facing && (
+                                                            <span className="meta-pill" style={{ background: '#ede9fe', color: '#6d28d9', fontWeight: 700 }}>
+                                                                🧭 Facing: {img.facing}
                                                             </span>
                                                         )}
                                                         {img.analysis?.billboardType && <span className="meta-pill">{img.analysis.billboardType}</span>}

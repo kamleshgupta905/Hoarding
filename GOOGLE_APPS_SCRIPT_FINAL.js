@@ -1570,25 +1570,37 @@ function updateHoardingDetails(data) {
       }
     }
 
-    // 2. Match by Lat-Long if present
-    var targetLatLong = cleanFull(data.latLong || (data.fields && (data.fields['Lat-Long'] || data.fields.LatLong)) || '');
-    var idxLatLong = headers.findIndex(function(h) { return cleanFull(h).indexOf('lat') !== -1 && cleanFull(h).indexOf('long') !== -1; });
-    if (rowIndex === -1 && targetLatLong && idxLatLong !== -1) {
+    // 2. Match by Location + Facing (High priority for twin sites / double-sided unipoles)
+    var targetFacing = cleanFull(data.facing || (data.fields && data.fields.Facing) || '');
+    var idxFacing = headers.findIndex(function(h) { return cleanFull(h) === 'facing' || cleanFull(h) === 'trafficview'; });
+    if (rowIndex === -1 && targetFacing && idxFacing !== -1) {
+      var searchName = cleanFull(siteSearchTerm);
       for (var i = 1; i < rows.length; i++) {
-        if (cleanFull(rows[i][idxLatLong]) === targetLatLong) {
+        var rowFacing = cleanFull(rows[i][idxFacing]);
+        if (cleanFull(rows[i][idxSite]) === searchName && (rowFacing === targetFacing || rowFacing.indexOf(targetFacing) !== -1 || targetFacing.indexOf(rowFacing) !== -1)) {
           rowIndex = i + 1;
           break;
         }
       }
     }
 
-    // 3. Match by Location + Facing
-    var targetFacing = cleanFull(data.facing || (data.fields && data.fields.Facing) || '');
-    var idxFacing = headers.findIndex(function(h) { return cleanFull(h) === 'facing' || cleanFull(h) === 'trafficview'; });
-    if (rowIndex === -1 && targetFacing && idxFacing !== -1) {
-      var searchName = cleanFull(siteSearchTerm);
+    // 2b. Match by Lat-Long + Facing (High precision for GPS twin sites)
+    var targetLatLong = cleanFull(data.latLong || (data.fields && (data.fields['Lat-Long'] || data.fields.LatLong)) || '');
+    var idxLatLong = headers.findIndex(function(h) { return cleanFull(h).indexOf('lat') !== -1 && cleanFull(h).indexOf('long') !== -1; });
+    if (rowIndex === -1 && targetLatLong && idxLatLong !== -1 && targetFacing && idxFacing !== -1) {
       for (var i = 1; i < rows.length; i++) {
-        if (cleanFull(rows[i][idxSite]) === searchName && cleanFull(rows[i][idxFacing]) === targetFacing) {
+        var rowFacing = cleanFull(rows[i][idxFacing]);
+        if (cleanFull(rows[i][idxLatLong]) === targetLatLong && (rowFacing === targetFacing || rowFacing.indexOf(targetFacing) !== -1 || targetFacing.indexOf(rowFacing) !== -1)) {
+          rowIndex = i + 1;
+          break;
+        }
+      }
+    }
+
+    // 2c. Match by Lat-Long if present and no facing conflict
+    if (rowIndex === -1 && targetLatLong && idxLatLong !== -1 && !targetFacing) {
+      for (var i = 1; i < rows.length; i++) {
+        if (cleanFull(rows[i][idxLatLong]) === targetLatLong) {
           rowIndex = i + 1;
           break;
         }
@@ -2910,10 +2922,13 @@ function syncDrivePhotosByGpsAndFacing_(data) {
       // 🎯 2. Facing / Direction Match
       if (facing && item.facing) {
         if (item.facing.indexOf(facing) !== -1 || facing.indexOf(item.facing) !== -1) {
-          score += 3500;
+          score += 6000;
+        } else {
+          // Strict opposite facing penalty: never let a photo facing X get assigned to a site facing Y
+          score -= 15000;
         }
       } else if (facing && item.rawKey.indexOf(facing) !== -1) {
-        score += 2500;
+        score += 3000;
       }
 
       // 🎯 3. Location Name Match

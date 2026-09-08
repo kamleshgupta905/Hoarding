@@ -209,6 +209,113 @@ If NONE of the candidate sites match at all, return "matchedIndex": -1.
 };
 
 /**
+ * 🧭 RESOLVE TWIN-SITE FACING WITH GEMINI VISION
+ * When multiple hoardings share the same GPS coordinates (e.g., a double-sided unipole
+ * with one face towards City and the opposite face towards Highway), this uses Gemini Vision
+ * to analyze camera perspective, road traffic flow, and background landmarks to automatically
+ * determine the exact facing without manual selection.
+ */
+export const resolveTwinSiteFacingWithGemini = async (imageBase64, candidates) => {
+  if (!imageBase64 || !Array.isArray(candidates) || candidates.length < 2) {
+    return null;
+  }
+
+  const parsed = parseBase64(imageBase64);
+  if (!parsed) return null;
+
+  const candidateDescriptions = candidates.map((c, idx) => {
+    const rawSite = c.site || c;
+    const name = rawSite["Location "] || rawSite["Locality Site Location"] || rawSite.Location || rawSite.siteName || `Site #${idx}`;
+    const facing = rawSite.Facing || rawSite['Traffic View'] || rawSite.facing || 'N/A';
+    const from = rawSite['Traffic From'] || rawSite.from || '';
+    const to = rawSite['Traffic To'] || rawSite.to || '';
+    const traffic = from && to ? `Traffic from ${from} towards ${to}` : (from || to || '');
+    const refUrl = rawSite.ImageURL && !rawSite.ImageURL.includes('unsplash.com') ? rawSite.ImageURL : '';
+    return `[Candidate ${idx}]:
+- Location: "${name}"
+- Facing Direction: "${facing}"
+${traffic ? `- Traffic Flow: "${traffic}"` : ''}
+${rawSite.City ? `- City: "${rawSite.City}"` : ''}
+${refUrl ? `- Reference Photo URL: ${refUrl}` : ''}`;
+  }).join('\n\n');
+
+  const prompt = `You are an expert AI Outdoor Advertising & Traffic Angle Analyst.
+A field audit photo was taken of an outdoor hoarding billboard.
+At this exact GPS coordinate, there are MULTIPLE candidate billboard faces (e.g. a double-sided unipole on the road divider, with opposite facings).
+
+CANDIDATE HOARDING FACES AT THIS SPOT:
+${candidateDescriptions}
+
+CRITICAL RULES FOR ACCURATE MATCHING:
+1. ⚠️ DO NOT be deceived by any advertiser store/showroom/branch address printed on the flex ad banner itself (for example: "205, Begum Bridge Road", "Store address", phone numbers). That is just the advertiser's showroom address, NOT the billboard's facing direction!
+2. Inspect the road perspective and traffic direction in the photo:
+   - Notice the direction traffic is flowing relative to the camera (towards camera vs away).
+   - Look at the road divider, metro/RRTS pillars, overbridge, street signs, and background shops.
+3. Compare with the Candidate Facing Directions and Traffic Flows above.
+4. Select the best matching Candidate (by index: 0, 1, etc.).
+5. Detect status: "Occupied" (active commercial brand ad mounted) or "Available" (blank, white, torn, or To-Let).
+
+Return ONLY a single valid JSON object (no markdown, no backticks):
+{
+  "matchedIndex": 0,
+  "facing": "exact facing from selected candidate",
+  "status": "Occupied",
+  "confidence": 0.96,
+  "reasoning": "Brief explanation of visual road perspective and why this candidate was selected"
+}`;
+
+  const payload = {
+    contents: [
+      {
+        parts: [
+          { text: prompt },
+          {
+            inline_data: {
+              mime_type: parsed.mimeType,
+              data: parsed.base64
+            }
+          }
+        ]
+      }
+    ],
+    generationConfig: {
+      temperature: 0.1,
+      topP: 0.8,
+      maxOutputTokens: 500
+    }
+  };
+
+  try {
+    const rawResponse = await callGeminiVision(payload);
+    const cleanJson = rawResponse.replace(/```json\s*/i, '').replace(/```\s*$/i, '').trim();
+    const jsonMatch = cleanJson.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) return null;
+
+    const result = JSON.parse(jsonMatch[0]);
+    const idx = parseInt(result.matchedIndex, 10);
+    if (!isNaN(idx) && idx >= 0 && idx < candidates.length) {
+      const selected = candidates[idx];
+      const rawSelected = selected.site || selected;
+      return {
+        matchedIndex: idx,
+        candidateIndex: selected.index !== undefined ? selected.index : idx,
+        matchedCandidate: selected,
+        matchedSite: rawSelected,
+        siteName: rawSelected["Location "] || rawSelected["Locality Site Location"] || rawSelected.Location || rawSelected.siteName,
+        facing: result.facing || rawSelected.Facing || rawSelected['Traffic View'] || '',
+        status: result.status === 'Occupied' ? 'Occupied' : 'Available',
+        confidence: typeof result.confidence === 'number' ? result.confidence : 0.95,
+        reasoning: result.reasoning || `AI visual perspective matched ${rawSelected.Facing || 'site'}.`
+      };
+    }
+  } catch (err) {
+    console.warn('[Gemini Twin-Site Facing Resolution Notice]:', err);
+  }
+
+  return null;
+};
+
+/**
  * 📸 DAILY PROOF OF EXECUTION MATCHING (GPS Stamp + Visual Intelligence)
  * Inspects raw site image, reads printed GPS stamps/coordinates watermark,
  * analyzes billboard environment, and matches with the master inventory.
@@ -232,13 +339,18 @@ Carefully examine this photograph of an outdoor billboard / hoarding.
 
 LOOK CLOSELY FOR CAMERA WATERMARKS & GPS OVERLAYS:
 Most inspection photos contain an on-screen camera stamp or watermark (such as "GPS Camera - PinPoint", "GPS Map Camera", "NoteCam", "Timestamp Camera") in the corners or bottom.
-Extract:
-1. "latitude": numeric decimal degrees (e.g. 29.0490666) if stamped on the image, or null
-2. "longitude": numeric decimal degrees (e.g. 77.7075798) if stamped on the image, or null
-3. "address": exact stamped location text, street name, or highway (e.g. "Low Floor Bus Station, NH 58, Modipuram, Meerut")
-4. "city": city name (e.g. "Meerut")
-5. "adBrand": brand name displayed on the billboard advertisement (e.g. "SENCO Gold & Diamonds")
-6. "status": "Occupied" if a commercial advertisement/brand flex is mounted, or "Available" if blank/white/torn/"To-Let" advertisement
+
+CRITICAL LOCATION EXTRACTION RULES:
+1. ⚠️ DO NOT use the advertiser's store/showroom address printed on the flex ad itself (e.g. "205, Begum Bridge Road"). That is just the advertiser's shop address!
+2. ALWAYS extract the real geographical address from the camera's GPS watermark overlay (e.g. "Low Floor Bus Station, NH 58, Modipuram, Meerut" or "Block F, Sector 2, Shastri Nagar").
+3. Extract:
+   - "latitude": numeric decimal degrees (e.g. 29.0490666) if stamped on the image, or null
+   - "longitude": numeric decimal degrees (e.g. 77.7075798) if stamped on the image, or null
+   - "address": exact stamped location text or highway from the camera watermark
+   - "city": city name (e.g. "Meerut")
+   - "adBrand": brand name displayed on the billboard advertisement (e.g. "SENCO Gold & Diamonds")
+   - "facing": traffic direction or facing (e.g. "Begum Bridge", "Modipuram", "Delhi Road") if mentioned or evident, or null
+   - "status": "Occupied" if a commercial advertisement/brand flex is mounted, or "Available" if blank/white/torn/"To-Let" advertisement
 
 Output ONLY a single valid JSON object:
 {
@@ -247,6 +359,7 @@ Output ONLY a single valid JSON object:
   "address": "Stamped location address",
   "city": "Meerut",
   "adBrand": "Mounted brand name",
+  "facing": "Extracted traffic facing or null",
   "status": "Occupied",
   "confidence": 0.98,
   "reasoning": "Detected GPS stamp and active brand"
