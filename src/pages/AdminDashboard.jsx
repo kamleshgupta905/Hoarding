@@ -478,8 +478,29 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
         }
     });
 
+    const [expandedDailyCards, setExpandedDailyCards] = useState(() => new Set());
+    const toggleDailyCardExpand = (idx) => {
+        setExpandedDailyCards(prev => {
+            const next = new Set(prev);
+            if (next.has(idx)) {
+                next.delete(idx);
+            } else {
+                next.add(idx);
+            }
+            return next;
+        });
+    };
+
     const removeDailyImage = (idxToRemove) => {
         setDailyImages(prev => prev.filter((_, idx) => idx !== idxToRemove));
+        setExpandedDailyCards(prev => {
+            const next = new Set();
+            prev.forEach(id => {
+                if (id < idxToRemove) next.add(id);
+                else if (id > idxToRemove) next.add(id - 1);
+            });
+            return next;
+        });
     };
     const [selectedAssetFile, setSelectedAssetFile] = useState(null);
     const [isDragging, setIsDragging] = useState(false);
@@ -5656,6 +5677,23 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                         <Zap size={20} fill="currentColor" /> Auto-Detect with AI
                                     </button>
                                 )}
+                                {dailyImages.length > 0 && (
+                                    <button
+                                        type="button"
+                                        className="ai-process-btn"
+                                        onClick={() => {
+                                            if (expandedDailyCards.size === dailyImages.length) {
+                                                setExpandedDailyCards(new Set());
+                                            } else {
+                                                setExpandedDailyCards(new Set(dailyImages.map((_, i) => i)));
+                                            }
+                                        }}
+                                        style={{ background: '#f8fafc', color: '#4338ca', border: '1px solid #c7d2fe' }}
+                                        title="Toggle show/hide all details"
+                                    >
+                                        {expandedDailyCards.size === dailyImages.length ? '▲ Collapse All Details' : '▼ Expand All Details'}
+                                    </button>
+                                )}
                                 {dailyImages.some(img => img.matchFailed && !img.uploaded) && (
                                     <button className="ai-process-btn dump-btn" onClick={dumpUnmatchedImages} title="Move unmatched images to dumping log">
                                         <XCircle size={20} /> Dump All Red
@@ -5668,6 +5706,7 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                         onClick={() => {
                                             if (window.confirm("Clear all items from Daily Upload?")) {
                                                 setDailyImages([]);
+                                                setExpandedDailyCards(new Set());
                                                 localStorage.removeItem('adh_daily_proof_images');
                                             }
                                         }}
@@ -5681,7 +5720,9 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
 
                             {dailyImages.length > 0 ? (
                                 <div className="daily-images-grid">
-                                    {dailyImages.map((img, idx) => (
+                                    {dailyImages.map((img, idx) => {
+                                        const isExpanded = expandedDailyCards.has(idx);
+                                        return (
                                         <div key={idx} className={`daily-card ${img.uploaded ? 'uploaded' : ''} ${img.matchFailed && !img.uploaded ? 'match-failed' : ''}`} style={{ position: 'relative' }}>
                                             <button
                                                 type="button"
@@ -5786,7 +5827,66 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                                 })()}
                                             </div>
 
-                                             <div className="card-controls">
+                                            {/* 🔽 Compact Dropdown Toggle Bar */}
+                                            <div 
+                                                className="daily-card-collapse-bar"
+                                                onClick={() => toggleDailyCardExpand(idx)}
+                                                style={{
+                                                    display: 'flex',
+                                                    alignItems: 'center',
+                                                    justifyContent: 'space-between',
+                                                    padding: '10px 14px',
+                                                    background: isExpanded ? '#f1f5f9' : '#ffffff',
+                                                    borderTop: '1px solid #e2e8f0',
+                                                    cursor: 'pointer',
+                                                    transition: 'all 0.15s ease',
+                                                    userSelect: 'none'
+                                                }}
+                                                title={isExpanded ? "Click to collapse details" : "Click to view / edit details"}
+                                            >
+                                                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', minWidth: 0, flex: 1, paddingRight: '8px' }}>
+                                                    <span style={{ 
+                                                        fontSize: '0.84rem', 
+                                                        fontWeight: '700', 
+                                                        color: img.matchedLocation ? '#1e293b' : (img.matchFailed ? '#dc2626' : '#64748b'),
+                                                        overflow: 'hidden', 
+                                                        textOverflow: 'ellipsis', 
+                                                        whiteSpace: 'nowrap' 
+                                                    }}>
+                                                        {img.matchedLocation 
+                                                            ? `${img.sl ? `#${img.sl} · ` : ''}${img.matchedLocation}${img.facing ? ` (${img.facing})` : ''}`
+                                                            : (img.aiLoading ? '⏳ Detecting site...' : (img.matchFailed ? '❌ Site Not Matched' : '📸 Image Ready'))
+                                                        }
+                                                    </span>
+                                                </div>
+
+                                                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}>
+                                                    {img.uploaded && (
+                                                        <span style={{ fontSize: '11px', fontWeight: '700', color: '#15803d', background: '#dcfce7', padding: '2px 6px', borderRadius: '4px' }}>
+                                                            Synced
+                                                        </span>
+                                                    )}
+                                                    <div style={{
+                                                        display: 'inline-flex',
+                                                        alignItems: 'center',
+                                                        gap: '4px',
+                                                        fontSize: '0.74rem',
+                                                        fontWeight: 700,
+                                                        color: '#4f46e5',
+                                                        background: isExpanded ? '#e0e7ff' : '#f8fafc',
+                                                        border: '1px solid #c7d2fe',
+                                                        padding: '4px 9px',
+                                                        borderRadius: '6px'
+                                                    }}>
+                                                        <span>{isExpanded ? 'Hide Details' : 'Details'}</span>
+                                                        <ChevronDown size={14} style={{ transform: isExpanded ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.2s ease' }} />
+                                                    </div>
+                                                </div>
+                                            </div>
+
+                                            {/* 📋 Dropdown Content (Hidden until opened) */}
+                                            {isExpanded && (
+                                                <div className="card-controls" style={{ borderTop: '1px solid #e2e8f0' }}>
                                                 <div className="control-group">
                                                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
                                                         <label style={{ margin: 0 }}>Location Match</label>
@@ -6095,8 +6195,10 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                                     </div>
                                                 )}
                                             </div>
-                                        </div>
-                                    ))}
+                                        )}
+                                    </div>
+                                );
+                            })}
                                 </div>
                             ) : (
                                 <div className="empty-upload-state">
