@@ -4429,17 +4429,18 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                     </div>
                                 </motion.div>
 
-                                {/* Card 2: Total Bookings */}
+                                {/* Card 2: Total sites booking */}
                                 <motion.div 
                                     whileHover={{ y: -3, transition: { duration: 0.18 } }}
                                     className="qm-kpi-card clickable" 
                                     role="button" 
                                     tabIndex={0} 
-                                    onClick={() => openInventory('All')} 
-                                    onKeyDown={(e) => e.key === 'Enter' && openInventory('All')}
+                                    onClick={() => openInventory('Booked')} 
+                                    onKeyDown={(e) => e.key === 'Enter' && openInventory('Booked')}
+                                    title="View booked sites in inventory"
                                 >
                                     <div className="qm-kpi-top">
-                                        <span className="qm-kpi-label">Total bookings</span>
+                                        <span className="qm-kpi-label">Total sites booking</span>
                                         <div className="qm-kpi-icon-box qm-blue">
                                             <Layers size={16} />
                                         </div>
