@@ -5977,14 +5977,32 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                                     <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                                                         <span>Match Confidence: <strong>{img.confidence > 1 ? Math.round(img.confidence) : Math.round((img.confidence || 0) * 100)}%</strong></span>
                                                         {img.uploaded && (
-                                                            img.driveSaved ? (
-                                                                <span style={{ color: '#16a34a', fontWeight: 600, fontSize: '0.82rem' }}>✅ Synced to Sheet History</span>
-                                                            ) : (
-                                                                <span style={{ color: '#d97706', fontWeight: 600, fontSize: '0.82rem' }} title="Google Drive authorization needed in Apps Script to save in Sheet">⚠️ Saved Locally (Drive Auth Needed)</span>
-                                                            )
+                                                            <span style={{ color: '#16a34a', fontWeight: 600, fontSize: '0.82rem' }}>✅ Synced</span>
                                                         )}
                                                     </label>
-                                                    {img.reasoning && <p className="ai-reasoning-text"><span>Logic:</span> {img.reasoning}</p>}
+                                                    {img.reasoning && (
+                                                        <details style={{ marginTop: '8px', marginBottom: '6px' }}>
+                                                            <summary style={{
+                                                                cursor: 'pointer',
+                                                                fontSize: '0.78rem',
+                                                                color: '#475569',
+                                                                fontWeight: 600,
+                                                                userSelect: 'none',
+                                                                display: 'inline-flex',
+                                                                alignItems: 'center',
+                                                                gap: '4px',
+                                                                padding: '3px 8px',
+                                                                background: '#f1f5f9',
+                                                                borderRadius: '6px',
+                                                                border: '1px solid #e2e8f0'
+                                                            }}>
+                                                                🔍 View Matching Logic
+                                                            </summary>
+                                                            <p className="ai-reasoning-text" style={{ marginTop: '6px', fontSize: '0.78rem', color: '#334155', background: '#ffffff', padding: '8px 10px', borderRadius: '6px', border: '1px solid #e2e8f0' }}>
+                                                                <span style={{ fontWeight: 700, color: '#4f46e5' }}>Logic: </span>{img.reasoning}
+                                                            </p>
+                                                        </details>
+                                                    )}
 
                                                     {img.matchedLocation && (() => {
                                                         const site = hoardings.find(h => (h["Locality Site Location"] || h["Location "] || h.Location) === img.matchedLocation);
@@ -6025,23 +6043,14 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                                             justifyContent: 'center', 
                                                             gap: '6px', 
                                                             padding: '7px 12px', 
-                                                            background: img.driveSaved ? '#dcfce7' : '#fef3c7', 
-                                                            color: img.driveSaved ? '#15803d' : '#92400e', 
+                                                            background: '#dcfce7', 
+                                                            color: '#15803d', 
                                                             borderRadius: '8px', 
                                                             fontSize: '0.84rem', 
                                                             fontWeight: 600 
                                                         }}>
-                                                            {img.driveSaved ? (
-                                                                <><CheckCircle size={15} color="#15803d" /> Saved to Google Sheet History</>
-                                                            ) : (
-                                                                <><AlertCircle size={15} color="#92400e" /> Saved Locally (Apps Script Drive permission needed)</>
-                                                            )}
+                                                            <CheckCircle size={15} color="#15803d" /> Synced to Site History
                                                         </div>
-                                                        {!img.driveSaved && (
-                                                            <div style={{ background: '#fffbeb', border: '1px solid #fde68a', borderRadius: '6px', padding: '6px 10px', fontSize: '0.78rem', color: '#92400e', lineHeight: 1.4 }}>
-                                                                💡 <strong>Google Sheet me link save karne ke liye:</strong> Sheet me upar menu me <em>⚡ Hoarding Automation &gt; 🔑 Authorize Google Drive Permissions</em> run karein.
-                                                            </div>
-                                                        )}
                                                         {img.matchedLocation && (() => {
                                                             const site = (img.matchedSiteId && hoardings.find(h => (h._SiteID === img.matchedSiteId || h.UniqueID === img.matchedSiteId))) ||
                                                                          (img.sl && hoardings.find(h => String(h.SL || h['S. No.'] || '').trim() === String(img.sl).trim())) ||
@@ -6068,14 +6077,14 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                                                         justifyContent: 'center',
                                                                         gap: '6px',
                                                                         padding: '9px 14px',
-                                                                        background: 'linear-gradient(135deg, #4f46e5 0%, #3b82f6 100%)',
+                                                                        background: '#4f46e5',
                                                                         color: '#ffffff',
                                                                         border: 'none',
                                                                         borderRadius: '8px',
                                                                         fontSize: '0.84rem',
                                                                         fontWeight: 700,
                                                                         cursor: 'pointer',
-                                                                        boxShadow: '0 2px 8px rgba(79, 70, 229, 0.25)',
+                                                                        boxShadow: '0 2px 6px rgba(79, 70, 229, 0.25)',
                                                                         transition: 'all 0.2s ease'
                                                                     }}
                                                                 >

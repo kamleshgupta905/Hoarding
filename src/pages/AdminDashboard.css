@@ -3709,7 +3709,7 @@
 }
 
 .sheet-view-btn.latest {
-    background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+    background: #10b981;
     color: #ffffff;
     border: none;
     box-shadow: 0 1px 4px rgba(16, 185, 129, 0.25);
