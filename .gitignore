@@ -30,3 +30,7 @@ output/
 *.njsproj
 *.sln
 *.sw?
+
+# Scratch & local assets
+scratch/
+*.traineddata

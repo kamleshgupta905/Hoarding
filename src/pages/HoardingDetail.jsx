@@ -1,8 +1,8 @@
 import React from 'react';
 import { useParams, Link, useNavigate, useSearchParams } from 'react-router-dom';
-import { ChevronLeft, MapPin, Maximize2, Layers, Zap, Info, Calendar, Phone, Share2, Heart, ShieldCheck, Edit3, Trash2, X, Upload, Camera, Copy, Check, Download } from 'lucide-react';
+import { ChevronLeft, MapPin, Maximize2, Layers, Zap, Info, Calendar, Phone, Share2, Heart, ShieldCheck, Edit3, Trash2, X, Upload, Camera, Copy, Check, Download, ExternalLink } from 'lucide-react';
 import { Helmet } from 'react-helmet-async';
-import { getImageUrl, compressImage, syncToGoogleSheet, downloadHoardingImage, recordSiteBooking, removeSiteBooking, getLocalHistory, removeSiteHistory, parseHistoryString } from '../services/dataService';
+import { getImageUrl, compressImage, syncToGoogleSheet, downloadHoardingImage, recordSiteBooking, removeSiteBooking, getLocalHistory, removeSiteHistory, parseHistoryString, getDirectDriveLink } from '../services/dataService';
 import ImageLightbox from '../components/ImageLightbox';
 import './HoardingDetail.css';
 
@@ -65,12 +65,13 @@ const HoardingDetail = ({ hoardings, setHoardings }) => {
         const seen = new Set();
         const merged = [];
         [...fromLocal, ...fromHoarding].forEach(item => {
-            const url = typeof item === 'object' ? (item.url || item.preview || '') : item;
+            const rawUrl = typeof item === 'object' ? (item.url || item.preview || '') : item;
+            const directUrl = getDirectDriveLink(rawUrl) || rawUrl;
             const time = typeof item === 'object' ? (item.timestamp || item.date || '') : '';
-            const key = `${url}_${time}`;
-            if (url && !seen.has(key)) {
+            const key = `${directUrl}_${time}`;
+            if (directUrl && !seen.has(key)) {
                 seen.add(key);
-                merged.push(item);
+                merged.push(typeof item === 'object' ? { ...item, url: directUrl } : { url: directUrl, timestamp: time });
             }
         });
         return merged;
@@ -685,17 +686,30 @@ const HoardingDetail = ({ hoardings, setHoardings }) => {
 
                                 <div className="history-cards-grid">
                                     {(activeHistory || []).map((item, idx) => {
-                                        const finalUrl = typeof item === 'object' ? item.url : item;
+                                        const rawUrl = typeof item === 'object' ? item.url : item;
+                                        const finalUrl = getDirectDriveLink(rawUrl) || rawUrl;
                                         const finalTime = typeof item === 'object' ? item.timestamp : null;
                                         
                                         return (
                                             <div key={idx} className="audit-card">
-                                                <div className="audit-card-media">
-                                                    <img src={finalUrl} alt={`Audit Update ${idx + 1}`} loading="lazy" onDoubleClick={() => setPreviewImage(finalUrl)} />
+                                                <div 
+                                                    className="audit-card-media" 
+                                                    onClick={() => setPreviewImage(finalUrl)}
+                                                    style={{ cursor: 'pointer' }}
+                                                    title="Click to view full photo preview"
+                                                >
+                                                    <img src={finalUrl} alt={`Audit Update ${idx + 1}`} loading="lazy" />
+                                                    <div className="audit-card-hover-overlay">
+                                                        <Maximize2 size={22} color="#ffffff" />
+                                                        <span>View Photo</span>
+                                                    </div>
                                                     {isAdmin && (
                                                         <button 
                                                             className="delete-item-btn" 
-                                                            onClick={() => handleDeleteHistoryItem(finalUrl)}
+                                                            onClick={(e) => {
+                                                                e.stopPropagation();
+                                                                handleDeleteHistoryItem(finalUrl);
+                                                            }}
                                                             title="Delete this update"
                                                         >
                                                             <Trash2 size={14} />
@@ -708,13 +722,35 @@ const HoardingDetail = ({ hoardings, setHoardings }) => {
                                                     )}
                                                 </div>
                                                 <div className="audit-card-body">
-                                                    <div className="audit-meta">
-                                                        <Calendar size={14} />
-                                                        <span className="audit-date">
-                                                            {finalTime 
-                                                                ? new Date(finalTime).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) 
-                                                                : 'Verified Date Unknown'}
-                                                        </span>
+                                                    <div className="audit-meta" style={{ justifyContent: 'space-between' }}>
+                                                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                                            <Calendar size={14} />
+                                                            <span className="audit-date">
+                                                                {finalTime 
+                                                                    ? new Date(finalTime).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) 
+                                                                    : 'Verified Date Unknown'}
+                                                            </span>
+                                                        </div>
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => setPreviewImage(finalUrl)}
+                                                            style={{
+                                                                background: 'none',
+                                                                border: 'none',
+                                                                color: '#4f46e5',
+                                                                fontWeight: 700,
+                                                                fontSize: '0.78rem',
+                                                                cursor: 'pointer',
+                                                                display: 'inline-flex',
+                                                                alignItems: 'center',
+                                                                gap: '3px',
+                                                                padding: '2px 6px',
+                                                                borderRadius: '4px'
+                                                            }}
+                                                            title="View full photo"
+                                                        >
+                                                            View <ExternalLink size={12} />
+                                                        </button>
                                                     </div>
                                                     {typeof item === 'object' && item.gps && (
                                                         <a 

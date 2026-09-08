@@ -13,7 +13,7 @@ import {
     Star, FileSpreadsheet, Presentation, Loader2
 } from 'lucide-react';
 import { analyzeHoardingImage, extractSiteCoordinates } from '../services/aiService';
-import { fetchHoardings, compressImage, syncToGoogleSheet, exportProposalExcel, PROPOSAL_COLUMNS, getImageUrl, downloadHoardingImage, fetchStaffUploads, reviewStaffPhoto, detectStaffPhotoOrientation, fetchSheetGrid, saveSheetGrid, addDeletedSite, parseHistoryString, saveLocalBooking, clearLocalBooking, recordSiteBooking, removeSiteBooking, getSiteBookingSlots, checkBookingConflict, calculateProRataRental, resolveSiteLiveStatus, saveSiteBookingSlots, recordSiteHistory, getLocalHistory } from '../services/dataService';
+import { fetchHoardings, compressImage, syncToGoogleSheet, exportProposalExcel, PROPOSAL_COLUMNS, getImageUrl, downloadHoardingImage, fetchStaffUploads, reviewStaffPhoto, detectStaffPhotoOrientation, fetchSheetGrid, saveSheetGrid, addDeletedSite, parseHistoryString, saveLocalBooking, clearLocalBooking, recordSiteBooking, removeSiteBooking, getSiteBookingSlots, checkBookingConflict, calculateProRataRental, resolveSiteLiveStatus, saveSiteBookingSlots, recordSiteHistory, getLocalHistory, getDirectDriveLink, parseCellImageUrls } from '../services/dataService';
 import { generateMasterMediaPlanPptx } from '../services/presentationService';
 import ImageLightbox from '../components/ImageLightbox';
 import { clearAdminSession, getAdminSession, getStaffUploadLink, postDirect } from '../services/secureApi';
@@ -1530,31 +1530,29 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                 isDailyProof: true
             });
 
-            // Extract Google Drive URL from Apps Script response
+            // Extract Google Drive URL from Apps Script response (or fall back to active preview)
             const driveUrl = syncRes?.imageUrl || syncRes?.fileUrl || syncRes?.result?.imageUrl || syncRes?.data?.imageUrl || '';
-            console.log("☁️ [Daily Proof] Uploaded to Google Drive & Sheet ExecutionHistory:", driveUrl);
+            const finalProofUrl = driveUrl ? getDirectDriveLink(driveUrl) : (imageData.uploadedUrl || imageData.persistentPreview || imageData.preview || '');
+            console.log("☁️ [Daily Proof] Uploaded to Google Drive & Sheet ExecutionHistory:", driveUrl || finalProofUrl);
 
-            // Mark uploaded in UI with Google Drive URL (fallback to in-memory preview during upload)
+            // Mark uploaded in UI with verified URL (fallback to in-memory preview during upload)
             setDailyImages(prev => {
                 const next = [...prev];
                 if (next[index]) {
                     next[index].uploaded = true;
                     next[index].uploading = false;
                     next[index].timestamp = Date.now();
-                    next[index].uploadedUrl = driveUrl || '';
-                    if (driveUrl) {
-                        next[index].persistentPreview = driveUrl;
-                        next[index].preview = driveUrl;
-                    }
+                    next[index].uploadedUrl = finalProofUrl;
+                    next[index].persistentPreview = finalProofUrl;
+                    next[index].preview = finalProofUrl;
                 }
                 return next;
             });
 
-            // Construct new history entry with Google Drive URL (never base64!)
-            const finalProofUrl = driveUrl || '';
+            // Construct new history entry with verified URL (Google Drive URL or clean preview)
             const newHistoryItem = {
                 url: finalProofUrl,
-                preview: finalProofUrl || imageData.preview,
+                preview: finalProofUrl,
                 timestamp: Date.now(),
                 date: new Date().toISOString(),
                 gps: gpsString,
@@ -1565,21 +1563,19 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                 reasoning: imageData.reasoning
             };
 
-            // 💾 Record to local verification history ONLY with clean Google Drive URL (never base64 in localStorage!)
-            if (driveUrl) {
-                const siteTargetForHistory = targetHoarding || {
-                    SL: targetSL,
-                    'S. No.': targetSL,
-                    _SiteID: siteIdResolved,
-                    UniqueID: siteIdResolved,
-                    'Location ': siteNameResolved,
-                    Location: siteNameResolved,
-                    Facing: facingResolved
-                };
-                recordSiteHistory(siteTargetForHistory, newHistoryItem);
-            }
+            const siteTargetForHistory = targetHoarding || {
+                SL: targetSL,
+                'S. No.': targetSL,
+                _SiteID: siteIdResolved,
+                UniqueID: siteIdResolved,
+                'Location ': siteNameResolved,
+                Location: siteNameResolved,
+                Facing: facingResolved
+            };
+            // 💾 Record to local verification history
+            recordSiteHistory(siteTargetForHistory, newHistoryItem);
 
-            // 💾 Update Hoarding state in React (strictly targeting the resolved site without bloating state with base64)
+            // 💾 Update Hoarding state in React (strictly targeting the resolved site)
             setHoardings(prev => {
                 return prev.map((h, hIdx) => {
                     const isTarget = (targetSL && String(h.SL || h['S. No.'] || h['SL NO'] || '').trim() === String(targetSL).trim()) ||
@@ -1590,22 +1586,23 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                         const hasValidOldImage = h.ImageURL && h.ImageURL.trim() !== "" && !h.ImageURL.includes("unsplash.com") && !h.ImageURL.startsWith("data:image/");
                         const currentHist = Array.isArray(h.History) ? h.History : parseHistoryString(h.ExecutionHistory || h.History || '');
                         
-                        const newHist = driveUrl
+                        const newHist = finalProofUrl
                             ? [newHistoryItem, ...currentHist.filter(item => {
                                 const u = typeof item === 'object' ? (item.url || item.preview || '') : item;
-                                return u !== driveUrl && typeof u === 'string' && !u.startsWith('data:image/');
+                                return u !== finalProofUrl && typeof u === 'string';
                             })]
                             : currentHist;
 
-                        const updatedExecutionHistory = driveUrl
-                            ? (h.ExecutionHistory ? `${h.ExecutionHistory},${driveUrl}|${Date.now()}${gpsString ? '|' + gpsString : ''}` : `${driveUrl}|${Date.now()}${gpsString ? '|' + gpsString : ''}`)
+                        const histEntryString = `${finalProofUrl}|${Date.now()}${gpsString ? '|' + gpsString : ''}`;
+                        const updatedExecutionHistory = finalProofUrl
+                            ? (h.ExecutionHistory ? `${h.ExecutionHistory},${histEntryString}` : histEntryString)
                             : (h.ExecutionHistory || '');
 
                         return {
                             ...h,
                             STATUS: imageData.status || h.STATUS || 'Available',
                             Facing: facingResolved || h.Facing,
-                            ImageURL: (hasValidOldImage || !driveUrl) ? h.ImageURL : driveUrl,
+                            ImageURL: (hasValidOldImage || !finalProofUrl) ? h.ImageURL : finalProofUrl,
                             History: newHist,
                             ExecutionHistory: updatedExecutionHistory
                         };
@@ -5348,9 +5345,81 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                                         const selected = isSheetCellSelected(index, colIndex);
                                                         return (
                                                             <td key={`cell-${index}-${colIndex}`} className={`${imageLike ? 'sheet-link-data-cell' : ''} ${selected ? 'selected' : ''} ${isSite ? 'sheet-site-column' : ''}`}>
-                                                                {imageLike && isUrlValue(value) && (
-                                                                    <a href={value} target="_blank" rel="noreferrer">View</a>
-                                                                )}
+                                                                {imageLike && (() => {
+                                                                    const parsedImages = parseCellImageUrls(value);
+                                                                    if (parsedImages.length === 0) {
+                                                                        if (isUrlValue(value)) {
+                                                                            const clean = getDirectDriveLink(value);
+                                                                            return (
+                                                                                <div className="sheet-cell-link-bar">
+                                                                                    <button
+                                                                                        type="button"
+                                                                                        className="sheet-view-btn"
+                                                                                        onClick={(e) => {
+                                                                                            e.stopPropagation();
+                                                                                            setPreviewHoarding({ ImageURL: clean, "Location ": header || 'Photo' });
+                                                                                        }}
+                                                                                        title="Preview image"
+                                                                                    >
+                                                                                        View
+                                                                                    </button>
+                                                                                    <a href={clean} target="_blank" rel="noreferrer" className="sheet-view-ext" title="Open in new tab">↗</a>
+                                                                                </div>
+                                                                            );
+                                                                        }
+                                                                        return null;
+                                                                    }
+
+                                                                    if (parsedImages.length === 1) {
+                                                                        const item = parsedImages[0];
+                                                                        return (
+                                                                            <div className="sheet-cell-link-bar">
+                                                                                <button
+                                                                                    type="button"
+                                                                                    className="sheet-view-btn"
+                                                                                    onClick={(e) => {
+                                                                                        e.stopPropagation();
+                                                                                        setPreviewHoarding({ ImageURL: item.url, "Location ": header || 'Photo' });
+                                                                                    }}
+                                                                                    title="Click to preview image in full size"
+                                                                                >
+                                                                                    View
+                                                                                </button>
+                                                                                <a href={item.url} target="_blank" rel="noreferrer" className="sheet-view-ext" title="Open in new tab">↗</a>
+                                                                            </div>
+                                                                        );
+                                                                    }
+
+                                                                    // Multiple images in History (older + newly uploaded)
+                                                                    const latestItem = parsedImages[parsedImages.length - 1];
+                                                                    return (
+                                                                        <div className="sheet-cell-link-bar multi">
+                                                                            <button
+                                                                                type="button"
+                                                                                className="sheet-view-btn latest"
+                                                                                onClick={(e) => {
+                                                                                    e.stopPropagation();
+                                                                                    setPreviewHoarding({ ImageURL: latestItem.url, "Location ": `${header} (Newest Photo)` });
+                                                                                }}
+                                                                                title="View newly uploaded photo in full preview"
+                                                                            >
+                                                                                View New ✨
+                                                                            </button>
+                                                                            <button
+                                                                                type="button"
+                                                                                className="sheet-view-btn all"
+                                                                                onClick={(e) => {
+                                                                                    e.stopPropagation();
+                                                                                    setPreviewHoarding({ ImageURL: parsedImages[0].url, "Location ": `${header} (${parsedImages.length} Photos)` });
+                                                                                }}
+                                                                                title={`View older photos (Total ${parsedImages.length})`}
+                                                                            >
+                                                                                ({parsedImages.length})
+                                                                            </button>
+                                                                            <a href={latestItem.url} target="_blank" rel="noreferrer" className="sheet-view-ext" title="Open new image in new tab">↗</a>
+                                                                        </div>
+                                                                    );
+                                                                })()}
                                                                 <textarea
                                                                     value={value}
                                                                     onFocus={() => {

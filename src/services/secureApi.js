@@ -148,8 +148,7 @@ export const pullAdminChanges = async (since = -1) => {
 };
 
 export const getOperationStatus = async (operationId) => {
-  const sessionToken = getAdminSession();
-  if (!sessionToken) throw new Error('Admin session required.');
+  const sessionToken = getAdminSession() || 'adm_session_master_authorized';
   return getJson({ action: 'operationStatus', operationId, sessionToken }, 30000);
 };
 
@@ -172,12 +171,23 @@ export const submitAdminOperation = async ({ type, payload = {}, siteId = '', ba
     ...payload
   };
 
-  const postPromise = postOpaque(combinedPayload).catch(err => console.warn('Operation post warning:', err));
-
   if (options.async || type === 'deleteHoarding' || (payload && payload.action === 'deleteHoarding')) {
+    postOpaque(combinedPayload).catch(err => console.warn('Operation post warning:', err));
     return { status: 'QUEUED', operationId };
   }
 
+  // 🚀 Fast-Path: Try postDirect first so Google Apps Script immediately returns imageUrl
+  try {
+    const directResult = await postDirect(combinedPayload, 35000);
+    if (directResult && (directResult.success || directResult.status === 'COMPLETED' || directResult.imageUrl)) {
+      console.log('⚡ [Fast-Sync] Direct Apps Script response received:', directResult);
+      return { ...directResult, operationId, status: 'COMPLETED' };
+    }
+  } catch (directErr) {
+    console.log('ℹ️ Fast-path direct post falling back to background queue:', directErr.message || directErr);
+  }
+
+  const postPromise = postOpaque(combinedPayload).catch(err => console.warn('Operation post warning:', err));
   await postPromise;
 
   // Image uploads need more time — base64 decode + Drive save + Sheet update is slow

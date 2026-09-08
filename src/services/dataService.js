@@ -40,25 +40,59 @@ export const STAFF_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwmtW7Y
  * Expertly handles Google Drive links to ensure they load in browsers.
  * Uses the THUMBNAIL format which is the most reliable for public/shared Drive files.
  */
-const getDirectDriveLink = (url) => {
+export const getDirectDriveLink = (url) => {
   if (!url || typeof url !== 'string') return '';
-  const cleanUrl = url.trim();
+  // 1. Strip pipe delimiter and trailing metadata (like |1725800000000|28.98,77.70)
+  const cleanUrl = url.split('|')[0].trim();
+  if (!cleanUrl) return '';
 
-  // If it's already an lh3 link, return it as it's the most robust
-  if (cleanUrl.includes('lh3.googleusercontent.com')) return cleanUrl;
+  // 2. If already an lh3 link, extract the file ID cleanly
+  const lh3Match = cleanUrl.match(/lh3\.googleusercontent\.com\/d\/([^/?#\s]+)/);
+  if (lh3Match && lh3Match[1]) {
+    return `https://lh3.googleusercontent.com/d/${lh3Match[1]}`;
+  }
 
-  // Extract the unique File ID from any Google Drive URL format (direct, preview, thumbnail, etc.)
-  const idMatch = cleanUrl.match(/\/file\/d\/([^/?#]+)/) || 
-                  cleanUrl.match(/[?&]id=([^&]+)/) || 
-                  cleanUrl.match(/\/d\/([^/?#]+)/);
+  // 3. Extract the unique File ID from any Google Drive URL format (direct, preview, thumbnail, etc.)
+  const idMatch = cleanUrl.match(/\/file\/d\/([^/?#\s]+)/) || 
+                  cleanUrl.match(/[?&]id=([^&#/\s]+)/) || 
+                  cleanUrl.match(/\/d\/([^/?#\s]+)/);
 
   if (idMatch && idMatch[1]) {
     const fileId = idMatch[1];
-    // ⚡ Using lh3.googleusercontent.com/d/[ID] which is faster and bypasses many auth issues
     return `https://lh3.googleusercontent.com/d/${fileId}`;
   }
 
   return cleanUrl;
+};
+
+/**
+ * 🔗 PARSE CELL IMAGE URLS
+ * Extracts all valid, sanitized image URLs from a cell value.
+ * Handles: single URL, pipe-delimited history (url|timestamp|gps),
+ * and comma-separated lists of URLs or history entries.
+ */
+export const parseCellImageUrls = (val) => {
+  if (!val || typeof val !== 'string') return [];
+  const parts = val.split(',');
+  const results = [];
+  parts.forEach((p, idx) => {
+    const trimmed = p.trim();
+    if (!trimmed) return;
+    const urlCandidate = trimmed.split('|')[0].trim();
+    if (/^https?:\/\//i.test(urlCandidate) || urlCandidate.startsWith('blob:') || urlCandidate.startsWith('data:image/')) {
+      const directUrl = getDirectDriveLink(urlCandidate);
+      const timestampPart = trimmed.split('|')[1]?.trim();
+      const gpsPart = trimmed.split('|')[2]?.trim();
+      results.push({
+        url: directUrl,
+        rawUrl: urlCandidate,
+        timestamp: timestampPart ? parseInt(timestampPart, 10) || null : null,
+        gps: gpsPart || '',
+        index: idx
+      });
+    }
+  });
+  return results;
 };
 
 export const parseHistoryString = (rawHistory) => {
@@ -66,7 +100,7 @@ export const parseHistoryString = (rawHistory) => {
   const isCleanUrl = (u) => {
     if (!u || typeof u !== 'string') return false;
     const trimmed = u.trim();
-    return trimmed.length > 0 && !trimmed.startsWith('data:image/') && !trimmed.startsWith('blob:') && trimmed.length < 3000;
+    return trimmed.length > 0 && !trimmed.startsWith('data:image/') && trimmed.length < 3000;
   };
 
   if (Array.isArray(rawHistory)) {
@@ -432,32 +466,53 @@ export const getLocalHistory = (site = null) => {
   if (typeof window === 'undefined') return site ? [] : {};
   try {
     const raw = localStorage.getItem('adh_local_history');
-    if (!raw) return site ? [] : {};
-    const current = JSON.parse(raw);
-    if (!current || typeof current !== 'object') return site ? [] : {};
+    const sessionRaw = sessionStorage.getItem('adh_session_recent_history');
+    const current = raw ? JSON.parse(raw) : {};
+    const sessionHistory = sessionRaw ? JSON.parse(sessionRaw) : {};
 
-    // 🛡️ Clean out any legacy base64 strings
     const cleanList = (list) => {
       if (!Array.isArray(list)) return [];
       return list.filter(item => {
         const u = typeof item === 'object' ? (item.url || item.preview || '') : item;
-        return u && typeof u === 'string' && !u.startsWith('data:image/') && !u.startsWith('blob:') && u.length < 3000;
+        return u && typeof u === 'string' && u.length < 3000;
+      }).map(item => {
+        if (typeof item === 'object') {
+          return {
+            ...item,
+            url: getDirectDriveLink(item.url || item.preview || '') || item.url || item.preview || ''
+          };
+        }
+        return getDirectDriveLink(item);
       });
     };
 
     if (!site) {
       const sanitized = {};
-      Object.keys(current).forEach(k => {
-        sanitized[k] = cleanList(current[k]);
+      const allKeys = new Set([...Object.keys(current), ...Object.keys(sessionHistory)]);
+      allKeys.forEach(k => {
+        const sessList = cleanList(sessionHistory[k] || []);
+        const locList = cleanList(current[k] || []);
+        const seen = new Set(sessList.map(i => typeof i === 'object' ? i.url : i));
+        sanitized[k] = [...sessList, ...locList.filter(i => !seen.has(typeof i === 'object' ? i.url : i))];
       });
       return sanitized;
     }
 
     const keys = getSiteBookingKeys(site);
     for (const k of keys) {
-      const list = cleanList(current[k]);
-      if (list.length > 0) {
-        return list;
+      const sessList = cleanList(sessionHistory[k] || []);
+      const locList = cleanList(current[k] || []);
+      const combined = [...sessList];
+      const seen = new Set(sessList.map(i => typeof i === 'object' ? i.url : i));
+      locList.forEach(i => {
+        const u = typeof i === 'object' ? i.url : i;
+        if (!seen.has(u)) {
+          seen.add(u);
+          combined.push(i);
+        }
+      });
+      if (combined.length > 0) {
+        return combined;
       }
     }
     return [];
@@ -473,17 +528,14 @@ export const recordSiteHistory = (site, historyItem) => {
     if (keys.length === 0) return;
 
     const rawUrl = historyItem.url || historyItem.preview || '';
-    // 🛡️ CRITICAL: NEVER store base64 in localStorage! Only store remote URLs (Google Drive / HTTP).
-    if (!rawUrl || typeof rawUrl !== 'string' || rawUrl.startsWith('data:image/') || rawUrl.startsWith('blob:') || rawUrl.length > 3000) {
-      console.log('🛡️ [Local History] Skipping base64/blob image from local storage - awaiting Google Drive URL');
-      return;
-    }
+    if (!rawUrl || typeof rawUrl !== 'string') return;
 
-    const current = getLocalHistory();
+    const isRemote = /^https?:\/\//i.test(rawUrl);
+    const cleanUrl = isRemote ? getDirectDriveLink(rawUrl) : rawUrl;
 
     const normalizedItem = {
-      url: rawUrl,
-      preview: rawUrl,
+      url: cleanUrl,
+      preview: cleanUrl,
       timestamp: historyItem.timestamp || Date.now(),
       date: historyItem.date || new Date().toISOString(),
       gps: historyItem.gps || '',
@@ -494,21 +546,41 @@ export const recordSiteHistory = (site, historyItem) => {
       reasoning: historyItem.reasoning
     };
 
-    keys.forEach(k => {
-      const existing = Array.isArray(current[k]) ? current[k] : [];
-      const filtered = existing.filter(item => {
-        const itemUrl = typeof item === 'object' ? (item.url || item.preview || '') : item;
-        const itemTime = typeof item === 'object' ? (item.timestamp || 0) : 0;
-        if (!itemUrl || typeof itemUrl !== 'string' || itemUrl.startsWith('data:image/')) return false;
-        if (itemUrl === normalizedItem.url) return false;
-        if (Math.abs(itemTime - normalizedItem.timestamp) < 60000 && itemUrl.slice(0, 50) === normalizedItem.url.slice(0, 50)) return false;
-        return true;
-      });
-      current[k] = [normalizedItem, ...filtered].slice(0, 30);
-    });
+    // If it's a remote URL (Drive/HTTP), persist to localStorage
+    if (isRemote && !cleanUrl.startsWith('data:image/') && cleanUrl.length < 3000) {
+      const current = (() => {
+        try { return JSON.parse(localStorage.getItem('adh_local_history') || '{}'); } catch { return {}; }
+      })();
 
-    localStorage.setItem('adh_local_history', JSON.stringify(current));
-    console.log(`💾 [Local History] Saved history proof for keys:`, keys);
+      keys.forEach(k => {
+        const existing = Array.isArray(current[k]) ? current[k] : [];
+        const filtered = existing.filter(item => {
+          const itemUrl = typeof item === 'object' ? (item.url || item.preview || '') : item;
+          const itemTime = typeof item === 'object' ? (item.timestamp || 0) : 0;
+          if (!itemUrl || typeof itemUrl !== 'string' || itemUrl.startsWith('data:image/')) return false;
+          if (itemUrl === normalizedItem.url) return false;
+          if (Math.abs(itemTime - normalizedItem.timestamp) < 60000 && itemUrl.slice(0, 50) === normalizedItem.url.slice(0, 50)) return false;
+          return true;
+        });
+        current[k] = [normalizedItem, ...filtered].slice(0, 30);
+      });
+
+      localStorage.setItem('adh_local_history', JSON.stringify(current));
+      console.log(`💾 [Local History] Saved history proof to localStorage for keys:`, keys);
+    } else {
+      // For immediate session preview (blobs or pending drive upload), store in sessionStorage
+      try {
+        const sessionCurrent = JSON.parse(sessionStorage.getItem('adh_session_recent_history') || '{}');
+        keys.forEach(k => {
+          const existing = Array.isArray(sessionCurrent[k]) ? sessionCurrent[k] : [];
+          sessionCurrent[k] = [normalizedItem, ...existing.filter(i => (typeof i === 'object' ? i.url : i) !== normalizedItem.url)].slice(0, 10);
+        });
+        sessionStorage.setItem('adh_session_recent_history', JSON.stringify(sessionCurrent));
+        console.log(`⚡ [Session History] Cached instant capture in sessionStorage for keys:`, keys);
+      } catch (sessErr) {
+        console.warn('Session history cache error:', sessErr);
+      }
+    }
   } catch (err) {
     console.warn('recordSiteHistory notice:', err);
   }

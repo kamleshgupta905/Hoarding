@@ -1,6 +1,6 @@
 import React from 'react';
 import { Camera, CheckCircle2, MapPin, MapPinOff, RefreshCw, RotateCcw, WifiOff, XCircle, Sparkles, Check, AlertCircle, Navigation, ChevronRight, Compass, Volume2, VolumeX, ShieldCheck, Zap } from 'lucide-react';
-import { uploadStaffPhoto, fetchHoardings, saveLocalStaffUpload, syncToGoogleSheet } from '../services/dataService';
+import { uploadStaffPhoto, fetchHoardings, saveLocalStaffUpload, syncToGoogleSheet, recordSiteHistory } from '../services/dataService';
 import { matchGeofencedHoardingWithGemini } from '../services/aiService';
 import { ensureUprightBlob } from '../core/imageOrientation';
 import { HIRA_LOGO } from '../assets/hiraLogoData';
@@ -960,6 +960,19 @@ const StaffUpload = () => {
                 try {
                     const gpsString = currentGps ? `${currentGps.latitude.toFixed(6)}, ${currentGps.longitude.toFixed(6)}` : '';
                     
+                    const newAuditItem = {
+                        url: base64Data,
+                        preview: base64Data,
+                        timestamp: Date.now(),
+                        date: new Date().toISOString(),
+                        gps: gpsString,
+                        source: 'Staff Live Capture',
+                        status: siteStatus
+                    };
+
+                    // Record to session/local history engine immediately
+                    recordSiteHistory({ "Location ": matchedSite, Location: matchedSite }, newAuditItem);
+
                     // 1. Instantly update client-side cache for live zero-latency rendering
                     try {
                         const cachedRaw = localStorage.getItem('adh_cached_hoardings');
@@ -967,14 +980,6 @@ const StaffUpload = () => {
                             const cachedList = JSON.parse(cachedRaw);
                             const targetIdx = cachedList.findIndex(h => (h["Location "] || h.Location) === matchedSite);
                             if (targetIdx >= 0) {
-                                const newAuditItem = {
-                                    url: base64Data,
-                                    timestamp: Date.now(),
-                                    date: new Date().toISOString(),
-                                    gps: gpsString,
-                                    source: 'Staff Live Capture',
-                                    status: siteStatus
-                                };
                                 const existingHistory = Array.isArray(cachedList[targetIdx].History) ? cachedList[targetIdx].History : [];
                                 cachedList[targetIdx] = {
                                     ...cachedList[targetIdx],
@@ -996,7 +1001,20 @@ const StaffUpload = () => {
                         fileData: base64Data,
                         mimeType: 'image/jpeg',
                         gps: gpsString,
-                        mode: 'archive_existing'
+                        mode: 'both',
+                        isDailyProof: true
+                    }).then(res => {
+                        const driveUrl = res?.imageUrl || res?.fileUrl || res?.result?.imageUrl || '';
+                        if (driveUrl) {
+                            recordSiteHistory({ "Location ": matchedSite, Location: matchedSite }, {
+                                url: driveUrl,
+                                preview: driveUrl,
+                                timestamp: Date.now(),
+                                gps: gpsString,
+                                source: 'Staff Live Capture',
+                                status: siteStatus
+                            });
+                        }
                     }).catch(syncErr => console.warn('Direct execution history sheet sync notice:', syncErr));
                 } catch (historySyncErr) {
                     console.warn('Auto-sync to history error:', historySyncErr);
