@@ -1559,11 +1559,15 @@ function updateHoardingDetails(data) {
     }
 
     // 1b. Match by SL if present
-    var targetSL = String((data.fields && (data.fields.SL || data.fields['S. No.'] || data.fields['SL NO'])) || data.sl || '').trim();
-    var idxSL = headers.findIndex(function(h) { return cleanFull(h) === 'sl' || cleanFull(h) === 'sno'; });
+    var targetSL = String((data.fields && (data.fields.SL || data.fields['S. No.'] || data.fields['SL NO'] || data.fields['S.No.'] || data.fields['Sr. No.'])) || data.sl || '').trim();
+    var idxSL = headers.findIndex(function(h) { 
+      var c = cleanFull(h);
+      return c === 'sl' || c === 'sno' || c === 'slno' || c === 'srno' || c === 'serial' || c === 'serialno'; 
+    });
     if (rowIndex === -1 && targetSL && idxSL !== -1) {
       for (var i = 1; i < rows.length; i++) {
-        if (String(rows[i][idxSL]).trim() === targetSL) {
+        var cellVal = String(rows[i][idxSL]).trim();
+        if (cellVal === targetSL || (parseInt(cellVal, 10) === parseInt(targetSL, 10) && !isNaN(parseInt(targetSL, 10)))) {
           rowIndex = i + 1;
           logDebug("UPDATE | Matched by SL #" + targetSL + " at row " + rowIndex);
           break;
