@@ -411,6 +411,7 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
 
                     return {
                         ...item,
+                        uploadMode: item.uploadMode || 'history_only',
                         preview: persistent || getSafeStringUrl(item.preview) || '',
                         persistentPreview: persistent || '',
                         uploadedUrl: persistent || getSafeStringUrl(item.uploadedUrl) || ''
@@ -444,6 +445,7 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                         preview: persistent || getSafeStringUrl(img.preview) || '',
                         persistentPreview: persistent || '',
                         uploadedUrl: persistent || getSafeStringUrl(img.uploadedUrl) || '',
+                        uploadMode: img.uploadMode || 'history_only',
                         sl: img.sl || '',
                         matchedIndex: img.matchedIndex != null ? img.matchedIndex : -1,
                         matchedLocation: img.matchedLocation || null,
@@ -467,6 +469,14 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
             console.warn('Could not save daily proof images to localStorage:', e);
         }
     }, [dailyImages]);
+
+    const [dailyUploadMode, setDailyUploadMode] = useState(() => {
+        try {
+            return localStorage.getItem('adh_daily_upload_mode') || 'history_only';
+        } catch {
+            return 'history_only';
+        }
+    });
 
     const removeDailyImage = (idxToRemove) => {
         setDailyImages(prev => prev.filter((_, idx) => idx !== idxToRemove));
@@ -1272,6 +1282,7 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
             preview: URL.createObjectURL(file),
             persistentPreview: null,
             uploadedUrl: null,
+            uploadMode: dailyUploadMode,
             matchedLocation: null,
             status: 'Unknown',
             confidence: 0,
@@ -1507,10 +1518,11 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
             const siteNameResolved = targetHoarding ? (targetHoarding["Locality Site Location"] || targetHoarding["Location "] || targetHoarding.Location) : imageData.matchedLocation;
             const siteIdResolved = targetHoarding ? (targetHoarding.UniqueID || targetHoarding["Unique ID"] || targetHoarding.ID || targetHoarding._SiteID || '') : (imageData.matchedSiteId || '');
             const facingResolved = imageData.facing || targetHoarding?.Facing || targetHoarding?.['Traffic View'] || '';
+            const effectiveMode = imageData.uploadMode || dailyUploadMode || 'history_only';
 
             // ☁️ Sync directly to Google Drive & Google Sheets ExecutionHistory via Google Apps Script
-            // Google Apps Script uploads the image directly to Drive, archives the Drive link to ExecutionHistory,
-            // and returns the permanent Google Drive URL. We NEVER send raw base64 in fields.ExecutionHistory!
+            // mode: 'archive' = New file -> History only (master image unchanged)
+            // mode: 'archive_existing' = Current Master -> History, New file -> Master Image in inventory
             const syncRes = await syncToGoogleSheet({
                 action: 'updateHoarding',
                 sl: targetSL,
@@ -1523,7 +1535,7 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                 },
                 fileData: base64,
                 mimeType: 'image/jpeg',
-                mode: 'both',
+                mode: effectiveMode === 'replace_master' ? 'archive_existing' : 'archive',
                 gps: gpsString,
                 isDailyProof: true
             });
@@ -1531,7 +1543,7 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
             // Extract Google Drive URL from Apps Script response (or fall back to active preview)
             const driveUrl = syncRes?.imageUrl || syncRes?.fileUrl || syncRes?.result?.imageUrl || syncRes?.data?.imageUrl || '';
             const finalProofUrl = driveUrl ? getDirectDriveLink(driveUrl) : (imageData.uploadedUrl || imageData.persistentPreview || imageData.preview || '');
-            console.log("☁️ [Daily Proof] Uploaded to Google Drive & Sheet ExecutionHistory:", driveUrl || finalProofUrl);
+            console.log("☁️ [Daily Proof] Uploaded to Google Drive & Sheet ExecutionHistory:", driveUrl || finalProofUrl, "Mode:", effectiveMode);
 
             // Mark uploaded in UI with verified URL (fallback to in-memory preview during upload)
             setDailyImages(prev => {
@@ -1555,7 +1567,7 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                 timestamp: Date.now(),
                 date: new Date().toISOString(),
                 gps: gpsString,
-                source: 'Daily Execution Proof (GPS Auto-Match)',
+                source: effectiveMode === 'replace_master' ? 'New Campaign Banner' : 'Daily Execution Proof (GPS Auto-Match)',
                 facing: facingResolved,
                 status: targetHoarding?.STATUS || 'Available',
                 confidence: imageData.confidence,
@@ -1576,40 +1588,88 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
 
             // 💾 Update Hoarding state in React (strictly targeting the resolved site)
             setHoardings(prev => {
-                return prev.map((h, hIdx) => {
+                const nextList = prev.map((h, hIdx) => {
                     const isTarget = (targetSL && String(h.SL || h['S. No.'] || h['SL NO'] || '').trim() === String(targetSL).trim()) ||
                         (siteIdResolved && (h._SiteID === siteIdResolved || h.UniqueID === siteIdResolved || h['Unique ID'] === siteIdResolved)) ||
                         (imageData.matchedIndex != null && imageData.matchedIndex >= 0 && hIdx === imageData.matchedIndex);
 
                     if (isTarget) {
-                        const hasValidOldImage = h.ImageURL && h.ImageURL.trim() !== "" && !h.ImageURL.includes("unsplash.com") && !h.ImageURL.startsWith("data:image/");
                         const currentHist = Array.isArray(h.History) ? h.History : parseHistoryString(h.ExecutionHistory || h.History || '');
-                        
-                        const newHist = finalProofUrl
-                            ? [newHistoryItem, ...currentHist.filter(item => {
-                                const u = typeof item === 'object' ? (item.url || item.preview || '') : item;
-                                return u !== finalProofUrl && typeof u === 'string';
-                            })]
-                            : currentHist;
 
-                        const histEntryString = `${finalProofUrl}|${Date.now()}${gpsString ? '|' + gpsString : ''}`;
-                        const updatedExecutionHistory = finalProofUrl
-                            ? (h.ExecutionHistory ? `${h.ExecutionHistory},${histEntryString}` : histEntryString)
-                            : (h.ExecutionHistory || '');
+                        if (effectiveMode === 'replace_master') {
+                            const oldMaster = h.ImageURL || h["IMAGE 1"] || h["Image URL"] || h.image || '';
+                            const hasValidOldMaster = oldMaster && oldMaster.trim() !== "" && !oldMaster.includes("unsplash.com") && !oldMaster.startsWith("data:image/");
+                            
+                            let updatedHist = [...currentHist];
+                            let histEntryString = '';
 
-                        return {
-                            ...h,
-                            STATUS: h.STATUS || 'Available',
-                            Facing: facingResolved || h.Facing,
-                            ImageURL: (hasValidOldImage || !finalProofUrl) ? h.ImageURL : finalProofUrl,
-                            History: newHist,
-                            ExecutionHistory: updatedExecutionHistory
-                        };
+                            if (hasValidOldMaster) {
+                                const oldMasterHistoryItem = {
+                                    url: oldMaster,
+                                    preview: oldMaster,
+                                    timestamp: Date.now(),
+                                    date: new Date().toISOString(),
+                                    gps: gpsString || h.Coordinates || '',
+                                    source: 'Archived Campaign Banner',
+                                    facing: facingResolved || h.Facing,
+                                    status: h.STATUS || 'Available'
+                                };
+                                recordSiteHistory(siteTargetForHistory, oldMasterHistoryItem);
+                                updatedHist = [oldMasterHistoryItem, ...currentHist.filter(item => {
+                                    const u = typeof item === 'object' ? (item.url || item.preview || '') : item;
+                                    return u !== oldMaster;
+                                })];
+                                histEntryString = `${oldMaster}|${Date.now()}${gpsString ? '|' + gpsString : ''}`;
+                            }
+
+                            const updatedExecutionHistory = histEntryString
+                                ? (h.ExecutionHistory ? `${h.ExecutionHistory},${histEntryString}` : histEntryString)
+                                : (h.ExecutionHistory || '');
+
+                            return {
+                                ...h,
+                                STATUS: h.STATUS || 'Available',
+                                Facing: facingResolved || h.Facing,
+                                ImageURL: finalProofUrl || h.ImageURL,
+                                "IMAGE 1": finalProofUrl || h["IMAGE 1"],
+                                "Image URL": finalProofUrl || h["Image URL"],
+                                image: finalProofUrl || h.image,
+                                History: updatedHist,
+                                ExecutionHistory: updatedExecutionHistory
+                            };
+                        } else {
+                            // history_only (Default)
+                            const hasValidOldImage = h.ImageURL && h.ImageURL.trim() !== "" && !h.ImageURL.includes("unsplash.com") && !h.ImageURL.startsWith("data:image/");
+                            const newHist = finalProofUrl
+                                ? [newHistoryItem, ...currentHist.filter(item => {
+                                    const u = typeof item === 'object' ? (item.url || item.preview || '') : item;
+                                    return u !== finalProofUrl && typeof u === 'string';
+                                })]
+                                : currentHist;
+
+                            const histEntryString = `${finalProofUrl}|${Date.now()}${gpsString ? '|' + gpsString : ''}`;
+                            const updatedExecutionHistory = finalProofUrl
+                                ? (h.ExecutionHistory ? `${h.ExecutionHistory},${histEntryString}` : histEntryString)
+                                : (h.ExecutionHistory || '');
+
+                            return {
+                                ...h,
+                                STATUS: h.STATUS || 'Available',
+                                Facing: facingResolved || h.Facing,
+                                ImageURL: (hasValidOldImage || !finalProofUrl) ? h.ImageURL : finalProofUrl,
+                                History: newHist,
+                                ExecutionHistory: updatedExecutionHistory
+                            };
+                        }
                     }
                     return h;
                 });
-            });
 
+                try {
+                    localStorage.setItem('hoardings_cache', JSON.stringify(nextList));
+                } catch (cacheErr) {}
+                return nextList;
+            });
         } catch (error) {
             console.error("Auto-sync failed with error:", error);
             setDailyImages(prev => {
@@ -5490,6 +5550,102 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                 <p>Upload raw site images. AI will detect the location and status automatically.</p>
                             </div>
 
+                            {/* 🎯 Pre-Upload Mode Selector (Images drop/select karne se pehle chunein) */}
+                            <div className="daily-preupload-mode-container" style={{
+                                margin: '14px 0 18px',
+                                background: '#f8fafc',
+                                border: '1.5px solid #e2e8f0',
+                                borderRadius: '12px',
+                                padding: '14px 16px',
+                                textAlign: 'left'
+                            }}>
+                                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '10px', flexWrap: 'wrap', gap: '8px' }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.85rem', fontWeight: '700', color: '#1e293b' }}>
+                                        <span>🎯</span>
+                                        <span>Select Upload Mode (Drop ya Select karne se pehle chunein):</span>
+                                    </div>
+                                    <span style={{ fontSize: '0.74rem', color: '#64748b', fontWeight: '600' }}>
+                                        {dailyUploadMode === 'replace_master' 
+                                            ? '🔄 Nayi image Main banegi, Purani History me archive hogi' 
+                                            : '📁 Nayi image sirf History me proof banegi'}
+                                    </span>
+                                </div>
+
+                                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '10px' }}>
+                                    {/* Option 1: History Only */}
+                                    <label 
+                                        onClick={() => {
+                                            setDailyUploadMode('history_only');
+                                            try { localStorage.setItem('adh_daily_upload_mode', 'history_only'); } catch (e) {}
+                                        }}
+                                        style={{
+                                            display: 'flex',
+                                            alignItems: 'flex-start',
+                                            gap: '10px',
+                                            padding: '10px 14px',
+                                            borderRadius: '8px',
+                                            cursor: 'pointer',
+                                            border: dailyUploadMode === 'history_only' ? '2px solid #10b981' : '1px solid #cbd5e1',
+                                            background: dailyUploadMode === 'history_only' ? '#ecfdf5' : '#ffffff',
+                                            transition: 'all 0.2s ease',
+                                            boxShadow: dailyUploadMode === 'history_only' ? '0 2px 8px rgba(16, 185, 129, 0.15)' : 'none'
+                                        }}
+                                    >
+                                        <input 
+                                            type="radio" 
+                                            name="dailyUploadMode" 
+                                            checked={dailyUploadMode === 'history_only'} 
+                                            onChange={() => {}}
+                                            style={{ marginTop: '3px', accentColor: '#10b981' }}
+                                        />
+                                        <div>
+                                            <div style={{ fontWeight: '700', fontSize: '0.86rem', color: dailyUploadMode === 'history_only' ? '#065f46' : '#1e293b' }}>
+                                                📁 Daily Audit Proof (Default)
+                                            </div>
+                                            <div style={{ fontSize: '0.74rem', color: '#64748b', marginTop: '2px', lineHeight: 1.35 }}>
+                                                <strong>Nayi photo History me save hogi.</strong> Main inventory photo purani hi rahegi (Routine inspection ke liye).
+                                            </div>
+                                        </div>
+                                    </label>
+
+                                    {/* Option 2: Replace Master */}
+                                    <label 
+                                        onClick={() => {
+                                            setDailyUploadMode('replace_master');
+                                            try { localStorage.setItem('adh_daily_upload_mode', 'replace_master'); } catch (e) {}
+                                        }}
+                                        style={{
+                                            display: 'flex',
+                                            alignItems: 'flex-start',
+                                            gap: '10px',
+                                            padding: '10px 14px',
+                                            borderRadius: '8px',
+                                            cursor: 'pointer',
+                                            border: dailyUploadMode === 'replace_master' ? '2px solid #6366f1' : '1px solid #cbd5e1',
+                                            background: dailyUploadMode === 'replace_master' ? '#eef2ff' : '#ffffff',
+                                            transition: 'all 0.2s ease',
+                                            boxShadow: dailyUploadMode === 'replace_master' ? '0 2px 8px rgba(99, 102, 241, 0.15)' : 'none'
+                                        }}
+                                    >
+                                        <input 
+                                            type="radio" 
+                                            name="dailyUploadMode" 
+                                            checked={dailyUploadMode === 'replace_master'} 
+                                            onChange={() => {}}
+                                            style={{ marginTop: '3px', accentColor: '#6366f1' }}
+                                        />
+                                        <div>
+                                            <div style={{ fontWeight: '700', fontSize: '0.86rem', color: dailyUploadMode === 'replace_master' ? '#3730a3' : '#1e293b' }}>
+                                                🔄 New Flex / Campaign Change
+                                            </div>
+                                            <div style={{ fontSize: '0.74rem', color: '#64748b', marginTop: '2px', lineHeight: 1.35 }}>
+                                                <strong>Nayi photo Main Inventory banegi.</strong> Purani photo date ke saath History me archive ho jayegi.
+                                            </div>
+                                        </div>
+                                    </label>
+                                </div>
+                            </div>
+
                             <div className="upload-actions-bar">
                                 <label className="upload-trigger-btn">
                                     <Plus size={20} /> Add Images
@@ -5587,6 +5743,21 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                                             }}
                                                         >
                                                             <span className="img-label">NEW</span>
+                                                            <span style={{
+                                                                position: 'absolute',
+                                                                top: '8px',
+                                                                left: '52px',
+                                                                zIndex: 10,
+                                                                padding: '2px 7px',
+                                                                borderRadius: '4px',
+                                                                fontSize: '10px',
+                                                                fontWeight: '700',
+                                                                background: (img.uploadMode || dailyUploadMode) === 'replace_master' ? 'rgba(79, 70, 229, 0.95)' : 'rgba(16, 185, 129, 0.95)',
+                                                                color: '#ffffff',
+                                                                boxShadow: '0 1px 4px rgba(0,0,0,0.25)'
+                                                            }}>
+                                                                {(img.uploadMode || dailyUploadMode) === 'replace_master' ? '🔄 Replace Main' : '📁 History Only'}
+                                                            </span>
                                                             {img?.aiLoading && <div className="ai-spinner-overlay"><div className="spinner"></div></div>}
                                                             {img?.uploaded && <div className="uploaded-overlay"><CheckCircle size={30} color="#4ade80" /></div>}
                                                             {img?.matchFailed && !img?.uploaded && (

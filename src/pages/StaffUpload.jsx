@@ -1001,7 +1001,7 @@ const StaffUpload = () => {
                         fileData: base64Data,
                         mimeType: 'image/jpeg',
                         gps: gpsString,
-                        mode: 'both',
+                        mode: 'archive',
                         isDailyProof: true
                     }).then(res => {
                         const driveUrl = res?.imageUrl || res?.fileUrl || res?.result?.imageUrl || '';

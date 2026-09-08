@@ -1725,8 +1725,8 @@ function updateHoardingDetails(data) {
         var fieldKey = cleanFull(fKey);
 
         // 🛡️ Daily proof uploads must NEVER mutate site booking STATUS or client info!
-        if (data.isDailyProof && (fieldKey === 'status' || fieldKey === 'bookedby' || fieldKey === 'bookingstart' || fieldKey === 'bookingend' || fieldKey === 'bookingschedule')) {
-          logDebug("UPDATE | Protected site booking STATUS: skipped field " + fKey + " because isDailyProof is true.");
+        if ((data.isDailyProof || data.mode === 'archive_existing') && (fieldKey === 'status' || fieldKey === 'bookedby' || fieldKey === 'bookingstart' || fieldKey === 'bookingend' || fieldKey === 'bookingschedule')) {
+          logDebug("UPDATE | Protected site booking STATUS: skipped field " + fKey + " because isDailyProof/archive_existing is true.");
           continue;
         }
         
@@ -1790,8 +1790,8 @@ function updateHoardingDetails(data) {
       }
     }
 
-    // 3. Handle Status (Legacy/AI path) - Never mutate when uploading a daily proof!
-    if (data.status && !data.isDailyProof) {
+    // 3. Handle Status (Legacy/AI path) - Never mutate when uploading a daily proof or archiving!
+    if (data.status && !data.isDailyProof && data.mode !== 'archive_existing') {
       var idxStatus = headers.findIndex(function(h) { return cleanFull(h) === 'status'; });
       if (idxStatus === -1) {
         var newColIndex = sheet.getLastColumn() + 1;
@@ -1825,16 +1825,16 @@ function updateHoardingDetails(data) {
           var currentHistory = String(sheet.getRange(rowIndex, idxHistory + 1).getValue() || '').trim();
           var itemToArchive = null;
 
-          if (data.mode === 'archive' || data.mode === 'both' || data.isDailyProof) {
-            var gpsSuffix = data.gps ? ("|" + String(data.gps).trim()) : "";
-            itemToArchive = fileUrl + "|" + new Date().getTime() + gpsSuffix; 
-            logDebug("UPDATE | Archiving NEW upload to history: " + itemToArchive);
-          } else if (data.mode === 'archive_existing') {
+          if (data.mode === 'archive_existing') {
             var existingMaster = sheet.getRange(rowIndex, idxImg + 1).getValue();
             if (existingMaster && existingMaster.toString().indexOf('http') > -1) {
               itemToArchive = existingMaster + "|" + new Date().getTime();
-              logDebug("UPDATE | Archiving EXISTING master to history before update");
+              logDebug("UPDATE | Archiving EXISTING master to history before update: " + itemToArchive);
             }
+          } else if (data.mode === 'archive' || data.mode === 'both' || data.isDailyProof) {
+            var gpsSuffix = data.gps ? ("|" + String(data.gps).trim()) : "";
+            itemToArchive = fileUrl + "|" + new Date().getTime() + gpsSuffix; 
+            logDebug("UPDATE | Archiving NEW upload to history: " + itemToArchive);
           }
 
           if (itemToArchive) {
