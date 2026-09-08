@@ -244,14 +244,13 @@ export const normalizeHoarding = (item) => {
   const deletedUrls = getDeletedHistoryUrls();
   const combinedHistory = [...localHistItems].filter(h => {
     const u = typeof h === 'object' ? (h.url || h.preview || '') : h;
-    const direct = getDirectDriveLink(u) || u;
-    return !deletedUrls.has(u) && !deletedUrls.has(direct);
+    return !isHistoryUrlDeleted(u, deletedUrls);
   });
   const seenUrls = new Set(combinedHistory.map(h => (typeof h === 'object' ? (h.url || h.preview || '') : h)));
   parsedHistory.forEach(h => {
     const url = typeof h === 'object' ? (h.url || h.preview || '') : h;
     const direct = getDirectDriveLink(url) || url;
-    if (url && !seenUrls.has(url) && !seenUrls.has(direct) && !deletedUrls.has(url) && !deletedUrls.has(direct)) {
+    if (url && !seenUrls.has(url) && !seenUrls.has(direct) && !isHistoryUrlDeleted(url, deletedUrls) && !isHistoryUrlDeleted(direct, deletedUrls)) {
       seenUrls.add(url);
       seenUrls.add(direct);
       combinedHistory.push(h);
@@ -485,13 +484,42 @@ export const getDeletedHistoryUrls = () => {
   }
 };
 
+export const isHistoryUrlDeleted = (url, deletedSet = null) => {
+  if (!url) return false;
+  const set = deletedSet || getDeletedHistoryUrls();
+  if (!set || set.size === 0) return false;
+  const str = typeof url === 'object' ? (url.url || url.preview || '') : String(url).trim();
+  if (!str) return false;
+  if (set.has(str)) return true;
+  const direct = getDirectDriveLink(str);
+  if (direct && set.has(direct)) return true;
+
+  const idMatch = str.match(/(?:\/d\/|[?&]id=)([a-zA-Z0-9_-]{20,})/);
+  if (idMatch && idMatch[1]) {
+    const fileId = idMatch[1];
+    if (set.has(fileId)) return true;
+    if (set.has(`https://lh3.googleusercontent.com/d/${fileId}`)) return true;
+    if (set.has(`https://drive.google.com/uc?id=${fileId}`)) return true;
+  }
+  return false;
+};
+
 export const addDeletedHistoryUrl = (url) => {
   if (!url || typeof window === 'undefined') return;
   try {
     const current = getDeletedHistoryUrls();
-    current.add(url);
-    const direct = getDirectDriveLink(url);
+    const str = typeof url === 'object' ? (url.url || url.preview || '') : String(url).trim();
+    if (!str) return;
+    current.add(str);
+    const direct = getDirectDriveLink(str);
     if (direct) current.add(direct);
+    const idMatch = str.match(/(?:\/d\/|[?&]id=)([a-zA-Z0-9_-]{20,})/);
+    if (idMatch && idMatch[1]) {
+      const fileId = idMatch[1];
+      current.add(fileId);
+      current.add(`https://lh3.googleusercontent.com/d/${fileId}`);
+      current.add(`https://drive.google.com/uc?id=${fileId}`);
+    }
     localStorage.setItem(DELETED_HISTORY_URLS_KEY, JSON.stringify(Array.from(current)));
   } catch (e) {}
 };
@@ -516,8 +544,7 @@ export const getLocalHistory = (site = null) => {
       return list.filter(item => {
         const u = typeof item === 'object' ? (item.url || item.preview || '') : item;
         if (!u || typeof u !== 'string' || u.length >= 3000) return false;
-        const norm = getDirectDriveLink(u) || u;
-        if (deletedUrls.has(u) || deletedUrls.has(norm)) return false;
+        if (isHistoryUrlDeleted(u, deletedUrls)) return false;
         return true;
       }).map(item => {
         if (typeof item === 'object') {

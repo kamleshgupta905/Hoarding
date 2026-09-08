@@ -2,7 +2,7 @@ import React from 'react';
 import { useParams, Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { ChevronLeft, MapPin, Maximize2, Layers, Zap, Info, Calendar, Phone, Share2, Heart, ShieldCheck, Edit3, Trash2, X, Upload, Camera, Copy, Check, Download, ExternalLink } from 'lucide-react';
 import { Helmet } from 'react-helmet-async';
-import { getImageUrl, compressImage, syncToGoogleSheet, downloadHoardingImage, recordSiteBooking, removeSiteBooking, getLocalHistory, removeSiteHistory, parseHistoryString, getDirectDriveLink, getDeletedHistoryUrls, addDeletedHistoryUrl } from '../services/dataService';
+import { getImageUrl, compressImage, syncToGoogleSheet, downloadHoardingImage, recordSiteBooking, removeSiteBooking, getLocalHistory, removeSiteHistory, parseHistoryString, getDirectDriveLink, getDeletedHistoryUrls, addDeletedHistoryUrl, isHistoryUrlDeleted } from '../services/dataService';
 import ImageLightbox from '../components/ImageLightbox';
 import './HoardingDetail.css';
 
@@ -76,7 +76,7 @@ const HoardingDetail = ({ hoardings, setHoardings }) => {
         [...fromLocal, ...fromHoarding].forEach(item => {
             const rawUrl = typeof item === 'object' ? (item.url || item.preview || '') : item;
             const directUrl = getDirectDriveLink(rawUrl) || rawUrl;
-            if (deletedHistoryUrls.has(directUrl) || deletedHistoryUrls.has(rawUrl)) return;
+            if (isHistoryUrlDeleted(directUrl, deletedHistoryUrls) || isHistoryUrlDeleted(rawUrl, deletedHistoryUrls)) return;
             const time = typeof item === 'object' ? (item.timestamp || item.date || '') : '';
             const key = `${directUrl}_${time}`;
             if (directUrl && !seen.has(key)) {
@@ -423,18 +423,20 @@ const HoardingDetail = ({ hoardings, setHoardings }) => {
         setTimeout(() => setCopySuccess(false), 2000);
     };
 
-    const handleDeleteHistoryItem = async (imageUrl) => {
+    const handleDeleteHistoryItem = async (imageUrl, rawUrl = null) => {
         if (!isAdmin) return;
         if (!confirm("Are you sure you want to delete this specific audit photo?")) return;
 
         // 1. Immediately persist deletion & remove from UI
         addDeletedHistoryUrl(imageUrl);
+        if (rawUrl) addDeletedHistoryUrl(rawUrl);
         const direct = getDirectDriveLink(imageUrl);
         if (direct) addDeletedHistoryUrl(direct);
 
         setDeletedHistoryUrls(prev => {
             const next = new Set(prev);
             next.add(imageUrl);
+            if (rawUrl) next.add(rawUrl);
             if (direct) next.add(direct);
             return next;
         });
@@ -447,6 +449,9 @@ const HoardingDetail = ({ hoardings, setHoardings }) => {
 
             // 2. Remove from local browser history (sessionStorage & localStorage)
             removeSiteHistory(hoarding, imageUrl);
+            if (rawUrl && rawUrl !== imageUrl) {
+                removeSiteHistory(hoarding, rawUrl);
+            }
 
             // 3. Update React hoardings state & local cache
             setHoardings(prev => {
@@ -756,7 +761,7 @@ const HoardingDetail = ({ hoardings, setHoardings }) => {
                                                             className="delete-item-btn" 
                                                             onClick={(e) => {
                                                                 e.stopPropagation();
-                                                                handleDeleteHistoryItem(finalUrl);
+                                                                handleDeleteHistoryItem(finalUrl, rawUrl);
                                                             }}
                                                             title="Delete this update"
                                                         >
