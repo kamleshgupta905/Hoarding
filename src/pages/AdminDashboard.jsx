@@ -320,17 +320,49 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
 
     const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
+    // 🛡️ Type-safe helper: check if a value is a valid non-blob URL
+    const isNonBlobUrl = (val) => {
+        if (!val) return false;
+        if (typeof val === 'string') {
+            const trimmed = val.trim();
+            return trimmed.length > 0 && !trimmed.startsWith('blob:');
+        }
+        if (typeof val === 'object') {
+            const inner = typeof val.url === 'string' ? val.url : (typeof val.preview === 'string' ? val.preview : '');
+            return typeof inner === 'string' && inner.trim().length > 0 && !inner.trim().startsWith('blob:');
+        }
+        return false;
+    };
+
+    // 🛡️ Type-safe helper: extract clean string URL from primitive or object
+    const getSafeStringUrl = (val) => {
+        if (!val) return '';
+        if (typeof val === 'string') return val;
+        if (typeof val === 'object') {
+            if (typeof val.url === 'string') return val.url;
+            if (typeof val.preview === 'string') return val.preview;
+        }
+        return '';
+    };
+
     // 🛡️ Helper: Safely resolve persistent proof preview even if blob URL died after page reload
     const getPersistentProofUrl = (img = {}) => {
-        if (!img) return '';
-        if (img.persistentPreview && !img.persistentPreview.startsWith('blob:')) return img.persistentPreview;
-        if (img.uploadedUrl && !img.uploadedUrl.startsWith('blob:')) return img.uploadedUrl;
-        if (img.preview && !img.preview.startsWith('blob:')) return img.preview;
-
         try {
+            if (!img || typeof img !== 'object') return '';
+            const pp = getSafeStringUrl(img.persistentPreview);
+            if (isNonBlobUrl(pp)) return pp;
+
+            const uu = getSafeStringUrl(img.uploadedUrl);
+            if (isNonBlobUrl(uu)) return uu;
+
+            const pv = getSafeStringUrl(img.preview);
+            if (isNonBlobUrl(pv)) return pv;
+
             const raw = localStorage.getItem('adh_local_history');
             if (!raw) return '';
             const localHistMap = JSON.parse(raw);
+            if (!localHistMap || typeof localHistMap !== 'object') return '';
+
             const keysToTry = [];
             if (img.sl) keysToTry.push(String(img.sl).trim().toLowerCase());
             if (img.matchedSiteId) keysToTry.push(String(img.matchedSiteId).trim().toLowerCase());
@@ -344,12 +376,15 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
             for (const k of keysToTry) {
                 const list = localHistMap[k];
                 if (Array.isArray(list) && list.length > 0) {
-                    const first = list[0];
-                    const url = typeof first === 'object' ? (first.url || first.preview || '') : first;
-                    if (url && !url.startsWith('blob:')) return url;
+                    for (const item of list) {
+                        const candidate = getSafeStringUrl(item);
+                        if (isNonBlobUrl(candidate)) return candidate;
+                    }
                 }
             }
-        } catch {}
+        } catch (err) {
+            console.warn('getPersistentProofUrl notice:', err);
+        }
 
         return '';
     };
@@ -360,65 +395,72 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
             const raw = localStorage.getItem('adh_daily_proof_images');
             if (!raw) return [];
             const parsed = JSON.parse(raw);
+            if (!Array.isArray(parsed)) return [];
             const cutoff = Date.now() - 24 * 60 * 60 * 1000;
-            const valid = parsed.filter(item => (item.timestamp || 0) > cutoff).map(item => {
-                const persistent = (item.persistentPreview && !item.persistentPreview.startsWith('blob:'))
-                    ? item.persistentPreview
-                    : (item.uploadedUrl && !item.uploadedUrl.startsWith('blob:'))
-                    ? item.uploadedUrl
-                    : (item.preview && !item.preview.startsWith('blob:'))
-                    ? item.preview
-                    : getPersistentProofUrl(item);
+            const valid = parsed
+                .filter(item => item && typeof item === 'object' && (Number(item.timestamp) || 0) > cutoff)
+                .map(item => {
+                    const persistent = isNonBlobUrl(item.persistentPreview)
+                        ? getSafeStringUrl(item.persistentPreview)
+                        : isNonBlobUrl(item.uploadedUrl)
+                        ? getSafeStringUrl(item.uploadedUrl)
+                        : isNonBlobUrl(item.preview)
+                        ? getSafeStringUrl(item.preview)
+                        : getPersistentProofUrl(item);
 
-                return {
-                    ...item,
-                    preview: persistent || '',
-                    persistentPreview: persistent || '',
-                    uploadedUrl: persistent || item.uploadedUrl || ''
-                };
-            });
+                    return {
+                        ...item,
+                        preview: persistent || getSafeStringUrl(item.preview) || '',
+                        persistentPreview: persistent || '',
+                        uploadedUrl: persistent || getSafeStringUrl(item.uploadedUrl) || ''
+                    };
+                });
             if (valid.length !== parsed.length) {
                 localStorage.setItem('adh_daily_proof_images', JSON.stringify(valid));
             }
             return valid;
-        } catch {
+        } catch (err) {
+            console.warn('Daily proof images load notice:', err);
             return [];
         }
     });
 
     useEffect(() => {
         try {
-            const serializable = dailyImages.map(img => {
-                const persistent = (img.persistentPreview && !img.persistentPreview.startsWith('blob:'))
-                    ? img.persistentPreview
-                    : (img.uploadedUrl && !img.uploadedUrl.startsWith('blob:'))
-                    ? img.uploadedUrl
-                    : (img.preview && !img.preview.startsWith('blob:'))
-                    ? img.preview
-                    : getPersistentProofUrl(img);
+            if (!Array.isArray(dailyImages)) return;
+            const serializable = dailyImages
+                .filter(img => img && typeof img === 'object')
+                .map(img => {
+                    const persistent = isNonBlobUrl(img.persistentPreview)
+                        ? getSafeStringUrl(img.persistentPreview)
+                        : isNonBlobUrl(img.uploadedUrl)
+                        ? getSafeStringUrl(img.uploadedUrl)
+                        : isNonBlobUrl(img.preview)
+                        ? getSafeStringUrl(img.preview)
+                        : getPersistentProofUrl(img);
 
-                return {
-                    preview: persistent || '',
-                    persistentPreview: persistent || '',
-                    uploadedUrl: persistent || img.uploadedUrl || '',
-                    sl: img.sl || '',
-                    matchedIndex: img.matchedIndex,
-                    matchedLocation: img.matchedLocation,
-                    matchedSiteId: img.matchedSiteId,
-                    facing: img.facing,
-                    twinCandidates: img.twinCandidates,
-                    status: img.status,
-                    confidence: img.confidence,
-                    reasoning: img.reasoning,
-                    analysis: img.analysis,
-                    gpsCoord: img.gpsCoord,
-                    distanceM: img.distanceM,
-                    uploaded: img.uploaded,
-                    uploading: false,
-                    matchFailed: img.matchFailed,
-                    timestamp: img.timestamp || Date.now()
-                };
-            });
+                    return {
+                        preview: persistent || getSafeStringUrl(img.preview) || '',
+                        persistentPreview: persistent || '',
+                        uploadedUrl: persistent || getSafeStringUrl(img.uploadedUrl) || '',
+                        sl: img.sl || '',
+                        matchedIndex: img.matchedIndex != null ? img.matchedIndex : -1,
+                        matchedLocation: img.matchedLocation || null,
+                        matchedSiteId: img.matchedSiteId || '',
+                        facing: img.facing || '',
+                        twinCandidates: Array.isArray(img.twinCandidates) ? img.twinCandidates : null,
+                        status: img.status || 'Available',
+                        confidence: img.confidence || 0,
+                        reasoning: img.reasoning || '',
+                        analysis: img.analysis || '',
+                        gpsCoord: img.gpsCoord || null,
+                        distanceM: img.distanceM != null ? img.distanceM : null,
+                        uploaded: Boolean(img.uploaded),
+                        uploading: false,
+                        matchFailed: Boolean(img.matchFailed),
+                        timestamp: Number(img.timestamp) || Date.now()
+                    };
+                });
             localStorage.setItem('adh_daily_proof_images', JSON.stringify(serializable));
         } catch (e) {
             console.warn('Could not save daily proof images to localStorage:', e);
@@ -1286,108 +1328,134 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
 
     const processImagesWithAI = async (currentBatch = null) => {
         const targetList = currentBatch || dailyImages;
-        const imagesToProcess = targetList.filter(img => !img.matchedLocation && !img.uploaded);
+        const indicesToProcess = targetList
+            .map((img, idx) => (!img.matchedLocation && !img.uploaded && !img.uploading ? idx : -1))
+            .filter(idx => idx !== -1);
 
-        if (imagesToProcess.length === 0) return;
+        if (indicesToProcess.length === 0) return;
 
-        const updatedImages = [...targetList];
+        // Immediately flag all pending images as loading in the UI
+        setDailyImages(prev => {
+            const next = [...prev];
+            indicesToProcess.forEach(i => {
+                if (next[i]) next[i] = { ...next[i], aiLoading: true, matchFailed: false };
+            });
+            return next;
+        });
 
-        for (let i = 0; i < updatedImages.length; i++) {
-            if (!updatedImages[i].matchedLocation && !updatedImages[i].uploaded && !updatedImages[i].uploading) {
-                try {
-                    setDailyImages(prev => {
-                        const next = [...prev];
-                        if (next[i]) next[i].aiLoading = true;
-                        return next;
-                    });
+        const processSingleItem = async (i) => {
+            try {
+                setDailyImages(prev => {
+                    const next = [...prev];
+                    if (next[i]) next[i] = { ...next[i], aiLoading: true };
+                    return next;
+                });
 
-                    // Convert file to base64 for AI & OCR
-                    const base64Data = await new Promise((resolve, reject) => {
-                        const reader = new FileReader();
-                        reader.onload = () => resolve(reader.result);
-                        reader.onerror = reject;
-                        reader.readAsDataURL(updatedImages[i].file);
-                    });
+                const currentItem = (currentBatch || dailyImages)[i] || targetList[i];
+                if (!currentItem) return;
 
-                    // 🧠 Run deep GPS extraction & multi-tier matching (EXIF -> OCR GPS -> Vision AI -> OCR Text)
-                    const aiResult = await analyzeHoardingImage(base64Data, hoardings, updatedImages[i].file);
-
-                    // 🎯 Resolve Target Hoarding Site with AI Twin-Site, SL & Facing Awareness
-                    let matchedData = null;
-                    const idx = parseInt(aiResult.matchedIndex, 10);
-                    const targetSL = aiResult.sl || aiResult.site?.SL || aiResult.site?.['S. No.'] || aiResult.site?.['SL NO'];
-                    if (targetSL) {
-                        matchedData = hoardings.find(h => String(h.SL || h['S. No.'] || h['SL NO'] || '').trim() === String(targetSL).trim());
+                // Convert file to base64 for AI & OCR
+                const base64Data = await new Promise((resolve, reject) => {
+                    if (!currentItem.file) {
+                        const fallbackUrl = currentItem.persistentPreview || currentItem.uploadedUrl || currentItem.preview;
+                        if (fallbackUrl) return resolve(fallbackUrl);
+                        return reject(new Error('No file or data found for image ' + i));
                     }
-                    if (!matchedData && !isNaN(idx) && idx >= 0 && idx < hoardings.length) {
-                        matchedData = hoardings[idx];
-                    } else if (!matchedData && aiResult.matchedSiteId) {
-                        matchedData = hoardings.find(h => (h._SiteID === aiResult.matchedSiteId || h.UniqueID === aiResult.matchedSiteId || h['Unique ID'] === aiResult.matchedSiteId));
-                    } else if (!matchedData && aiResult.matchedLocation) {
-                        const aiLoc = String(aiResult.matchedLocation).toLowerCase().trim();
-                        matchedData = hoardings.find(h => {
-                            const name1 = String(h["Locality Site Location"] || '').toLowerCase().trim();
-                            const name2 = String(h["Location "] || '').toLowerCase().trim();
-                            const name3 = String(h.Location || '').toLowerCase().trim();
-                            const matchesName = name1 === aiLoc || name2 === aiLoc || name3 === aiLoc ||
-                                   (aiLoc.length > 5 && (name1.includes(aiLoc) || aiLoc.includes(name1)));
-                            if (!matchesName) return false;
-                            if (aiResult.facing) {
-                                const siteFacing = String(h.Facing || h['Traffic View'] || '').toLowerCase().trim();
-                                return siteFacing === String(aiResult.facing).toLowerCase().trim();
-                            }
-                            return true;
-                        });
-                    }
+                    const reader = new FileReader();
+                    reader.onload = () => resolve(reader.result);
+                    reader.onerror = reject;
+                    reader.readAsDataURL(currentItem.file);
+                });
 
-                    const resolvedSL = matchedData ? (matchedData.SL || matchedData['S. No.'] || matchedData['SL NO'] || '') : (aiResult.sl || '');
-                    const finalLocation = matchedData ? (matchedData["Locality Site Location"] || matchedData["Location "] || matchedData.Location) : null;
-                    const resolvedFacing = aiResult.facing || matchedData?.Facing || matchedData?.['Traffic View'] || '';
-                    const resolvedSiteId = matchedData?._SiteID || matchedData?.UniqueID || matchedData?.['Unique ID'] || matchedData?.ID || '';
-                    const resolvedIndex = matchedData ? hoardings.indexOf(matchedData) : (!isNaN(idx) && idx >= 0 ? idx : -1);
+                // 🧠 Run deep GPS extraction & multi-tier matching (EXIF -> OCR GPS -> Vision AI -> OCR Text)
+                const aiResult = await analyzeHoardingImage(base64Data, hoardings, currentItem.file);
 
-                    // Update the local item state
-                    // eslint-disable-next-line react-hooks/immutability
-                    updatedImages[i] = {
-                        ...updatedImages[i],
-                        sl: resolvedSL,
-                        matchedIndex: resolvedIndex,
-                        matchedLocation: finalLocation,
-                        matchedSiteId: resolvedSiteId,
-                        facing: resolvedFacing,
-                        twinCandidates: aiResult.twinCandidates || null,
-                        status: aiResult.status || 'Available',
-                        confidence: aiResult.confidence || 0,
-                        reasoning: aiResult.reasoning || '',
-                        analysis: aiResult.analysis || '',
-                        gpsCoord: aiResult.gpsCoord || null,
-                        distanceM: aiResult.distanceM != null ? aiResult.distanceM : null,
-                        aiLoading: false,
-                        matchFailed: !finalLocation
-                    };
-
-                    // Update state progressively
-                    setDailyImages(prev => {
-                        const next = [...prev];
-                        if (next[i]) next[i] = { ...updatedImages[i] };
-                        return next;
-                    });
-
-                    // 🚀 AUTO-SYNC: If matched, upload image & save directly to hoarding history!
-                    if (finalLocation) {
-                        await triggerAutoUpload(i, updatedImages[i]);
-                    }
-
-                } catch (error) {
-                    console.error("AI Image Processing Error:", error);
-                    setDailyImages(prev => {
-                        const next = [...prev];
-                        if (next[i]) next[i] = { ...next[i], aiLoading: false, matchFailed: true };
-                        return next;
+                // 🎯 Resolve Target Hoarding Site with AI Twin-Site, SL & Facing Awareness
+                let matchedData = null;
+                const idx = parseInt(aiResult.matchedIndex, 10);
+                const targetSL = aiResult.sl || aiResult.site?.SL || aiResult.site?.['S. No.'] || aiResult.site?.['SL NO'];
+                if (targetSL) {
+                    matchedData = hoardings.find(h => String(h.SL || h['S. No.'] || h['SL NO'] || '').trim() === String(targetSL).trim());
+                }
+                if (!matchedData && !isNaN(idx) && idx >= 0 && idx < hoardings.length) {
+                    matchedData = hoardings[idx];
+                } else if (!matchedData && aiResult.matchedSiteId) {
+                    matchedData = hoardings.find(h => (h._SiteID === aiResult.matchedSiteId || h.UniqueID === aiResult.matchedSiteId || h['Unique ID'] === aiResult.matchedSiteId));
+                } else if (!matchedData && aiResult.matchedLocation) {
+                    const aiLoc = String(aiResult.matchedLocation).toLowerCase().trim();
+                    matchedData = hoardings.find(h => {
+                        const name1 = String(h["Locality Site Location"] || '').toLowerCase().trim();
+                        const name2 = String(h["Location "] || '').toLowerCase().trim();
+                        const name3 = String(h.Location || '').toLowerCase().trim();
+                        const matchesName = name1 === aiLoc || name2 === aiLoc || name3 === aiLoc ||
+                               (aiLoc.length > 5 && (name1.includes(aiLoc) || aiLoc.includes(name1)));
+                        if (!matchesName) return false;
+                        if (aiResult.facing) {
+                            const siteFacing = String(h.Facing || h['Traffic View'] || '').toLowerCase().trim();
+                            return siteFacing === String(aiResult.facing).toLowerCase().trim();
+                        }
+                        return true;
                     });
                 }
+
+                const resolvedSL = matchedData ? (matchedData.SL || matchedData['S. No.'] || matchedData['SL NO'] || '') : (aiResult.sl || '');
+                const finalLocation = matchedData ? (matchedData["Locality Site Location"] || matchedData["Location "] || matchedData.Location) : null;
+                const resolvedFacing = aiResult.facing || matchedData?.Facing || matchedData?.['Traffic View'] || '';
+                const resolvedSiteId = matchedData?._SiteID || matchedData?.UniqueID || matchedData?.['Unique ID'] || matchedData?.ID || '';
+                const resolvedIndex = matchedData ? hoardings.indexOf(matchedData) : (!isNaN(idx) && idx >= 0 ? idx : -1);
+
+                const updatedItem = {
+                    ...currentItem,
+                    sl: resolvedSL,
+                    matchedIndex: resolvedIndex,
+                    matchedLocation: finalLocation,
+                    matchedSiteId: resolvedSiteId,
+                    facing: resolvedFacing,
+                    twinCandidates: aiResult.twinCandidates || null,
+                    status: aiResult.status || 'Available',
+                    confidence: aiResult.confidence || 0,
+                    reasoning: aiResult.reasoning || '',
+                    analysis: aiResult.analysis || '',
+                    gpsCoord: aiResult.gpsCoord || null,
+                    distanceM: aiResult.distanceM != null ? aiResult.distanceM : null,
+                    aiLoading: false,
+                    matchFailed: !finalLocation
+                };
+
+                // Update state progressively for this image
+                setDailyImages(prev => {
+                    const next = [...prev];
+                    if (next[i]) next[i] = { ...next[i], ...updatedItem, aiLoading: false };
+                    return next;
+                });
+
+                // 🚀 AUTO-SYNC: If matched, upload image & save directly to hoarding history!
+                if (finalLocation) {
+                    await triggerAutoUpload(i, updatedItem);
+                }
+
+            } catch (error) {
+                console.error(`AI Image Processing Error for index ${i}:`, error);
+                setDailyImages(prev => {
+                    const next = [...prev];
+                    if (next[i]) next[i] = { ...next[i], aiLoading: false, matchFailed: true };
+                    return next;
+                });
             }
-        }
+        };
+
+        // ⚡ Concurrency pool: run up to 6 image matching workers simultaneously
+        const CONCURRENCY_LIMIT = 6;
+        let cursor = 0;
+        const workerCount = Math.min(CONCURRENCY_LIMIT, indicesToProcess.length);
+        const workers = Array.from({ length: workerCount }, async () => {
+            while (cursor < indicesToProcess.length) {
+                const targetIdx = indicesToProcess[cursor++];
+                await processSingleItem(targetIdx);
+            }
+        });
+
+        await Promise.all(workers);
     };
 
     const triggerAutoUpload = async (index, imageData) => {
@@ -1398,7 +1466,19 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
         });
 
         try {
-            const base64 = await compressImage(imageData.file);
+            let base64 = '';
+            if (imageData.file) {
+                base64 = await compressImage(imageData.file);
+            } else if (imageData.persistentPreview || imageData.uploadedUrl || imageData.preview) {
+                base64 = imageData.persistentPreview || imageData.uploadedUrl || imageData.preview;
+            } else {
+                setDailyImages(prev => {
+                    const next = [...prev];
+                    if (next[index]) next[index].uploading = false;
+                    return next;
+                });
+                return;
+            }
 
             // Find target site in hoardings list (strictly matching by SL / siteId / index / facing)
             const targetHoarding = hoardings.find((h, hIdx) => {
@@ -1907,7 +1987,7 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
             
             if (selectedAssetFile) {
                 imageKeys.forEach(key => delete cleanFields[key]);
-            } else if (cleanFields.ImageURL && (cleanFields.ImageURL.startsWith('blob:') || cleanFields.ImageURL.includes('localhost'))) {
+            } else if (cleanFields.ImageURL && typeof cleanFields.ImageURL === 'string' && (cleanFields.ImageURL.startsWith('blob:') || cleanFields.ImageURL.includes('localhost'))) {
                 delete cleanFields.ImageURL;
             }
 
@@ -2030,7 +2110,7 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
             
             if (selectedAssetFile) {
                 imageKeys.forEach(key => delete cleanFields[key]);
-            } else if (cleanFields.ImageURL && (cleanFields.ImageURL.startsWith('blob:') || cleanFields.ImageURL.includes('localhost'))) {
+            } else if (cleanFields.ImageURL && typeof cleanFields.ImageURL === 'string' && (cleanFields.ImageURL.startsWith('blob:') || cleanFields.ImageURL.includes('localhost'))) {
                 delete cleanFields.ImageURL;
             }
 
@@ -5413,9 +5493,21 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                             </button>
                                             <div className="daily-images-container">
                                                 {(() => {
-                                                    const displayPreview = (img.preview && !img.preview.startsWith('blob:'))
-                                                        ? img.preview
-                                                        : (img.persistentPreview || img.uploadedUrl || getPersistentProofUrl(img) || img.preview || '');
+                                                    let displayPreview = '';
+                                                    try {
+                                                        const rawPreview = getSafeStringUrl(img?.preview);
+                                                        if (isNonBlobUrl(rawPreview)) {
+                                                            displayPreview = rawPreview;
+                                                        } else {
+                                                            const persistent = getSafeStringUrl(img?.persistentPreview);
+                                                            const uploaded = getSafeStringUrl(img?.uploadedUrl);
+                                                            displayPreview = isNonBlobUrl(persistent) ? persistent :
+                                                                             isNonBlobUrl(uploaded) ? uploaded :
+                                                                             getPersistentProofUrl(img) || rawPreview || '';
+                                                        }
+                                                    } catch {
+                                                        displayPreview = getSafeStringUrl(img?.preview) || '';
+                                                    }
                                                     return (
                                                         <div 
                                                             className="img-preview" 
@@ -5428,9 +5520,9 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                                             }}
                                                         >
                                                             <span className="img-label">NEW</span>
-                                                            {img.aiLoading && <div className="ai-spinner-overlay"><div className="spinner"></div></div>}
-                                                            {img.uploaded && <div className="uploaded-overlay"><CheckCircle size={30} color="#4ade80" /></div>}
-                                                            {img.matchFailed && !img.uploaded && (
+                                                            {img?.aiLoading && <div className="ai-spinner-overlay"><div className="spinner"></div></div>}
+                                                            {img?.uploaded && <div className="uploaded-overlay"><CheckCircle size={30} color="#4ade80" /></div>}
+                                                            {img?.matchFailed && !img?.uploaded && (
                                                                 <div className="match-failed-overlay">
                                                                     <XCircle size={30} color="#f87171" />
                                                                 </div>
