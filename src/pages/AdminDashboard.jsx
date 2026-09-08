@@ -268,6 +268,20 @@ const isOlderThan2Days = (time) => {
     return !isNaN(ts) && (Date.now() - ts > TWO_DAYS_MS);
 };
 
+const SEARCH_CATEGORY_OPTIONS = [
+    { id: 'all', label: 'All Fields' },
+    { id: 'location', label: 'Site / Location' },
+    { id: 'city', label: 'City / Market' },
+    { id: 'locality', label: 'Locality / Area' },
+    { id: 'client', label: 'Client / Booked By' },
+    { id: 'media', label: 'Media Format' },
+    { id: 'facing', label: 'Facing / Direction' },
+    { id: 'size', label: 'Size / Dimension' },
+    { id: 'price', label: 'Rental Price' },
+    { id: 'status', label: 'Status' },
+    { id: 'sl', label: 'S.No / ID' }
+];
+
 const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
     const navigate = useNavigate();
     const [activeTab, setActiveTabState] = useState(() => {
@@ -281,7 +295,27 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
     };
     const [quickBookingTarget, setQuickBookingTarget] = useState(null); // { site, clientName, startDate, endDate }
     const [searchTerm, setSearchTerm] = useState('');
-    const [inventorySearchCategory, setInventorySearchCategory] = useState('all');
+    const [inventorySearchCategories, setInventorySearchCategories] = useState(['all']);
+    const [isSearchCategoryDropdownOpen, setIsSearchCategoryDropdownOpen] = useState(false);
+
+    const toggleSearchCategory = (catId) => {
+        setInventorySearchCategories(prev => {
+            const list = Array.isArray(prev) ? [...prev] : ['all'];
+            if (catId === 'all') {
+                return ['all'];
+            }
+            let next = list.filter(c => c !== 'all');
+            if (next.includes(catId)) {
+                next = next.filter(c => c !== catId);
+            } else {
+                next.push(catId);
+            }
+            if (next.length === 0) {
+                return ['all'];
+            }
+            return next;
+        });
+    };
     const [inventoryCityFilter, setInventoryCityFilter] = useState(['All']);
     const [inventoryStatusFilter, setInventoryStatusFilter] = useState('All');
     const [filterStartDate, setFilterStartDate] = useState('');
@@ -2511,7 +2545,6 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
 
     const filteredInventory = useMemo(() => {
         const cleanSearch = searchTerm.trim().toLowerCase();
-
         return hoardings.filter(h => {
             if (!h) return false;
 
@@ -2519,62 +2552,56 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
             let matchSearch = true;
             if (cleanSearch) {
                 const searchKeywords = cleanSearch.split(/\s+/).filter(Boolean);
+                const getCategoryFieldText = (cat) => {
+                    switch (cat) {
+                        case 'location':
+                            return String(h["Locality Site Location"] || h["Location "] || h["Location"] || "");
+                        case 'city':
+                            return String(h.City || "");
+                        case 'locality':
+                            return String(h["Locality"] || h["Area"] || "");
+                        case 'client':
+                            return String(h.BookedBy || h.ClientName || h["Client Name"] || h.Customer || "");
+                        case 'media':
+                            return String(h["Media Format (Front Lit / Back Lit / Non Lit)"] || h["Media Format"] || h["Media Type"] || h.Media || h["Type of Site (Unipole/Billboard)"] || h.Type || "");
+                        case 'facing':
+                            return `${h.Facing || ''} ${h["Traffic View"] || ''} ${h["Traffic From"] || ''} ${h["Traffic To"] || ''}`;
+                        case 'size':
+                            return `${h.Width || ''} ${h.Height || ''} ${h["Total SQ.ft"] || ''} ${h["Total Sq. Ft"] || ''} ${h["Size (Large/Medium/Small)"] || ''} ${h.Size || ''}`;
+                        case 'price':
+                            return String(h["Rental Per Month"] || h["Avg Monthly Cost (INR)"] || "");
+                        case 'status':
+                            return String(h.STATUS || h.Status || "");
+                        case 'sl':
+                            return String(h.SL || h["S. No."] || h["SL NO"] || "");
+                        default:
+                            return "";
+                    }
+                };
 
                 let targetText = '';
-                switch (inventorySearchCategory) {
-                    case 'location':
-                        targetText = String(h["Locality Site Location"] || h["Location "] || h["Location"] || "");
-                        break;
-                    case 'city':
-                        targetText = String(h.City || "");
-                        break;
-                    case 'locality':
-                        targetText = String(h["Locality"] || h["Area"] || "");
-                        break;
-                    case 'client':
-                        targetText = String(h.BookedBy || h.ClientName || h["Client Name"] || h.Customer || "");
-                        break;
-                    case 'media':
-                        targetText = String(h["Media Format (Front Lit / Back Lit / Non Lit)"] || h["Media Format"] || h["Media Type"] || h.Media || h["Type of Site (Unipole/Billboard)"] || h.Type || "");
-                        break;
-                    case 'facing':
-                        targetText = `${h.Facing || ''} ${h["Traffic View"] || ''} ${h["Traffic From"] || ''} ${h["Traffic To"] || ''}`;
-                        break;
-                    case 'size':
-                        targetText = `${h.Width || ''} ${h.Height || ''} ${h["Total SQ.ft"] || ''} ${h["Total Sq. Ft"] || ''} ${h["Size (Large/Medium/Small)"] || ''} ${h.Size || ''}`;
-                        break;
-                    case 'price':
-                        targetText = String(h["Rental Per Month"] || h["Avg Monthly Cost (INR)"] || "");
-                        break;
-                    case 'status':
-                        targetText = String(h.STATUS || h.Status || "");
-                        break;
-                    case 'sl':
-                        targetText = String(h.SL || h["S. No."] || h["SL NO"] || "");
-                        break;
-                    case 'all':
-                    default: {
-                        const siteTitle = String(h["Locality Site Location"] || h["Location "] || h["Location"] || "");
-                        const siteLocality = String(h["Locality"] || h["Area"] || "");
-                        const city = String(h.City || "");
-                        const facing = String(h.Facing || h["Traffic View"] || "");
-                        const bookedBy = String(h.BookedBy || h.ClientName || h["Client Name"] || h.Customer || "");
-                        const trafficFrom = String(h["Traffic From"] || "");
-                        const trafficTo = String(h["Traffic To"] || "");
-                        const media = String(h.Media || h["Media Format"] || h.Type || "");
-                        const status = String(h.STATUS || h.Status || "");
-                        const sl = String(h.SL || h["S. No."] || h["SL NO"] || "");
-                        const dimensions = `${h.Width || ''} ${h.Height || ''} ${h["Total SQ.ft"] || ''} ${h.Size || ''}`;
-                        const price = String(h["Rental Per Month"] || h["Avg Monthly Cost (INR)"] || "");
+                if (!inventorySearchCategories || inventorySearchCategories.includes('all') || inventorySearchCategories.length === 0) {
+                    const siteTitle = String(h["Locality Site Location"] || h["Location "] || h["Location"] || "");
+                    const siteLocality = String(h["Locality"] || h["Area"] || "");
+                    const city = String(h.City || "");
+                    const facing = String(h.Facing || h["Traffic View"] || "");
+                    const bookedBy = String(h.BookedBy || h.ClientName || h["Client Name"] || h.Customer || "");
+                    const trafficFrom = String(h["Traffic From"] || "");
+                    const trafficTo = String(h["Traffic To"] || "");
+                    const media = String(h.Media || h["Media Format"] || h.Type || "");
+                    const status = String(h.STATUS || h.Status || "");
+                    const sl = String(h.SL || h["S. No."] || h["SL NO"] || "");
+                    const dimensions = `${h.Width || ''} ${h.Height || ''} ${h["Total SQ.ft"] || ''} ${h.Size || ''}`;
+                    const price = String(h["Rental Per Month"] || h["Avg Monthly Cost (INR)"] || "");
 
-                        const allFieldValues = Object.entries(h)
-                            .filter(([k]) => !k.startsWith('_') && k !== 'ImageURL' && k !== 'driveUrl')
-                            .map(([, v]) => String(v || ''))
-                            .join(' ');
+                    const allFieldValues = Object.entries(h)
+                        .filter(([k]) => !k.startsWith('_') && k !== 'ImageURL' && k !== 'driveUrl')
+                        .map(([, v]) => String(v || ''))
+                        .join(' ');
 
-                        targetText = `${allFieldValues} ${siteTitle} ${siteLocality} ${city} ${facing} ${bookedBy} ${trafficFrom} ${trafficTo} ${media} ${status} ${sl} ${dimensions} ${price}`;
-                        break;
-                    }
+                    targetText = `${allFieldValues} ${siteTitle} ${siteLocality} ${city} ${facing} ${bookedBy} ${trafficFrom} ${trafficTo} ${media} ${status} ${sl} ${dimensions} ${price}`;
+                } else {
+                    targetText = inventorySearchCategories.map(cat => getCategoryFieldText(cat)).join(' ');
                 }
 
                 const lowerTarget = targetText.toLowerCase();
@@ -2583,9 +2610,10 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
             }
             if (!matchSearch) return false;
 
-            const hCity = String(h.City || "").trim().toLowerCase();
+            // City Filter
+            const siteCity = String(h.City || "").trim().toLowerCase();
             const isAllCity = !inventoryCityFilter || inventoryCityFilter.length === 0 || inventoryCityFilter.includes('All');
-            const matchCity = isAllCity || (Array.isArray(inventoryCityFilter) && inventoryCityFilter.some(c => String(c).toLowerCase() === hCity));
+            const matchCity = isAllCity || (Array.isArray(inventoryCityFilter) && inventoryCityFilter.some(c => String(c).toLowerCase() === siteCity));
             if (!matchCity) return false;
 
             // Status & Date Range Availability Filter
@@ -2619,18 +2647,34 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
             const matchSize = isAllSize || (Array.isArray(inventorySizeFilter) && inventorySizeFilter.includes(hSize));
             if (!matchSize) return false;
 
-            const hCat = String(h["Site Category"] || h["Category"] || '');
-            const isAllCat = !inventoryCategoryFilter || inventoryCategoryFilter.length === 0 || inventoryCategoryFilter.includes('All');
-            const matchCategory = isAllCat || (Array.isArray(inventoryCategoryFilter) && inventoryCategoryFilter.includes(hCat));
+            const hCategory = String(h["Site Category"] || h["Category"] || '');
+            const isAllCategory = !inventoryCategoryFilter || inventoryCategoryFilter.length === 0 || inventoryCategoryFilter.includes('All');
+            const matchCategory = isAllCategory || (Array.isArray(inventoryCategoryFilter) && inventoryCategoryFilter.includes(hCategory));
             if (!matchCategory) return false;
 
-            const price = Number(h["Avg Monthly Cost (INR)"] || h["Rental Per Month"] || 0);
+            // Price Range Filter
             let matchPrice = true;
-            if (inventoryPriceFilter === '0-25k') matchPrice = price <= 25000;
-            if (inventoryPriceFilter === '25k-50k') matchPrice = price > 25000 && price <= 50000;
-            if (inventoryPriceFilter === '50k-100k') matchPrice = price > 50000 && price <= 100000;
-            if (inventoryPriceFilter === '100k+') matchPrice = price > 100000;
+            if (inventoryPriceFilter && inventoryPriceFilter !== 'All') {
+                const price = parseFloat(String(h["Rental Per Month"] || h["Avg Monthly Cost (INR)"] || 0).replace(/[^0-9.]/g, '')) || 0;
+                switch (inventoryPriceFilter) {
+                    case '0-25k':
+                        matchPrice = (price < 25000);
+                        break;
+                    case '25k-50k':
+                        matchPrice = (price >= 25000 && price <= 50000);
+                        break;
+                    case '50k-100k':
+                        matchPrice = (price > 50000 && price <= 100000);
+                        break;
+                    case '100k+':
+                        matchPrice = (price > 100000);
+                        break;
+                    default:
+                        matchPrice = true;
+                }
+            }
 
+            // ⭐ Star-Only Filter
             if (showOnlyStarred) {
                 const siteKey = String(h.SL || h.UniqueID || h['Unique ID'] || `${h.City || ''}_${h['Location '] || h.Location || ''}_${h.Facing || ''}`).trim();
                 if (!Array.isArray(starredSiteKeys) || !starredSiteKeys.includes(siteKey)) {
@@ -2640,7 +2684,7 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
 
             return matchPrice;
         });
-    }, [hoardings, searchTerm, inventorySearchCategory, inventoryCityFilter, inventoryStatusFilter, filterStartDate, filterEndDate, inventoryLocalityFilter, inventoryMediaFilter, inventorySizeFilter, inventoryCategoryFilter, inventoryPriceFilter, showOnlyStarred, starredSiteKeys]);
+    }, [hoardings, searchTerm, inventorySearchCategories, inventoryCityFilter, inventoryStatusFilter, filterStartDate, filterEndDate, inventoryLocalityFilter, inventoryMediaFilter, inventorySizeFilter, inventoryCategoryFilter, inventoryPriceFilter, showOnlyStarred, starredSiteKeys]);
 
     const getSiteStableKey = useCallback((h) => {
         if (!h) return '';
@@ -2700,21 +2744,21 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
         }
     };
 
-    const getProposalKey = (h, index = 0) => [
-        h["Location "],
-        h.City,
-        h.Width,
-        h.Height,
-        h.Latitude,
-        h.Longitude,
-        index
-    ].filter(Boolean).join('|');
+    const getProposalKey = useCallback((h) => {
+        return getSiteStableKey(h);
+    }, [getSiteStableKey]);
 
-    const filteredInventoryKeys = filteredInventory.map((h, i) => getProposalKey(h, i));
-    const selectedProposalSites = filteredInventory.filter((h, i) =>
-        Array.isArray(selectedProposalKeys) && selectedProposalKeys.includes(getProposalKey(h, i))
-    );
-    const isAllFilteredSelected = filteredInventory.length > 0 &&
+    const filteredInventoryKeys = useMemo(() => {
+        return filteredInventory.map(h => getProposalKey(h)).filter(Boolean);
+    }, [filteredInventory, getProposalKey]);
+
+    const selectedProposalSites = useMemo(() => {
+        return (Array.isArray(hoardings) ? hoardings : []).filter(h =>
+            h && Array.isArray(selectedProposalKeys) && selectedProposalKeys.includes(getProposalKey(h))
+        );
+    }, [hoardings, selectedProposalKeys, getProposalKey]);
+
+    const isAllFilteredSelected = filteredInventoryKeys.length > 0 &&
         filteredInventoryKeys.every(key => Array.isArray(selectedProposalKeys) && selectedProposalKeys.includes(key));
 
     const toggleProposalSelection = (key) => {
@@ -2914,10 +2958,16 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
     const mediaFormatMap = {};
     safeHoardings.forEach(h => {
         if (!h) return;
-        const type = (h["Type of Site (Unipole/Billboard)"] || h["Media Format (Front Lit/ Back Lit/Non Lit)"] || 'Other').trim();
-        if (type) mediaFormatMap[type] = (mediaFormatMap[type] || 0) + 1;
+        let type = (h["Type of Site (Unipole/Billboard)"] || h["Media Format"] || h["Media Type"] || '').trim();
+        if (!type || /^(non\s*lit|front\s*lit|back\s*lit|lit)$/i.test(type)) {
+            type = (h["Type of Site"] || h["Media"] || '').trim();
+        }
+        if (type && !/^(non\s*lit|front\s*lit|back\s*lit|lit)$/i.test(type)) {
+            mediaFormatMap[type] = (mediaFormatMap[type] || 0) + 1;
+        }
     });
     const mediaFormats = Object.entries(mediaFormatMap)
+        .filter(([name]) => name && !/non\s*lit/i.test(name))
         .sort((a, b) => b[1] - a[1])
         .slice(0, 5)
         .map(([name, count]) => ({
@@ -6474,41 +6524,109 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                     boxShadow: '0 1px 4px rgba(0, 0, 0, 0.04)',
                                     transition: 'border-color 0.2s ease, box-shadow 0.2s ease'
                                 }}>
-                                    {/* Category Dropdown Selector */}
+                                    {/* Multi-Select Category Dropdown with Checkboxes */}
                                     <div style={{ position: 'relative', display: 'flex', alignItems: 'center', flexShrink: 0 }}>
-                                        <select 
-                                            value={inventorySearchCategory}
-                                            onChange={(e) => setInventorySearchCategory(e.target.value)}
+                                        <button
+                                            type="button"
+                                            onClick={() => setIsSearchCategoryDropdownOpen(prev => !prev)}
                                             style={{
-                                                appearance: 'none',
-                                                WebkitAppearance: 'none',
                                                 background: '#f1f5f9',
                                                 border: '1px solid #e2e8f0',
                                                 borderRadius: '8px',
-                                                padding: '7px 28px 7px 10px',
+                                                padding: '7px 12px',
                                                 fontSize: '0.82rem',
                                                 fontWeight: 600,
                                                 color: '#334155',
                                                 cursor: 'pointer',
-                                                outline: 'none',
+                                                display: 'inline-flex',
+                                                alignItems: 'center',
+                                                gap: '6px',
                                                 transition: 'all 0.15s ease'
                                             }}
-                                            aria-label="Select search category"
-                                            title="Search specifically by field"
+                                            title="Click to select search categories"
+                                            aria-label="Select search categories"
                                         >
-                                            <option value="all">🔍 All Fields</option>
-                                            <option value="location">📍 Site / Location</option>
-                                            <option value="city">🏙️ City / Market</option>
-                                            <option value="locality">📌 Locality / Area</option>
-                                            <option value="client">👤 Client / Booked By</option>
-                                            <option value="media">🖼️ Media Format</option>
-                                            <option value="facing">🧭 Facing / Direction</option>
-                                            <option value="size">📐 Size / Dimension</option>
-                                            <option value="price">💰 Rental Price</option>
-                                            <option value="status">🟢 Status</option>
-                                            <option value="sl">🔢 S.No / ID</option>
-                                        </select>
-                                        <ChevronDown size={14} color="#64748b" style={{ position: 'absolute', right: '9px', pointerEvents: 'none' }} />
+                                            <span>
+                                                {!inventorySearchCategories || inventorySearchCategories.includes('all') || inventorySearchCategories.length === 0
+                                                    ? 'All Fields'
+                                                    : inventorySearchCategories.length === 1
+                                                        ? (SEARCH_CATEGORY_OPTIONS.find(o => o.id === inventorySearchCategories[0])?.label || '1 Field')
+                                                        : `${inventorySearchCategories.length} Fields`}
+                                            </span>
+                                            <ChevronDown size={14} color="#64748b" style={{ transform: isSearchCategoryDropdownOpen ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s ease' }} />
+                                        </button>
+
+                                        {isSearchCategoryDropdownOpen && (
+                                            <>
+                                                <div 
+                                                    style={{ position: 'fixed', inset: 0, zIndex: 998 }} 
+                                                    onClick={() => setIsSearchCategoryDropdownOpen(false)} 
+                                                />
+                                                <div style={{
+                                                    position: 'absolute',
+                                                    top: 'calc(100% + 6px)',
+                                                    left: 0,
+                                                    background: '#ffffff',
+                                                    border: '1px solid #e2e8f0',
+                                                    borderRadius: '10px',
+                                                    boxShadow: '0 10px 25px -5px rgba(0,0,0,0.1), 0 8px 10px -6px rgba(0,0,0,0.06)',
+                                                    padding: '6px',
+                                                    zIndex: 999,
+                                                    minWidth: '200px',
+                                                    display: 'flex',
+                                                    flexDirection: 'column',
+                                                    gap: '2px',
+                                                    maxHeight: '340px',
+                                                    overflowY: 'auto'
+                                                }}>
+                                                    {SEARCH_CATEGORY_OPTIONS.map(opt => {
+                                                        const isChecked = opt.id === 'all'
+                                                            ? (!inventorySearchCategories || inventorySearchCategories.includes('all') || inventorySearchCategories.length === 0)
+                                                            : (Array.isArray(inventorySearchCategories) && inventorySearchCategories.includes(opt.id));
+                                                        return (
+                                                            <label
+                                                                key={opt.id}
+                                                                onClick={(e) => e.stopPropagation()}
+                                                                style={{
+                                                                    display: 'flex',
+                                                                    alignItems: 'center',
+                                                                    gap: '8px',
+                                                                    padding: '6px 10px',
+                                                                    borderRadius: '6px',
+                                                                    cursor: 'pointer',
+                                                                    fontSize: '0.82rem',
+                                                                    fontWeight: isChecked ? 600 : 500,
+                                                                    color: isChecked ? '#1e40af' : '#334155',
+                                                                    background: isChecked ? '#eff6ff' : 'transparent',
+                                                                    transition: 'background 0.12s ease',
+                                                                    userSelect: 'none'
+                                                                }}
+                                                                onMouseEnter={(e) => {
+                                                                    if (!isChecked) e.currentTarget.style.background = '#f8fafc';
+                                                                }}
+                                                                onMouseLeave={(e) => {
+                                                                    if (!isChecked) e.currentTarget.style.background = 'transparent';
+                                                                }}
+                                                            >
+                                                                <input
+                                                                    type="checkbox"
+                                                                    checked={isChecked}
+                                                                    onChange={() => toggleSearchCategory(opt.id)}
+                                                                    style={{
+                                                                        width: '15px',
+                                                                        height: '15px',
+                                                                        accentColor: '#2563eb',
+                                                                        cursor: 'pointer',
+                                                                        margin: 0
+                                                                    }}
+                                                                />
+                                                                <span>{opt.label}</span>
+                                                            </label>
+                                                        );
+                                                    })}
+                                                </div>
+                                            </>
+                                        )}
                                     </div>
 
                                     {/* Search Input Box */}
@@ -6517,17 +6635,11 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                         <input 
                                             type="text"
                                             placeholder={
-                                                inventorySearchCategory === 'location' ? 'Search by site name or location (e.g. Delhi Road)...' :
-                                                inventorySearchCategory === 'city' ? 'Search by city / market (e.g. Meerut, Delhi)...' :
-                                                inventorySearchCategory === 'locality' ? 'Search by locality or area...' :
-                                                inventorySearchCategory === 'client' ? 'Search by client name / booked by...' :
-                                                inventorySearchCategory === 'media' ? 'Search by media format (e.g. Unipole, Billboard)...' :
-                                                inventorySearchCategory === 'facing' ? 'Search by facing or traffic direction...' :
-                                                inventorySearchCategory === 'size' ? 'Search by dimensions or size (e.g. 20x10)...' :
-                                                inventorySearchCategory === 'price' ? 'Search by monthly rental / cost...' :
-                                                inventorySearchCategory === 'status' ? 'Search by status (Available, Booked)...' :
-                                                inventorySearchCategory === 'sl' ? 'Search by serial no. or ID...' :
-                                                'Search location, city, client, facing, area, size or any keyword...'
+                                                !inventorySearchCategories || inventorySearchCategories.includes('all') || inventorySearchCategories.length === 0
+                                                    ? 'Search location, city, client, facing, area, size or any keyword...'
+                                                    : inventorySearchCategories.length === 1
+                                                        ? `Search by ${SEARCH_CATEGORY_OPTIONS.find(o => o.id === inventorySearchCategories[0])?.label || 'field'}...`
+                                                        : `Search in ${inventorySearchCategories.length} selected fields...`
                                             }
                                             value={searchTerm}
                                             onChange={(e) => setSearchTerm(e.target.value)}
@@ -6750,7 +6862,7 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                                 setInventoryCategoryFilter(['All']);
                                                 setInventoryPriceFilter('All');
                                                 setSearchTerm('');
-                                                setInventorySearchCategory('all');
+                                                setInventorySearchCategories(['all']);
                                             }}
                                         >
                                             Reset Filters
@@ -6810,10 +6922,9 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                                     aria-label="Select all filtered sites"
                                                 />
                                             </th>
-                                            <th className="star-col" style={{ width: '56px', textAlign: 'center', padding: '14px 8px' }} title="Star Mark / Shortlist for 1-Click Excel & PPT">
-                                                <div style={{ display: 'inline-flex', alignItems: 'center', gap: '3px', color: '#b45309', fontWeight: 700, fontSize: '0.75rem' }}>
-                                                    <Star size={15} fill="#f59e0b" color="#f59e0b" />
-                                                    <span>STAR</span>
+                                            <th className="star-col" style={{ width: '48px', textAlign: 'center', padding: '14px 6px' }} title="Star Mark / Shortlist for 1-Click Excel & PPT">
+                                                <div style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
+                                                    <Star size={16} fill="#f59e0b" color="#f59e0b" />
                                                 </div>
                                             </th>
                                             <th className="image-col">Image</th>
@@ -6826,12 +6937,12 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                     </thead>
                                     <tbody>
                                         {filteredInventory.map((h, i) => (
-                                            <tr key={i}>
+                                            <tr key={getProposalKey(h) || i}>
                                                 <td className="select-col">
                                                     <input
                                                         type="checkbox"
-                                                        checked={selectedProposalKeys.includes(getProposalKey(h, i))}
-                                                        onChange={() => toggleProposalSelection(getProposalKey(h, i))}
+                                                        checked={selectedProposalKeys.includes(getProposalKey(h))}
+                                                        onChange={() => toggleProposalSelection(getProposalKey(h))}
                                                         aria-label={`Select ${h["Location "]}`}
                                                     />
                                                 </td>
@@ -7459,20 +7570,19 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                                                     background: '#fee2e2',
                                                                     border: 'none',
                                                                     borderRadius: '6px',
-                                                                    padding: '5px 10px',
+                                                                    padding: '6px 8px',
                                                                     color: '#dc2626',
                                                                     fontSize: '0.75rem',
                                                                     fontWeight: 700,
                                                                     cursor: 'pointer',
                                                                     display: 'inline-flex',
                                                                     alignItems: 'center',
-                                                                    gap: '4px',
+                                                                    justifyContent: 'center',
                                                                     transition: 'background 0.15s ease'
                                                                 }}
-                                                                title="Release this booking slot"
+                                                                title="Delete / Release this booking slot"
                                                             >
-                                                                <Trash2 size={12} />
-                                                                <span>Release</span>
+                                                                <Trash2 size={15} />
                                                             </button>
                                                         </td>
                                                     </tr>
