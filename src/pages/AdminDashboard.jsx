@@ -2500,6 +2500,15 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
         return false;
     };
 
+    const isSiteUpcoming = (site) => {
+        if (!site) return false;
+        const live = resolveSiteLiveStatus(site);
+        if (live.status === 'Upcoming') return true;
+        const today = new Date().toISOString().split('T')[0];
+        const slots = getSiteBookingSlots(site);
+        return slots.some(s => s && s.start && s.start > today);
+    };
+
     const filteredInventory = useMemo(() => {
         const cleanSearch = searchTerm.trim().toLowerCase();
 
@@ -2587,11 +2596,11 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                 const isAvailInDates = isSiteAvailableForDateRange(h, filterStartDate, filterEndDate);
                 if (inventoryStatusFilter === 'Available') matchStatus = isAvailInDates;
                 else if (inventoryStatusFilter === 'Booked' || inventoryStatusFilter === 'Active Booked') matchStatus = !isAvailInDates;
-                else if (inventoryStatusFilter === 'Upcoming (Future Booked)') matchStatus = (live.status === 'Upcoming');
+                else if (inventoryStatusFilter === 'Upcoming (Future Booked)') matchStatus = isSiteUpcoming(h);
             } else {
                 if (inventoryStatusFilter === 'Available') matchStatus = (live.status === 'Available');
                 else if (inventoryStatusFilter === 'Booked' || inventoryStatusFilter === 'Active Booked') matchStatus = (live.status === 'Booked');
-                else if (inventoryStatusFilter === 'Upcoming (Future Booked)') matchStatus = (live.status === 'Upcoming');
+                else if (inventoryStatusFilter === 'Upcoming (Future Booked)') matchStatus = isSiteUpcoming(h);
             }
             if (!matchStatus) return false;
 
@@ -2818,6 +2827,76 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
     const bookedCount = safeHoardings.filter(h => h && ((h.STATUS || '').toLowerCase() === 'booked' || (h.STATUS || '').toLowerCase() === 'occupied')).length;
     const availableCount = safeHoardings.filter(h => h && !((h.STATUS || '').toLowerCase() === 'booked' || (h.STATUS || '').toLowerCase() === 'occupied')).length;
     
+    // 📅 Current Month Analytics (1st to Today & 1st to Month-End)
+    const now = new Date();
+    const currentYear = now.getFullYear();
+    const currentMonthIdx = now.getMonth();
+    const currentDay = now.getDate();
+    const totalDaysInMonth = new Date(currentYear, currentMonthIdx + 1, 0).getDate();
+    const todayDateStr = `${currentYear}-${String(currentMonthIdx + 1).padStart(2, '0')}-${String(currentDay).padStart(2, '0')}`;
+    const monthStartDateStr = `${currentYear}-${String(currentMonthIdx + 1).padStart(2, '0')}-01`;
+    const monthEndDateStr = `${currentYear}-${String(currentMonthIdx + 1).padStart(2, '0')}-${String(totalDaysInMonth).padStart(2, '0')}`;
+
+    // 📋 All Site Bookings Analytics across all media locations
+    const overviewAllBookings = [];
+    safeHoardings.forEach(h => {
+        if (!h) return;
+        const slots = getSiteBookingSlots(h);
+        const monthlyRental = parseFloat(String(h["Rental Per Month"] || h["Avg Monthly Cost (INR)"] || 0).replace(/[^0-9.]/g, '')) || 0;
+        slots.forEach(slot => {
+            const isCompleted = Boolean(slot.end && slot.end < todayDateStr);
+            const isTodayActive = Boolean(slot.start && slot.end && slot.start <= todayDateStr && slot.end >= todayDateStr);
+            const isUpcoming = Boolean(slot.start && slot.start > todayDateStr);
+            overviewAllBookings.push({
+                site: h,
+                slot,
+                monthlyRental,
+                start: slot.start,
+                end: slot.end,
+                isCompleted,
+                isTodayActive,
+                isUpcoming
+            });
+        });
+    });
+
+    // 1. Total bookings excluding completed ("sabhi milake completed ko chodke")
+    const nonCompletedBookingsCount = overviewAllBookings.filter(b => !b.isCompleted).length;
+
+    // 2. Upcoming sites
+    const upcomingSitesCount = safeHoardings.filter(h => isSiteUpcoming(h)).length;
+
+    // 3. Month Revenue: 1st of month till today (so far)
+    // 4. Month Revenue: 1st of month till last date of month (full month expected)
+    let currentMonthEarnedSoFar = 0;
+    let currentMonthFullExpected = 0;
+
+    overviewAllBookings.forEach(b => {
+        if (!b.start || !b.end || b.monthlyRental <= 0) return;
+
+        const dayRate = b.monthlyRental / totalDaysInMonth;
+
+        // Overlap with [monthStart, today]
+        const mtdStart = b.start > monthStartDateStr ? b.start : monthStartDateStr;
+        const mtdEnd = b.end < todayDateStr ? b.end : todayDateStr;
+        if (mtdEnd >= mtdStart) {
+            const sDate = new Date(mtdStart);
+            const eDate = new Date(mtdEnd);
+            const elapsedDays = Math.max(1, Math.round((eDate - sDate) / (1000 * 60 * 60 * 24)) + 1);
+            currentMonthEarnedSoFar += Math.round(dayRate * elapsedDays);
+        }
+
+        // Overlap with [monthStart, monthEnd]
+        const fullStart = b.start > monthStartDateStr ? b.start : monthStartDateStr;
+        const fullEnd = b.end < monthEndDateStr ? b.end : monthEndDateStr;
+        if (fullEnd >= fullStart) {
+            const sDate = new Date(fullStart);
+            const eDate = new Date(fullEnd);
+            const fullDays = Math.max(1, Math.round((eDate - sDate) / (1000 * 60 * 60 * 24)) + 1);
+            currentMonthFullExpected += Math.round(dayRate * fullDays);
+        }
+    });
+
     const totalMonthlyRevenue = safeHoardings.reduce((sum, h) => {
         if (!h) return sum;
         const v = parseFloat(String(h["Rental Per Month"] || h["Avg Monthly Cost (INR)"] || 0).replace(/[^0-9.]/g, '')) || 0;
@@ -4105,10 +4184,6 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                         <Zap size={18} />
                         <span>Daily Updates</span>
                     </button>
-                    <button className={`nav-item ${activeTab === 'guide' ? 'active' : ''}`} onClick={() => setActiveTab('guide')}>
-                        <BookOpen size={18} />
-                        <span>System Guide</span>
-                    </button>
                     <button className="nav-item" onClick={() => setIsAppDownloadModalOpen(true)}>
                         <Download size={18} />
                         <span>Download Apps</span>
@@ -4273,26 +4348,33 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                 className="qm-kpi-grid"
                             >
                                 
-                                {/* Card 1: Total Revenue */}
+                                {/* Card 1: No. of Bookings (Excl. Completed) */}
                                 <motion.div 
                                     whileHover={{ y: -3, transition: { duration: 0.18 } }}
-                                    className="qm-kpi-card"
+                                    className="qm-kpi-card clickable"
+                                    role="button"
+                                    tabIndex={0}
+                                    onClick={() => {
+                                        setClientStatusFilter('all');
+                                        setActiveTab('clients');
+                                    }}
+                                    onKeyDown={(e) => {
+                                        if (e.key === 'Enter') {
+                                            setClientStatusFilter('all');
+                                            setActiveTab('clients');
+                                        }
+                                    }}
+                                    title="View active and scheduled bookings (click to open)"
                                 >
                                     <div className="qm-kpi-top">
-                                        <span className="qm-kpi-label">Total revenue</span>
+                                        <span className="qm-kpi-label">No. of bookings</span>
                                         <div className="qm-kpi-icon-box qm-green">
-                                            <span style={{ fontSize: '0.95rem', fontWeight: 700 }}>₹</span>
+                                            <Layers size={16} />
                                         </div>
                                     </div>
                                     <div className="qm-kpi-value-row">
                                         <span className="qm-kpi-main-val">
-                                            <AnimatedCounter 
-                                                value={totalMonthlyRevenue > 10000000 ? (totalMonthlyRevenue / 10000000) : (totalMonthlyRevenue > 100000 ? (totalMonthlyRevenue / 100000) : (totalMonthlyRevenue > 1000 ? (totalMonthlyRevenue / 1000) : totalMonthlyRevenue))} 
-                                                prefix="₹" 
-                                                suffix={totalMonthlyRevenue > 10000000 ? " Cr" : (totalMonthlyRevenue > 100000 ? " L" : (totalMonthlyRevenue > 1000 ? " K" : ""))} 
-                                                decimals={2} 
-                                                duration={800} 
-                                            />
+                                            <AnimatedCounter value={nonCompletedBookingsCount} duration={800} />
                                         </span>
                                     </div>
                                 </motion.div>
@@ -4341,21 +4423,25 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                     </div>
                                 </motion.div>
 
-                                {/* Card 4: Clients */}
+                                {/* Card 4: Upcoming Sites */}
                                 <motion.div 
                                     whileHover={{ y: -3, transition: { duration: 0.18 } }}
                                     className="qm-kpi-card clickable"
-                                    onClick={() => setActiveTab('clients')}
+                                    role="button"
+                                    tabIndex={0}
+                                    onClick={() => openInventory('Upcoming (Future Booked)')}
+                                    onKeyDown={(e) => e.key === 'Enter' && openInventory('Upcoming (Future Booked)')}
+                                    title="View upcoming sites in Inventory (click to open)"
                                 >
                                     <div className="qm-kpi-top">
-                                        <span className="qm-kpi-label">Verified Sites</span>
+                                        <span className="qm-kpi-label">Upcoming sites</span>
                                         <div className="qm-kpi-icon-box qm-purple">
-                                            <Users size={16} />
+                                            <Compass size={16} />
                                         </div>
                                     </div>
                                     <div className="qm-kpi-value-row">
                                         <span className="qm-kpi-main-val">
-                                            <AnimatedCounter value={verifiedAssetsCount} duration={800} />
+                                            <AnimatedCounter value={upcomingSitesCount} duration={800} />
                                         </span>
                                     </div>
                                 </motion.div>
@@ -4541,40 +4627,58 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
 
                             </motion.div>
 
-                            {/* 📊 Bottom Row: Average Order Value & Low Stock Items (Screenshot 2 Bottom) */}
+                            {/* 📊 Bottom Row: Month Revenue (1st to Today) & Expected Month Revenue (Till Month End) */}
                             <motion.div 
                                 initial={{ opacity: 0, y: 22 }}
                                 whileInView={{ opacity: 1, y: 0 }}
                                 viewport={{ once: false, amount: 0.15 }}
                                 transition={{ duration: 0.48, ease: [0.16, 1, 0.3, 1] }}
-                                style={{ display: 'grid', gridTemplateColumns: '1.48fr 1fr', gap: '24px' }}
+                                style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '24px' }}
                             >
                                 
-                                {/* Bottom Card 1: Average order value */}
+                                {/* Bottom Card 1: Revenue from 1st of month till today */}
                                 <motion.div 
                                     whileHover={{ y: -2, transition: { duration: 0.18 } }}
                                     className="qm-card" 
                                     style={{ padding: '22px 26px' }}
                                 >
-                                    <div style={{ fontSize: '0.82rem', fontWeight: 600, color: '#64748b', marginBottom: '8px' }}>
-                                        Average order value
+                                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
+                                        <div style={{ fontSize: '0.84rem', fontWeight: 700, color: '#475569', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                            <span>💰</span>
+                                            <span>Revenue: 1st till Today</span>
+                                        </div>
+                                        <span style={{ fontSize: '0.72rem', fontWeight: 700, background: '#dcfce7', color: '#15803d', padding: '2px 8px', borderRadius: '12px' }}>
+                                            Day 1 - {currentDay}
+                                        </span>
                                     </div>
-                                    <div style={{ fontSize: '2rem', fontWeight: 800, color: '#0f172a', letterSpacing: '-0.02em', lineHeight: 1 }}>
-                                        ₹<AnimatedCounter value={avgMonthlyRate} duration={1000} />
+                                    <div style={{ fontSize: '2rem', fontWeight: 800, color: '#15803d', letterSpacing: '-0.02em', lineHeight: 1.1 }}>
+                                        <AnimatedCounter value={currentMonthEarnedSoFar} prefix="₹" duration={1000} />
+                                    </div>
+                                    <div style={{ fontSize: '0.76rem', color: '#64748b', marginTop: '6px' }}>
+                                        Earned so far this month from active site bookings
                                     </div>
                                 </motion.div>
 
-                                {/* Bottom Card 2: Low stock items (< 10) */}
+                                {/* Bottom Card 2: Total expected revenue till last date of month */}
                                 <motion.div 
                                     whileHover={{ y: -2, transition: { duration: 0.18 } }}
                                     className="qm-card" 
                                     style={{ padding: '22px 26px' }}
                                 >
-                                    <div style={{ fontSize: '0.82rem', fontWeight: 600, color: '#64748b', marginBottom: '8px' }}>
-                                        Low stock items (&lt; 10)
+                                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
+                                        <div style={{ fontSize: '0.84rem', fontWeight: 700, color: '#475569', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                            <span>📈</span>
+                                            <span>Projected Revenue: Till Month End</span>
+                                        </div>
+                                        <span style={{ fontSize: '0.72rem', fontWeight: 700, background: '#e0e7ff', color: '#4338ca', padding: '2px 8px', borderRadius: '12px' }}>
+                                            Till {new Date(currentYear, currentMonthIdx + 1, 0).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}
+                                        </span>
                                     </div>
-                                    <div style={{ fontSize: '2rem', fontWeight: 800, color: '#ea580c', letterSpacing: '-0.02em', lineHeight: 1 }}>
-                                        <AnimatedCounter value={3} duration={800} />
+                                    <div style={{ fontSize: '2rem', fontWeight: 800, color: '#4f46e5', letterSpacing: '-0.02em', lineHeight: 1.1 }}>
+                                        <AnimatedCounter value={currentMonthFullExpected} prefix="₹" duration={1000} />
+                                    </div>
+                                    <div style={{ fontSize: '0.76rem', color: '#64748b', marginTop: '6px' }}>
+                                        Expected total by month end from scheduled & active bookings
                                     </div>
                                 </motion.div>
 
