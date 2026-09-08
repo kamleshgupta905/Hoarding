@@ -242,15 +242,20 @@ export const resolveTwinSiteFacingWithGemini = async (imageBase64, candidates) =
 
   const candidateDescriptions = candidates.map((c, idx) => {
     const rawSite = c.site || c;
+    const sl = rawSite.SL || rawSite['S. No.'] || rawSite['SL NO'] || (c.index !== undefined ? c.index + 1 : idx + 1);
     const name = rawSite["Location "] || rawSite["Locality Site Location"] || rawSite.Location || rawSite.siteName || `Site #${idx}`;
     const facing = rawSite.Facing || rawSite['Traffic View'] || rawSite.facing || 'N/A';
     const from = rawSite['Traffic From'] || rawSite.from || '';
     const to = rawSite['Traffic To'] || rawSite.to || '';
     const traffic = from && to ? `Traffic from ${from} towards ${to}` : (from || to || '');
     const refUrl = rawSite.ImageURL && !rawSite.ImageURL.includes('unsplash.com') ? rawSite.ImageURL : '';
+    const distText = c.distanceM !== undefined ? `${c.distanceM}m away from camera GPS` : '';
+    const poleRole = (idx === 0 || (c.distanceM !== undefined && c.distanceM <= 50)) ? '(Closest Foreground Structure)' : '(Neighboring Structure further down road)';
     return `[Candidate ${idx}]:
+- S.No / SL: #${sl}
 - Location: "${name}"
 - Facing Direction: "${facing}" (Face is oriented towards ${facing}, visible to oncoming traffic coming from ${from || facing} heading towards ${to || 'opposite'})
+${distText ? `- Distance to Camera: ${distText} ${poleRole}` : ''}
 ${traffic ? `- Traffic Flow: "${traffic}"` : ''}
 ${rawSite.City ? `- City: "${rawSite.City}"` : ''}
 ${refUrl ? `- Reference Photo URL: ${refUrl}` : ''}`;
@@ -258,7 +263,7 @@ ${refUrl ? `- Reference Photo URL: ${refUrl}` : ''}`;
 
   const prompt = `You are an expert AI Outdoor Advertising (OOH / Billboard) Traffic Analyst.
 A field audit photo was taken of an outdoor hoarding billboard.
-At this exact GPS coordinate, there are MULTIPLE candidate billboard faces (e.g. a double-sided unipole on the road divider, with opposite facings).
+At or near this GPS coordinate, there may be MULTIPLE candidate billboard faces (e.g. a double-sided unipole on the road divider with opposite facings, or multiple consecutive unipoles/billboards situated along the same road).
 
 CANDIDATE HOARDING FACES AT THIS SPOT:
 ${candidateDescriptions}
@@ -272,9 +277,13 @@ CRITICAL RULES FOR ACCURATE MATCHING:
 3. Inspect the road perspective and traffic direction in the photo:
    - Notice the direction traffic is flowing relative to the camera (towards camera vs away).
    - Look at the road divider, metro/RRTS pillars, overbridge, street signs, and background shops.
-4. Compare with the Candidate Facing Directions and Traffic Flows above.
-5. Select the best matching Candidate (by index: 0, 1, etc.).
-6. Detect status: "Occupied" (active commercial brand ad mounted) or "Available" (blank, white, torn, or To-Let).
+4. Multiple Consecutive Hoardings Along the Same Road:
+   - When multiple hoarding structures stand along the same road corridor (e.g. Modipuram Road), multiple candidates share the exact same Facing direction.
+   - Pay attention to Distance to Camera. The camera photo was taken right in front of the CLOSEST physical structure (foreground).
+   - Select the Candidate matching the correct Facing that is CLOSEST to the camera, unless the visual framing clearly shows a distant structure zoomed in.
+5. Compare with the Candidate Facing Directions, Distances, and Traffic Flows above.
+6. Select the best matching Candidate (by index: 0, 1, etc.).
+7. Detect status: "Occupied" (active commercial brand ad mounted) or "Available" (blank, white, torn, or To-Let).
 
 Return ONLY a single valid JSON object (no markdown, no backticks):
 {
@@ -282,7 +291,7 @@ Return ONLY a single valid JSON object (no markdown, no backticks):
   "facing": "exact facing from selected candidate",
   "status": "Occupied",
   "confidence": 0.98,
-  "reasoning": "Detailed visual explanation of road direction, traffic flow, and why this candidate facing was selected"
+  "reasoning": "Detailed visual explanation of road direction, traffic flow, distance, and why this candidate facing was selected"
 }`;
 
   const payload = {

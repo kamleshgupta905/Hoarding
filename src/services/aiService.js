@@ -396,6 +396,7 @@ export const matchHoardingByGps = async (coord, locationList, rawImageBase64 = n
 
     const twinCandidatesList = cluster80m.length > 1 ? cluster80m.map(c => ({
         index: c.index,
+        sl: c.site?.SL || c.site?.['S. No.'] || c.site?.['SL NO'] || (c.index + 1),
         siteId: c.siteId,
         siteName: c.siteName,
         facing: c.facing || 'N/A',
@@ -409,10 +410,25 @@ export const matchHoardingByGps = async (coord, locationList, rawImageBase64 = n
         try {
             const resolved = await resolveTwinSiteFacingWithGemini(rawImageBase64, cluster80m);
             if (resolved && resolved.matchedSite) {
-                const resolvedIndex = resolved.candidateIndex !== undefined ? resolved.candidateIndex : resolved.matchedIndex;
-                const targetCandidate = cluster80m.find(c => c.index === resolvedIndex) || cluster80m[0];
+                // Determine target candidate:
+                // If multiple poles on the same road share the exact same facing (e.g. SL 211 at 43m and SL 210 at 72m),
+                // matchingCandidates[0] is the closest physical structure photographed in the foreground!
+                const targetFacingNorm = normalizeText(resolved.facing);
+                const matchingCandidates = cluster80m.filter(c => normalizeText(c.facing) === targetFacingNorm);
+                
+                let targetCandidate = null;
+                if (matchingCandidates.length > 0) {
+                    targetCandidate = matchingCandidates[0];
+                } else {
+                    const resolvedIndex = resolved.candidateIndex !== undefined ? resolved.candidateIndex : resolved.matchedIndex;
+                    targetCandidate = cluster80m.find(c => c.index === resolvedIndex) || cluster80m[0];
+                }
+
+                const resolvedSL = targetCandidate.site?.SL || targetCandidate.site?.['S. No.'] || targetCandidate.site?.['SL NO'] || (targetCandidate.index + 1);
+
                 return {
                     index: targetCandidate.index,
+                    sl: resolvedSL,
                     site: targetCandidate.site,
                     siteName: targetCandidate.siteName,
                     siteCoord: targetCandidate.siteCoord,
@@ -421,7 +437,7 @@ export const matchHoardingByGps = async (coord, locationList, rawImageBase64 = n
                     status: resolved.status || 'Occupied',
                     confidence: Math.round((resolved.confidence || 0.96) * 100),
                     twinCandidates: twinCandidatesList,
-                    reasoning: `🧭 AI Auto-Resolved Facing: "${resolved.facing || targetCandidate.facing}" (${resolved.reasoning || 'Road traffic angle match'})`
+                    reasoning: `🧭 AI Auto-Resolved Facing: "${resolved.facing || targetCandidate.facing}" (SL #${resolvedSL}, ${targetCandidate.distanceM}m) — ${resolved.reasoning || 'Road traffic angle match'}`
                 };
             }
         } catch (twinErr) {
@@ -429,10 +445,13 @@ export const matchHoardingByGps = async (coord, locationList, rawImageBase64 = n
         }
     }
 
+    const closestSL = closest.site?.SL || closest.site?.['S. No.'] || closest.site?.['SL NO'] || (closest.index + 1);
+
     // 🎯 Threshold 1: <= 50m is an Exact Pinpoint Match (99% confidence)
     if (closest.distanceM <= 50) {
         return {
             index: closest.index,
+            sl: closestSL,
             site: closest.site,
             siteName: closest.siteName,
             siteCoord: closest.siteCoord,
@@ -448,6 +467,7 @@ export const matchHoardingByGps = async (coord, locationList, rawImageBase64 = n
     if (closest.distanceM <= 150) {
         return {
             index: closest.index,
+            sl: closestSL,
             site: closest.site,
             siteName: closest.siteName,
             siteCoord: closest.siteCoord,
@@ -463,6 +483,7 @@ export const matchHoardingByGps = async (coord, locationList, rawImageBase64 = n
     if (closest.distanceM <= 350) {
         return {
             index: closest.index,
+            sl: closestSL,
             site: closest.site,
             siteName: closest.siteName,
             siteCoord: closest.siteCoord,
@@ -478,6 +499,7 @@ export const matchHoardingByGps = async (coord, locationList, rawImageBase64 = n
     if (closest.distanceM <= 750) {
         return {
             index: closest.index,
+            sl: closestSL,
             site: closest.site,
             siteName: closest.siteName,
             siteCoord: closest.siteCoord,
@@ -493,6 +515,7 @@ export const matchHoardingByGps = async (coord, locationList, rawImageBase64 = n
     if (closest.distanceM <= 2500) {
         return {
             index: closest.index,
+            sl: closestSL,
             site: closest.site,
             siteName: closest.siteName,
             siteCoord: closest.siteCoord,
@@ -611,6 +634,8 @@ export const analyzeHoardingImage = async (base64Image, locationList, rawFile = 
                 if (gpsMatch) {
                     return {
                         matchedIndex: gpsMatch.index,
+                        sl: gpsMatch.sl || gpsMatch.site?.SL || gpsMatch.site?.['S. No.'] || '',
+                        site: gpsMatch.site,
                         matchedLocation: gpsMatch.siteName,
                         matchedSiteId: gpsMatch.site._SiteID || gpsMatch.site.UniqueID || gpsMatch.site['Unique ID'] || '',
                         facing: gpsMatch.facing || gpsMatch.site.Facing || '',
@@ -665,6 +690,8 @@ export const analyzeHoardingImage = async (base64Image, locationList, rawFile = 
                 const status = gpsMatch.status || (lowerOcr.includes('available') || lowerOcr.includes('vacant') || lowerOcr.includes('to-let') || lowerOcr.includes('to let') ? 'Available' : 'Occupied');
                 return {
                     matchedIndex: gpsMatch.index,
+                    sl: gpsMatch.sl || gpsMatch.site?.SL || gpsMatch.site?.['S. No.'] || '',
+                    site: gpsMatch.site,
                     matchedLocation: gpsMatch.siteName,
                     matchedSiteId: gpsMatch.site._SiteID || gpsMatch.site.UniqueID || gpsMatch.site['Unique ID'] || '',
                     facing: gpsMatch.facing || gpsMatch.site.Facing || '',
@@ -700,6 +727,8 @@ export const analyzeHoardingImage = async (base64Image, locationList, rawFile = 
                 if (gpsMatch) {
                     return {
                         matchedIndex: gpsMatch.index,
+                        sl: gpsMatch.sl || gpsMatch.site?.SL || gpsMatch.site?.['S. No.'] || '',
+                        site: gpsMatch.site,
                         matchedLocation: gpsMatch.siteName,
                         matchedSiteId: gpsMatch.site._SiteID || gpsMatch.site.UniqueID || gpsMatch.site['Unique ID'] || '',
                         facing: gpsMatch.facing || gpsMatch.site.Facing || '',
@@ -719,6 +748,8 @@ export const analyzeHoardingImage = async (base64Image, locationList, rawFile = 
                 const matchedH = locationList[aiResult.matchedIndex];
                 return {
                     matchedIndex: aiResult.matchedIndex,
+                    sl: matchedH?.SL || matchedH?.['S. No.'] || '',
+                    site: matchedH,
                     matchedLocation: aiResult.matchedSiteName,
                     matchedSiteId: matchedH?._SiteID || matchedH?.UniqueID || matchedH?.['Unique ID'] || '',
                     facing: aiResult.facing || matchedH?.Facing || matchedH?.['Traffic View'] || '',

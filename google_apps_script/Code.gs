@@ -1565,6 +1565,7 @@ function updateHoardingDetails(data) {
       for (var i = 1; i < rows.length; i++) {
         if (String(rows[i][idxSL]).trim() === targetSL) {
           rowIndex = i + 1;
+          logDebug("UPDATE | Matched by SL #" + targetSL + " at row " + rowIndex);
           break;
         }
       }
