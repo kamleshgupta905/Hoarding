@@ -5721,14 +5721,9 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                             onDragLeave={onDragLeave}
                             onDrop={onDrop}
                         >
-                            <div className="upload-header">
-                                <h3>📸 Daily Proof of Execution</h3>
-                                <p>Upload raw site images. AI will detect the location and status automatically.</p>
-                            </div>
-
-                            {/* 🎯 Pre-Upload Mode Selector (Images drop/select karne se pehle chunein) */}
+                            {/* 🎯 Pre-Upload Mode Selector */}
                             <div className="daily-preupload-mode-container" style={{
-                                margin: '10px 0 16px',
+                                margin: '0 0 14px',
                                 background: '#f8fafc',
                                 border: '1px solid #e2e8f0',
                                 borderRadius: '10px',
@@ -5738,12 +5733,12 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px', flexWrap: 'wrap', gap: '6px' }}>
                                     <div style={{ display: 'flex', alignItems: 'center', gap: '5px', fontSize: '0.78rem', fontWeight: '700', color: '#1e293b' }}>
                                         <span>🎯</span>
-                                        <span>Select Upload Mode (Drop ya Select karne se pehle chunein):</span>
+                                        <span>Select Upload Mode (Choose before uploading images):</span>
                                     </div>
                                     <span style={{ fontSize: '0.70rem', color: '#64748b', fontWeight: '600' }}>
                                         {dailyUploadMode === 'replace_master' 
-                                            ? '🔄 Nayi image Main banegi, Purani History me archive hogi' 
-                                            : '📁 Nayi image sirf History me proof banegi'}
+                                            ? '🔄 New image becomes Main, old archived in History' 
+                                            : '📁 New image saved only to History as proof'}
                                     </span>
                                 </div>
 
@@ -5779,7 +5774,7 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                                 📁 Daily Audit Proof (Default)
                                             </div>
                                             <div style={{ fontSize: '0.70rem', color: '#64748b', marginTop: '2px', lineHeight: 1.3 }}>
-                                                <strong>Nayi photo History me save hogi.</strong> Main inventory photo purani hi rahegi (Routine inspection ke liye).
+                                                <strong>New photo saved to History.</strong> Main inventory photo remains unchanged (for routine inspection).
                                             </div>
                                         </div>
                                     </label>
@@ -5815,7 +5810,7 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                                 🔄 New Flex / Campaign Change
                                             </div>
                                             <div style={{ fontSize: '0.70rem', color: '#64748b', marginTop: '2px', lineHeight: 1.3 }}>
-                                                <strong>Nayi photo Main Inventory banegi.</strong> Purani photo date ke saath History me archive ho jayegi.
+                                                <strong>New photo becomes Main Inventory.</strong> Previous photo is archived in History with date.
                                             </div>
                                         </div>
                                     </label>
