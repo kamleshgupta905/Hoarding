@@ -1880,16 +1880,17 @@ function deleteHistoryItem(data) {
     return res({ success: false, error: 'siteName, sl, or siteId is required' });
   }
 
+  // Safe Lock handling (never deadlock or fail if lock is already held)
   var lock = LockService.getScriptLock();
+  var hasLock = false;
   try {
-    lock.waitLock(10000);
-  } catch (e) {
-    return res({ success: false, error: 'Could not obtain lock.' });
-  }
+    if (lock.tryLock(8000)) hasLock = true;
+  } catch (e) {}
 
   try {
     var ss = SpreadsheetApp.getActiveSpreadsheet();
     var sheet = ss.getSheetByName(CONFIG.SHEET_NAME);
+    if (!sheet) return res({ success: false, error: 'Sheet not found' });
     var headers = getAllHeaders(sheet);
     var idxSite = findSiteColumn(headers);
     var idxHistory = findHistoryColumn(headers);
@@ -1899,23 +1900,37 @@ function deleteHistoryItem(data) {
     var rows = sheet.getDataRange().getValues();
     var rowIndex = -1;
 
-    // 1. Match by SL
-    var targetSL = String((data.fields && (data.fields.SL || data.fields['S. No.'])) || data.sl || '').trim();
-    var idxSL = headers.findIndex(function(h) { 
-      var c = cleanFull(h);
-      return c === 'sl' || c === 'sno' || c === 'slno' || c === 'srno'; 
-    });
-    if (targetSL && idxSL !== -1) {
+    // 1. Match by _SiteID if present
+    var targetSiteId = String(data.siteId || (data.fields && (data.fields.UniqueID || data.fields['Unique ID'] || data.fields._SiteID)) || '').trim().toLowerCase();
+    var idxSiteId = headers.indexOf('_SiteID');
+    if (targetSiteId && idxSiteId !== -1) {
       for (var i = 1; i < rows.length; i++) {
-        var cellVal = String(rows[i][idxSL]).trim();
-        if (cellVal === targetSL || (parseInt(cellVal, 10) === parseInt(targetSL, 10) && !isNaN(parseInt(targetSL, 10)))) {
+        if (String(rows[i][idxSiteId]).trim().toLowerCase() === targetSiteId) {
           rowIndex = i + 1;
           break;
         }
       }
     }
 
-    // 2. Match by SiteName
+    // 2. Match by SL
+    if (rowIndex === -1) {
+      var targetSL = String((data.fields && (data.fields.SL || data.fields['S. No.'])) || data.sl || '').trim();
+      var idxSL = headers.findIndex(function(h) { 
+        var c = cleanFull(h);
+        return c === 'sl' || c === 'sno' || c === 'slno' || c === 'srno'; 
+      });
+      if (targetSL && idxSL !== -1) {
+        for (var i = 1; i < rows.length; i++) {
+          var cellVal = String(rows[i][idxSL]).trim();
+          if (cellVal === targetSL || (parseInt(cellVal, 10) === parseInt(targetSL, 10) && !isNaN(parseInt(targetSL, 10)))) {
+            rowIndex = i + 1;
+            break;
+          }
+        }
+      }
+    }
+
+    // 3. Match by SiteName
     if (rowIndex === -1 && data.siteName) {
       var searchName = cleanFull(data.siteName);
       for (var i = 1; i < rows.length; i++) {
@@ -1957,7 +1972,9 @@ function deleteHistoryItem(data) {
   } catch (err) {
     return res({ success: false, error: err.toString() });
   } finally {
-    lock.releaseLock();
+    if (hasLock) {
+      try { lock.releaseLock(); } catch (e) {}
+    }
   }
 }
 

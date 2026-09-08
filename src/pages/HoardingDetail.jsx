@@ -2,7 +2,7 @@ import React from 'react';
 import { useParams, Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { ChevronLeft, MapPin, Maximize2, Layers, Zap, Info, Calendar, Phone, Share2, Heart, ShieldCheck, Edit3, Trash2, X, Upload, Camera, Copy, Check, Download, ExternalLink } from 'lucide-react';
 import { Helmet } from 'react-helmet-async';
-import { getImageUrl, compressImage, syncToGoogleSheet, downloadHoardingImage, recordSiteBooking, removeSiteBooking, getLocalHistory, removeSiteHistory, parseHistoryString, getDirectDriveLink } from '../services/dataService';
+import { getImageUrl, compressImage, syncToGoogleSheet, downloadHoardingImage, recordSiteBooking, removeSiteBooking, getLocalHistory, removeSiteHistory, parseHistoryString, getDirectDriveLink, getDeletedHistoryUrls, addDeletedHistoryUrl } from '../services/dataService';
 import ImageLightbox from '../components/ImageLightbox';
 import './HoardingDetail.css';
 
@@ -53,7 +53,7 @@ const HoardingDetail = ({ hoardings, setHoardings }) => {
             return false;
         }
     }, []);
-    const [deletedHistoryUrls, setDeletedHistoryUrls] = React.useState(() => new Set());
+    const [deletedHistoryUrls, setDeletedHistoryUrls] = React.useState(() => getDeletedHistoryUrls());
     const [isEditModalOpen, setIsEditModalOpen] = React.useState(false);
     const [isLoading, setIsLoading] = React.useState(false);
     const [formData, setFormData] = React.useState({});
@@ -427,11 +427,14 @@ const HoardingDetail = ({ hoardings, setHoardings }) => {
         if (!isAdmin) return;
         if (!confirm("Are you sure you want to delete this specific audit photo?")) return;
 
-        // 1. Immediately remove from UI
+        // 1. Immediately persist deletion & remove from UI
+        addDeletedHistoryUrl(imageUrl);
+        const direct = getDirectDriveLink(imageUrl);
+        if (direct) addDeletedHistoryUrl(direct);
+
         setDeletedHistoryUrls(prev => {
             const next = new Set(prev);
             next.add(imageUrl);
-            const direct = getDirectDriveLink(imageUrl);
             if (direct) next.add(direct);
             return next;
         });

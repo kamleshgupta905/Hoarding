@@ -241,12 +241,19 @@ export const normalizeHoarding = (item) => {
     }
   }
 
-  const combinedHistory = [...localHistItems];
-  const seenUrls = new Set(localHistItems.map(h => (typeof h === 'object' ? (h.url || h.preview || '') : h)));
+  const deletedUrls = getDeletedHistoryUrls();
+  const combinedHistory = [...localHistItems].filter(h => {
+    const u = typeof h === 'object' ? (h.url || h.preview || '') : h;
+    const direct = getDirectDriveLink(u) || u;
+    return !deletedUrls.has(u) && !deletedUrls.has(direct);
+  });
+  const seenUrls = new Set(combinedHistory.map(h => (typeof h === 'object' ? (h.url || h.preview || '') : h)));
   parsedHistory.forEach(h => {
     const url = typeof h === 'object' ? (h.url || h.preview || '') : h;
-    if (url && !seenUrls.has(url)) {
+    const direct = getDirectDriveLink(url) || url;
+    if (url && !seenUrls.has(url) && !seenUrls.has(direct) && !deletedUrls.has(url) && !deletedUrls.has(direct)) {
       seenUrls.add(url);
+      seenUrls.add(direct);
       combinedHistory.push(h);
     }
   });
@@ -465,6 +472,30 @@ export const clearLocalBooking = (siteKeyOrSite) => {
   }
 };
 
+const DELETED_HISTORY_URLS_KEY = 'adh_deleted_history_urls';
+
+export const getDeletedHistoryUrls = () => {
+  if (typeof window === 'undefined') return new Set();
+  try {
+    const raw = localStorage.getItem(DELETED_HISTORY_URLS_KEY);
+    const arr = raw ? JSON.parse(raw) : [];
+    return new Set(Array.isArray(arr) ? arr : []);
+  } catch {
+    return new Set();
+  }
+};
+
+export const addDeletedHistoryUrl = (url) => {
+  if (!url || typeof window === 'undefined') return;
+  try {
+    const current = getDeletedHistoryUrls();
+    current.add(url);
+    const direct = getDirectDriveLink(url);
+    if (direct) current.add(direct);
+    localStorage.setItem(DELETED_HISTORY_URLS_KEY, JSON.stringify(Array.from(current)));
+  } catch (e) {}
+};
+
 /**
  * 📜 LOCAL EXECUTION PROOF / AUDIT HISTORY ENGINE
  * Guarantees newly uploaded daily verification photos are immediately visible
@@ -478,12 +509,16 @@ export const getLocalHistory = (site = null) => {
     const sessionRaw = sessionStorage.getItem('adh_session_recent_history');
     const current = raw ? JSON.parse(raw) : {};
     const sessionHistory = sessionRaw ? JSON.parse(sessionRaw) : {};
+    const deletedUrls = getDeletedHistoryUrls();
 
     const cleanList = (list) => {
       if (!Array.isArray(list)) return [];
       return list.filter(item => {
         const u = typeof item === 'object' ? (item.url || item.preview || '') : item;
-        return u && typeof u === 'string' && u.length < 3000;
+        if (!u || typeof u !== 'string' || u.length >= 3000) return false;
+        const norm = getDirectDriveLink(u) || u;
+        if (deletedUrls.has(u) || deletedUrls.has(norm)) return false;
+        return true;
       }).map(item => {
         if (typeof item === 'object') {
           return {
@@ -596,41 +631,88 @@ export const recordSiteHistory = (site, historyItem) => {
 };
 
 export const removeSiteHistory = (site, targetUrl) => {
-  if (!site || !targetUrl || typeof window === 'undefined') return;
+  if (!targetUrl || typeof window === 'undefined') return;
   try {
-    const keys = getSiteBookingKeys(site);
+    addDeletedHistoryUrl(targetUrl);
     const normTarget = getDirectDriveLink(targetUrl) || targetUrl;
 
-    // 1. Remove from localStorage
+    const matchesTarget = (u) => {
+      if (!u) return false;
+      const str = typeof u === 'object' ? (u.url || u.preview || '') : String(u);
+      if (!str) return false;
+      if (str === targetUrl || str === normTarget) return true;
+      const norm = getDirectDriveLink(str) || str;
+      if (norm === normTarget || norm === targetUrl) return true;
+      const idMatch1 = str.match(/\/d\/([^/?#\s]+)/) || str.match(/[?&]id=([^&#/\s]+)/);
+      const idMatch2 = normTarget.match(/\/d\/([^/?#\s]+)/) || normTarget.match(/[?&]id=([^&#/\s]+)/);
+      if (idMatch1 && idMatch2 && idMatch1[1] === idMatch2[1]) return true;
+      return false;
+    };
+
+    // 1. Remove from localStorage adh_local_history across ALL keys
     try {
       const current = JSON.parse(localStorage.getItem('adh_local_history') || '{}');
-      const targetKeys = keys.length > 0 ? keys : Object.keys(current);
-      targetKeys.forEach(k => {
+      Object.keys(current).forEach(k => {
         if (Array.isArray(current[k])) {
-          current[k] = current[k].filter(item => {
-            const itemUrl = typeof item === 'object' ? (item.url || item.preview || '') : item;
-            const normItem = getDirectDriveLink(itemUrl) || itemUrl;
-            return normItem !== normTarget && itemUrl !== targetUrl;
-          });
+          current[k] = current[k].filter(item => !matchesTarget(item));
         }
       });
       localStorage.setItem('adh_local_history', JSON.stringify(current));
     } catch (e) {}
 
-    // 2. Remove from sessionStorage
+    // 2. Remove from sessionStorage adh_session_recent_history across ALL keys
     try {
       const sessionCurrent = JSON.parse(sessionStorage.getItem('adh_session_recent_history') || '{}');
-      const sessionTargetKeys = keys.length > 0 ? keys : Object.keys(sessionCurrent);
-      sessionTargetKeys.forEach(k => {
+      Object.keys(sessionCurrent).forEach(k => {
         if (Array.isArray(sessionCurrent[k])) {
-          sessionCurrent[k] = sessionCurrent[k].filter(item => {
-            const itemUrl = typeof item === 'object' ? (item.url || item.preview || '') : item;
-            const normItem = getDirectDriveLink(itemUrl) || itemUrl;
-            return normItem !== normTarget && itemUrl !== targetUrl;
-          });
+          sessionCurrent[k] = sessionCurrent[k].filter(item => !matchesTarget(item));
         }
       });
       sessionStorage.setItem('adh_session_recent_history', JSON.stringify(sessionCurrent));
+    } catch (e) {}
+
+    // 3. Purge from hoardings_cache
+    try {
+      const hCacheRaw = localStorage.getItem('hoardings_cache');
+      if (hCacheRaw) {
+        const hCache = JSON.parse(hCacheRaw);
+        if (Array.isArray(hCache)) {
+          const updatedCache = hCache.map(h => {
+            if (Array.isArray(h.History)) {
+              h.History = h.History.filter(item => !matchesTarget(item));
+            }
+            if (h.ExecutionHistory && typeof h.ExecutionHistory === 'string') {
+              h.ExecutionHistory = h.ExecutionHistory.split(',')
+                .filter(part => !matchesTarget(part.split('|')[0]))
+                .join(',');
+            }
+            return h;
+          });
+          localStorage.setItem('hoardings_cache', JSON.stringify(updatedCache));
+        }
+      }
+    } catch (e) {}
+
+    // 4. Purge from adh_cached_hoardings
+    try {
+      const adhRaw = localStorage.getItem('adh_cached_hoardings');
+      if (adhRaw) {
+        const adhList = JSON.parse(adhRaw);
+        if (Array.isArray(adhList)) {
+          const updatedAdh = adhList.map(h => {
+            if (Array.isArray(h.History)) {
+              h.History = h.History.filter(item => !matchesTarget(item));
+            }
+            if (h.ExecutionHistory && typeof h.ExecutionHistory === 'string') {
+              h.ExecutionHistory = h.ExecutionHistory.split(',')
+                .filter(part => !matchesTarget(part.split('|')[0]))
+                .join(',');
+            }
+            return h;
+          });
+          localStorage.setItem('adh_cached_hoardings', JSON.stringify(updatedAdh));
+        }
+      }
     } catch (e) {}
   } catch (err) {
     console.warn('removeSiteHistory notice:', err);
