@@ -707,6 +707,34 @@ export const analyzeHoardingImage = async (base64Image, locationList, rawFile = 
             if (gpsMatch) {
                 const lowerOcr = detectedOcrText.toLowerCase();
                 const status = gpsMatch.status || (lowerOcr.includes('available') || lowerOcr.includes('vacant') || lowerOcr.includes('to-let') || lowerOcr.includes('to let') ? 'Available' : 'Occupied');
+                
+                // 🧭 Enrich candidates with any named locations detected in the watermark text (e.g. Rakshapuram)
+                let combinedCandidates = gpsMatch.twinCandidates ? [...gpsMatch.twinCandidates] : [];
+                locationList.forEach((site, sIdx) => {
+                    const loc = String(site["Locality Site Location"] || site["Location "] || site.Location || '').toLowerCase().trim();
+                    const area = String(site.Area || site.Locality || '').toLowerCase().trim();
+                    const siteSL = site.SL || site['S. No.'] || site['SL NO'] || (sIdx + 1);
+                    const matchesLoc = loc.length >= 4 && lowerOcr.includes(loc);
+                    const matchesArea = area.length >= 4 && lowerOcr.includes(area);
+                    if (matchesLoc || matchesArea) {
+                        const alreadyPresent = combinedCandidates.some(c => String(c.sl) === String(siteSL));
+                        if (!alreadyPresent) {
+                            combinedCandidates.push({
+                                index: sIdx,
+                                sl: siteSL,
+                                siteId: site._SiteID || site.UniqueID || site['Unique ID'] || site.ID || `site_${sIdx}`,
+                                siteName: site["Locality Site Location"] || site["Location "] || site.Location || `Site #${sIdx + 1}`,
+                                facing: site.Facing || site['Traffic View'] || site.facing || 'N/A',
+                                distanceM: 'Watermark Name',
+                                trafficFrom: site['Traffic From'] || '',
+                                trafficTo: site['Traffic To'] || '',
+                                imageUrl: site.ImageURL || '',
+                                site: site
+                            });
+                        }
+                    }
+                });
+
                 return {
                     matchedIndex: gpsMatch.index,
                     sl: gpsMatch.sl || gpsMatch.site?.SL || gpsMatch.site?.['S. No.'] || '',
@@ -714,7 +742,7 @@ export const analyzeHoardingImage = async (base64Image, locationList, rawFile = 
                     matchedLocation: gpsMatch.siteName,
                     matchedSiteId: gpsMatch.site._SiteID || gpsMatch.site.UniqueID || gpsMatch.site['Unique ID'] || '',
                     facing: gpsMatch.facing || gpsMatch.site.Facing || '',
-                    twinCandidates: gpsMatch.twinCandidates || null,
+                    twinCandidates: combinedCandidates.length > 0 ? combinedCandidates : (gpsMatch.twinCandidates || null),
                     status: status,
                     confidence: gpsMatch.confidence,
                     reasoning: `📸 On-Image GPS Stamp: ${gpsMatch.reasoning}`,

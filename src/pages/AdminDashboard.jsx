@@ -4,7 +4,7 @@ import {
     LayoutDashboard, Database, FileUp, Settings,
     Scissors,
     FileText, LogOut, Search, Eye, EyeOff,
-    TrendingUp, MapPin, CheckCircle, Smartphone,
+    TrendingUp, MapPin, CheckCircle, Smartphone, AlertCircle,
     Bell, HelpCircle, Plus, Filter, Download,
     MessageSquare, Mail, User, Users, Package, ShoppingBag, BarChart2, FolderTree, Calendar, CheckSquare,
     MoreVertical, ExternalLink, ShieldCheck, Menu, X, UploadCloud, RefreshCw, Zap, XCircle, Share2, Trash2, Camera, Table2, Save, Undo2, Redo2, FileDown, Copy, Timer, Clock3, PanelLeftClose, PanelLeftOpen, Maximize2, Minimize2,
@@ -1545,6 +1545,7 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                     next[index].uploadedUrl = finalProofUrl;
                     next[index].persistentPreview = finalProofUrl;
                     next[index].preview = finalProofUrl;
+                    next[index].driveSaved = !!driveUrl;
                 }
                 return next;
             });
@@ -5806,7 +5807,13 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                                     </div>
                                                     <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                                                         <span>Match Confidence: <strong>{img.confidence > 1 ? Math.round(img.confidence) : Math.round((img.confidence || 0) * 100)}%</strong></span>
-                                                        {img.uploaded && <span style={{ color: '#16a34a', fontWeight: 600, fontSize: '0.82rem' }}>✅ Auto-Synced to History</span>}
+                                                        {img.uploaded && (
+                                                            img.driveSaved ? (
+                                                                <span style={{ color: '#16a34a', fontWeight: 600, fontSize: '0.82rem' }}>✅ Synced to Sheet History</span>
+                                                            ) : (
+                                                                <span style={{ color: '#d97706', fontWeight: 600, fontSize: '0.82rem' }} title="Google Drive authorization needed in Apps Script to save in Sheet">⚠️ Saved Locally (Drive Auth Needed)</span>
+                                                            )
+                                                        )}
                                                     </label>
                                                     {img.reasoning && <p className="ai-reasoning-text"><span>Logic:</span> {img.reasoning}</p>}
 
@@ -5849,14 +5856,23 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                                             justifyContent: 'center', 
                                                             gap: '6px', 
                                                             padding: '7px 12px', 
-                                                            background: '#dcfce7', 
-                                                            color: '#15803d', 
+                                                            background: img.driveSaved ? '#dcfce7' : '#fef3c7', 
+                                                            color: img.driveSaved ? '#15803d' : '#92400e', 
                                                             borderRadius: '8px', 
                                                             fontSize: '0.84rem', 
                                                             fontWeight: 600 
                                                         }}>
-                                                            <CheckCircle size={15} color="#15803d" /> Saved to Site History
+                                                            {img.driveSaved ? (
+                                                                <><CheckCircle size={15} color="#15803d" /> Saved to Google Sheet History</>
+                                                            ) : (
+                                                                <><AlertCircle size={15} color="#92400e" /> Saved Locally (Apps Script Drive permission needed)</>
+                                                            )}
                                                         </div>
+                                                        {!img.driveSaved && (
+                                                            <div style={{ background: '#fffbeb', border: '1px solid #fde68a', borderRadius: '6px', padding: '6px 10px', fontSize: '0.78rem', color: '#92400e', lineHeight: 1.4 }}>
+                                                                💡 <strong>Google Sheet me link save karne ke liye:</strong> Sheet me upar menu me <em>⚡ Hoarding Automation &gt; 🔑 Authorize Google Drive Permissions</em> run karein.
+                                                            </div>
+                                                        )}
                                                         {img.matchedLocation && (() => {
                                                             const site = (img.matchedSiteId && hoardings.find(h => (h._SiteID === img.matchedSiteId || h.UniqueID === img.matchedSiteId))) ||
                                                                          (img.sl && hoardings.find(h => String(h.SL || h['S. No.'] || '').trim() === String(img.sl).trim())) ||

@@ -3565,6 +3565,7 @@ function findBestImageFileForSite(siteKey, imageList) {
 function decodeBase64(dataUrl) {
   if (!dataUrl) return null;
   var base64Data = dataUrl.indexOf(',') > -1 ? dataUrl.split(",")[1] : dataUrl;
+  base64Data = String(base64Data).replace(/[\r\n\s]/g, '');
   return Utilities.base64Decode(base64Data);
 }
 
@@ -3670,6 +3671,8 @@ function res(o) {
 function onOpen() {
   var ui = SpreadsheetApp.getUi();
   ui.createMenu('⚡ Hoarding Automation')
+    .addItem('🔑 Authorize Google Drive Permissions (Run Once)', 'authorizeDriveAndTest')
+    .addSeparator()
     .addItem('▶ Process All PPT Files Now', 'processPPTs')
     .addItem('🖼 Map Existing Images to Sheet', 'mapExistingImagesToSheet')
     .addItem('🧹 Clean Empty / Blank Rows', 'cleanEmptyRowsAndNotify')
