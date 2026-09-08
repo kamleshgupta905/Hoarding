@@ -42,9 +42,16 @@ export const STAFF_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwmtW7Y
  */
 export const getDirectDriveLink = (url) => {
   if (!url || typeof url !== 'string') return '';
+  // 0. If data URL or blob URL, return as-is immediately (never mangle base64 strings!)
+  if (url.startsWith('data:') || url.startsWith('blob:')) {
+    return url;
+  }
   // 1. Strip pipe delimiter and trailing metadata (like |1725800000000|28.98,77.70)
   const cleanUrl = url.split('|')[0].trim();
   if (!cleanUrl) return '';
+  if (cleanUrl.startsWith('data:') || cleanUrl.startsWith('blob:')) {
+    return cleanUrl;
+  }
 
   // 2. If already an lh3 link, extract the file ID cleanly
   const lh3Match = cleanUrl.match(/lh3\.googleusercontent\.com\/d\/([^/?#\s]+)/);
@@ -52,14 +59,16 @@ export const getDirectDriveLink = (url) => {
     return `https://lh3.googleusercontent.com/d/${lh3Match[1]}`;
   }
 
-  // 3. Extract the unique File ID from any Google Drive URL format (direct, preview, thumbnail, etc.)
-  const idMatch = cleanUrl.match(/\/file\/d\/([^/?#\s]+)/) || 
-                  cleanUrl.match(/[?&]id=([^&#/\s]+)/) || 
-                  cleanUrl.match(/\/d\/([^/?#\s]+)/);
+  // 3. Extract the unique File ID from Google Drive URLs ONLY
+  if (cleanUrl.includes('drive.google.com') || cleanUrl.includes('docs.google.com') || cleanUrl.includes('googleusercontent.com')) {
+    const idMatch = cleanUrl.match(/\/file\/d\/([^/?#\s]+)/) || 
+                    cleanUrl.match(/[?&]id=([^&#/\s]+)/) || 
+                    cleanUrl.match(/\/d\/([^/?#\s]+)/);
 
-  if (idMatch && idMatch[1]) {
-    const fileId = idMatch[1];
-    return `https://lh3.googleusercontent.com/d/${fileId}`;
+    if (idMatch && idMatch[1]) {
+      const fileId = idMatch[1];
+      return `https://lh3.googleusercontent.com/d/${fileId}`;
+    }
   }
 
   return cleanUrl;
@@ -590,17 +599,39 @@ export const removeSiteHistory = (site, targetUrl) => {
   if (!site || !targetUrl || typeof window === 'undefined') return;
   try {
     const keys = getSiteBookingKeys(site);
-    if (keys.length === 0) return;
-    const current = getLocalHistory();
-    keys.forEach(k => {
-      if (Array.isArray(current[k])) {
-        current[k] = current[k].filter(item => {
-          const itemUrl = typeof item === 'object' ? (item.url || item.preview || '') : item;
-          return itemUrl !== targetUrl;
-        });
-      }
-    });
-    localStorage.setItem('adh_local_history', JSON.stringify(current));
+    const normTarget = getDirectDriveLink(targetUrl) || targetUrl;
+
+    // 1. Remove from localStorage
+    try {
+      const current = JSON.parse(localStorage.getItem('adh_local_history') || '{}');
+      const targetKeys = keys.length > 0 ? keys : Object.keys(current);
+      targetKeys.forEach(k => {
+        if (Array.isArray(current[k])) {
+          current[k] = current[k].filter(item => {
+            const itemUrl = typeof item === 'object' ? (item.url || item.preview || '') : item;
+            const normItem = getDirectDriveLink(itemUrl) || itemUrl;
+            return normItem !== normTarget && itemUrl !== targetUrl;
+          });
+        }
+      });
+      localStorage.setItem('adh_local_history', JSON.stringify(current));
+    } catch (e) {}
+
+    // 2. Remove from sessionStorage
+    try {
+      const sessionCurrent = JSON.parse(sessionStorage.getItem('adh_session_recent_history') || '{}');
+      const sessionTargetKeys = keys.length > 0 ? keys : Object.keys(sessionCurrent);
+      sessionTargetKeys.forEach(k => {
+        if (Array.isArray(sessionCurrent[k])) {
+          sessionCurrent[k] = sessionCurrent[k].filter(item => {
+            const itemUrl = typeof item === 'object' ? (item.url || item.preview || '') : item;
+            const normItem = getDirectDriveLink(itemUrl) || itemUrl;
+            return normItem !== normTarget && itemUrl !== targetUrl;
+          });
+        }
+      });
+      sessionStorage.setItem('adh_session_recent_history', JSON.stringify(sessionCurrent));
+    } catch (e) {}
   } catch (err) {
     console.warn('removeSiteHistory notice:', err);
   }

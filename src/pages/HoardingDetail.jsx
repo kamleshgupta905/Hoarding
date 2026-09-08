@@ -44,7 +44,16 @@ const HoardingDetail = ({ hoardings, setHoardings }) => {
                 hSite.replace(/\s+/g, ' ').toLowerCase() === decodedSiteName.replace(/\s+/g, ' ').toLowerCase();
         });
 
-    const [isAdmin] = React.useState(localStorage.getItem('isAdminAuthenticated') === 'true');
+    const isAdmin = React.useMemo(() => {
+        try {
+            return localStorage.getItem('isAdminAuthenticated') === 'true' ||
+                   !!sessionStorage.getItem('adh_admin_session') ||
+                   !!localStorage.getItem('adh_admin_session');
+        } catch {
+            return false;
+        }
+    }, []);
+    const [deletedHistoryUrls, setDeletedHistoryUrls] = React.useState(() => new Set());
     const [isEditModalOpen, setIsEditModalOpen] = React.useState(false);
     const [isLoading, setIsLoading] = React.useState(false);
     const [formData, setFormData] = React.useState({});
@@ -67,6 +76,7 @@ const HoardingDetail = ({ hoardings, setHoardings }) => {
         [...fromLocal, ...fromHoarding].forEach(item => {
             const rawUrl = typeof item === 'object' ? (item.url || item.preview || '') : item;
             const directUrl = getDirectDriveLink(rawUrl) || rawUrl;
+            if (deletedHistoryUrls.has(directUrl) || deletedHistoryUrls.has(rawUrl)) return;
             const time = typeof item === 'object' ? (item.timestamp || item.date || '') : '';
             const key = `${directUrl}_${time}`;
             if (directUrl && !seen.has(key)) {
@@ -75,7 +85,7 @@ const HoardingDetail = ({ hoardings, setHoardings }) => {
             }
         });
         return merged;
-    }, [hoarding]);
+    }, [hoarding, deletedHistoryUrls]);
 
     React.useEffect(() => {
         if (window.location.hash === '#history' || window.location.hash === '#site-history') {
@@ -417,34 +427,69 @@ const HoardingDetail = ({ hoardings, setHoardings }) => {
         if (!isAdmin) return;
         if (!confirm("Are you sure you want to delete this specific audit photo?")) return;
 
+        // 1. Immediately remove from UI
+        setDeletedHistoryUrls(prev => {
+            const next = new Set(prev);
+            next.add(imageUrl);
+            const direct = getDirectDriveLink(imageUrl);
+            if (direct) next.add(direct);
+            return next;
+        });
+
         setIsLoading(true);
         try {
-            await fetch(scriptUrl, {
-                method: 'POST',
-                mode: 'no-cors',
-                headers: { 'Content-Type': 'text/plain' },
-                body: JSON.stringify({
-                    action: 'deleteHistoryItem',
-                    siteName: hoarding["Location "],
-                    imageUrl: imageUrl 
-                })
+            const siteLocName = hoarding["Location "] || hoarding.Location || hoarding["Locality Site Location"] || decodedSiteName || '';
+            const targetSL = hoarding.SL || hoarding['S. No.'] || hoarding['SL NO'] || '';
+            const siteId = hoarding._SiteID || hoarding.UniqueID || hoarding['Unique ID'] || '';
+
+            // 2. Remove from local browser history (sessionStorage & localStorage)
+            removeSiteHistory(hoarding, imageUrl);
+
+            // 3. Update React hoardings state & local cache
+            setHoardings(prev => {
+                const next = prev.map(h => {
+                    const isMatch = (targetSL && String(h.SL || h['S. No.'] || h['SL NO'] || '').trim() === String(targetSL).trim()) ||
+                                    (siteId && (h._SiteID === siteId || h.UniqueID === siteId)) ||
+                                    (siteLocName && (h["Location "] === siteLocName || h.Location === siteLocName || h["Locality Site Location"] === siteLocName));
+                    if (isMatch) {
+                        const currentHist = Array.isArray(h.History) ? h.History : parseHistoryString(h.ExecutionHistory || h.History || '');
+                        const updatedHist = currentHist.filter(item => {
+                            const url = typeof item === 'object' ? (item.url || item.preview || '') : item;
+                            return url !== imageUrl && getDirectDriveLink(url) !== getDirectDriveLink(imageUrl);
+                        });
+                        const updatedExecutionHistory = updatedHist.map(item => {
+                            const u = typeof item === 'object' ? (item.url || item.preview || '') : item;
+                            const t = typeof item === 'object' ? (item.timestamp || Date.now()) : Date.now();
+                            const g = typeof item === 'object' && item.gps ? `|${item.gps}` : '';
+                            return `${u}|${t}${g}`;
+                        }).join(',');
+
+                        return {
+                            ...h,
+                            History: updatedHist,
+                            ExecutionHistory: updatedExecutionHistory
+                        };
+                    }
+                    return h;
+                });
+                try {
+                    localStorage.setItem('hoardings_cache', JSON.stringify(next));
+                    localStorage.setItem('last_hoardings_update', Date.now().toString());
+                } catch {}
+                return next;
             });
 
-            // Update local state and remove from local history cache
-            removeSiteHistory(hoarding, imageUrl);
-            setHoardings(prev => prev.map(h => {
-                if (h["Location "] === hoarding["Location "]) {
-                    return {
-                        ...h,
-                        History: (h.History || []).filter(item => {
-                            const url = typeof item === 'object' ? item.url : item;
-                            return url !== imageUrl;
-                        })
-                    };
-                }
-                return h;
-            }));
+            // 4. Sync deletion to Google Apps Script / Sheet backend
+            await syncToGoogleSheet({
+                action: 'deleteHistoryItem',
+                siteName: siteLocName,
+                sl: targetSL,
+                siteId: siteId,
+                imageUrl: imageUrl
+            }).catch(err => console.warn('Remote history delete notice:', err));
+
         } catch (err) {
+            console.error("Error deleting history item:", err);
             alert("Error deleting history item: " + err.message);
         } finally {
             setIsLoading(false);

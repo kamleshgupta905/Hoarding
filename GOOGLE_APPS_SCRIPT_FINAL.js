@@ -1870,8 +1870,8 @@ function updateHoardingDetails(data) {
 }
 
 function deleteHistoryItem(data) {
-  if (!data || !data.siteName || !data.imageUrl) {
-    return res({ success: false, error: 'siteName and imageUrl are required' });
+  if (!data || (!data.siteName && !data.sl && !data.siteId)) {
+    return res({ success: false, error: 'siteName, sl, or siteId is required' });
   }
 
   var lock = LockService.getScriptLock();
@@ -1886,21 +1886,37 @@ function deleteHistoryItem(data) {
     var sheet = ss.getSheetByName(CONFIG.SHEET_NAME);
     var headers = getAllHeaders(sheet);
     var idxSite = findSiteColumn(headers);
-    var idxHistory = headers.findIndex(h => {
-      var clean = h.toString().toLowerCase().replace(/[^a-z0-9]/g, '');
-      return clean === 'executionhistory' || clean === 'history';
-    });
+    var idxHistory = findHistoryColumn(headers);
 
     if (idxSite === -1 || idxHistory === -1) return res({ success: false, error: 'Required columns not found' });
 
     var rows = sheet.getDataRange().getValues();
     var rowIndex = -1;
-    var searchName = cleanFull(data.siteName);
 
-    for (var i = 1; i < rows.length; i++) {
-      if (cleanFull(rows[i][idxSite]) === searchName) {
-        rowIndex = i + 1;
-        break;
+    // 1. Match by SL
+    var targetSL = String((data.fields && (data.fields.SL || data.fields['S. No.'])) || data.sl || '').trim();
+    var idxSL = headers.findIndex(function(h) { 
+      var c = cleanFull(h);
+      return c === 'sl' || c === 'sno' || c === 'slno' || c === 'srno'; 
+    });
+    if (targetSL && idxSL !== -1) {
+      for (var i = 1; i < rows.length; i++) {
+        var cellVal = String(rows[i][idxSL]).trim();
+        if (cellVal === targetSL || (parseInt(cellVal, 10) === parseInt(targetSL, 10) && !isNaN(parseInt(targetSL, 10)))) {
+          rowIndex = i + 1;
+          break;
+        }
+      }
+    }
+
+    // 2. Match by SiteName
+    if (rowIndex === -1 && data.siteName) {
+      var searchName = cleanFull(data.siteName);
+      for (var i = 1; i < rows.length; i++) {
+        if (cleanFull(rows[i][idxSite]) === searchName) {
+          rowIndex = i + 1;
+          break;
+        }
       }
     }
 
@@ -1909,10 +1925,23 @@ function deleteHistoryItem(data) {
     var currentHistory = sheet.getRange(rowIndex, idxHistory + 1).getValue().toString();
     if (!currentHistory) return res({ success: true, message: 'History already empty' });
 
-    // Filter out the item that contains the target URL
+    function extractFileId(u) {
+      if (!u) return '';
+      var clean = String(u).split('|')[0].trim();
+      var m = clean.match(/lh3\.googleusercontent\.com\/d\/([^/?#\s]+)/) ||
+              clean.match(/\/file\/d\/([^/?#\s]+)/) ||
+              clean.match(/[?&]id=([^&#/\s]+)/) ||
+              clean.match(/\/d\/([^/?#\s]+)/);
+      return m && m[1] ? m[1] : clean;
+    }
+    var targetFileId = extractFileId(data.imageUrl);
+
     var items = currentHistory.split(',');
     var filteredItems = items.filter(function(item) {
-      // item might be "url|timestamp"
+      var itemUrl = item.split('|')[0].trim();
+      if (!data.imageUrl) return true;
+      if (itemUrl === data.imageUrl) return false;
+      if (targetFileId && extractFileId(itemUrl) === targetFileId) return false;
       return item.indexOf(data.imageUrl) === -1;
     });
 
