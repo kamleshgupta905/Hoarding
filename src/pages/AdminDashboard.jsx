@@ -5728,26 +5728,26 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
 
                             {/* 🎯 Pre-Upload Mode Selector (Images drop/select karne se pehle chunein) */}
                             <div className="daily-preupload-mode-container" style={{
-                                margin: '14px 0 18px',
+                                margin: '10px 0 16px',
                                 background: '#f8fafc',
-                                border: '1.5px solid #e2e8f0',
-                                borderRadius: '12px',
-                                padding: '14px 16px',
+                                border: '1px solid #e2e8f0',
+                                borderRadius: '10px',
+                                padding: '10px 14px',
                                 textAlign: 'left'
                             }}>
-                                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '10px', flexWrap: 'wrap', gap: '8px' }}>
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.85rem', fontWeight: '700', color: '#1e293b' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px', flexWrap: 'wrap', gap: '6px' }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '5px', fontSize: '0.78rem', fontWeight: '700', color: '#1e293b' }}>
                                         <span>🎯</span>
                                         <span>Select Upload Mode (Drop ya Select karne se pehle chunein):</span>
                                     </div>
-                                    <span style={{ fontSize: '0.74rem', color: '#64748b', fontWeight: '600' }}>
+                                    <span style={{ fontSize: '0.70rem', color: '#64748b', fontWeight: '600' }}>
                                         {dailyUploadMode === 'replace_master' 
                                             ? '🔄 Nayi image Main banegi, Purani History me archive hogi' 
                                             : '📁 Nayi image sirf History me proof banegi'}
                                     </span>
                                 </div>
 
-                                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '10px' }}>
+                                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '8px' }}>
                                     {/* Option 1: History Only */}
                                     <label 
                                         onClick={() => {
@@ -5757,14 +5757,14 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                         style={{
                                             display: 'flex',
                                             alignItems: 'flex-start',
-                                            gap: '10px',
-                                            padding: '10px 14px',
-                                            borderRadius: '8px',
+                                            gap: '8px',
+                                            padding: '8px 12px',
+                                            borderRadius: '7px',
                                             cursor: 'pointer',
-                                            border: dailyUploadMode === 'history_only' ? '2px solid #10b981' : '1px solid #cbd5e1',
+                                            border: dailyUploadMode === 'history_only' ? '1.5px solid #10b981' : '1px solid #cbd5e1',
                                             background: dailyUploadMode === 'history_only' ? '#ecfdf5' : '#ffffff',
-                                            transition: 'all 0.2s ease',
-                                            boxShadow: dailyUploadMode === 'history_only' ? '0 2px 8px rgba(16, 185, 129, 0.15)' : 'none'
+                                            transition: 'all 0.18s ease',
+                                            boxShadow: dailyUploadMode === 'history_only' ? '0 1px 4px rgba(16, 185, 129, 0.15)' : 'none'
                                         }}
                                     >
                                         <input 
@@ -5772,13 +5772,13 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                             name="dailyUploadMode" 
                                             checked={dailyUploadMode === 'history_only'} 
                                             onChange={() => {}}
-                                            style={{ marginTop: '3px', accentColor: '#10b981' }}
+                                            style={{ marginTop: '2px', accentColor: '#10b981', width: '13px', height: '13px' }}
                                         />
                                         <div>
-                                            <div style={{ fontWeight: '700', fontSize: '0.86rem', color: dailyUploadMode === 'history_only' ? '#065f46' : '#1e293b' }}>
+                                            <div style={{ fontWeight: '700', fontSize: '0.79rem', color: dailyUploadMode === 'history_only' ? '#065f46' : '#1e293b' }}>
                                                 📁 Daily Audit Proof (Default)
                                             </div>
-                                            <div style={{ fontSize: '0.74rem', color: '#64748b', marginTop: '2px', lineHeight: 1.35 }}>
+                                            <div style={{ fontSize: '0.70rem', color: '#64748b', marginTop: '2px', lineHeight: 1.3 }}>
                                                 <strong>Nayi photo History me save hogi.</strong> Main inventory photo purani hi rahegi (Routine inspection ke liye).
                                             </div>
                                         </div>
@@ -5793,14 +5793,14 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                         style={{
                                             display: 'flex',
                                             alignItems: 'flex-start',
-                                            gap: '10px',
-                                            padding: '10px 14px',
-                                            borderRadius: '8px',
+                                            gap: '8px',
+                                            padding: '8px 12px',
+                                            borderRadius: '7px',
                                             cursor: 'pointer',
-                                            border: dailyUploadMode === 'replace_master' ? '2px solid #6366f1' : '1px solid #cbd5e1',
+                                            border: dailyUploadMode === 'replace_master' ? '1.5px solid #6366f1' : '1px solid #cbd5e1',
                                             background: dailyUploadMode === 'replace_master' ? '#eef2ff' : '#ffffff',
-                                            transition: 'all 0.2s ease',
-                                            boxShadow: dailyUploadMode === 'replace_master' ? '0 2px 8px rgba(99, 102, 241, 0.15)' : 'none'
+                                            transition: 'all 0.18s ease',
+                                            boxShadow: dailyUploadMode === 'replace_master' ? '0 1px 4px rgba(99, 102, 241, 0.15)' : 'none'
                                         }}
                                     >
                                         <input 
@@ -5808,13 +5808,13 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                             name="dailyUploadMode" 
                                             checked={dailyUploadMode === 'replace_master'} 
                                             onChange={() => {}}
-                                            style={{ marginTop: '3px', accentColor: '#6366f1' }}
+                                            style={{ marginTop: '2px', accentColor: '#6366f1', width: '13px', height: '13px' }}
                                         />
                                         <div>
-                                            <div style={{ fontWeight: '700', fontSize: '0.86rem', color: dailyUploadMode === 'replace_master' ? '#3730a3' : '#1e293b' }}>
+                                            <div style={{ fontWeight: '700', fontSize: '0.79rem', color: dailyUploadMode === 'replace_master' ? '#3730a3' : '#1e293b' }}>
                                                 🔄 New Flex / Campaign Change
                                             </div>
-                                            <div style={{ fontSize: '0.74rem', color: '#64748b', marginTop: '2px', lineHeight: 1.35 }}>
+                                            <div style={{ fontSize: '0.70rem', color: '#64748b', marginTop: '2px', lineHeight: 1.3 }}>
                                                 <strong>Nayi photo Main Inventory banegi.</strong> Purani photo date ke saath History me archive ho jayegi.
                                             </div>
                                         </div>
@@ -5824,12 +5824,12 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
 
                             <div className="upload-actions-bar">
                                 <label className="upload-trigger-btn">
-                                    <Plus size={20} /> Add Images
+                                    <Plus size={15} /> Add Images
                                     <input type="file" multiple accept="image/*" onChange={handleDailyImageSelect} style={{ display: 'none' }} />
                                 </label>
                                 {dailyImages.length > 0 && (
                                     <button className="ai-process-btn" onClick={processImagesWithAI}>
-                                        <Zap size={20} fill="currentColor" /> Auto-Detect with AI
+                                        <Zap size={15} fill="currentColor" /> Auto-Detect with AI
                                     </button>
                                 )}
                                 {dailyImages.length > 0 && (
@@ -5843,7 +5843,7 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                                 setExpandedDailyCards(new Set(dailyImages.map((_, i) => i)));
                                             }
                                         }}
-                                        style={{ background: '#f8fafc', color: '#4338ca', border: '1px solid #c7d2fe' }}
+                                        style={{ background: '#f8fafc', color: '#4338ca', border: '1px solid #c7d2fe', boxShadow: 'none' }}
                                         title="Toggle show/hide all details"
                                     >
                                         {expandedDailyCards.size === dailyImages.length ? '▲ Collapse All Details' : '▼ Expand All Details'}
@@ -5851,7 +5851,7 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                 )}
                                 {dailyImages.some(img => img.matchFailed && !img.uploaded) && (
                                     <button className="ai-process-btn dump-btn" onClick={dumpUnmatchedImages} title="Move unmatched images to dumping log">
-                                        <XCircle size={20} /> Dump All Red
+                                        <XCircle size={15} /> Dump All Red
                                     </button>
                                 )}
                                 {dailyImages.length > 0 && (
@@ -5866,9 +5866,8 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                             }
                                         }}
                                         title="Clear all cards from Daily Upload"
-                                        style={{ background: '#f3f4f6', color: '#4b5563', border: '1px solid #d1d5db' }}
                                     >
-                                        <Trash2 size={16} /> Clear List
+                                        <Trash2 size={15} /> Clear List
                                     </button>
                                 )}
                             </div>
