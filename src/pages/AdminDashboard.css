@@ -4470,6 +4470,14 @@
     transform: translateY(-1px);
 }
 
+.qm-btn-primary.qm-btn-sm {
+    padding: 5px 12px;
+    font-size: 0.78rem;
+    height: 32px;
+    border-radius: 7px;
+    gap: 6px;
+}
+
 .qm-btn-secondary {
     display: inline-flex;
     align-items: center;

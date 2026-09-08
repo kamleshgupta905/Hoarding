@@ -4303,14 +4303,14 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                     </button>
                                 )}
 
-                                <label className="btn-primary-admin" style={{ cursor: 'pointer', padding: '7px 14px', fontSize: '0.82rem' }}>
-                                    <Download size={16} />
-                                    Excel Sync
+                                <label className="qm-btn-primary qm-btn-sm" style={{ cursor: 'pointer' }} title="Sync master hoardings from Excel spreadsheet">
+                                    <Download size={14} />
+                                    <span>Excel Sync</span>
                                     <input type="file" style={{ display: 'none' }} accept=".xlsx,.xls,.csv" disabled={Boolean(fileProcessing)} onChange={(e) => handleFileUpload(e, 'excel')} />
                                 </label>
-                                <label className="btn-primary-admin" style={{ background: '#00c851', borderColor: '#00c851', color: 'white', cursor: 'pointer', padding: '7px 14px', fontSize: '0.82rem' }}>
-                                    <Plus size={16} />
-                                    PPT Upload
+                                <label className="qm-btn-primary qm-btn-sm" style={{ cursor: 'pointer' }} title="Upload PPT presentation file">
+                                    <Plus size={14} />
+                                    <span>PPT Upload</span>
                                     <input type="file" style={{ display: 'none' }} accept=".ppt,.pptx" disabled={Boolean(fileProcessing)} onChange={(e) => handleFileUpload(e, 'ppt')} />
                                 </label>
                             </div>
