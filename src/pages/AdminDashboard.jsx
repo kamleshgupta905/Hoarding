@@ -13,7 +13,7 @@ import {
     Star, FileSpreadsheet, Presentation, Loader2
 } from 'lucide-react';
 import { analyzeHoardingImage, extractSiteCoordinates } from '../services/aiService';
-import { fetchHoardings, compressImage, syncToGoogleSheet, exportProposalExcel, PROPOSAL_COLUMNS, getImageUrl, downloadHoardingImage, fetchStaffUploads, reviewStaffPhoto, detectStaffPhotoOrientation, fetchSheetGrid, saveSheetGrid, addDeletedSite, parseHistoryString, saveLocalBooking, clearLocalBooking, recordSiteBooking, removeSiteBooking, getSiteBookingSlots, checkBookingConflict, calculateProRataRental, resolveSiteLiveStatus, saveSiteBookingSlots } from '../services/dataService';
+import { fetchHoardings, compressImage, syncToGoogleSheet, exportProposalExcel, PROPOSAL_COLUMNS, getImageUrl, downloadHoardingImage, fetchStaffUploads, reviewStaffPhoto, detectStaffPhotoOrientation, fetchSheetGrid, saveSheetGrid, addDeletedSite, parseHistoryString, saveLocalBooking, clearLocalBooking, recordSiteBooking, removeSiteBooking, getSiteBookingSlots, checkBookingConflict, calculateProRataRental, resolveSiteLiveStatus, saveSiteBookingSlots, recordSiteHistory, getLocalHistory } from '../services/dataService';
 import { generateMasterMediaPlanPptx } from '../services/presentationService';
 import ImageLightbox from '../components/ImageLightbox';
 import { clearAdminSession, getAdminSession, getStaffUploadLink, postDirect } from '../services/secureApi';
@@ -1400,6 +1400,18 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                 return next;
             });
 
+            // 💾 Record to local verification history immediately so UI displays it with zero delay
+            const siteTargetForHistory = targetHoarding || {
+                SL: targetSL,
+                'S. No.': targetSL,
+                _SiteID: siteIdResolved,
+                UniqueID: siteIdResolved,
+                'Location ': siteNameResolved,
+                Location: siteNameResolved,
+                Facing: facingResolved
+            };
+            recordSiteHistory(siteTargetForHistory, newHistoryItem);
+
             // 💾 Update Hoarding state and cache (strictly targeting the resolved site to prevent twin-site collision)
             setHoardings(prev => {
                 const updatedList = prev.map((h, hIdx) => {
@@ -1426,6 +1438,7 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
 
                 try {
                     localStorage.setItem('adh_cached_hoardings', JSON.stringify(updatedList));
+                    localStorage.setItem('hoardings_cache', JSON.stringify(updatedList));
                 } catch (e) {
                     console.warn('Could not cache hoardings to localStorage:', e);
                 }
@@ -5344,13 +5357,22 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                                         <label style={{ margin: 0 }}>Location Match</label>
                                                         {img.matchedLocation && (() => {
                                                             const site = (img.matchedSiteId && hoardings.find(h => (h._SiteID === img.matchedSiteId || h.UniqueID === img.matchedSiteId))) ||
+                                                                         (img.sl && hoardings.find(h => String(h.SL || h['S. No.'] || '').trim() === String(img.sl).trim())) ||
+                                                                         (img.matchedIndex != null && img.matchedIndex >= 0 && hoardings[img.matchedIndex]) ||
                                                                          hoardings.find(h => (h["Locality Site Location"] || h["Location "] || h.Location) === img.matchedLocation);
                                                             const targetCity = site?.City || 'city';
                                                             const targetSiteName = site?.["Location "] || site?.Location || site?.["Locality Site Location"] || img.matchedLocation;
+                                                            const siteId = site?._SiteID || site?.UniqueID || img.matchedSiteId || '';
+                                                            const siteSL = site?.SL || site?.['S. No.'] || img.sl || '';
+                                                            const queryParams = new URLSearchParams();
+                                                            if (siteId) queryParams.set('id', siteId);
+                                                            if (siteSL) queryParams.set('sl', siteSL);
+                                                            if (site?.Facing || img.facing) queryParams.set('facing', site?.Facing || img.facing);
+                                                            const queryString = queryParams.toString() ? `?${queryParams.toString()}` : '';
                                                             return (
                                                                 <button
                                                                     type="button"
-                                                                    onClick={() => navigate(`/${encodeURIComponent(targetCity)}/${encodeURIComponent(targetSiteName)}#site-history`)}
+                                                                    onClick={() => navigate(`/${encodeURIComponent(targetCity)}/${encodeURIComponent(targetSiteName)}${queryString}#site-history`)}
                                                                     style={{
                                                                         background: 'transparent',
                                                                         border: 'none',
@@ -5571,10 +5593,20 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                                             <CheckCircle size={15} color="#15803d" /> Saved to Site History
                                                         </div>
                                                         {img.matchedLocation && (() => {
-                                                            const site = hoardings.find(h => (h["Locality Site Location"] || h["Location "] || h.Location) === img.matchedLocation);
+                                                            const site = (img.matchedSiteId && hoardings.find(h => (h._SiteID === img.matchedSiteId || h.UniqueID === img.matchedSiteId))) ||
+                                                                         (img.sl && hoardings.find(h => String(h.SL || h['S. No.'] || '').trim() === String(img.sl).trim())) ||
+                                                                         (img.matchedIndex != null && img.matchedIndex >= 0 && hoardings[img.matchedIndex]) ||
+                                                                         hoardings.find(h => (h["Locality Site Location"] || h["Location "] || h.Location) === img.matchedLocation);
                                                             const targetCity = site?.City || 'city';
                                                             const targetSiteName = site?.["Location "] || site?.Location || site?.["Locality Site Location"] || img.matchedLocation;
-                                                            const historyPath = `/${encodeURIComponent(targetCity)}/${encodeURIComponent(targetSiteName)}#site-history`;
+                                                            const siteId = site?._SiteID || site?.UniqueID || img.matchedSiteId || '';
+                                                            const siteSL = site?.SL || site?.['S. No.'] || img.sl || '';
+                                                            const queryParams = new URLSearchParams();
+                                                            if (siteId) queryParams.set('id', siteId);
+                                                            if (siteSL) queryParams.set('sl', siteSL);
+                                                            if (site?.Facing || img.facing) queryParams.set('facing', site?.Facing || img.facing);
+                                                            const queryString = queryParams.toString() ? `?${queryParams.toString()}` : '';
+                                                            const historyPath = `/${encodeURIComponent(targetCity)}/${encodeURIComponent(targetSiteName)}${queryString}#site-history`;
 
                                                             return (
                                                                 <button

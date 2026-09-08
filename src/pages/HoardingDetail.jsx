@@ -1,32 +1,48 @@
 import React from 'react';
-import { useParams, Link, useNavigate } from 'react-router-dom';
+import { useParams, Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { ChevronLeft, MapPin, Maximize2, Layers, Zap, Info, Calendar, Phone, Share2, Heart, ShieldCheck, Edit3, Trash2, X, Upload, Camera, Copy, Check, Download } from 'lucide-react';
 import { Helmet } from 'react-helmet-async';
-import { getImageUrl, compressImage, syncToGoogleSheet, downloadHoardingImage, recordSiteBooking, removeSiteBooking } from '../services/dataService';
+import { getImageUrl, compressImage, syncToGoogleSheet, downloadHoardingImage, recordSiteBooking, removeSiteBooking, getLocalHistory, removeSiteHistory, parseHistoryString } from '../services/dataService';
 import ImageLightbox from '../components/ImageLightbox';
 import './HoardingDetail.css';
 
 const HoardingDetail = ({ hoardings, setHoardings }) => {
     const navigate = useNavigate();
     const { city, siteName } = useParams();
+    const [searchParams] = useSearchParams();
+    const targetId = searchParams.get('id');
+    const targetSL = searchParams.get('sl');
+    const targetFacing = searchParams.get('facing');
     const decodedSiteName = decodeURIComponent(siteName || '').trim();
     const targetCity = decodeURIComponent(city || '').trim().toLowerCase();
 
-    const hoarding = hoardings.find(h => {
-        if (!h) return false;
-        const hCity = String(h.City || h.city || h.CITY || '').trim().toLowerCase();
-        const hSite = String(h["Location "] || h.Location || h["Location"] || h["Locality Site Location"] || h["Site Name"] || '').trim();
-        
-        const cityMatch = !targetCity || targetCity === 'all' || targetCity === 'city' || hCity === targetCity;
-        const siteMatch = hSite.toLowerCase() === decodedSiteName.toLowerCase() ||
-            hSite.replace(/\s+/g, ' ').toLowerCase() === decodedSiteName.replace(/\s+/g, ' ').toLowerCase();
-        return cityMatch && siteMatch;
-    }) || hoardings.find(h => {
-        if (!h) return false;
-        const hSite = String(h["Location "] || h.Location || h["Location"] || h["Locality Site Location"] || h["Site Name"] || '').trim();
-        return hSite.toLowerCase() === decodedSiteName.toLowerCase() ||
-            hSite.replace(/\s+/g, ' ').toLowerCase() === decodedSiteName.replace(/\s+/g, ' ').toLowerCase();
-    });
+    const hoarding = (targetId && hoardings.find(h => h && (h._SiteID === targetId || h.UniqueID === targetId || h['Unique ID'] === targetId || h.ID === targetId))) ||
+        (targetSL && hoardings.find(h => h && String(h.SL || h['S. No.'] || h['SL NO'] || '').trim() === String(targetSL).trim())) ||
+        hoardings.find(h => {
+            if (!h) return false;
+            const hCity = String(h.City || h.city || h.CITY || '').trim().toLowerCase();
+            const hSite = String(h["Location "] || h.Location || h["Location"] || h["Locality Site Location"] || h["Site Name"] || '').trim();
+            const hFacing = String(h.Facing || h['Traffic View'] || '').trim().toLowerCase();
+            
+            const cityMatch = !targetCity || targetCity === 'all' || targetCity === 'city' || hCity === targetCity;
+            const siteMatch = hSite.toLowerCase() === decodedSiteName.toLowerCase() ||
+                hSite.replace(/\s+/g, ' ').toLowerCase() === decodedSiteName.replace(/\s+/g, ' ').toLowerCase();
+            const facingMatch = !targetFacing || hFacing === targetFacing.toLowerCase();
+            return cityMatch && siteMatch && facingMatch;
+        }) || hoardings.find(h => {
+            if (!h) return false;
+            const hCity = String(h.City || h.city || h.CITY || '').trim().toLowerCase();
+            const hSite = String(h["Location "] || h.Location || h["Location"] || h["Locality Site Location"] || h["Site Name"] || '').trim();
+            const cityMatch = !targetCity || targetCity === 'all' || targetCity === 'city' || hCity === targetCity;
+            const siteMatch = hSite.toLowerCase() === decodedSiteName.toLowerCase() ||
+                hSite.replace(/\s+/g, ' ').toLowerCase() === decodedSiteName.replace(/\s+/g, ' ').toLowerCase();
+            return cityMatch && siteMatch;
+        }) || hoardings.find(h => {
+            if (!h) return false;
+            const hSite = String(h["Location "] || h.Location || h["Location"] || h["Locality Site Location"] || h["Site Name"] || '').trim();
+            return hSite.toLowerCase() === decodedSiteName.toLowerCase() ||
+                hSite.replace(/\s+/g, ' ').toLowerCase() === decodedSiteName.replace(/\s+/g, ' ').toLowerCase();
+        });
 
     const [isAdmin] = React.useState(localStorage.getItem('isAdminAuthenticated') === 'true');
     const [isEditModalOpen, setIsEditModalOpen] = React.useState(false);
@@ -38,6 +54,28 @@ const HoardingDetail = ({ hoardings, setHoardings }) => {
     const [copySuccess, setCopySuccess] = React.useState(false);
     const [previewImage, setPreviewImage] = React.useState('');
     
+    // 📜 Active History: Merges remote Google Sheets history with local verified uploads
+    const activeHistory = React.useMemo(() => {
+        if (!hoarding) return [];
+        const fromHoarding = Array.isArray(hoarding.History) && hoarding.History.length > 0 
+            ? hoarding.History 
+            : parseHistoryString(hoarding.ExecutionHistory || hoarding.History || '');
+        const fromLocal = getLocalHistory(hoarding);
+
+        const seen = new Set();
+        const merged = [];
+        [...fromLocal, ...fromHoarding].forEach(item => {
+            const url = typeof item === 'object' ? (item.url || item.preview || '') : item;
+            const time = typeof item === 'object' ? (item.timestamp || item.date || '') : '';
+            const key = `${url}_${time}`;
+            if (url && !seen.has(key)) {
+                seen.add(key);
+                merged.push(item);
+            }
+        });
+        return merged;
+    }, [hoarding]);
+
     React.useEffect(() => {
         if (window.location.hash === '#history' || window.location.hash === '#site-history') {
             setTimeout(() => {
@@ -391,7 +429,8 @@ const HoardingDetail = ({ hoardings, setHoardings }) => {
                 })
             });
 
-            // Update local state
+            // Update local state and remove from local history cache
+            removeSiteHistory(hoarding, imageUrl);
             setHoardings(prev => prev.map(h => {
                 if (h["Location "] === hoarding["Location "]) {
                     return {
@@ -632,7 +671,7 @@ const HoardingDetail = ({ hoardings, setHoardings }) => {
                             </div>
                         </section>
 
-                        {hoarding.History && hoarding.History.length > 0 && (
+                        {activeHistory && activeHistory.length > 0 && (
                             <section id="site-history" className="execution-gallery animate-in" style={{ marginTop: '56px' }}>
                                 <div className="gallery-header" style={{ marginBottom: '24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                                     <div>
@@ -640,12 +679,12 @@ const HoardingDetail = ({ hoardings, setHoardings }) => {
                                         <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', marginTop: '4px' }}>Proof of campaign execution and physical site audits.</p>
                                     </div>
                                     <div className="update-status-pill">
-                                        <Zap size={14} /> {hoarding.History.length} Live Records
+                                        <Zap size={14} /> {activeHistory.length} Live Records
                                     </div>
                                 </div>
 
                                 <div className="history-cards-grid">
-                                    {(hoarding.History || []).map((item, idx) => {
+                                    {(activeHistory || []).map((item, idx) => {
                                         const finalUrl = typeof item === 'object' ? item.url : item;
                                         const finalTime = typeof item === 'object' ? item.timestamp : null;
                                         

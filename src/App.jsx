@@ -8,7 +8,7 @@ import Navbar from './components/Navbar';
 import Footer from './components/Footer';
 import AdminLogin from './pages/AdminLogin';
 import AppAutoUpdater from './components/AppAutoUpdater';
-import { fetchHoardings, getLocalBookings, getSiteBookingKeys } from './services/dataService';
+import { fetchHoardings, getLocalBookings, getSiteBookingKeys, getLocalHistory } from './services/dataService';
 import { HelmetProvider } from 'react-helmet-async';
 
 // Lazy-loaded pages for code splitting
@@ -378,9 +378,10 @@ function App() {
       });
     }
 
-    // Overlay active local bookings and multi-slot schedules so remote CDN caching cannot clobber fresh local bookings
+    // Overlay active local bookings, multi-slot schedules, and verification history so remote CDN caching cannot clobber fresh local data
     try {
       const localBookings = getLocalBookings();
+      const localHistory = getLocalHistory();
       const rawSchedules = localStorage.getItem('adh_booking_schedules');
       const localSchedules = rawSchedules ? JSON.parse(rawSchedules) : {};
 
@@ -388,6 +389,28 @@ function App() {
         const item = mergedList[i];
         const keys = getSiteBookingKeys(item);
         
+        // Overlay local verification history if present
+        for (const k of keys) {
+          if (Array.isArray(localHistory[k]) && localHistory[k].length > 0) {
+            const currentHist = Array.isArray(mergedList[i].History) ? mergedList[i].History : [];
+            const seenUrls = new Set(localHistory[k].map(h => (typeof h === 'object' ? (h.url || h.preview || '') : h)));
+            const combined = [...localHistory[k]];
+            currentHist.forEach(h => {
+              const url = typeof h === 'object' ? (h.url || h.preview || '') : h;
+              if (url && !seenUrls.has(url)) {
+                seenUrls.add(url);
+                combined.push(h);
+              }
+            });
+            mergedList[i] = {
+              ...mergedList[i],
+              History: combined,
+              ExecutionHistory: combined.map(h => `${typeof h === 'object' ? (h.url || h.preview || '') : h}|${typeof h === 'object' ? (h.timestamp || Date.now()) : Date.now()}${typeof h === 'object' && h.gps ? '|' + h.gps : ''}`).join(',')
+            };
+            break;
+          }
+        }
+
         // Overlay multi-slot schedule if present locally
         for (const k of keys) {
           if (Array.isArray(localSchedules[k]) && localSchedules[k].length > 0) {

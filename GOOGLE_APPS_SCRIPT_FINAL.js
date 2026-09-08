@@ -1425,6 +1425,32 @@ function batchUpdateSheet_(data) {
 /* ================= UPDATE LOGIC ================= */
 
 /**
+ * 🔑 ONE-CLICK DRIVE AUTHORIZATION & HEALTH TEST
+ * Run this function once in the Google Apps Script editor to authorize Google Drive permissions!
+ * In the Apps Script toolbar, select 'authorizeDriveAndTest' from the function dropdown and click 'Run'.
+ */
+function authorizeDriveAndTest() {
+  Logger.log("Testing DriveApp authorization...");
+  try {
+    var root = DriveApp.getRootFolder();
+    Logger.log("✅ DriveApp Root Access Granted! User Root: " + root.getName());
+    var folder;
+    try {
+      folder = DriveApp.getFolderById(CONFIG.IMAGE_FOLDER_ID);
+      Logger.log("✅ CONFIG.IMAGE_FOLDER_ID found: " + folder.getName());
+    } catch(fErr) {
+      var folders = DriveApp.getFoldersByName("Hoarding_Project_Images");
+      folder = folders.hasNext() ? folders.next() : DriveApp.createFolder("Hoarding_Project_Images");
+      Logger.log("✅ Fallback folder ready: " + folder.getName() + " (ID: " + folder.getId() + ")");
+    }
+    return "SUCCESS: DriveApp is fully authorized and ready to save daily execution proofs!";
+  } catch(err) {
+    Logger.log("❌ Drive authorization error: " + err.toString());
+    throw err;
+  }
+}
+
+/**
  * 🛠 Upload image to Drive and return the thumbnail URL
  */
 function uploadImageToDrive(data) {
@@ -1433,12 +1459,30 @@ function uploadImageToDrive(data) {
     var decoded = decodeBase64(data.fileData);
     if (!decoded) return null;
     
-    var folder;
+    var folder = null;
     try {
-      folder = DriveApp.getFolderById(CONFIG.IMAGE_FOLDER_ID);
+      if (CONFIG.IMAGE_FOLDER_ID) {
+        folder = DriveApp.getFolderById(CONFIG.IMAGE_FOLDER_ID);
+      }
     } catch(e) {
-      var folders = DriveApp.getFoldersByName("Hoarding_Project_Images");
-      folder = folders.hasNext() ? folders.next() : DriveApp.createFolder("Hoarding_Project_Images");
+      logDebug("IMAGE_FOLDER_ID not accessible directly: " + e.toString());
+    }
+
+    if (!folder) {
+      try {
+        var folders = DriveApp.getFoldersByName("Hoarding_Project_Images");
+        folder = folders.hasNext() ? folders.next() : DriveApp.createFolder("Hoarding_Project_Images");
+      } catch(e2) {
+        logDebug("Hoarding_Project_Images folder error: " + e2.toString());
+      }
+    }
+
+    if (!folder) {
+      try {
+        folder = DriveApp.getRootFolder();
+      } catch(e3) {
+        logDebug("DriveApp.getRootFolder error: " + e3.toString());
+      }
     }
 
     var rawName = data.fileName || ((data.siteName || "Site") + "_" + new Date().getTime() + ".jpg");
@@ -1446,15 +1490,21 @@ function uploadImageToDrive(data) {
     if (!/\.(jpg|jpeg|png|webp)$/i.test(cleanName)) cleanName += '.jpg';
 
     // 🛡️ Deduplication Guard: Check if file with exact cleanName already exists in Drive
-    var existingFiles = folder.getFilesByName(cleanName);
-    if (existingFiles.hasNext()) {
-      var existingFile = existingFiles.next();
-      return "https://lh3.googleusercontent.com/d/" + existingFile.getId();
+    if (folder) {
+      try {
+        var existingFiles = folder.getFilesByName(cleanName);
+        if (existingFiles.hasNext()) {
+          var existingFile = existingFiles.next();
+          return "https://lh3.googleusercontent.com/d/" + existingFile.getId();
+        }
+      } catch(dedupErr) {}
     }
 
     var blob = Utilities.newBlob(decoded, data.mimeType || 'image/jpeg', cleanName);
-    var file = folder.createFile(blob);
-    file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+    var file = folder ? folder.createFile(blob) : DriveApp.createFile(blob);
+    try {
+      file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+    } catch(shareErr) {}
     return "https://lh3.googleusercontent.com/d/" + file.getId();
   } catch (err) {
     logDebug("uploadImageToDrive FAILED: " + err.toString());
@@ -1677,8 +1727,21 @@ function updateHoardingDetails(data) {
         // Prevent overwriting ImageURL via fields if a new file is being uploaded
         if (data.fileData && (fieldKey === 'imageurl' || fieldKey.includes('image') || fieldKey.includes('photo') || fieldKey.includes('img') || fieldKey.includes('pic'))) continue;
         
-        // Always skip history from fields
-        if (fieldKey === 'history' || fieldKey === 'executionhistory') continue;
+        // Safely handle ExecutionHistory from fields (guarding against raw base64 data to stay within 50k char limit)
+        if (fieldKey === 'history' || fieldKey === 'executionhistory') {
+          var incomingHist = String(data.fields[fKey] || '').trim();
+          if (incomingHist && incomingHist.indexOf('data:image') === -1) {
+            if (idxHistory === -1) {
+              var newHistCol = sheet.getLastColumn() + 1;
+              sheet.getRange(1, newHistCol).setValue('ExecutionHistory');
+              headers = getAllHeaders(sheet);
+              idxHistory = newHistCol - 1;
+            }
+            sheet.getRange(rowIndex, idxHistory + 1).setValue(incomingHist);
+            logDebug("UPDATE | Safely wrote ExecutionHistory from fields to Row " + rowIndex);
+          }
+          continue;
+        }
 
         var idx = headers.findIndex(function(h) {
           var sheetKey = cleanFull(h);

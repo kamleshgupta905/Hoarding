@@ -177,6 +177,25 @@ export const normalizeHoarding = (item) => {
     _SiteID: item._SiteID || item.UniqueID || item['Unique ID'] || item.ID
   });
 
+  const localHistoryMap = typeof window !== 'undefined' ? getLocalHistory() : {};
+  let localHistItems = [];
+  for (const k of candidateKeys) {
+    if (Array.isArray(localHistoryMap[k]) && localHistoryMap[k].length > 0) {
+      localHistItems = localHistoryMap[k];
+      break;
+    }
+  }
+
+  const combinedHistory = [...localHistItems];
+  const seenUrls = new Set(localHistItems.map(h => (typeof h === 'object' ? (h.url || h.preview || '') : h)));
+  parsedHistory.forEach(h => {
+    const url = typeof h === 'object' ? (h.url || h.preview || '') : h;
+    if (url && !seenUrls.has(url)) {
+      seenUrls.add(url);
+      combinedHistory.push(h);
+    }
+  });
+
   const localBookings = typeof window !== 'undefined' ? getLocalBookings() : {};
   let localBooking = null;
   for (const k of candidateKeys) {
@@ -240,8 +259,8 @@ export const normalizeHoarding = (item) => {
     'Longitude': lng ? (typeof lng === 'number' ? lng : (parseFloat(lng) || lng)) : '',
     'Lat.': lat ? (typeof lat === 'number' ? lat : (parseFloat(lat) || lat)) : '',
     'Long.': lng ? (typeof lng === 'number' ? lng : (parseFloat(lng) || lng)) : '',
-    'History': parsedHistory,
-    'ExecutionHistory': item['ExecutionHistory'] || (parsedHistory.length > 0 ? parsedHistory.map(h => `${h.url}|${h.timestamp}${h.gps ? '|' + h.gps : ''}`).join(',') : ''),
+    'History': combinedHistory,
+    'ExecutionHistory': item['ExecutionHistory'] || (combinedHistory.length > 0 ? combinedHistory.map(h => `${typeof h === 'object' ? (h.url || h.preview || '') : h}|${typeof h === 'object' ? (h.timestamp || Date.now()) : Date.now()}${typeof h === 'object' && h.gps ? '|' + h.gps : ''}`).join(',') : ''),
     'Site Category': siteCategory,
     'STATUS': status,
     'BookedBy': bookedBy,
@@ -386,6 +405,91 @@ export const clearLocalBooking = (siteKeyOrSite) => {
     localStorage.setItem('adh_local_bookings', JSON.stringify(current));
   } catch (err) {
     console.warn('clearLocalBooking notice:', err);
+  }
+};
+
+/**
+ * 📜 LOCAL EXECUTION PROOF / AUDIT HISTORY ENGINE
+ * Guarantees newly uploaded daily verification photos are immediately visible
+ * across all pages (Admin Dashboard, Site History, Audit gallery) and are never
+ * wiped by remote sheet polling or slow CDN caches.
+ */
+export const getLocalHistory = (site = null) => {
+  if (typeof window === 'undefined') return site ? [] : {};
+  try {
+    const raw = localStorage.getItem('adh_local_history');
+    if (!raw) return site ? [] : {};
+    const current = JSON.parse(raw);
+    if (!site) return current;
+
+    const keys = getSiteBookingKeys(site);
+    for (const k of keys) {
+      if (Array.isArray(current[k]) && current[k].length > 0) {
+        return current[k];
+      }
+    }
+    return [];
+  } catch {
+    return site ? [] : {};
+  }
+};
+
+export const recordSiteHistory = (site, historyItem) => {
+  if (!site || !historyItem || typeof window === 'undefined') return;
+  try {
+    const keys = getSiteBookingKeys(site);
+    if (keys.length === 0) return;
+    const current = getLocalHistory();
+
+    const normalizedItem = {
+      url: historyItem.url || historyItem.preview || '',
+      preview: historyItem.preview || historyItem.url || '',
+      timestamp: historyItem.timestamp || Date.now(),
+      date: historyItem.date || new Date().toISOString(),
+      gps: historyItem.gps || '',
+      source: historyItem.source || 'Daily Execution Proof (GPS Auto-Match)',
+      status: historyItem.status || 'Available',
+      facing: historyItem.facing || site.Facing || '',
+      confidence: historyItem.confidence,
+      reasoning: historyItem.reasoning
+    };
+
+    keys.forEach(k => {
+      const existing = Array.isArray(current[k]) ? current[k] : [];
+      const filtered = existing.filter(item => {
+        const itemUrl = typeof item === 'object' ? (item.url || item.preview || '') : item;
+        const itemTime = typeof item === 'object' ? (item.timestamp || 0) : 0;
+        if (itemUrl === normalizedItem.url) return false;
+        if (Math.abs(itemTime - normalizedItem.timestamp) < 60000 && itemUrl.slice(0, 50) === normalizedItem.url.slice(0, 50)) return false;
+        return true;
+      });
+      current[k] = [normalizedItem, ...filtered].slice(0, 30);
+    });
+
+    localStorage.setItem('adh_local_history', JSON.stringify(current));
+    console.log(`💾 [Local History] Saved history proof for keys:`, keys);
+  } catch (err) {
+    console.warn('recordSiteHistory notice:', err);
+  }
+};
+
+export const removeSiteHistory = (site, targetUrl) => {
+  if (!site || !targetUrl || typeof window === 'undefined') return;
+  try {
+    const keys = getSiteBookingKeys(site);
+    if (keys.length === 0) return;
+    const current = getLocalHistory();
+    keys.forEach(k => {
+      if (Array.isArray(current[k])) {
+        current[k] = current[k].filter(item => {
+          const itemUrl = typeof item === 'object' ? (item.url || item.preview || '') : item;
+          return itemUrl !== targetUrl;
+        });
+      }
+    });
+    localStorage.setItem('adh_local_history', JSON.stringify(current));
+  } catch (err) {
+    console.warn('removeSiteHistory notice:', err);
   }
 };
 
