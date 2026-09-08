@@ -22,6 +22,7 @@ export const getGeminiApiKeys = () => {
 };
 
 export const GEMINI_MODELS = [
+  'gemini-3.8-flash',
   'gemini-3.7-flash',
   'gemini-3.5-flash',
   'gemini-flash-lite-latest',
@@ -249,13 +250,13 @@ export const resolveTwinSiteFacingWithGemini = async (imageBase64, candidates) =
     const refUrl = rawSite.ImageURL && !rawSite.ImageURL.includes('unsplash.com') ? rawSite.ImageURL : '';
     return `[Candidate ${idx}]:
 - Location: "${name}"
-- Facing Direction: "${facing}"
+- Facing Direction: "${facing}" (Face is oriented towards ${facing}, visible to oncoming traffic coming from ${from || facing} heading towards ${to || 'opposite'})
 ${traffic ? `- Traffic Flow: "${traffic}"` : ''}
 ${rawSite.City ? `- City: "${rawSite.City}"` : ''}
 ${refUrl ? `- Reference Photo URL: ${refUrl}` : ''}`;
   }).join('\n\n');
 
-  const prompt = `You are an expert AI Outdoor Advertising & Traffic Angle Analyst.
+  const prompt = `You are an expert AI Outdoor Advertising (OOH / Billboard) Traffic Analyst.
 A field audit photo was taken of an outdoor hoarding billboard.
 At this exact GPS coordinate, there are MULTIPLE candidate billboard faces (e.g. a double-sided unipole on the road divider, with opposite facings).
 
@@ -263,21 +264,25 @@ CANDIDATE HOARDING FACES AT THIS SPOT:
 ${candidateDescriptions}
 
 CRITICAL RULES FOR ACCURATE MATCHING:
-1. ⚠️ DO NOT be deceived by any advertiser store/showroom/branch address printed on the flex ad banner itself (for example: "205, Begum Bridge Road", "Store address", phone numbers). That is just the advertiser's showroom address, NOT the billboard's facing direction!
-2. Inspect the road perspective and traffic direction in the photo:
+1. ⚠️ DO NOT be deceived by any advertiser store/showroom/branch address printed on the flex ad banner itself (for example: "205, Begum Bridge Road", "Showroom address", phone numbers). That is just the advertiser's showroom address, NOT the billboard's facing direction!
+2. In outdoor advertising (OOH): "Facing [X]" means the billboard face is physically oriented looking towards direction X, so traffic approaching/coming FROM direction X sees this face directly through their windshield!
+   - For example, on the Delhi-Roorkee highway at Modipuram:
+     * Traffic driving from Pallavpuram/Roorkee heading towards Begum Bridge/Meerut City sees the face that is "Facing: Pallavpuram"!
+     * Traffic driving from Begum Bridge/Meerut City heading towards Pallavpuram/Roorkee sees the face that is "Facing: Begum Bridge"!
+3. Inspect the road perspective and traffic direction in the photo:
    - Notice the direction traffic is flowing relative to the camera (towards camera vs away).
    - Look at the road divider, metro/RRTS pillars, overbridge, street signs, and background shops.
-3. Compare with the Candidate Facing Directions and Traffic Flows above.
-4. Select the best matching Candidate (by index: 0, 1, etc.).
-5. Detect status: "Occupied" (active commercial brand ad mounted) or "Available" (blank, white, torn, or To-Let).
+4. Compare with the Candidate Facing Directions and Traffic Flows above.
+5. Select the best matching Candidate (by index: 0, 1, etc.).
+6. Detect status: "Occupied" (active commercial brand ad mounted) or "Available" (blank, white, torn, or To-Let).
 
 Return ONLY a single valid JSON object (no markdown, no backticks):
 {
   "matchedIndex": 0,
   "facing": "exact facing from selected candidate",
   "status": "Occupied",
-  "confidence": 0.96,
-  "reasoning": "Brief explanation of visual road perspective and why this candidate was selected"
+  "confidence": 0.98,
+  "reasoning": "Detailed visual explanation of road direction, traffic flow, and why this candidate facing was selected"
 }`;
 
   const payload = {
