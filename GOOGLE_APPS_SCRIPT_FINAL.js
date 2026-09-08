@@ -1832,6 +1832,12 @@ function updateHoardingDetails(data) {
           }
 
           if (itemToArchive) {
+            if (currentHistory && (currentHistory.indexOf('data:image/') !== -1 || currentHistory.indexOf('base64') !== -1)) {
+              var histParts = currentHistory.split(',');
+              currentHistory = histParts.filter(function(hp) {
+                return hp.indexOf('data:image/') === -1 && hp.indexOf('base64') === -1 && hp.length < 3000;
+              }).join(',');
+            }
             var updatedHistory = currentHistory ? (currentHistory + "," + itemToArchive) : itemToArchive;
             sheet.getRange(rowIndex, idxHistory + 1).setValue(updatedHistory);
             SpreadsheetApp.flush();

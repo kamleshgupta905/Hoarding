@@ -63,11 +63,19 @@ const getDirectDriveLink = (url) => {
 
 export const parseHistoryString = (rawHistory) => {
   if (!rawHistory) return [];
+  const isCleanUrl = (u) => {
+    if (!u || typeof u !== 'string') return false;
+    const trimmed = u.trim();
+    return trimmed.length > 0 && !trimmed.startsWith('data:image/') && !trimmed.startsWith('blob:') && trimmed.length < 3000;
+  };
+
   if (Array.isArray(rawHistory)) {
     return rawHistory.map(item => {
       if (typeof item === 'object' && item !== null) {
+        const raw = item.url || item.ImageURL || item.preview || '';
+        if (!isCleanUrl(raw)) return null;
         return {
-          url: getDirectDriveLink(item.url || item.ImageURL || item.preview || ''),
+          url: getDirectDriveLink(raw),
           timestamp: item.timestamp || (item.date ? new Date(item.date).getTime() : Date.now()),
           date: item.date || (item.timestamp ? new Date(item.timestamp).toISOString() : new Date().toISOString()),
           gps: item.gps || '',
@@ -77,21 +85,25 @@ export const parseHistoryString = (rawHistory) => {
       }
       const str = String(item).trim();
       const parts = str.split('|');
+      const raw = parts[0]?.trim() || '';
+      if (!isCleanUrl(raw)) return null;
       return {
-        url: getDirectDriveLink(parts[0]?.trim() || ''),
+        url: getDirectDriveLink(raw),
         timestamp: parseInt(parts[1]?.trim(), 10) || Date.now(),
         date: new Date(parseInt(parts[1]?.trim(), 10) || Date.now()).toISOString(),
         gps: parts[2]?.trim() || '',
         source: 'Verified Capture',
         status: 'Available'
       };
-    }).filter(i => Boolean(i.url));
+    }).filter(i => Boolean(i && i.url));
   }
 
   if (typeof rawHistory === 'string' && rawHistory.trim()) {
     return rawHistory.split(',').map(entry => {
       const parts = entry.split('|');
-      const url = getDirectDriveLink(parts[0]?.trim() || '');
+      const raw = parts[0]?.trim() || '';
+      if (!isCleanUrl(raw)) return null;
+      const url = getDirectDriveLink(raw);
       const timestamp = parseInt(parts[1]?.trim(), 10) || Date.now();
       const gps = parts[2]?.trim() || '';
       return {
@@ -102,7 +114,7 @@ export const parseHistoryString = (rawHistory) => {
         source: 'Verified Capture',
         status: 'Available'
       };
-    }).filter(i => Boolean(i.url));
+    }).filter(i => Boolean(i && i.url));
   }
 
   return [];
@@ -260,7 +272,9 @@ export const normalizeHoarding = (item) => {
     'Lat.': lat ? (typeof lat === 'number' ? lat : (parseFloat(lat) || lat)) : '',
     'Long.': lng ? (typeof lng === 'number' ? lng : (parseFloat(lng) || lng)) : '',
     'History': combinedHistory,
-    'ExecutionHistory': item['ExecutionHistory'] || (combinedHistory.length > 0 ? combinedHistory.map(h => `${typeof h === 'object' ? (h.url || h.preview || '') : h}|${typeof h === 'object' ? (h.timestamp || Date.now()) : Date.now()}${typeof h === 'object' && h.gps ? '|' + h.gps : ''}`).join(',') : ''),
+    'ExecutionHistory': (typeof item['ExecutionHistory'] === 'string' && item['ExecutionHistory'].includes('data:image/'))
+      ? item['ExecutionHistory'].split(',').filter(p => !p.includes('data:image/')).join(',')
+      : (item['ExecutionHistory'] || (combinedHistory.length > 0 ? combinedHistory.map(h => `${typeof h === 'object' ? (h.url || h.preview || '') : h}|${typeof h === 'object' ? (h.timestamp || Date.now()) : Date.now()}${typeof h === 'object' && h.gps ? '|' + h.gps : ''}`).join(',') : '')),
     'Site Category': siteCategory,
     'STATUS': status,
     'BookedBy': bookedBy,
@@ -420,12 +434,30 @@ export const getLocalHistory = (site = null) => {
     const raw = localStorage.getItem('adh_local_history');
     if (!raw) return site ? [] : {};
     const current = JSON.parse(raw);
-    if (!site) return current;
+    if (!current || typeof current !== 'object') return site ? [] : {};
+
+    // 🛡️ Clean out any legacy base64 strings
+    const cleanList = (list) => {
+      if (!Array.isArray(list)) return [];
+      return list.filter(item => {
+        const u = typeof item === 'object' ? (item.url || item.preview || '') : item;
+        return u && typeof u === 'string' && !u.startsWith('data:image/') && !u.startsWith('blob:') && u.length < 3000;
+      });
+    };
+
+    if (!site) {
+      const sanitized = {};
+      Object.keys(current).forEach(k => {
+        sanitized[k] = cleanList(current[k]);
+      });
+      return sanitized;
+    }
 
     const keys = getSiteBookingKeys(site);
     for (const k of keys) {
-      if (Array.isArray(current[k]) && current[k].length > 0) {
-        return current[k];
+      const list = cleanList(current[k]);
+      if (list.length > 0) {
+        return list;
       }
     }
     return [];
@@ -439,11 +471,19 @@ export const recordSiteHistory = (site, historyItem) => {
   try {
     const keys = getSiteBookingKeys(site);
     if (keys.length === 0) return;
+
+    const rawUrl = historyItem.url || historyItem.preview || '';
+    // 🛡️ CRITICAL: NEVER store base64 in localStorage! Only store remote URLs (Google Drive / HTTP).
+    if (!rawUrl || typeof rawUrl !== 'string' || rawUrl.startsWith('data:image/') || rawUrl.startsWith('blob:') || rawUrl.length > 3000) {
+      console.log('🛡️ [Local History] Skipping base64/blob image from local storage - awaiting Google Drive URL');
+      return;
+    }
+
     const current = getLocalHistory();
 
     const normalizedItem = {
-      url: historyItem.url || historyItem.preview || '',
-      preview: historyItem.preview || historyItem.url || '',
+      url: rawUrl,
+      preview: rawUrl,
       timestamp: historyItem.timestamp || Date.now(),
       date: historyItem.date || new Date().toISOString(),
       gps: historyItem.gps || '',
@@ -459,6 +499,7 @@ export const recordSiteHistory = (site, historyItem) => {
       const filtered = existing.filter(item => {
         const itemUrl = typeof item === 'object' ? (item.url || item.preview || '') : item;
         const itemTime = typeof item === 'object' ? (item.timestamp || 0) : 0;
+        if (!itemUrl || typeof itemUrl !== 'string' || itemUrl.startsWith('data:image/')) return false;
         if (itemUrl === normalizedItem.url) return false;
         if (Math.abs(itemTime - normalizedItem.timestamp) < 60000 && itemUrl.slice(0, 50) === normalizedItem.url.slice(0, 50)) return false;
         return true;

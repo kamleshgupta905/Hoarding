@@ -389,15 +389,19 @@ function App() {
         const item = mergedList[i];
         const keys = getSiteBookingKeys(item);
         
-        // Overlay local verification history if present
+        // Overlay local verification history if present (filter out any raw base64 blobs)
         for (const k of keys) {
           if (Array.isArray(localHistory[k]) && localHistory[k].length > 0) {
             const currentHist = Array.isArray(mergedList[i].History) ? mergedList[i].History : [];
-            const seenUrls = new Set(localHistory[k].map(h => (typeof h === 'object' ? (h.url || h.preview || '') : h)));
-            const combined = [...localHistory[k]];
+            const cleanLocal = localHistory[k].filter(h => {
+              const u = typeof h === 'object' ? (h.url || h.preview || '') : h;
+              return u && typeof u === 'string' && !u.startsWith('data:image/');
+            });
+            const seenUrls = new Set(cleanLocal.map(h => (typeof h === 'object' ? (h.url || h.preview || '') : h)));
+            const combined = [...cleanLocal];
             currentHist.forEach(h => {
               const url = typeof h === 'object' ? (h.url || h.preview || '') : h;
-              if (url && !seenUrls.has(url)) {
+              if (url && typeof url === 'string' && !url.startsWith('data:image/') && !seenUrls.has(url)) {
                 seenUrls.add(url);
                 combined.push(h);
               }
@@ -514,11 +518,53 @@ function App() {
   }, [applyFreshHoardings]);
 
   const wrappedSetHoardings = (newData) => {
-    const now = Date.now().toString();
-    localStorage.setItem('last_hoardings_update', now);
+    const safeCache = (data) => {
+      if (!data || typeof window === 'undefined') return;
+      try {
+        const now = Date.now().toString();
+        localStorage.setItem('last_hoardings_update', now);
+        // 🛡️ Strip any heavy base64 strings so localStorage never exceeds quota
+        const sanitized = Array.isArray(data) ? data.map(h => {
+          if (!h || typeof h !== 'object') return h;
+          let changed = false;
+          let newH = h;
+          if (typeof h.ImageURL === 'string' && h.ImageURL.startsWith('data:image/')) {
+            newH = { ...newH, ImageURL: '' };
+            changed = true;
+          }
+          if (typeof h.ExecutionHistory === 'string' && h.ExecutionHistory.includes('data:image/')) {
+            const cleanParts = h.ExecutionHistory.split(',').filter(p => !p.includes('data:image/')).join(',');
+            newH = { ...newH, ExecutionHistory: cleanParts };
+            changed = true;
+          }
+          if (Array.isArray(h.History)) {
+            const cleanHist = h.History.filter(item => {
+              const u = typeof item === 'object' ? (item.url || item.preview || '') : item;
+              return typeof u !== 'string' || !u.startsWith('data:image/');
+            });
+            if (cleanHist.length !== h.History.length) {
+              newH = { ...newH, History: cleanHist };
+              changed = true;
+            }
+          }
+          return changed ? newH : h;
+        }) : data;
+        localStorage.setItem('hoardings_cache', JSON.stringify(sanitized));
+      } catch (err) {
+        console.warn('Could not safely save hoardings_cache to localStorage:', err);
+      }
+    };
+
     if (typeof newData === 'function') {
-      setHoardings(prev => { const result = newData(prev); localStorage.setItem('hoardings_cache', JSON.stringify(result)); return result; });
-    } else { setHoardings(newData); localStorage.setItem('hoardings_cache', JSON.stringify(newData)); }
+      setHoardings(prev => {
+        const result = newData(prev);
+        safeCache(result);
+        return result;
+      });
+    } else {
+      setHoardings(newData);
+      safeCache(newData);
+    }
   };
 
   const isStaffAppEnvironment = (typeof window !== 'undefined' && (window.isStaffApp || window.Capacitor?.isNativePlatform?.() || localStorage.getItem('is_staff_app') === 'true' || window.location.pathname.startsWith('/staff')));

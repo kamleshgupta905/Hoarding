@@ -325,11 +325,12 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
         if (!val) return false;
         if (typeof val === 'string') {
             const trimmed = val.trim();
-            return trimmed.length > 0 && !trimmed.startsWith('blob:');
+            return (trimmed.startsWith('http://') || trimmed.startsWith('https://')) && !trimmed.startsWith('data:image/') && trimmed.length < 3000;
         }
         if (typeof val === 'object') {
             const inner = typeof val.url === 'string' ? val.url : (typeof val.preview === 'string' ? val.preview : '');
-            return typeof inner === 'string' && inner.trim().length > 0 && !inner.trim().startsWith('blob:');
+            const trimmed = (inner || '').trim();
+            return (trimmed.startsWith('http://') || trimmed.startsWith('https://')) && !trimmed.startsWith('data:image/') && trimmed.length < 3000;
         }
         return false;
     };
@@ -1502,40 +1503,15 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                 ? `${imageData.gpsCoord.lat.toFixed(6)}, ${imageData.gpsCoord.lng.toFixed(6)}` 
                 : '';
 
-            // Construct new history entry
-            const newHistoryItem = {
-                url: base64,
-                preview: imageData.preview,
-                timestamp: Date.now(),
-                date: new Date().toISOString(),
-                gps: gpsString,
-                source: 'Daily Execution Proof (GPS Auto-Match)',
-                facing: imageData.facing || targetHoarding?.Facing || '',
-                status: imageData.status || 'Available',
-                confidence: imageData.confidence,
-                reasoning: imageData.reasoning
-            };
-
-            const existingHistory = targetHoarding ? (
-                Array.isArray(targetHoarding.History) ? targetHoarding.History : parseHistoryString(targetHoarding.ExecutionHistory || targetHoarding.History || '')
-            ) : [];
-
-            const updatedHistory = [newHistoryItem, ...existingHistory.filter(h => (typeof h === 'object' ? h.url : h) !== base64)];
-
-            const historyString = updatedHistory.map(item => {
-                const url = typeof item === 'object' ? (item.url || item.preview || '') : item;
-                const time = typeof item === 'object' ? (item.timestamp || Date.now()) : Date.now();
-                const gps = typeof item === 'object' ? (item.gps || '') : '';
-                return `${url}|${time}${gps ? '|' + gps : ''}`;
-            }).join(',');
-
             const targetSL = targetHoarding ? (targetHoarding.SL || targetHoarding['S. No.'] || targetHoarding['SL NO'] || '') : (imageData.sl || '');
             const siteNameResolved = targetHoarding ? (targetHoarding["Locality Site Location"] || targetHoarding["Location "] || targetHoarding.Location) : imageData.matchedLocation;
             const siteIdResolved = targetHoarding ? (targetHoarding.UniqueID || targetHoarding["Unique ID"] || targetHoarding.ID || targetHoarding._SiteID || '') : (imageData.matchedSiteId || '');
             const facingResolved = imageData.facing || targetHoarding?.Facing || targetHoarding?.['Traffic View'] || '';
 
-            // ☁️ Sync to Google Sheets ExecutionHistory column with Facing Awareness & SL
-            await syncToGoogleSheet({
+            // ☁️ Sync directly to Google Drive & Google Sheets ExecutionHistory via Google Apps Script
+            // Google Apps Script uploads the image directly to Drive, archives the Drive link to ExecutionHistory,
+            // and returns the permanent Google Drive URL. We NEVER send raw base64 in fields.ExecutionHistory!
+            const syncRes = await syncToGoogleSheet({
                 action: 'updateHoarding',
                 sl: targetSL,
                 siteName: siteNameResolved,
@@ -1544,7 +1520,6 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                 status: imageData.status || 'Available',
                 fields: { 
                     "SL": targetSL,
-                    "ExecutionHistory": historyString,
                     STATUS: imageData.status || 'Available',
                     Facing: facingResolved
                 },
@@ -1555,64 +1530,88 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                 isDailyProof: true
             });
 
-            // Mark uploaded in UI and lock persistent preview to base64
+            // Extract Google Drive URL from Apps Script response
+            const driveUrl = syncRes?.imageUrl || syncRes?.fileUrl || syncRes?.result?.imageUrl || syncRes?.data?.imageUrl || '';
+            console.log("☁️ [Daily Proof] Uploaded to Google Drive & Sheet ExecutionHistory:", driveUrl);
+
+            // Mark uploaded in UI with Google Drive URL (fallback to in-memory preview during upload)
             setDailyImages(prev => {
                 const next = [...prev];
                 if (next[index]) {
                     next[index].uploaded = true;
                     next[index].uploading = false;
                     next[index].timestamp = Date.now();
-                    next[index].persistentPreview = base64;
-                    next[index].uploadedUrl = base64;
-                    next[index].preview = base64;
+                    next[index].uploadedUrl = driveUrl || '';
+                    if (driveUrl) {
+                        next[index].persistentPreview = driveUrl;
+                        next[index].preview = driveUrl;
+                    }
                 }
                 return next;
             });
 
-            // 💾 Record to local verification history immediately so UI displays it with zero delay
-            const siteTargetForHistory = targetHoarding || {
-                SL: targetSL,
-                'S. No.': targetSL,
-                _SiteID: siteIdResolved,
-                UniqueID: siteIdResolved,
-                'Location ': siteNameResolved,
-                Location: siteNameResolved,
-                Facing: facingResolved
+            // Construct new history entry with Google Drive URL (never base64!)
+            const finalProofUrl = driveUrl || '';
+            const newHistoryItem = {
+                url: finalProofUrl,
+                preview: finalProofUrl || imageData.preview,
+                timestamp: Date.now(),
+                date: new Date().toISOString(),
+                gps: gpsString,
+                source: 'Daily Execution Proof (GPS Auto-Match)',
+                facing: facingResolved,
+                status: imageData.status || 'Available',
+                confidence: imageData.confidence,
+                reasoning: imageData.reasoning
             };
-            recordSiteHistory(siteTargetForHistory, newHistoryItem);
 
-            // 💾 Update Hoarding state and cache (strictly targeting the resolved site to prevent twin-site collision)
+            // 💾 Record to local verification history ONLY with clean Google Drive URL (never base64 in localStorage!)
+            if (driveUrl) {
+                const siteTargetForHistory = targetHoarding || {
+                    SL: targetSL,
+                    'S. No.': targetSL,
+                    _SiteID: siteIdResolved,
+                    UniqueID: siteIdResolved,
+                    'Location ': siteNameResolved,
+                    Location: siteNameResolved,
+                    Facing: facingResolved
+                };
+                recordSiteHistory(siteTargetForHistory, newHistoryItem);
+            }
+
+            // 💾 Update Hoarding state in React (strictly targeting the resolved site without bloating state with base64)
             setHoardings(prev => {
-                const updatedList = prev.map((h, hIdx) => {
+                return prev.map((h, hIdx) => {
                     const isTarget = (targetSL && String(h.SL || h['S. No.'] || h['SL NO'] || '').trim() === String(targetSL).trim()) ||
                         (siteIdResolved && (h._SiteID === siteIdResolved || h.UniqueID === siteIdResolved || h['Unique ID'] === siteIdResolved)) ||
                         (imageData.matchedIndex != null && imageData.matchedIndex >= 0 && hIdx === imageData.matchedIndex);
 
                     if (isTarget) {
-                        const hasValidOldImage = h.ImageURL && h.ImageURL.trim() !== "" && !h.ImageURL.includes("unsplash.com");
+                        const hasValidOldImage = h.ImageURL && h.ImageURL.trim() !== "" && !h.ImageURL.includes("unsplash.com") && !h.ImageURL.startsWith("data:image/");
                         const currentHist = Array.isArray(h.History) ? h.History : parseHistoryString(h.ExecutionHistory || h.History || '');
-                        const newHist = [newHistoryItem, ...currentHist.filter(item => (typeof item === 'object' ? item.url : item) !== base64)];
+                        
+                        const newHist = driveUrl
+                            ? [newHistoryItem, ...currentHist.filter(item => {
+                                const u = typeof item === 'object' ? (item.url || item.preview || '') : item;
+                                return u !== driveUrl && typeof u === 'string' && !u.startsWith('data:image/');
+                            })]
+                            : currentHist;
+
+                        const updatedExecutionHistory = driveUrl
+                            ? (h.ExecutionHistory ? `${h.ExecutionHistory},${driveUrl}|${Date.now()}${gpsString ? '|' + gpsString : ''}` : `${driveUrl}|${Date.now()}${gpsString ? '|' + gpsString : ''}`)
+                            : (h.ExecutionHistory || '');
 
                         return {
                             ...h,
                             STATUS: imageData.status || h.STATUS || 'Available',
                             Facing: facingResolved || h.Facing,
-                            ImageURL: hasValidOldImage ? h.ImageURL : base64,
+                            ImageURL: (hasValidOldImage || !driveUrl) ? h.ImageURL : driveUrl,
                             History: newHist,
-                            ExecutionHistory: historyString
+                            ExecutionHistory: updatedExecutionHistory
                         };
                     }
                     return h;
                 });
-
-                try {
-                    localStorage.setItem('adh_cached_hoardings', JSON.stringify(updatedList));
-                    localStorage.setItem('hoardings_cache', JSON.stringify(updatedList));
-                } catch (e) {
-                    console.warn('Could not cache hoardings to localStorage:', e);
-                }
-
-                return updatedList;
             });
 
         } catch (error) {
