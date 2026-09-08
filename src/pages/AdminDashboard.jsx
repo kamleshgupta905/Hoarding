@@ -319,7 +319,52 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
     const [formData, setFormData] = useState({});
 
     const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
-    const [dailyImages, setDailyImages] = useState([]); // [{file, preview, status, location, aiLoading}]
+    // 📸 Daily Proof Upload State (Persists for 24 hours in localStorage or until user clicks cross)
+    const [dailyImages, setDailyImages] = useState(() => {
+        try {
+            const raw = localStorage.getItem('adh_daily_proof_images');
+            if (!raw) return [];
+            const parsed = JSON.parse(raw);
+            const cutoff = Date.now() - 24 * 60 * 60 * 1000;
+            const valid = parsed.filter(item => (item.timestamp || 0) > cutoff);
+            if (valid.length !== parsed.length) {
+                localStorage.setItem('adh_daily_proof_images', JSON.stringify(valid));
+            }
+            return valid;
+        } catch {
+            return [];
+        }
+    });
+
+    useEffect(() => {
+        try {
+            const serializable = dailyImages.map(img => ({
+                preview: img.preview,
+                matchedIndex: img.matchedIndex,
+                matchedLocation: img.matchedLocation,
+                matchedSiteId: img.matchedSiteId,
+                facing: img.facing,
+                twinCandidates: img.twinCandidates,
+                status: img.status,
+                confidence: img.confidence,
+                reasoning: img.reasoning,
+                analysis: img.analysis,
+                gpsCoord: img.gpsCoord,
+                distanceM: img.distanceM,
+                uploaded: img.uploaded,
+                uploading: false,
+                matchFailed: img.matchFailed,
+                timestamp: img.timestamp || Date.now()
+            }));
+            localStorage.setItem('adh_daily_proof_images', JSON.stringify(serializable));
+        } catch (e) {
+            console.warn('Could not save daily proof images to localStorage:', e);
+        }
+    }, [dailyImages]);
+
+    const removeDailyImage = (idxToRemove) => {
+        setDailyImages(prev => prev.filter((_, idx) => idx !== idxToRemove));
+    };
     const [selectedAssetFile, setSelectedAssetFile] = useState(null);
     const [isDragging, setIsDragging] = useState(false);
     const [deleteTarget, setDeleteTarget] = useState(null); // { site, index, name, city, locality } or string
@@ -1329,7 +1374,9 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                 },
                 fileData: base64,
                 mimeType: 'image/jpeg',
-                mode: hasExistingMaster ? 'archive' : 'replace'
+                mode: 'both',
+                gps: gpsString,
+                isDailyProof: true
             });
 
             // Mark uploaded in UI
@@ -1338,6 +1385,7 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                 if (next[index]) {
                     next[index].uploaded = true;
                     next[index].uploading = false;
+                    next[index].timestamp = Date.now();
                 }
                 return next;
             });
@@ -5197,12 +5245,59 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                         <XCircle size={20} /> Dump All Red
                                     </button>
                                 )}
+                                {dailyImages.length > 0 && (
+                                    <button
+                                        type="button"
+                                        className="ai-process-btn dump-btn"
+                                        onClick={() => {
+                                            if (window.confirm("Clear all items from Daily Upload?")) {
+                                                setDailyImages([]);
+                                                localStorage.removeItem('adh_daily_proof_images');
+                                            }
+                                        }}
+                                        title="Clear all cards from Daily Upload"
+                                        style={{ background: '#f3f4f6', color: '#4b5563', border: '1px solid #d1d5db' }}
+                                    >
+                                        <Trash2 size={16} /> Clear List
+                                    </button>
+                                )}
                             </div>
 
                             {dailyImages.length > 0 ? (
                                 <div className="daily-images-grid">
                                     {dailyImages.map((img, idx) => (
-                                        <div key={idx} className={`daily-card ${img.uploaded ? 'uploaded' : ''} ${img.matchFailed && !img.uploaded ? 'match-failed' : ''}`}>
+                                        <div key={idx} className={`daily-card ${img.uploaded ? 'uploaded' : ''} ${img.matchFailed && !img.uploaded ? 'match-failed' : ''}`} style={{ position: 'relative' }}>
+                                            <button
+                                                type="button"
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    removeDailyImage(idx);
+                                                }}
+                                                title="Remove this image from Daily Upload"
+                                                style={{
+                                                    position: 'absolute',
+                                                    top: '8px',
+                                                    right: '8px',
+                                                    width: '24px',
+                                                    height: '24px',
+                                                    borderRadius: '50%',
+                                                    background: '#ffffff',
+                                                    border: '1px solid #e5e7eb',
+                                                    color: '#ef4444',
+                                                    fontSize: '13px',
+                                                    fontWeight: 'bold',
+                                                    display: 'flex',
+                                                    alignItems: 'center',
+                                                    justifyContent: 'center',
+                                                    cursor: 'pointer',
+                                                    zIndex: 25,
+                                                    boxShadow: '0 2px 6px rgba(0,0,0,0.18)',
+                                                    lineHeight: 1,
+                                                    padding: 0
+                                                }}
+                                            >
+                                                ✕
+                                            </button>
                                             <div className="daily-images-container">
                                                 <div className="img-preview" title="New Captured Image" style={{ backgroundImage: `url(${img.preview})` }}>
                                                     <span className="img-label">NEW</span>

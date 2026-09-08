@@ -1748,12 +1748,13 @@ function updateHoardingDetails(data) {
         }
 
         if (idxHistory !== -1) {
-          var currentHistory = sheet.getRange(rowIndex, idxHistory + 1).getValue();
+          var currentHistory = String(sheet.getRange(rowIndex, idxHistory + 1).getValue() || '').trim();
           var itemToArchive = null;
 
-          if (data.mode === 'archive' || data.mode === 'both') {
-            itemToArchive = fileUrl + "|" + new Date().getTime(); 
-            logDebug("UPDATE | Archiving NEW upload to history");
+          if (data.mode === 'archive' || data.mode === 'both' || data.isDailyProof) {
+            var gpsSuffix = data.gps ? ("|" + String(data.gps).trim()) : "";
+            itemToArchive = fileUrl + "|" + new Date().getTime() + gpsSuffix; 
+            logDebug("UPDATE | Archiving NEW upload to history: " + itemToArchive);
           } else if (data.mode === 'archive_existing') {
             var existingMaster = sheet.getRange(rowIndex, idxImg + 1).getValue();
             if (existingMaster && existingMaster.toString().indexOf('http') > -1) {
@@ -1763,14 +1764,16 @@ function updateHoardingDetails(data) {
           }
 
           if (itemToArchive) {
-            var updatedHistory = currentHistory ? currentHistory + "," + itemToArchive : itemToArchive;
+            var updatedHistory = currentHistory ? (currentHistory + "," + itemToArchive) : itemToArchive;
             sheet.getRange(rowIndex, idxHistory + 1).setValue(updatedHistory);
+            SpreadsheetApp.flush();
             historyUpdated = true;
           }
         }
 
-        // Only update master image if mode is NOT 'archive'
-        if (idxImg !== -1 && data.mode !== 'archive') {
+        // Only update master image if mode is NOT 'archive', or if master image is currently empty
+        var currentMaster = idxImg !== -1 ? String(sheet.getRange(rowIndex, idxImg + 1).getValue() || '').trim() : '';
+        if (idxImg !== -1 && (data.mode !== 'archive' || !currentMaster || currentMaster.indexOf('unsplash.com') !== -1)) {
           sheet.getRange(rowIndex, idxImg + 1).setValue(fileUrl);
           SpreadsheetApp.flush(); 
           logDebug("UPDATE WROTE ImageURL to Row " + rowIndex + " Col " + (idxImg + 1));
@@ -3518,7 +3521,7 @@ function findSiteColumn(headers) {
 function findHistoryColumn(headers) {
   var idx = headers.findIndex(function(h) {
     var c = cleanFull(h);
-    return c === 'executionhistory' || c === 'history';
+    return c === 'executionhistory' || c === 'history' || c === 'dailyupdates' || c === 'dailyproof' || c.indexOf('execution') !== -1 || c.indexOf('history') !== -1;
   });
   return idx;
 }

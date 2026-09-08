@@ -23,7 +23,8 @@ export const getGeminiApiKeys = () => {
 
 export const GEMINI_MODELS = [
   'gemini-3.7-flash',
-  'gemini-flash-latest',
+  'gemini-3.5-flash',
+  'gemini-flash-lite-latest',
   'gemini-3.1-flash-lite'
 ];
 
@@ -46,6 +47,21 @@ export const callGeminiVision = async (payload) => {
   let lastError = null;
   const apiKeys = getGeminiApiKeys();
 
+  // 🛡️ Prevent thinking token truncation for Gemini 3.7 / 3.5 reasoning models
+  const safePayload = {
+    ...payload,
+    generationConfig: {
+      temperature: 0.1,
+      topP: 0.8,
+      maxOutputTokens: 2048,
+      thinkingConfig: { thinkingBudget: 0 },
+      ...(payload.generationConfig || {})
+    }
+  };
+  if (safePayload.generationConfig.maxOutputTokens < 1000) {
+    safePayload.generationConfig.maxOutputTokens = 2048;
+  }
+
   for (const apiKey of apiKeys) {
     if (!apiKey) continue;
 
@@ -59,7 +75,7 @@ export const callGeminiVision = async (payload) => {
             'x-goog-api-key': apiKey,
             'User-Agent': 'aistudio-build'
           },
-          body: JSON.stringify(payload)
+          body: JSON.stringify(safePayload)
         });
 
         if (!response.ok) {
