@@ -5372,27 +5372,32 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                                     </div>
                                                     <select
                                                         value={img.matchedIndex != null && img.matchedIndex >= 0 ? img.matchedIndex : (img.matchedLocation || "")}
-                                                        onChange={(e) => {
+                                                        onChange={async (e) => {
                                                             const selectedIdx = parseInt(e.target.value, 10);
                                                             const newImages = [...dailyImages];
                                                             if (!isNaN(selectedIdx) && selectedIdx >= 0 && selectedIdx < hoardings.length) {
                                                                 const h = hoardings[selectedIdx];
+                                                                const prevSl = newImages[idx].sl;
                                                                 newImages[idx].matchedIndex = selectedIdx;
                                                                 newImages[idx].sl = h.SL || h['S. No.'] || h['SL NO'] || '';
                                                                 newImages[idx].matchedLocation = h["Locality Site Location"] || h["Location "] || h.Location;
                                                                 newImages[idx].matchedSiteId = h._SiteID || h.UniqueID || h['Unique ID'] || h.ID || '';
                                                                 newImages[idx].facing = h.Facing || h['Traffic View'] || '';
                                                                 newImages[idx].matchFailed = false;
+                                                                newImages[idx].reasoning = `Manual selection: #${newImages[idx].sl} | ${newImages[idx].matchedLocation} [Facing: ${newImages[idx].facing}]`;
+                                                                setDailyImages(newImages);
+                                                                if (newImages[idx].uploaded && prevSl !== newImages[idx].sl) {
+                                                                    await triggerAutoUpload(idx, newImages[idx]);
+                                                                }
                                                             } else {
                                                                 newImages[idx].matchedIndex = -1;
                                                                 newImages[idx].sl = '';
                                                                 newImages[idx].matchedLocation = '';
                                                                 newImages[idx].matchedSiteId = '';
                                                                 newImages[idx].facing = '';
+                                                                setDailyImages(newImages);
                                                             }
-                                                            setDailyImages(newImages);
                                                         }}
-                                                        disabled={img.uploaded}
                                                     >
                                                         <option value="">-- Select Location & Facing --</option>
                                                         {hoardings.map((h, i) => {
@@ -5422,25 +5427,28 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                                                         <button
                                                                             key={tIdx}
                                                                             type="button"
-                                                                            disabled={img.uploaded}
-                                                                            onClick={() => {
+                                                                            onClick={async () => {
                                                                                 const newImages = [...dailyImages];
                                                                                 const targetSite = hoardings[twin.index] || hoardings.find(h => String(h.SL || h['S. No.'] || '').trim() === String(twin.sl).trim());
+                                                                                const prevSl = newImages[idx].sl;
                                                                                 newImages[idx].matchedIndex = twin.index;
                                                                                 newImages[idx].sl = twin.sl || targetSite?.SL || targetSite?.['S. No.'] || '';
                                                                                 newImages[idx].matchedSiteId = twin.siteId;
                                                                                 newImages[idx].facing = twin.facing;
                                                                                 newImages[idx].matchedLocation = targetSite ? (targetSite["Locality Site Location"] || targetSite["Location "] || targetSite.Location) : twin.siteName;
-                                                                                newImages[idx].reasoning = `Manual switch to #${twin.sl} | Facing: ${twin.facing} (${twin.distanceM}m)`;
+                                                                                newImages[idx].reasoning = `Switched to #${newImages[idx].sl} | Facing: ${twin.facing} (${twin.distanceM}m away)`;
                                                                                 newImages[idx].matchFailed = false;
                                                                                 setDailyImages(newImages);
+                                                                                if (newImages[idx].uploaded && prevSl !== newImages[idx].sl) {
+                                                                                    await triggerAutoUpload(idx, newImages[idx]);
+                                                                                }
                                                                             }}
                                                                             style={{
                                                                                 padding: '4px 10px',
                                                                                 borderRadius: '6px',
                                                                                 fontSize: '0.75rem',
                                                                                 fontWeight: 600,
-                                                                                cursor: img.uploaded ? 'default' : 'pointer',
+                                                                                cursor: 'pointer',
                                                                                 border: isSelected ? '1.5px solid #4f46e5' : '1px solid #d1d5db',
                                                                                 background: isSelected ? '#e0e7ff' : '#ffffff',
                                                                                 color: isSelected ? '#3730a3' : '#4b5563',
@@ -5466,21 +5474,25 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                                     <div className="status-toggles">
                                                         <button
                                                             className={`toggle-btn ${img.status === 'Available' ? 'active-green' : ''}`}
-                                                            onClick={() => {
+                                                            onClick={async () => {
                                                                 const newImages = [...dailyImages];
                                                                 newImages[idx].status = 'Available';
                                                                 setDailyImages(newImages);
+                                                                if (newImages[idx].uploaded) {
+                                                                    await triggerAutoUpload(idx, newImages[idx]);
+                                                                }
                                                             }}
-                                                            disabled={img.uploaded}
                                                         >Available</button>
                                                         <button
                                                             className={`toggle-btn ${img.status === 'Occupied' ? 'active-red' : ''}`}
-                                                            onClick={() => {
+                                                            onClick={async () => {
                                                                 const newImages = [...dailyImages];
                                                                 newImages[idx].status = 'Occupied';
                                                                 setDailyImages(newImages);
+                                                                if (newImages[idx].uploaded) {
+                                                                    await triggerAutoUpload(idx, newImages[idx]);
+                                                                }
                                                             }}
-                                                            disabled={img.uploaded}
                                                         >Occupied</button>
                                                     </div>
                                                 </div>

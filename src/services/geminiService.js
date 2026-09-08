@@ -232,6 +232,36 @@ If NONE of the candidate sites match at all, return "matchedIndex": -1.
  * to analyze camera perspective, road traffic flow, and background landmarks to automatically
  * determine the exact facing without manual selection.
  */
+/**
+ * Helper to fetch and convert candidate image URL to base64 for Gemini Vision comparison
+ */
+export const loadCandidateImageAsBase64 = async (url) => {
+  if (!url || typeof url !== 'string') return null;
+  if (url.startsWith('data:image/')) return url;
+  if (url.includes('unsplash.com')) return null;
+  try {
+    const res = await fetch(url);
+    if (!res.ok) return null;
+    const blob = await res.blob();
+    return new Promise((resolve) => {
+      const reader = new FileReader();
+      reader.onloadend = () => resolve(reader.result);
+      reader.onerror = () => resolve(null);
+      reader.readAsDataURL(blob);
+    });
+  } catch (e) {
+    return null;
+  }
+};
+
+/**
+ * 🧭 RESOLVE TWIN-SITE & CORRIDOR HOARDING WITH GEMINI VISION
+ * When multiple hoardings exist along the same road corridor or junction (e.g., opposite faces on a
+ * double-sided unipole, or consecutive hoardings along a stretch like Company Garden), this uses
+ * Gemini Multimodal Vision to compare the audit photo against reference photos, examine physical
+ * structures (mounting pole, concrete walls, fences, railings, sidewalks, trees, streetlamps),
+ * road traffic direction, and determine the EXACT hoarding and facing.
+ */
 export const resolveTwinSiteFacingWithGemini = async (imageBase64, candidates) => {
   if (!imageBase64 || !Array.isArray(candidates) || candidates.length < 2) {
     return null;
@@ -239,6 +269,25 @@ export const resolveTwinSiteFacingWithGemini = async (imageBase64, candidates) =
 
   const parsed = parseBase64(imageBase64);
   if (!parsed) return null;
+
+  // Load candidate reference photos if available (up to 4 candidates)
+  const candidateImages = [];
+  for (let idx = 0; idx < Math.min(candidates.length, 4); idx++) {
+    const c = candidates[idx];
+    const rawSite = c.site || c;
+    const imgUrl = rawSite.ImageURL || rawSite.imageUrl || rawSite.image;
+    if (imgUrl && !imgUrl.includes('unsplash.com')) {
+      try {
+        const b64 = await loadCandidateImageAsBase64(imgUrl);
+        if (b64) {
+          const parsedRef = parseBase64(b64);
+          if (parsedRef) {
+            candidateImages.push({ idx, parsed: parsedRef, site: rawSite });
+          }
+        }
+      } catch (e) {}
+    }
+  }
 
   const candidateDescriptions = candidates.map((c, idx) => {
     const rawSite = c.site || c;
@@ -250,68 +299,77 @@ export const resolveTwinSiteFacingWithGemini = async (imageBase64, candidates) =
     const traffic = from && to ? `Traffic from ${from} towards ${to}` : (from || to || '');
     const refUrl = rawSite.ImageURL && !rawSite.ImageURL.includes('unsplash.com') ? rawSite.ImageURL : '';
     const distText = c.distanceM !== undefined ? `${c.distanceM}m away from camera GPS` : '';
-    const poleRole = (idx === 0 || (c.distanceM !== undefined && c.distanceM <= 50)) ? '(Closest Foreground Structure)' : '(Neighboring Structure further down road)';
+    const hasRefPhoto = candidateImages.some(img => img.idx === idx) ? ' (Visual Reference Photo Attached Below)' : '';
     return `[Candidate ${idx}]:
 - S.No / SL: #${sl}
 - Location: "${name}"
-- Facing Direction: "${facing}" (Face is oriented towards ${facing}, visible to oncoming traffic coming from ${from || facing} heading towards ${to || 'opposite'})
-${distText ? `- Distance to Camera: ${distText} ${poleRole}` : ''}
+- Facing Direction: "${facing}" (Face points towards ${facing}, visible to traffic coming from ${from || facing} heading towards ${to || 'opposite'})
+${distText ? `- Distance to Camera GPS: ${distText}` : ''}
 ${traffic ? `- Traffic Flow: "${traffic}"` : ''}
 ${rawSite.City ? `- City: "${rawSite.City}"` : ''}
-${refUrl ? `- Reference Photo URL: ${refUrl}` : ''}`;
+${refUrl ? `- Reference Photo: ${refUrl}${hasRefPhoto}` : ''}`;
   }).join('\n\n');
 
-  const prompt = `You are an expert AI Outdoor Advertising (OOH / Billboard) Traffic Analyst.
-A field audit photo was taken of an outdoor hoarding billboard.
-At or near this GPS coordinate, there may be MULTIPLE candidate billboard faces (e.g. a double-sided unipole on the road divider with opposite facings, or multiple consecutive unipoles/billboards situated along the same road).
+  const prompt = `You are an expert AI Outdoor Advertising (OOH / Billboard) Traffic & Location Analyst.
+A field audit photo was taken of an outdoor billboard / hoarding along a road corridor.
+Compare this live audit photo against the candidate hoardings in our master inventory.
 
-CANDIDATE HOARDING FACES AT THIS SPOT:
+CANDIDATE HOARDINGS AT / NEAR THIS CORRIDOR:
 ${candidateDescriptions}
 
 CRITICAL RULES FOR ACCURATE MATCHING:
-1. ⚠️ DO NOT be deceived by any advertiser store/showroom/branch address printed on the flex ad banner itself (for example: "205, Begum Bridge Road", "Showroom address", phone numbers). That is just the advertiser's showroom address, NOT the billboard's facing direction!
+1. ⚠️ DO NOT be deceived by any advertiser store/showroom/branch address printed on the flex ad banner itself (for example: "205, Begum Bridge Road", phone numbers). That is just the advertiser's showroom address, NOT the billboard's facing direction or location!
 2. In outdoor advertising (OOH): "Facing [X]" means the billboard face is physically oriented looking towards direction X, so traffic approaching/coming FROM direction X sees this face directly through their windshield!
-   - For example, on the Delhi-Roorkee highway at Modipuram:
-     * Traffic driving from Pallavpuram/Roorkee heading towards Begum Bridge/Meerut City sees the face that is "Facing: Pallavpuram"!
-     * Traffic driving from Begum Bridge/Meerut City heading towards Pallavpuram/Roorkee sees the face that is "Facing: Begum Bridge"!
-3. Inspect the road perspective and traffic direction in the photo:
-   - Notice the direction traffic is flowing relative to the camera (towards camera vs away).
-   - Look at the road divider, metro/RRTS pillars, overbridge, street signs, and background shops.
-4. Multiple Consecutive Hoardings Along the Same Road:
-   - When multiple hoarding structures stand along the same road corridor (e.g. Modipuram Road), multiple candidates share the exact same Facing direction.
-   - Pay attention to Distance to Camera. The camera photo was taken right in front of the CLOSEST physical structure (foreground).
-   - Select the Candidate matching the correct Facing that is CLOSEST to the camera, unless the visual framing clearly shows a distant structure zoomed in.
-5. Compare with the Candidate Facing Directions, Distances, and Traffic Flows above.
-6. Select the best matching Candidate (by index: 0, 1, etc.).
-7. Detect status: "Occupied" (active commercial brand ad mounted) or "Available" (blank, white, torn, or To-Let).
+3. VISUAL STRUCTURE & SURROUNDING ENVIRONMENT MATCHING:
+   - Carefully inspect the physical surroundings in the audit photo: concrete flyover ramps, boundary walls, barbed wire/security fencing, pedestrian sidewalk tiles, railings/barriers, trees, street light poles with stickers/posters, overhead cables, road median, and background structures.
+   - If candidate reference photos are provided below, compare these physical features directly with each candidate reference photo. The correct hoarding is the one whose physical structure and environment matches the audit photo.
+4. If multiple candidates share the same facing direction along the road, pick the one whose physical surroundings and installation match the audit photo.
+5. Status detection: "Occupied" (active commercial brand ad mounted) or "Available" (blank, white, torn, or To-Let).
 
 Return ONLY a single valid JSON object (no markdown, no backticks):
 {
   "matchedIndex": 0,
+  "sl": 198,
   "facing": "exact facing from selected candidate",
   "status": "Occupied",
   "confidence": 0.98,
-  "reasoning": "Detailed visual explanation of road direction, traffic flow, distance, and why this candidate facing was selected"
+  "reasoning": "Detailed visual explanation of physical structure, landmarks, road perspective, and why this candidate was selected"
 }`;
+
+  const parts = [
+    { text: prompt },
+    {
+      inline_data: {
+        mime_type: parsed.mimeType,
+        data: parsed.base64
+      }
+    }
+  ];
+
+  for (const item of candidateImages) {
+    const sl = item.site.SL || item.site['S. No.'] || item.site['SL NO'] || (item.idx + 1);
+    parts.push({
+      text: `REFERENCE PHOTO FOR CANDIDATE ${item.idx} (Hoarding SL #${sl} - Location: "${item.site.Location || ''}" - Facing: "${item.site.Facing || ''}"):`
+    });
+    parts.push({
+      inline_data: {
+        mime_type: item.parsed.mimeType,
+        data: item.parsed.base64
+      }
+    });
+  }
 
   const payload = {
     contents: [
       {
-        parts: [
-          { text: prompt },
-          {
-            inline_data: {
-              mime_type: parsed.mimeType,
-              data: parsed.base64
-            }
-          }
-        ]
+        parts
       }
     ],
     generationConfig: {
       temperature: 0.1,
       topP: 0.8,
-      maxOutputTokens: 500
+      maxOutputTokens: 1000,
+      thinkingConfig: { thinkingBudget: 0 }
     }
   };
 
@@ -322,24 +380,45 @@ Return ONLY a single valid JSON object (no markdown, no backticks):
     if (!jsonMatch) return null;
 
     const result = JSON.parse(jsonMatch[0]);
-    const idx = parseInt(result.matchedIndex, 10);
-    if (!isNaN(idx) && idx >= 0 && idx < candidates.length) {
-      const selected = candidates[idx];
-      const rawSelected = selected.site || selected;
+    let matchedCandidate = null;
+    let idx = parseInt(result.matchedIndex, 10);
+    
+    // 1. Match by exact SL if returned by Gemini
+    if (result.sl) {
+      const bySl = candidates.find(c => {
+        const rawSite = c.site || c;
+        const sl = rawSite.SL || rawSite['S. No.'] || rawSite['SL NO'];
+        return sl && String(sl).trim() === String(result.sl).trim();
+      });
+      if (bySl) {
+        matchedCandidate = bySl;
+        idx = candidates.indexOf(bySl);
+      }
+    }
+
+    // 2. Match by matchedIndex
+    if (!matchedCandidate && !isNaN(idx) && idx >= 0 && idx < candidates.length) {
+      matchedCandidate = candidates[idx];
+    }
+
+    if (matchedCandidate) {
+      const rawSelected = matchedCandidate.site || matchedCandidate;
+      const resolvedSL = rawSelected.SL || rawSelected['S. No.'] || rawSelected['SL NO'] || (matchedCandidate.index !== undefined ? matchedCandidate.index + 1 : idx + 1);
       return {
         matchedIndex: idx,
-        candidateIndex: selected.index !== undefined ? selected.index : idx,
-        matchedCandidate: selected,
+        candidateIndex: matchedCandidate.index !== undefined ? matchedCandidate.index : idx,
+        sl: resolvedSL,
+        matchedCandidate,
         matchedSite: rawSelected,
         siteName: rawSelected["Location "] || rawSelected["Locality Site Location"] || rawSelected.Location || rawSelected.siteName,
         facing: result.facing || rawSelected.Facing || rawSelected['Traffic View'] || '',
         status: result.status === 'Occupied' ? 'Occupied' : 'Available',
-        confidence: typeof result.confidence === 'number' ? result.confidence : 0.95,
+        confidence: typeof result.confidence === 'number' ? result.confidence : 0.96,
         reasoning: result.reasoning || `AI visual perspective matched ${rawSelected.Facing || 'site'}.`
       };
     }
   } catch (err) {
-    console.warn('[Gemini Twin-Site Facing Resolution Notice]:', err);
+    console.warn('[Gemini Corridor / Twin-Site Resolution Notice]:', err);
   }
 
   return null;

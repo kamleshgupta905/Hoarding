@@ -389,12 +389,16 @@ export const matchHoardingByGps = async (coord, locationList, rawImageBase64 = n
     candidates.sort((a, b) => a.distanceM - b.distanceM);
     const closest = candidates[0];
 
-    // 🎯 TWIN-SITE CLUSTER DETECTION (Double-sided unipoles / junction opposite facings)
-    // If multiple candidates are within 80 meters of the GPS location with different facings
-    const cluster80m = candidates.filter(c => c.distanceM <= 80);
-    const uniqueFacings = new Set(cluster80m.map(c => normalizeText(c.facing)).filter(Boolean));
+    // 🎯 CORRIDOR & TWIN-SITE CLUSTER DETECTION (Consecutive road structures / opposite facings)
+    // Group candidate hoardings along the same road corridor or junction.
+    // If closest hoarding is within 350m, cluster all candidates within 120m of closest site (capped at 400m).
+    const clusterMaxDist = closest.distanceM <= 350
+        ? Math.min(400, Math.max(100, closest.distanceM + 120))
+        : Math.min(800, closest.distanceM + 150);
 
-    const twinCandidatesList = cluster80m.length > 1 ? cluster80m.map(c => ({
+    const corridorCluster = candidates.filter(c => c.distanceM <= clusterMaxDist);
+
+    const twinCandidatesList = corridorCluster.length > 1 ? corridorCluster.map(c => ({
         index: c.index,
         sl: c.site?.SL || c.site?.['S. No.'] || c.site?.['SL NO'] || (c.index + 1),
         siteId: c.siteId,
@@ -406,22 +410,37 @@ export const matchHoardingByGps = async (coord, locationList, rawImageBase64 = n
         imageUrl: c.site.ImageURL || ''
     })) : null;
 
-    if (cluster80m.length > 1 && uniqueFacings.size > 1 && rawImageBase64) {
+    if (corridorCluster.length > 1 && rawImageBase64) {
         try {
-            const resolved = await resolveTwinSiteFacingWithGemini(rawImageBase64, cluster80m);
-            if (resolved && resolved.matchedSite) {
-                // Determine target candidate:
-                // If multiple poles on the same road share the exact same facing (e.g. SL 211 at 43m and SL 210 at 72m),
-                // matchingCandidates[0] is the closest physical structure photographed in the foreground!
-                const targetFacingNorm = normalizeText(resolved.facing);
-                const matchingCandidates = cluster80m.filter(c => normalizeText(c.facing) === targetFacingNorm);
-                
+            const resolved = await resolveTwinSiteFacingWithGemini(rawImageBase64, corridorCluster);
+            if (resolved && (resolved.matchedSite || resolved.sl)) {
                 let targetCandidate = null;
-                if (matchingCandidates.length > 0) {
-                    targetCandidate = matchingCandidates[0];
-                } else {
+
+                // 1. Direct match by SL if resolved
+                if (resolved.sl) {
+                    targetCandidate = corridorCluster.find(c => {
+                        const sl = c.site?.SL || c.site?.['S. No.'] || c.site?.['SL NO'];
+                        return sl && String(sl).trim() === String(resolved.sl).trim();
+                    });
+                }
+
+                // 2. Direct match by candidate index
+                if (!targetCandidate) {
                     const resolvedIndex = resolved.candidateIndex !== undefined ? resolved.candidateIndex : resolved.matchedIndex;
-                    targetCandidate = cluster80m.find(c => c.index === resolvedIndex) || cluster80m[0];
+                    targetCandidate = corridorCluster.find(c => c.index === resolvedIndex) || corridorCluster[resolvedIndex];
+                }
+
+                // 3. Fallback match by facing
+                if (!targetCandidate && resolved.facing) {
+                    const targetFacingNorm = normalizeText(resolved.facing);
+                    const matchingCandidates = corridorCluster.filter(c => normalizeText(c.facing) === targetFacingNorm);
+                    if (matchingCandidates.length > 0) {
+                        targetCandidate = matchingCandidates[0];
+                    }
+                }
+
+                if (!targetCandidate) {
+                    targetCandidate = corridorCluster[0];
                 }
 
                 const resolvedSL = targetCandidate.site?.SL || targetCandidate.site?.['S. No.'] || targetCandidate.site?.['SL NO'] || (targetCandidate.index + 1);
@@ -437,11 +456,11 @@ export const matchHoardingByGps = async (coord, locationList, rawImageBase64 = n
                     status: resolved.status || 'Occupied',
                     confidence: Math.round((resolved.confidence || 0.96) * 100),
                     twinCandidates: twinCandidatesList,
-                    reasoning: `🧭 AI Auto-Resolved Facing: "${resolved.facing || targetCandidate.facing}" (SL #${resolvedSL}, ${targetCandidate.distanceM}m) — ${resolved.reasoning || 'Road traffic angle match'}`
+                    reasoning: `🧭 AI Auto-Resolved Match: SL #${resolvedSL} [Facing: ${resolved.facing || targetCandidate.facing}] (${targetCandidate.distanceM}m away) — ${resolved.reasoning || 'Visual environment & road corridor match'}`
                 };
             }
         } catch (twinErr) {
-            console.warn('[Twin-Site AI Auto-Facing Notice]:', twinErr);
+            console.warn('[Corridor / Twin-Site AI Auto-Facing Notice]:', twinErr);
         }
     }
 
