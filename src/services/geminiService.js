@@ -320,11 +320,21 @@ ${candidateDescriptions}
 CRITICAL RULES FOR ACCURATE MATCHING:
 1. ⚠️ DO NOT be deceived by any advertiser store/showroom/branch address printed on the flex ad banner itself (for example: "205, Begum Bridge Road", phone numbers). That is just the advertiser's showroom address, NOT the billboard's facing direction or location!
 2. In outdoor advertising (OOH): "Facing [X]" means the billboard face is physically oriented looking towards direction X, so traffic approaching/coming FROM direction X sees this face directly through their windshield!
-3. VISUAL STRUCTURE & SURROUNDING ENVIRONMENT MATCHING:
-   - Carefully inspect the physical surroundings in the audit photo: concrete flyover ramps, boundary walls, barbed wire/security fencing, pedestrian sidewalk tiles, railings/barriers, trees, street light poles with stickers/posters, overhead cables, road median, and background structures.
-   - If candidate reference photos are provided below, compare these physical features directly with each candidate reference photo. The correct hoarding is the one whose physical structure and environment matches the audit photo.
-4. If multiple candidates share the same facing direction along the road, pick the one whose physical surroundings and installation match the audit photo.
-5. Status detection: "Occupied" (active commercial brand ad mounted) or "Available" (blank, white, torn, or To-Let).
+3. 🏗️ BILLBOARD MOUNTING STRUCTURE TYPE (HIGHEST PRIORITY):
+   - Carefully inspect the exact structural engineering of the primary billboard being captured:
+     * UNIPOLE: A massive horizontal billboard mounted atop a single tall circular steel/concrete pole or pillar, often standing in the road median directly underneath or parallel to the elevated metro/flyover viaduct.
+     * OVERHEAD GANTRY: A steel truss bridge spanning horizontally directly over traffic lanes.
+     * DOUBLE-POLE / STREET-CORNER: Supported on two vertical side posts or mounted on the side of a roundabout / chauraha junction.
+     * ROOFTOP / WALL-MOUNTED: Fixed onto a building facade or terrace.
+   - Look at each candidate's reference photo: The correct candidate MUST have the IDENTICAL structural frame type and mounting location.
+4. ⚠️ AVOID BACKGROUND LANDMARK BIAS:
+   - Do NOT select a candidate simply because a background building, school, or secondary sign (such as 'GD GOENKA Toddler House' or a roadside stall) is visible in both photos! 
+   - A single landmark can be visible from multiple nearby poles along a 200m corridor. You must match the PRIMARY BILLBOARD POLE itself, not distant background landmarks!
+5. SAME-FACING DISAMBIGUATION (e.g. Both facing Pallavpuram):
+   - When multiple candidates have the same facing direction (e.g. two poles along NH-58 both facing Pallavpuram):
+     * Match the exact pillar alignment with the elevated metro viaduct.
+     * Match whether the billboard is a median Unipole (e.g. SL #210) versus an intersection gantry / corner board (e.g. SL #211).
+6. Status detection: "Occupied" (active commercial brand ad mounted) or "Available" (blank, white, torn, or To-Let).
 
 Return ONLY a single valid JSON object (no markdown, no backticks):
 {
@@ -333,7 +343,7 @@ Return ONLY a single valid JSON object (no markdown, no backticks):
   "facing": "exact facing from selected candidate",
   "status": "Occupied",
   "confidence": 0.98,
-  "reasoning": "Detailed visual explanation of physical structure, landmarks, road perspective, and why this candidate was selected"
+  "reasoning": "Detailed visual explanation of physical structure (unipole/gantry/etc), flyover alignment, why this candidate was chosen over other nearby same-facing poles"
 }`;
 
   const parts = [
