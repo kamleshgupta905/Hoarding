@@ -1723,6 +1723,12 @@ function updateHoardingDetails(data) {
       var updatedIndices = {};
       for (var fKey in data.fields) {
         var fieldKey = cleanFull(fKey);
+
+        // 🛡️ Daily proof uploads must NEVER mutate site booking STATUS or client info!
+        if (data.isDailyProof && (fieldKey === 'status' || fieldKey === 'bookedby' || fieldKey === 'bookingstart' || fieldKey === 'bookingend' || fieldKey === 'bookingschedule')) {
+          logDebug("UPDATE | Protected site booking STATUS: skipped field " + fKey + " because isDailyProof is true.");
+          continue;
+        }
         
         // Prevent overwriting ImageURL via fields if a new file is being uploaded
         if (data.fileData && (fieldKey === 'imageurl' || fieldKey.includes('image') || fieldKey.includes('photo') || fieldKey.includes('img') || fieldKey.includes('pic'))) continue;
@@ -1784,8 +1790,8 @@ function updateHoardingDetails(data) {
       }
     }
 
-    // 3. Handle Status (Legacy/AI path)
-    if (data.status) {
+    // 3. Handle Status (Legacy/AI path) - Never mutate when uploading a daily proof!
+    if (data.status && !data.isDailyProof) {
       var idxStatus = headers.findIndex(function(h) { return cleanFull(h) === 'status'; });
       if (idxStatus === -1) {
         var newColIndex = sheet.getLastColumn() + 1;

@@ -1413,7 +1413,7 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                     matchedSiteId: resolvedSiteId,
                     facing: resolvedFacing,
                     twinCandidates: aiResult.twinCandidates || null,
-                    status: aiResult.status || 'Available',
+                    status: (matchedData?.STATUS || 'Available'),
                     confidence: aiResult.confidence || 0,
                     reasoning: aiResult.reasoning || '',
                     analysis: aiResult.analysis || '',
@@ -1517,10 +1517,8 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                 siteName: siteNameResolved,
                 siteId: siteIdResolved,
                 facing: facingResolved,
-                status: imageData.status || 'Available',
                 fields: { 
                     "SL": targetSL,
-                    STATUS: imageData.status || 'Available',
                     Facing: facingResolved
                 },
                 fileData: base64,
@@ -1559,7 +1557,7 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                 gps: gpsString,
                 source: 'Daily Execution Proof (GPS Auto-Match)',
                 facing: facingResolved,
-                status: imageData.status || 'Available',
+                status: targetHoarding?.STATUS || 'Available',
                 confidence: imageData.confidence,
                 reasoning: imageData.reasoning
             };
@@ -1601,7 +1599,7 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
 
                         return {
                             ...h,
-                            STATUS: imageData.status || h.STATUS || 'Available',
+                            STATUS: h.STATUS || 'Available',
                             Facing: facingResolved || h.Facing,
                             ImageURL: (hasValidOldImage || !finalProofUrl) ? h.ImageURL : finalProofUrl,
                             History: newHist,

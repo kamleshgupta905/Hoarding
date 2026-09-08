@@ -967,7 +967,7 @@ const StaffUpload = () => {
                         date: new Date().toISOString(),
                         gps: gpsString,
                         source: 'Staff Live Capture',
-                        status: siteStatus
+                        status: matchedSiteData?.STATUS || 'Available'
                     };
 
                     // Record to session/local history engine immediately
@@ -984,7 +984,7 @@ const StaffUpload = () => {
                                 cachedList[targetIdx] = {
                                     ...cachedList[targetIdx],
                                     History: [newAuditItem, ...existingHistory],
-                                    STATUS: siteStatus
+                                    STATUS: cachedList[targetIdx].STATUS || 'Available'
                                 };
                                 localStorage.setItem('adh_cached_hoardings', JSON.stringify(cachedList));
                                 window.dispatchEvent(new CustomEvent('hoardings:updated', { detail: cachedList }));

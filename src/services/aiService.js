@@ -453,7 +453,7 @@ export const matchHoardingByGps = async (coord, locationList, rawImageBase64 = n
                     siteCoord: targetCandidate.siteCoord,
                     distanceM: targetCandidate.distanceM,
                     facing: resolved.facing || targetCandidate.facing,
-                    status: resolved.status || 'Occupied',
+                    status: targetCandidate.site?.STATUS || resolved.status || 'Available',
                     confidence: Math.round((resolved.confidence || 0.96) * 100),
                     twinCandidates: twinCandidatesList,
                     reasoning: `🧭 AI Auto-Resolved Match: SL #${resolvedSL} [Facing: ${resolved.facing || targetCandidate.facing}] (${targetCandidate.distanceM}m away) — ${resolved.reasoning || 'Visual environment & road corridor match'}`
@@ -659,7 +659,7 @@ export const analyzeHoardingImage = async (base64Image, locationList, rawFile = 
                         matchedSiteId: gpsMatch.site._SiteID || gpsMatch.site.UniqueID || gpsMatch.site['Unique ID'] || '',
                         facing: gpsMatch.facing || gpsMatch.site.Facing || '',
                         twinCandidates: gpsMatch.twinCandidates || null,
-                        status: gpsMatch.status || gpsMatch.site.STATUS || 'Occupied',
+                        status: gpsMatch.site?.STATUS || gpsMatch.status || 'Available',
                         confidence: gpsMatch.confidence,
                         reasoning: `🛰️ Camera EXIF GPS: ${gpsMatch.reasoning}`,
                         analysis: `EXIF Lat: ${exifCoord.lat.toFixed(6)}, Long: ${exifCoord.lng.toFixed(6)}`,
@@ -706,7 +706,9 @@ export const analyzeHoardingImage = async (base64Image, locationList, rawFile = 
             const gpsMatch = await matchHoardingByGps(ocrCoord, locationList, base64Image);
             if (gpsMatch) {
                 const lowerOcr = detectedOcrText.toLowerCase();
-                const status = gpsMatch.status || (lowerOcr.includes('available') || lowerOcr.includes('vacant') || lowerOcr.includes('to-let') || lowerOcr.includes('to let') ? 'Available' : 'Occupied');
+                const ocrIndicatesOccupied = lowerOcr.includes('occupied') || lowerOcr.includes('booked');
+                const ocrIndicatesAvailable = lowerOcr.includes('available') || lowerOcr.includes('vacant') || lowerOcr.includes('to-let') || lowerOcr.includes('to let');
+                const status = ocrIndicatesOccupied ? 'Occupied' : (ocrIndicatesAvailable ? 'Available' : (gpsMatch.site?.STATUS || gpsMatch.status || 'Available'));
                 
                 // 🧭 Enrich candidates with any named locations detected in the watermark text (e.g. Rakshapuram)
                 let combinedCandidates = gpsMatch.twinCandidates ? [...gpsMatch.twinCandidates] : [];
