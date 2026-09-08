@@ -5415,7 +5415,8 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                                             </div>
                                                             <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
                                                                 {img.twinCandidates.map((twin, tIdx) => {
-                                                                    const isSelected = (img.sl && twin.sl && String(img.sl).trim() === String(twin.sl).trim()) ||
+                                                                    const twinSL = twin.sl || hoardings[twin.index]?.SL || hoardings[twin.index]?.['S. No.'] || (twin.index != null ? twin.index + 1 : '');
+                                                                    const isSelected = (img.sl && twinSL && String(img.sl).trim() === String(twinSL).trim()) ||
                                                                                        (img.matchedIndex != null && img.matchedIndex === twin.index);
                                                                     return (
                                                                         <button
@@ -5448,10 +5449,10 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                                                                 gap: '5px',
                                                                                 transition: 'all 0.15s ease'
                                                                             }}
-                                                                            title={`Switch to Pole #${twin.sl} | Facing: ${twin.facing} (${twin.distanceM}m away)`}
+                                                                            title={`Switch to Pole #${twinSL} | Facing: ${twin.facing} (${twin.distanceM}m away)`}
                                                                         >
                                                                             {isSelected && <span>✓</span>}
-                                                                            <span>#{twin.sl} | Facing: {twin.facing} ({twin.distanceM}m)</span>
+                                                                            <span>#{twinSL} | Facing: {twin.facing} ({twin.distanceM}m)</span>
                                                                         </button>
                                                                     );
                                                                 })}
