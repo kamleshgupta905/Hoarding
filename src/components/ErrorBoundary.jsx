@@ -13,6 +13,18 @@ class ErrorBoundary extends React.Component {
   componentDidCatch(error, errorInfo) {
     console.error('ErrorBoundary caught:', error, errorInfo);
     this.setState({ errorInfo });
+
+    const msg = error?.message || error?.toString() || '';
+    const isChunkLoadError = /dynamically imported module|ChunkLoadError|Loading chunk|Failed to fetch dynamically imported/i.test(msg);
+
+    if (isChunkLoadError) {
+      const lastReload = parseInt(sessionStorage.getItem('last_chunk_reload') || '0', 10);
+      const now = Date.now();
+      if (now - lastReload > 8000) {
+        sessionStorage.setItem('last_chunk_reload', String(now));
+        window.location.reload();
+      }
+    }
   }
 
   handleReset = () => {
@@ -37,6 +49,9 @@ class ErrorBoundary extends React.Component {
       localStorage.removeItem('deleted_sites_cache');
       localStorage.removeItem('adh_installed_version');
       sessionStorage.clear();
+      if ('caches' in window) {
+        caches.keys().then(keys => keys.forEach(k => caches.delete(k)));
+      }
     } catch (e) {
       console.warn('Could not clear storage:', e);
     }
@@ -45,7 +60,7 @@ class ErrorBoundary extends React.Component {
       window.location.hash = '#/admin/dashboard';
       window.location.reload();
     } else {
-      window.location.href = '/';
+      window.location.reload();
     }
   };
 
@@ -60,6 +75,7 @@ class ErrorBoundary extends React.Component {
     if (this.state.hasError) {
       const errorMessage = this.state.error?.message || this.state.error?.toString() || 'Unknown error occurred';
       const isElectron = Boolean(typeof window !== 'undefined' && window.electronAPI?.isElectron);
+      const isChunkLoadError = /dynamically imported module|ChunkLoadError|Loading chunk|Failed to fetch dynamically imported/i.test(errorMessage);
 
       return (
         <div style={{
@@ -73,14 +89,18 @@ class ErrorBoundary extends React.Component {
           }}>
             <div style={{
               width: '64px', height: '64px', borderRadius: '16px',
-              background: '#fef2f2', display: 'flex', alignItems: 'center',
+              background: isChunkLoadError ? '#eef2ff' : '#fef2f2', display: 'flex', alignItems: 'center',
               justifyContent: 'center', margin: '0 auto 16px', fontSize: '28px'
-            }}>⚠️</div>
+            }}>
+              {isChunkLoadError ? '🚀' : '⚠️'}
+            </div>
             <h2 style={{ fontSize: '1.3rem', fontWeight: '800', color: '#0f172a', marginBottom: '8px' }}>
-              Something went wrong
+              {isChunkLoadError ? 'Naya Update Uplabdh Hai' : 'Something went wrong'}
             </h2>
             <p style={{ fontSize: '0.88rem', color: '#64748b', marginBottom: '18px', lineHeight: '1.5' }}>
-              An unexpected error occurred. Don't worry — your data is safe.
+              {isChunkLoadError
+                ? 'App ka naya version deploy hua hai. Naye files load karne ke liye kripya reload karein.'
+                : "An unexpected error occurred. Don't worry — your data is safe."}
             </p>
 
             {/* Error Message & Details Box */}

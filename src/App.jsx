@@ -11,15 +11,38 @@ import AppAutoUpdater from './components/AppAutoUpdater';
 import { fetchHoardings, getLocalBookings, getSiteBookingKeys, getLocalHistory } from './services/dataService';
 import { HelmetProvider } from 'react-helmet-async';
 
-// Lazy-loaded pages for code splitting
-const Home = lazy(() => import('./pages/Home'));
-const CityList = lazy(() => import('./pages/CityList'));
-const HoardingDetail = lazy(() => import('./pages/HoardingDetail'));
-const AdminDashboard = lazy(() => import('./pages/AdminDashboard'));
-const PublicAudit = lazy(() => import('./pages/PublicAudit'));
-const ClientReport = lazy(() => import('./pages/ClientReport'));
-const StaffUpload = lazy(() => import('./pages/StaffUpload'));
-const SystemGuide = lazy(() => import('./pages/SystemGuide'));
+// Helper to auto-recover dynamic imports when a new build is deployed on Vercel
+const lazyWithRetry = (componentImport) =>
+  lazy(async () => {
+    try {
+      return await componentImport();
+    } catch (error) {
+      const isChunkError =
+        error?.name === 'ChunkLoadError' ||
+        /Failed to fetch dynamically imported module/i.test(error?.message || '') ||
+        /Loading chunk [\d]+ failed/i.test(error?.message || '');
+
+      const lastReload = parseInt(sessionStorage.getItem('last_chunk_reload') || '0', 10);
+      const now = Date.now();
+
+      if (isChunkError && now - lastReload > 8000) {
+        sessionStorage.setItem('last_chunk_reload', String(now));
+        window.location.reload();
+        return new Promise(() => {}); // hold until reload
+      }
+      throw error;
+    }
+  });
+
+// Lazy-loaded pages for code splitting with chunk-reload resilience
+const Home = lazyWithRetry(() => import('./pages/Home'));
+const CityList = lazyWithRetry(() => import('./pages/CityList'));
+const HoardingDetail = lazyWithRetry(() => import('./pages/HoardingDetail'));
+const AdminDashboard = lazyWithRetry(() => import('./pages/AdminDashboard'));
+const PublicAudit = lazyWithRetry(() => import('./pages/PublicAudit'));
+const ClientReport = lazyWithRetry(() => import('./pages/ClientReport'));
+const StaffUpload = lazyWithRetry(() => import('./pages/StaffUpload'));
+const SystemGuide = lazyWithRetry(() => import('./pages/SystemGuide'));
 
 const LIVE_REFRESH_INTERVAL_MS = 60000;
 const LOCAL_SYNC_PRESERVATION_MS = 30000;
