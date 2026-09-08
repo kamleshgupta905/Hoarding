@@ -6451,27 +6451,29 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                         className="inventory-view-container"
                     >
                         <div className="inventory-card">
-                            <div className="inventory-header" style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px', width: '100%' }}>
+                            <div className="inventory-header" style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px', width: '100%' }}>
                                     <div>
-                                        <h3 style={{ margin: 0, fontSize: '1.625rem', fontWeight: 700, color: '#111827', letterSpacing: '-0.02em' }}>Master Asset Inventory</h3>
+                                        <h3 style={{ margin: 0, fontSize: '1.45rem', fontWeight: 700, color: '#111827', letterSpacing: '-0.02em' }}>Master Asset Inventory</h3>
                                         <p style={{ margin: '2px 0 0', color: '#6b7280', fontSize: '0.8125rem', fontWeight: 400 }}>{filteredInventory.length} active hoarding assets across operational regions</p>
                                     </div>
                                     <div className="inventory-actions">
-                                        <button className="btn-primary-admin" style={{ background: '#10b981' }} onClick={() => { 
+                                        <button className="qm-btn-primary qm-btn-sm" onClick={() => { 
                                             setFormData({}); 
                                             setSelectedAssetFile(null); 
                                             setIsAddModalOpen(true); 
                                         }}>
-                                            <Plus size={18} /> Add New Asset
+                                            <Plus size={14} /> Add New Asset
                                         </button>
-                                        <button className="btn-icon" title="Export Full Inventory" onClick={() => exportProposalExcel(hoardings)}><Download size={18} /></button>
+                                        <button className="btn-icon qm-btn-icon-sm" title="Export Full Inventory" onClick={() => exportProposalExcel(hoardings)}>
+                                            <Download size={14} />
+                                        </button>
                                         <button
-                                            className={`btn-icon ${isInventoryFilterOpen ? 'active-accent' : ''}`}
+                                            className={`btn-icon qm-btn-icon-sm ${isInventoryFilterOpen ? 'active-accent' : ''}`}
                                             onClick={() => setIsInventoryFilterOpen(!isInventoryFilterOpen)}
                                             title="Toggle Filters"
                                         >
-                                            <Filter size={18} />
+                                            <Filter size={14} />
                                         </button>
 
                                         {/* ⭐ Starred Sites Filter Toggle */}
@@ -6480,31 +6482,31 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                             onClick={() => setShowOnlyStarred(!showOnlyStarred)}
                                             title={showOnlyStarred ? "Show all inventory assets" : "Show only star-marked shortlisted sites"}
                                         >
-                                            <Star size={16} fill={showOnlyStarred ? "#f59e0b" : "none"} color={showOnlyStarred ? "#f59e0b" : "#64748b"} />
+                                            <Star size={14} fill={showOnlyStarred ? "#f59e0b" : "none"} color={showOnlyStarred ? "#f59e0b" : "#64748b"} />
                                             <span>Starred ({starredSites.length})</span>
                                         </button>
 
                                         {/* 📥 1-Click Excel Download for Starred */}
                                         <button
-                                            className="btn-primary-admin starred-excel-btn"
+                                            className="starred-excel-btn"
                                             disabled={starredSites.length === 0}
                                             onClick={handleDownloadStarredExcel}
                                             title={starredSites.length === 0 ? "Star some sites first to download Excel" : "1-Click Download Starred Sites Excel"}
                                             style={{ background: '#059669', opacity: starredSites.length === 0 ? 0.5 : 1 }}
                                         >
-                                            <FileSpreadsheet size={16} />
+                                            <FileSpreadsheet size={14} />
                                             <span>Excel ({starredSites.length})</span>
                                         </button>
 
                                         {/* 📊 1-Click PPT Download for Starred (87MB Master PPT Format) */}
                                         <button
-                                            className="btn-primary-admin starred-ppt-btn"
+                                            className="starred-ppt-btn"
                                             disabled={starredSites.length === 0 || isPptGenerating}
                                             onClick={handleDownloadStarredPpt}
                                             title={starredSites.length === 0 ? "Star some sites first to download PPT" : "1-Click Download Starred Sites PPT (Master 4:3 format)"}
                                             style={{ background: '#ea580c', opacity: (starredSites.length === 0 || isPptGenerating) ? 0.6 : 1 }}
                                         >
-                                            {isPptGenerating ? <Loader2 size={16} className="spin-animate" /> : <Presentation size={16} />}
+                                            {isPptGenerating ? <Loader2 size={14} className="spin-animate" /> : <Presentation size={14} />}
                                             <span>{isPptGenerating ? (pptProgressText || 'Packaging...') : `PPT (${starredSites.length})`}</span>
                                         </button>
                                     </div>
