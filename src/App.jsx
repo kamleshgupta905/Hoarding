@@ -306,7 +306,7 @@ function AppContent({ hoardings, setHoardings }) {
     ? hoardings.filter(h => h && h.STATUS && String(h.STATUS).toLowerCase() !== 'disabled')
     : [];
 
-  if (isStaffMode && location.pathname === '/') {
+  if (isStaffMode) {
     return (
       <div className="app-container staff-app-mode">
         <AppAutoUpdater />

@@ -53,32 +53,32 @@ jobs:
           MANIFEST="android/app/src/main/AndroidManifest.xml"
           if [ -f "$MANIFEST" ]; then
             python3 - << 'EOF'
-          import re
-          path = "android/app/src/main/AndroidManifest.xml"
-          with open(path, "r", encoding="utf-8") as f:
-              content = f.read()
+import re
+path = "android/app/src/main/AndroidManifest.xml"
+with open(path, "r", encoding="utf-8") as f:
+    content = f.read()
 
-          permissions = """
-              <uses-permission android:name="android.permission.INTERNET" />
-              <uses-permission android:name="android.permission.CAMERA" />
-              <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
-              <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
-              <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
-              <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
-              <uses-feature android:name="android.hardware.camera" android:required="false" />
-              <uses-feature android:name="android.hardware.location.gps" android:required="false" />
-              <uses-feature android:name="android.hardware.sensor.compass" android:required="false" />
-              <uses-feature android:name="android.hardware.sensor.gyroscope" android:required="false" />
-          """
+permissions = """
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
+    <uses-feature android:name="android.hardware.camera" android:required="false" />
+    <uses-feature android:name="android.hardware.location.gps" android:required="false" />
+    <uses-feature android:name="android.hardware.sensor.compass" android:required="false" />
+    <uses-feature android:name="android.hardware.sensor.gyroscope" android:required="false" />
+"""
 
-          if "<uses-permission android:name=\"android.permission.CAMERA\"" not in content:
-              content = content.replace("<application", permissions + "\n    <application", 1)
-              with open(path, "w", encoding="utf-8") as f:
-                  f.write(content)
-              print("Permissions injected into AndroidManifest.xml")
-          else:
-              print("Permissions already present in AndroidManifest.xml")
-          EOF
+if "<uses-permission android:name=\"android.permission.CAMERA\"" not in content:
+    content = content.replace("<application", permissions + "\n    <application", 1)
+    with open(path, "w", encoding="utf-8") as f:
+        f.write(content)
+    print("Permissions injected into AndroidManifest.xml")
+else:
+    print("Permissions already present in AndroidManifest.xml")
+EOF
           fi
 
       - name: 🔨 Compile Android Debug APK with Gradle
