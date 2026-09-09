@@ -13,7 +13,7 @@ import {
     Star, FileSpreadsheet, Presentation, Loader2
 } from 'lucide-react';
 import { analyzeHoardingImage, extractSiteCoordinates } from '../services/aiService';
-import { fetchHoardings, compressImage, syncToGoogleSheet, exportProposalExcel, PROPOSAL_COLUMNS, getImageUrl, downloadHoardingImage, fetchStaffUploads, reviewStaffPhoto, detectStaffPhotoOrientation, fetchSheetGrid, saveSheetGrid, addDeletedSite, parseHistoryString, saveLocalBooking, clearLocalBooking, recordSiteBooking, removeSiteBooking, getSiteBookingSlots, checkBookingConflict, calculateProRataRental, resolveSiteLiveStatus, saveSiteBookingSlots, recordSiteHistory, getLocalHistory, getDirectDriveLink, parseCellImageUrls } from '../services/dataService';
+import { fetchHoardings, compressImage, syncToGoogleSheet, exportProposalExcel, PROPOSAL_COLUMNS, getImageUrl, downloadHoardingImage, fetchStaffUploads, reviewStaffPhoto, detectStaffPhotoOrientation, fetchSheetGrid, saveSheetGrid, addDeletedSite, parseHistoryString, saveLocalBooking, clearLocalBooking, recordSiteBooking, removeSiteBooking, getSiteBookingSlots, checkBookingConflict, calculateProRataRental, resolveSiteLiveStatus, saveSiteBookingSlots, recordSiteHistory, getLocalHistory, getDirectDriveLink, parseCellImageUrls, addDeletedHistoryUrl, isHistoryUrlDeleted, removeSiteHistory } from '../services/dataService';
 import { generateMasterMediaPlanPptx } from '../services/presentationService';
 import ImageLightbox from '../components/ImageLightbox';
 import { clearAdminSession, getAdminSession, getStaffUploadLink, postDirect } from '../services/secureApi';
@@ -424,6 +424,17 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
         return '';
     };
 
+    // 🛡️ Helper: Extract Google Drive Unique File ID from any Drive link
+    const extractDriveId = (url) => {
+        if (!url || typeof url !== 'string') return '';
+        const clean = url.split('|')[0].trim();
+        const match = clean.match(/lh3\.googleusercontent\.com\/d\/([^/?#\s|]+)/) ||
+                      clean.match(/\/file\/d\/([^/?#\s|]+)/) ||
+                      clean.match(/[?&]id=([^&#/\s|]+)/) ||
+                      clean.match(/\/d\/([^/?#\s|]+)/);
+        return match ? match[1] : '';
+    };
+
     // 📸 Daily Proof Upload State (Persists in localStorage + hydrates from cloud hoardings ExecutionHistory)
     const [dailyImages, setDailyImages] = useState(() => {
         try {
@@ -431,26 +442,71 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
             if (!raw) return [];
             const parsed = JSON.parse(raw);
             if (!Array.isArray(parsed)) return [];
-            const cutoff = Date.now() - 48 * 60 * 60 * 1000;
-            const valid = parsed
-                .filter(item => item && typeof item === 'object' && (Number(item.timestamp) || 0) > cutoff)
-                .map(item => {
-                    const persistent = isNonBlobUrl(item.persistentPreview)
-                        ? getSafeStringUrl(item.persistentPreview)
-                        : isNonBlobUrl(item.uploadedUrl)
-                        ? getSafeStringUrl(item.uploadedUrl)
-                        : isNonBlobUrl(item.preview)
-                        ? getSafeStringUrl(item.preview)
-                        : getPersistentProofUrl(item);
 
-                    return {
-                        ...item,
-                        uploadMode: item.uploadMode || 'history_only',
-                        preview: persistent || getSafeStringUrl(item.preview) || '',
-                        persistentPreview: persistent || '',
-                        uploadedUrl: persistent || getSafeStringUrl(item.uploadedUrl) || ''
-                    };
+            // Load dismissed items from localStorage
+            let dismissedKeys = new Set();
+            let dismissedSls = new Set();
+            let dismissedFileIds = new Set();
+            try {
+                const rawDismissed = localStorage.getItem('adh_dismissed_daily_proofs');
+                if (rawDismissed) {
+                    const parsedD = JSON.parse(rawDismissed);
+                    if (Array.isArray(parsedD)) {
+                        const cutoff = Date.now() - 48 * 60 * 60 * 1000;
+                        parsedD.filter(d => (Number(d?.time) || 0) > cutoff).forEach(d => {
+                            if (d?.url) dismissedKeys.add(d.url);
+                            if (d?.directUrl) dismissedKeys.add(d.directUrl);
+                            if (d?.id) dismissedKeys.add(d.id);
+                            if (d?.fileId) dismissedFileIds.add(d.fileId);
+                            if (d?.sl) dismissedSls.add(String(d.sl).trim());
+                        });
+                    }
+                }
+            } catch {}
+
+            const cutoff = Date.now() - 48 * 60 * 60 * 1000;
+            const seenSls = new Set();
+            const valid = [];
+
+            for (const item of parsed) {
+                if (!item || typeof item !== 'object') continue;
+                if ((Number(item.timestamp) || 0) <= cutoff) continue;
+
+                const sl = item.sl ? String(item.sl).trim() : '';
+                const fileId = extractDriveId(item.uploadedUrl || item.preview || item.persistentPreview);
+                const url = getSafeStringUrl(item.uploadedUrl || item.persistentPreview || item.preview);
+
+                // Check if user dismissed this item
+                if (sl && dismissedSls.has(sl)) continue;
+                if (fileId && dismissedFileIds.has(fileId)) continue;
+                if (url && (dismissedKeys.has(url) || isHistoryUrlDeleted(url))) continue;
+
+                // Strict de-duplication by SL: keep at most 1 card per hoarding site
+                if (sl) {
+                    if (seenSls.has(sl)) continue;
+                    seenSls.add(sl);
+                }
+
+                const persistent = isNonBlobUrl(item.persistentPreview)
+                    ? getSafeStringUrl(item.persistentPreview)
+                    : isNonBlobUrl(item.uploadedUrl)
+                    ? getSafeStringUrl(item.uploadedUrl)
+                    : isNonBlobUrl(item.preview)
+                    ? getSafeStringUrl(item.preview)
+                    : getPersistentProofUrl(item);
+
+                // If marked uploaded but has no non-blob URL, skip phantom
+                if (item.uploaded && !persistent) continue;
+
+                valid.push({
+                    ...item,
+                    uploadMode: item.uploadMode || 'history_only',
+                    preview: persistent || getSafeStringUrl(item.preview) || '',
+                    persistentPreview: persistent || '',
+                    uploadedUrl: persistent || getSafeStringUrl(item.uploadedUrl) || ''
                 });
+            }
+
             if (valid.length !== parsed.length) {
                 localStorage.setItem('adh_daily_proof_images', JSON.stringify(valid));
             }
@@ -466,6 +522,8 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
         if (!Array.isArray(hoardingsList) || hoardingsList.length === 0) return;
 
         let dismissedKeys = new Set();
+        let dismissedSls = new Set();
+        let dismissedFileIds = new Set();
         try {
             const rawDismissed = localStorage.getItem('adh_dismissed_daily_proofs');
             if (rawDismissed) {
@@ -474,34 +532,50 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                     const cutoff = Date.now() - 48 * 60 * 60 * 1000;
                     parsed.filter(d => (Number(d?.time) || 0) > cutoff).forEach(d => {
                         if (d?.url) dismissedKeys.add(d.url);
+                        if (d?.directUrl) dismissedKeys.add(d.directUrl);
                         if (d?.id) dismissedKeys.add(d.id);
+                        if (d?.fileId) dismissedFileIds.add(d.fileId);
+                        if (d?.sl) dismissedSls.add(String(d.sl).trim());
                     });
                 }
             }
         } catch {}
 
-        const cloudCards = [];
         const cutoff48h = Date.now() - 48 * 60 * 60 * 1000;
+        const cloudCardsBySl = new Map();
 
         hoardingsList.forEach((h, hIdx) => {
+            const sl = String(h.SL || h['S. No.'] || h['SL NO'] || '').trim();
+            if (sl && dismissedSls.has(sl)) return;
+
             const hist = Array.isArray(h.History) 
                 ? h.History 
                 : parseHistoryString(h.ExecutionHistory || h.History || '');
 
             if (!Array.isArray(hist) || hist.length === 0) return;
 
-            const sl = h.SL || h['S. No.'] || h['SL NO'] || '';
-            const siteLocation = h["Locality Site Location"] || h["Location "] || h.Location || '';
+            const siteLocation = h["Location"] || h["Locality Site Location"] || h["Location "] || '';
             const siteId = h._SiteID || h.UniqueID || h['Unique ID'] || h.ID || '';
             const defaultFacing = h.Facing || h['Traffic View'] || '';
 
-            hist.forEach((entry, eIdx) => {
-                const rawUrl = typeof entry === 'object' ? (entry.url || entry.preview || '') : String(entry).split('|')[0].trim();
-                if (!rawUrl || rawUrl.startsWith('data:image/')) return;
-                const proofUrl = getDirectDriveLink(rawUrl) || rawUrl;
-                if (!proofUrl) return;
+            // Sort history descending by timestamp so the latest daily proof comes first
+            const sortedHist = [...hist].sort((a, b) => {
+                const tA = Number(typeof a === 'object' ? a.timestamp : null) || (a && a.date ? new Date(a.date).getTime() : 0);
+                const tB = Number(typeof b === 'object' ? b.timestamp : null) || (b && b.date ? new Date(b.date).getTime() : 0);
+                return tB - tA;
+            });
 
-                if (dismissedKeys.has(proofUrl) || dismissedKeys.has(rawUrl)) return;
+            for (let eIdx = 0; eIdx < sortedHist.length; eIdx++) {
+                const entry = sortedHist[eIdx];
+                const rawUrl = typeof entry === 'object' ? (entry.url || entry.preview || '') : String(entry).split('|')[0].trim();
+                if (!rawUrl || rawUrl.startsWith('data:image/')) continue;
+                const proofUrl = getDirectDriveLink(rawUrl) || rawUrl;
+                if (!proofUrl) continue;
+
+                const fileId = extractDriveId(proofUrl);
+                if (dismissedKeys.has(proofUrl) || dismissedKeys.has(rawUrl) || (fileId && dismissedFileIds.has(fileId)) || isHistoryUrlDeleted(proofUrl) || isHistoryUrlDeleted(rawUrl)) {
+                    continue;
+                }
 
                 const timestamp = Number(typeof entry === 'object' ? entry.timestamp : null) || (entry && entry.date ? new Date(entry.date).getTime() : Date.now());
                 const isRecent = timestamp > cutoff48h;
@@ -510,7 +584,7 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                     entry.gps
                 );
 
-                if (!isRecent && !hasProofMarker) return;
+                if (!isRecent && !hasProofMarker) continue;
 
                 let gpsCoord = null;
                 const gpsString = typeof entry === 'object' ? (entry.gps || '') : '';
@@ -527,78 +601,117 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                     }
                 }
 
-                cloudCards.push({
-                    id: `cloud_${sl || hIdx}_${timestamp}_${eIdx}`,
-                    preview: proofUrl,
-                    persistentPreview: proofUrl,
-                    uploadedUrl: proofUrl,
-                    sl: sl,
-                    matchedIndex: hIdx,
-                    matchedLocation: siteLocation,
-                    matchedSiteId: siteId,
-                    facing: (typeof entry === 'object' && entry.facing) || defaultFacing,
-                    status: (typeof entry === 'object' && entry.status) || h.STATUS || 'Available',
-                    confidence: (typeof entry === 'object' && entry.confidence) || 1.0,
-                    reasoning: (typeof entry === 'object' && entry.source) || 'Cloud Synced Daily Proof',
-                    analysis: (typeof entry === 'object' && entry.analysis) || '',
-                    gpsCoord: gpsCoord,
-                    distanceM: null,
-                    uploaded: true,
-                    uploading: false,
-                    aiLoading: false,
-                    matchFailed: false,
-                    timestamp: timestamp,
-                    uploadMode: (typeof entry === 'object' && entry.source && entry.source.includes('Campaign')) ? 'replace_master' : 'history_only',
-                    cloudSynced: true
-                });
-            });
+                const cardKey = sl || siteId || `site_${hIdx}`;
+                // Keep only the single latest daily proof per site
+                if (!cloudCardsBySl.has(cardKey)) {
+                    cloudCardsBySl.set(cardKey, {
+                        id: `cloud_${sl || hIdx}_${timestamp}`,
+                        preview: proofUrl,
+                        persistentPreview: proofUrl,
+                        uploadedUrl: proofUrl,
+                        sl: sl,
+                        matchedIndex: hIdx,
+                        matchedLocation: siteLocation,
+                        matchedSiteId: siteId,
+                        facing: (typeof entry === 'object' && entry.facing) || defaultFacing,
+                        status: (typeof entry === 'object' && entry.status) || h.STATUS || 'Available',
+                        confidence: (typeof entry === 'object' && entry.confidence) || 1.0,
+                        reasoning: (typeof entry === 'object' && entry.source) || 'Cloud Synced Daily Proof',
+                        analysis: (typeof entry === 'object' && entry.analysis) || '',
+                        gpsCoord: gpsCoord,
+                        distanceM: null,
+                        uploaded: true,
+                        uploading: false,
+                        aiLoading: false,
+                        matchFailed: false,
+                        timestamp: timestamp,
+                        uploadMode: (typeof entry === 'object' && entry.source && entry.source.includes('Campaign')) ? 'replace_master' : 'history_only',
+                        cloudSynced: true
+                    });
+                }
+                break; // 1 latest card per site
+            }
         });
-
-        if (cloudCards.length === 0) return;
 
         setDailyImages(prev => {
             const existing = Array.isArray(prev) ? prev : [];
-            const localPending = existing.filter(img => img.uploading || img.aiLoading || !img.uploaded);
-            
+
+            // 1. Keep active local in-flight items (user currently dropping or AI detecting right now)
+            const localInFlight = existing.filter(img => 
+                (img.uploading || img.aiLoading || !img.uploaded) &&
+                (!img.sl || !dismissedSls.has(String(img.sl).trim()))
+            );
+
+            // Index existing cards by sl, fileId, and url
+            const existingBySl = new Map();
+            const existingByFileId = new Map();
             const existingByUrl = new Map();
+
             existing.forEach(img => {
-                const u = img.uploadedUrl || img.preview || img.persistentPreview;
-                if (u) existingByUrl.set(u, img);
+                const s = img.sl ? String(img.sl).trim() : '';
+                if (s) existingBySl.set(s, img);
+                const fid = extractDriveId(img.uploadedUrl || img.preview || img.persistentPreview);
+                if (fid) existingByFileId.set(fid, img);
+                const u = getSafeStringUrl(img.uploadedUrl || img.preview || img.persistentPreview);
+                if (u) {
+                    existingByUrl.set(u, img);
+                    const norm = getDirectDriveLink(u);
+                    if (norm) existingByUrl.set(norm, img);
+                }
             });
 
-            const mergedMap = new Map();
-            cloudCards.forEach(c => {
-                const key = c.uploadedUrl || c.preview;
-                const existingMatch = existingByUrl.get(key);
+            // 2. Build merged cards from cloud
+            const mergedCards = [];
+            const processedSls = new Set();
+
+            cloudCardsBySl.forEach((c) => {
+                const sl = c.sl ? String(c.sl).trim() : '';
+                const fid = extractDriveId(c.uploadedUrl);
+                const normUrl = getDirectDriveLink(c.uploadedUrl) || c.uploadedUrl;
+
+                // Find matching existing local item
+                const existingMatch = (sl && existingBySl.get(sl)) || 
+                                      (fid && existingByFileId.get(fid)) || 
+                                      existingByUrl.get(normUrl) ||
+                                      existingByUrl.get(c.uploadedUrl);
+
                 if (existingMatch) {
-                    mergedMap.set(key, {
+                    mergedCards.push({
                         ...c,
                         ...existingMatch,
+                        // Always enforce verified cloud properties
+                        preview: c.preview,
+                        persistentPreview: c.persistentPreview,
+                        uploadedUrl: c.uploadedUrl,
                         uploaded: true,
                         uploading: false,
-                        aiLoading: false
+                        aiLoading: false,
+                        cloudSynced: true
                     });
                 } else {
-                    mergedMap.set(key, c);
+                    mergedCards.push(c);
+                }
+
+                if (sl) processedSls.add(sl);
+            });
+
+            // 3. Add local in-flight items if they are not already superseded by cloud cards
+            localInFlight.forEach(inf => {
+                const infSl = inf.sl ? String(inf.sl).trim() : '';
+                if (!infSl || !processedSls.has(infSl)) {
+                    mergedCards.push(inf);
+                    if (infSl) processedSls.add(infSl);
                 }
             });
 
-            existing.forEach(img => {
-                const key = img.uploadedUrl || img.preview || img.persistentPreview;
-                if (key && !mergedMap.has(key) && !dismissedKeys.has(key)) {
-                    mergedMap.set(key, img);
-                }
-            });
-
-            const allCombined = [...localPending, ...Array.from(mergedMap.values()).filter(img => !localPending.includes(img))];
-            
-            allCombined.sort((a, b) => {
+            // 4. Sort: in-flight first, then newest timestamp first
+            mergedCards.sort((a, b) => {
                 if ((a.uploading || a.aiLoading) && !(b.uploading || b.aiLoading)) return -1;
                 if (!(a.uploading || a.aiLoading) && (b.uploading || b.aiLoading)) return 1;
                 return (b.timestamp || 0) - (a.timestamp || 0);
             });
 
-            return allCombined;
+            return mergedCards;
         });
     }, []);
 
@@ -694,16 +807,47 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
         const itemToRemove = dailyImages[idxToRemove];
         if (itemToRemove) {
             const urlToRemove = itemToRemove.uploadedUrl || itemToRemove.preview || itemToRemove.persistentPreview;
-            if (urlToRemove) {
-                try {
-                    const raw = localStorage.getItem('adh_dismissed_daily_proofs');
-                    const list = raw ? JSON.parse(raw) : [];
-                    list.push({ url: urlToRemove, id: itemToRemove.id, time: Date.now() });
-                    localStorage.setItem('adh_dismissed_daily_proofs', JSON.stringify(list));
-                } catch {}
+            const directUrl = urlToRemove ? getDirectDriveLink(urlToRemove) : '';
+            const fileId = extractDriveId(urlToRemove);
+            const slToRemove = itemToRemove.sl ? String(itemToRemove.sl).trim() : '';
+            const siteIdToRemove = itemToRemove.matchedSiteId || '';
+
+            try {
+                const raw = localStorage.getItem('adh_dismissed_daily_proofs');
+                const list = raw ? JSON.parse(raw) : [];
+                list.push({ 
+                    url: urlToRemove || null,
+                    directUrl: directUrl || null,
+                    fileId: fileId || null,
+                    sl: slToRemove || null,
+                    siteId: siteIdToRemove || null,
+                    id: itemToRemove.id || null,
+                    time: Date.now() 
+                });
+                localStorage.setItem('adh_dismissed_daily_proofs', JSON.stringify(list));
+            } catch {}
+
+            // Prevent resurrection across any dataService history parsers
+            if (urlToRemove) addDeletedHistoryUrl(urlToRemove);
+            if (directUrl) addDeletedHistoryUrl(directUrl);
+            if (fileId) addDeletedHistoryUrl(fileId);
+
+            // Clean local history caches
+            const siteObj = (itemToRemove.matchedIndex != null && hoardings[itemToRemove.matchedIndex]) ||
+                            (slToRemove && hoardings.find(h => String(h.SL || h['S. No.'] || '').trim() === slToRemove));
+            if (siteObj && urlToRemove) {
+                removeSiteHistory(siteObj, urlToRemove);
             }
         }
-        setDailyImages(prev => prev.filter((_, idx) => idx !== idxToRemove));
+
+        setDailyImages(prev => {
+            const updated = prev.filter((_, idx) => idx !== idxToRemove);
+            try {
+                localStorage.setItem('adh_daily_proof_images', JSON.stringify(updated));
+            } catch {}
+            return updated;
+        });
+
         setExpandedDailyCards(prev => {
             const next = new Set();
             prev.forEach(id => {
@@ -716,14 +860,30 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
 
     const handleClearAllDailyImages = () => {
         try {
-            const dismissed = dailyImages.map(img => ({
-                url: img.uploadedUrl || img.preview || img.persistentPreview,
-                id: img.id,
-                time: Date.now()
-            })).filter(x => Boolean(x.url));
+            const dismissed = dailyImages.map(img => {
+                const u = img.uploadedUrl || img.preview || img.persistentPreview;
+                return {
+                    url: u || null,
+                    directUrl: u ? getDirectDriveLink(u) : null,
+                    fileId: extractDriveId(u) || null,
+                    sl: img.sl ? String(img.sl).trim() : null,
+                    siteId: img.matchedSiteId || null,
+                    id: img.id,
+                    time: Date.now()
+                };
+            }).filter(x => Boolean(x.url || x.sl));
+
             const raw = localStorage.getItem('adh_dismissed_daily_proofs');
             const list = raw ? JSON.parse(raw) : [];
             localStorage.setItem('adh_dismissed_daily_proofs', JSON.stringify([...list, ...dismissed]));
+
+            dismissed.forEach(d => {
+                if (d.url) addDeletedHistoryUrl(d.url);
+                if (d.directUrl) addDeletedHistoryUrl(d.directUrl);
+                if (d.fileId) addDeletedHistoryUrl(d.fileId);
+            });
+
+            localStorage.removeItem('adh_daily_proof_images');
         } catch {}
         setDailyImages([]);
     };
@@ -1857,6 +2017,19 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                 }
                 return next;
             });
+
+            if (targetSL) {
+                try {
+                    const rawD = localStorage.getItem('adh_dismissed_daily_proofs');
+                    if (rawD) {
+                        const parsedD = JSON.parse(rawD);
+                        if (Array.isArray(parsedD)) {
+                            const filteredD = parsedD.filter(d => String(d?.sl).trim() !== String(targetSL).trim());
+                            localStorage.setItem('adh_dismissed_daily_proofs', JSON.stringify(filteredD));
+                        }
+                    }
+                } catch {}
+            }
 
             // Construct new history entry with verified URL (Google Drive URL or clean preview)
             const newHistoryItem = {
@@ -6288,18 +6461,20 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                                     );
                                                 })()}
 
-                                                {img.matchedLocation && (() => {
-                                                    const refSite = (img.matchedSiteId && hoardings.find(h => (h._SiteID === img.matchedSiteId || h.UniqueID === img.matchedSiteId))) ||
+                                                {(img.matchedLocation || img.sl) && (() => {
+                                                    const refSite = (img.sl && hoardings.find(h => String(h.SL || h['S. No.'] || h['SL NO']).trim() === String(img.sl).trim())) ||
+                                                                    (img.matchedSiteId && hoardings.find(h => (h._SiteID === img.matchedSiteId || h.UniqueID === img.matchedSiteId))) ||
                                                                     (img.matchedIndex != null && img.matchedIndex >= 0 ? hoardings[img.matchedIndex] : null) ||
-                                                                    hoardings.find(h => (h["Locality Site Location"] || h["Location "] || h.Location) === img.matchedLocation);
+                                                                    (img.matchedLocation && hoardings.find(h => (h["Locality Site Location"] || h["Location "] || h.Location) === img.matchedLocation));
                                                     const refUrl = refSite?.ImageURL;
+                                                    const refFacing = refSite?.Facing || refSite?.['Traffic View'] || img.facing || '';
                                                     return refUrl ? (
-                                                        <div className="img-preview ref-image" title={`Old Reference Image: ${refSite?.Facing ? `Facing ${refSite.Facing}` : 'Site'}`} style={{
+                                                        <div className="img-preview ref-image" title={`Old Reference Image: ${refFacing ? `Facing ${refFacing}` : 'Site'}`} style={{
                                                             backgroundImage: `url(${refUrl})`,
                                                             backgroundSize: 'cover',
                                                             backgroundPosition: 'center'
                                                         }}>
-                                                            <span className="img-label ref">REF {refSite?.Facing ? `(${refSite.Facing})` : ''}</span>
+                                                            <span className="img-label ref">REF {refFacing ? `(${refFacing})` : ''}</span>
                                                         </div>
                                                     ) : null;
                                                 })()}
@@ -6331,10 +6506,14 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                                         textOverflow: 'ellipsis', 
                                                         whiteSpace: 'nowrap' 
                                                     }}>
-                                                        {img.matchedLocation 
-                                                            ? `${img.sl ? `#${img.sl} · ` : ''}${img.matchedLocation}${img.facing ? ` (${img.facing})` : ''}`
-                                                            : (img.aiLoading ? '⏳ Detecting site...' : (img.matchFailed ? '❌ Site Not Matched' : '📸 Image Ready'))
-                                                        }
+                                                        {(() => {
+                                                            const siteLoc = img.matchedLocation || (img.sl && hoardings.find(h => String(h.SL || h['S. No.'] || '').trim() === String(img.sl).trim())?.Location) || '';
+                                                            const facing = img.facing || (img.sl && hoardings.find(h => String(h.SL || h['S. No.'] || '').trim() === String(img.sl).trim())?.Facing) || '';
+                                                            if (siteLoc || img.sl) {
+                                                                return `${img.sl ? `#${img.sl} · ` : ''}${siteLoc || 'Site'}${facing ? ` (${facing})` : ''}`;
+                                                            }
+                                                            return img.aiLoading ? '⏳ Detecting site...' : (img.matchFailed ? '❌ Site Not Matched' : '📸 Image Ready');
+                                                        })()}
                                                     </span>
                                                 </div>
 
