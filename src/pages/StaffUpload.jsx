@@ -1,5 +1,5 @@
 import React from 'react';
-import { Camera, CheckCircle2, MapPin, MapPinOff, RefreshCw, RotateCcw, WifiOff, XCircle, Sparkles, Check, AlertCircle, Navigation, ChevronRight, Compass, Volume2, VolumeX, ShieldCheck, Zap } from 'lucide-react';
+import { Camera, CheckCircle2, MapPin, MapPinOff, RefreshCw, RotateCcw, WifiOff, XCircle, Sparkles, Check, AlertCircle, Navigation, ChevronRight, Compass, Volume2, VolumeX, ShieldCheck, Zap, Smartphone, Share2 } from 'lucide-react';
 import { uploadStaffPhoto, fetchHoardings, saveLocalStaffUpload, syncToGoogleSheet, recordSiteHistory } from '../services/dataService';
 import { matchGeofencedHoardingWithGemini } from '../services/aiService';
 import { ensureUprightBlob } from '../core/imageOrientation';
@@ -500,6 +500,15 @@ const captureCameraPhoto = async (video, stream) => {
     return await ensureUprightBlob(rawSnapshot, MAX_IMAGE_WIDTH, 0.82);
 };
 
+// 📱 Mobile Device Detector (Staff Field Camera is strictly optimized for Mobile Phones)
+const checkIsDesktop = () => {
+    if (typeof window === 'undefined') return false;
+    const ua = navigator.userAgent || '';
+    const isMobileUA = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(ua);
+    if (isMobileUA) return false;
+    return window.innerWidth > 900;
+};
+
 const StaffUpload = () => {
     const videoRef = React.useRef(null);
     const streamRef = React.useRef(null);
@@ -508,6 +517,10 @@ const StaffUpload = () => {
     const lastCaptureIdRef = React.useRef('');
     const hoardingsRef = React.useRef([]);
     const bannerTimerRef = React.useRef(null);
+
+    const [isDesktop, setIsDesktop] = React.useState(checkIsDesktop);
+    const [overrideDesktop, setOverrideDesktop] = React.useState(false);
+    const [copiedLink, setCopiedLink] = React.useState(false);
 
     const [pendingCount, setPendingCount] = React.useState(0);
     const [uploadedCount, setUploadedCount] = React.useState(getStoredUploadedCount);
@@ -528,6 +541,14 @@ const StaffUpload = () => {
     const [isAiMatching, setIsAiMatching] = React.useState(false);
     const [hoardingsList, setHoardingsList] = React.useState([]);
     const [compassHeading, setCompassHeading] = React.useState(null); // { degrees: number, direction: string }
+
+    React.useEffect(() => {
+        const handleResize = () => {
+            setIsDesktop(checkIsDesktop());
+        };
+        window.addEventListener('resize', handleResize);
+        return () => window.removeEventListener('resize', handleResize);
+    }, []);
 
     // Fetch hoardings once on mount for instant client-side GPS matching
     React.useEffect(() => {
@@ -779,14 +800,19 @@ const StaffUpload = () => {
     }, [isOnline, lastGps, isVoiceMuted]);
 
     React.useEffect(() => {
+        if (isDesktop && !overrideDesktop) return;
+
         migrateLegacyStaffQueue().then(refreshPendingCount);
-        setTimeout(() => {
+        const camTimer = setTimeout(() => {
             startCamera();
         }, 50);
 
         // 🔊 Global User Interaction Listener to Unlock Audio Context
         const handleUserGesture = () => {
             unlockAudio();
+            if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
+                DeviceOrientationEvent.requestPermission().catch(() => {});
+            }
         };
         window.addEventListener('touchstart', handleUserGesture, { passive: true });
         window.addEventListener('click', handleUserGesture, { passive: true });
@@ -837,6 +863,7 @@ const StaffUpload = () => {
 
         flushQueue();
         return () => {
+            window.clearTimeout(camTimer);
             window.clearTimeout(gpsInitTimer);
             window.removeEventListener('touchstart', handleUserGesture);
             window.removeEventListener('click', handleUserGesture);
@@ -857,7 +884,7 @@ const StaffUpload = () => {
                 } catch {}
             }
         };
-    }, [flushQueue, refreshPendingCount, startCamera]);
+    }, [flushQueue, refreshPendingCount, startCamera, isDesktop, overrideDesktop]);
 
     const showMatchBanner = (bannerData) => {
         window.clearTimeout(bannerTimerRef.current);
@@ -1178,6 +1205,68 @@ const StaffUpload = () => {
     const gpsLabel = lastGps?.latitude
         ? `GPS ready${lastGps.accuracy ? ` (${Math.round(lastGps.accuracy)}m)` : ''}`
         : (gpsError || 'GPS dhoondh raha hai...');
+
+    // 🖥️ Desktop / Laptop Guard Screen (App is restricted to Mobile Phones)
+    if (isDesktop && !overrideDesktop) {
+        const mobileAppUrl = typeof window !== 'undefined' ? window.location.href : 'https://hoarding-app.com/staff';
+        const qrCodeUrl = `https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=${encodeURIComponent(mobileAppUrl)}`;
+
+        const handleCopyLink = () => {
+            if (navigator.clipboard) {
+                navigator.clipboard.writeText(mobileAppUrl);
+                setCopiedLink(true);
+                setTimeout(() => setCopiedLink(false), 2500);
+            }
+        };
+
+        return (
+            <main className="staff-desktop-guard-page">
+                <div className="staff-desktop-guard-card">
+                    <div className="guard-brand-badge">
+                        <img src={HIRA_LOGO} alt="HIRA Advertising" style={{ height: '24px', width: 'auto', display: 'block' }} />
+                    </div>
+
+                    <div className="guard-phone-icon-wrap">
+                        <div className="guard-pulse-ring"></div>
+                        <Smartphone size={38} className="guard-phone-icon" />
+                    </div>
+
+                    <div className="guard-tag">
+                        <span>📱 MOBILE ONLY APPLICATION</span>
+                    </div>
+
+                    <h2>Staff Field Camera App</h2>
+                    <p className="guard-desc">
+                        Yeh camera application sirf <strong>Field Staff ke Mobile Phone</strong> par chalne ke liye banayi gayi hai. Mobile ke bina <strong>Live GPS Geotagging, 50m Distance Tracker aur Digital Compass Facing</strong> possible nahi hai.
+                    </p>
+
+                    <div className="guard-qr-box">
+                        <img src={qrCodeUrl} alt="Scan QR Code to open on Mobile" className="guard-qr-img" />
+                        <div className="guard-qr-caption">
+                            <strong>📷 Scan with Phone Camera</strong>
+                            <span>Apne mobile camera se scan karke direct kholein</span>
+                        </div>
+                    </div>
+
+                    <div className="guard-actions">
+                        <button type="button" className="guard-copy-btn" onClick={handleCopyLink}>
+                            {copiedLink ? <Check size={16} /> : <Share2 size={16} />}
+                            <span>{copiedLink ? 'Link Copied! WhatsApp pe share karein' : 'Copy Link for WhatsApp'}</span>
+                        </button>
+                        <a href="/admin" className="guard-admin-btn">
+                            <span>Open Admin Dashboard</span>
+                        </a>
+                    </div>
+
+                    <div className="guard-footer">
+                        <button type="button" className="guard-override-link" onClick={() => setOverrideDesktop(true)}>
+                            Testing / Dev Mode (Continue on Desktop) →
+                        </button>
+                    </div>
+                </div>
+            </main>
+        );
+    }
 
     return (
         <main className="staff-camera-page">

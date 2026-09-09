@@ -1004,3 +1004,211 @@
     }
 }
 
+/* 🖥️ Desktop Guard Screen (Mobile-Only Restriction) */
+.staff-desktop-guard-page {
+    min-height: 100vh;
+    width: 100vw;
+    background: radial-gradient(circle at 50% 20%, #1e1b4b 0%, #090d16 65%, #020408 100%);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px 16px;
+    color: #ffffff;
+    font-family: var(--font-body, system-ui, sans-serif);
+}
+
+.staff-desktop-guard-card {
+    max-width: 480px;
+    width: 100%;
+    background: rgba(15, 23, 42, 0.82);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    border-radius: 20px;
+    padding: 28px 24px;
+    text-align: center;
+    box-shadow: 0 20px 50px rgba(0, 0, 0, 0.6), 0 0 30px rgba(99, 102, 241, 0.15);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+}
+
+.guard-brand-badge {
+    background: #ffffff;
+    padding: 4px 10px;
+    border-radius: 10px;
+    margin-bottom: 18px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+}
+
+.guard-phone-icon-wrap {
+    position: relative;
+    width: 76px;
+    height: 76px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #4f46e5, #7c3aed);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-bottom: 16px;
+    box-shadow: 0 8px 24px rgba(99, 102, 241, 0.4);
+}
+
+.guard-pulse-ring {
+    position: absolute;
+    inset: -6px;
+    border-radius: 50%;
+    border: 2px solid rgba(129, 140, 248, 0.6);
+    animation: guardPulse 2s infinite ease-out;
+}
+
+@keyframes guardPulse {
+    0% { transform: scale(0.95); opacity: 0.8; }
+    100% { transform: scale(1.35); opacity: 0; }
+}
+
+.guard-phone-icon {
+    color: #ffffff;
+}
+
+.guard-tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 3px 10px;
+    background: rgba(239, 68, 68, 0.18);
+    border: 1px solid rgba(239, 68, 68, 0.4);
+    border-radius: 20px;
+    font-size: 0.70rem;
+    font-weight: 800;
+    color: #fca5a5;
+    letter-spacing: 0.8px;
+    margin-bottom: 12px;
+}
+
+.staff-desktop-guard-card h2 {
+    font-size: 1.35rem;
+    font-weight: 800;
+    color: #ffffff;
+    margin: 0 0 8px;
+}
+
+.guard-desc {
+    font-size: 0.82rem;
+    color: #94a3b8;
+    line-height: 1.5;
+    margin: 0 0 20px;
+}
+
+.guard-desc strong {
+    color: #e2e8f0;
+}
+
+.guard-qr-box {
+    background: #ffffff;
+    border-radius: 14px;
+    padding: 14px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.25);
+    margin-bottom: 20px;
+}
+
+.guard-qr-img {
+    width: 170px;
+    height: 170px;
+    border-radius: 8px;
+    display: block;
+}
+
+.guard-qr-caption {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+}
+
+.guard-qr-caption strong {
+    font-size: 0.82rem;
+    color: #0f172a;
+    font-weight: 800;
+}
+
+.guard-qr-caption span {
+    font-size: 0.70rem;
+    color: #64748b;
+}
+
+.guard-actions {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    width: 100%;
+}
+
+.guard-copy-btn {
+    width: 100%;
+    min-height: 42px;
+    background: #10b981;
+    color: #ffffff;
+    border: none;
+    border-radius: 10px;
+    font-size: 0.84rem;
+    font-weight: 700;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    transition: background 0.18s ease;
+}
+
+.guard-copy-btn:hover {
+    background: #059669;
+}
+
+.guard-admin-btn {
+    width: 100%;
+    min-height: 38px;
+    background: rgba(255, 255, 255, 0.08);
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    color: #e2e8f0;
+    border-radius: 10px;
+    font-size: 0.80rem;
+    font-weight: 600;
+    text-decoration: none;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.18s ease;
+}
+
+.guard-admin-btn:hover {
+    background: rgba(255, 255, 255, 0.14);
+    color: #ffffff;
+}
+
+.guard-footer {
+    margin-top: 18px;
+    padding-top: 14px;
+    border-top: 1px solid rgba(255, 255, 255, 0.08);
+    width: 100%;
+}
+
+.guard-override-link {
+    background: none;
+    border: none;
+    color: #64748b;
+    font-size: 0.72rem;
+    cursor: pointer;
+    text-decoration: underline;
+    transition: color 0.15s ease;
+}
+
+.guard-override-link:hover {
+    color: #94a3b8;
+}
+
+
