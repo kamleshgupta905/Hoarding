@@ -798,3 +798,209 @@
     }
 }
 
+/* 🧭 Real-Time Camera HUD (Heads-Up Display) */
+.staff-hud-container {
+    position: absolute;
+    left: 12px;
+    right: 12px;
+    bottom: calc(130px + env(safe-area-inset-bottom) + 12px);
+    z-index: 5;
+    pointer-events: none;
+    transition: transform 0.25s ease, opacity 0.25s ease;
+}
+
+.staff-hud-card {
+    pointer-events: auto;
+    background: rgba(15, 23, 42, 0.86);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border: 1px solid rgba(255, 255, 255, 0.16);
+    border-radius: 14px;
+    padding: 10px 14px;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+    color: #ffffff;
+    transition: all 0.3s ease;
+}
+
+.staff-hud-card.locked {
+    border-color: rgba(16, 185, 129, 0.6);
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5), 0 0 18px rgba(16, 185, 129, 0.22);
+}
+
+.staff-hud-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    margin-bottom: 8px;
+}
+
+.staff-hud-target {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+    flex: 1;
+}
+
+.staff-hud-pin-icon {
+    font-size: 1.15rem;
+    flex-shrink: 0;
+}
+
+.staff-hud-site-info {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    overflow: hidden;
+}
+
+.staff-hud-site-name {
+    font-size: 0.85rem;
+    font-weight: 800;
+    color: #ffffff;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    line-height: 1.25;
+}
+
+.staff-hud-site-sub {
+    font-size: 0.70rem;
+    color: #94a3b8;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    line-height: 1.2;
+}
+
+.staff-hud-dist-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 9px;
+    border-radius: 20px;
+    font-size: 0.74rem;
+    font-weight: 800;
+    flex-shrink: 0;
+    letter-spacing: 0.2px;
+}
+
+.staff-hud-dist-badge.in-range {
+    background: #059669;
+    color: #ffffff;
+    box-shadow: 0 2px 8px rgba(5, 150, 105, 0.35);
+}
+
+.staff-hud-dist-badge.out-range {
+    background: #d97706;
+    color: #ffffff;
+    box-shadow: 0 2px 8px rgba(217, 119, 6, 0.35);
+}
+
+.dist-pulse {
+    animation: distPulse 1.8s infinite ease-in-out;
+}
+
+@keyframes distPulse {
+    0%, 100% { transform: scale(1); }
+    50% { transform: scale(1.22); }
+}
+
+.staff-hud-metrics {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+    border-top: 1px solid rgba(255, 255, 255, 0.1);
+    padding-top: 8px;
+}
+
+.staff-hud-metric-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+    background: rgba(255, 255, 255, 0.05);
+    padding: 5px 8px;
+    border-radius: 8px;
+    border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.staff-hud-metric-item.hud-span-full {
+    grid-column: 1 / -1;
+}
+
+.hud-metric-icon {
+    flex-shrink: 0;
+}
+
+.hud-metric-icon.compass-icon {
+    color: #38bdf8;
+}
+
+.hud-metric-icon.traffic-icon {
+    color: #a78bfa;
+}
+
+.hud-metric-icon.gps-icon {
+    color: #34d399;
+}
+
+.hud-metric-text {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    overflow: hidden;
+}
+
+.hud-metric-label {
+    font-size: 0.62rem;
+    font-weight: 700;
+    color: #94a3b8;
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+    line-height: 1.1;
+}
+
+.hud-metric-val {
+    font-size: 0.74rem;
+    font-weight: 800;
+    color: #f8fafc;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    line-height: 1.25;
+}
+
+.hud-metric-coords {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    font-size: 0.72rem;
+    font-weight: 700;
+    color: #38bdf8;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    line-height: 1.25;
+}
+
+@media (max-width: 480px) {
+    .staff-hud-container {
+        left: 8px;
+        right: 8px;
+        bottom: calc(120px + env(safe-area-inset-bottom) + 8px);
+    }
+
+    .staff-hud-card {
+        padding: 8px 10px;
+    }
+
+    .staff-hud-metrics {
+        gap: 6px;
+        padding-top: 6px;
+    }
+
+    .staff-hud-metric-item {
+        padding: 4px 6px;
+    }
+}
+

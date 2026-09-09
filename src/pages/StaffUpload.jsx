@@ -25,6 +25,14 @@ const getStoredUploadedCount = () => {
     return Number.isFinite(value) ? value : 0;
 };
 
+// 🧭 Helper to convert heading degrees (0 - 360) to 8-point compass cardinal
+const getCardinalDirection = (deg) => {
+    if (deg === null || deg === undefined || isNaN(deg)) return '';
+    const directions = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'];
+    const idx = Math.round(((deg %= 360) < 0 ? deg + 360 : deg) / 45) % 8;
+    return directions[idx];
+};
+
 // 📍 Authentic GPS Map Camera / PinPoint Style Watermark Stamping
 const stampGpsWatermarkOnBlob = (blob, gpsData, siteInfo = {}) => new Promise((resolve) => {
     if (!blob || !gpsData || !gpsData.latitude) {
@@ -47,8 +55,8 @@ const stampGpsWatermarkOnBlob = (blob, gpsData, siteInfo = {}) => new Promise((r
 
             // 2. Compute proportional scale
             const scale = Math.max(0.65, Math.min(1.45, canvas.width / 1200));
-            const cardWidth = Math.min(canvas.width * 0.94, 580 * scale);
-            const cardHeight = 155 * scale;
+            const cardWidth = Math.min(canvas.width * 0.94, 610 * scale);
+            const cardHeight = 176 * scale;
             const padding = 16 * scale;
             const cardX = canvas.width - cardWidth - (20 * scale);
             const cardY = canvas.height - cardHeight - (22 * scale);
@@ -56,9 +64,9 @@ const stampGpsWatermarkOnBlob = (blob, gpsData, siteInfo = {}) => new Promise((r
 
             // 3. Draw rounded translucent card background
             ctx.save();
-            ctx.shadowColor = 'rgba(0, 0, 0, 0.55)';
+            ctx.shadowColor = 'rgba(0, 0, 0, 0.65)';
             ctx.shadowBlur = 18 * scale;
-            ctx.fillStyle = 'rgba(15, 23, 42, 0.85)'; // Premium dark slate
+            ctx.fillStyle = 'rgba(15, 23, 42, 0.88)'; // Premium dark slate
 
             ctx.beginPath();
             ctx.moveTo(cardX + radius, cardY);
@@ -100,37 +108,45 @@ const stampGpsWatermarkOnBlob = (blob, gpsData, siteInfo = {}) => new Promise((r
 
             // Line 1: City & Country
             ctx.fillStyle = '#ffffff';
-            ctx.font = `bold ${16 * scale}px sans-serif`;
+            ctx.font = `bold ${15 * scale}px sans-serif`;
             ctx.textAlign = 'left';
             const cityText = `${siteInfo.city || 'Meerut'}, Uttar Pradesh, India 🇮🇳`;
             ctx.fillText(cityText, textStartX, cardY + padding + (14 * scale), maxTextWidth);
 
             // Line 2: Locality / Site Location
-            ctx.fillStyle = '#e2e8f0';
+            ctx.fillStyle = '#f1f5f9';
             ctx.font = `600 ${13 * scale}px sans-serif`;
             const locText = siteInfo.location || siteInfo.locality || 'Verified OOH Billboard Site';
-            ctx.fillText(locText, textStartX, cardY + padding + (35 * scale), maxTextWidth);
+            ctx.fillText(locText, textStartX, cardY + padding + (34 * scale), maxTextWidth);
 
             // Line 3: Timestamp
             ctx.fillStyle = '#94a3b8';
-            ctx.font = `${12 * scale}px sans-serif`;
+            ctx.font = `${11.5 * scale}px sans-serif`;
             const dateStr = new Date(gpsData.capturedAt || Date.now()).toLocaleString('en-IN', {
                 weekday: 'short', day: '2-digit', month: 'short', year: 'numeric',
                 hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false
             });
-            ctx.fillText(`${dateStr} IST`, textStartX, cardY + padding + (55 * scale), maxTextWidth);
+            ctx.fillText(`${dateStr} IST`, textStartX, cardY + padding + (53 * scale), maxTextWidth);
 
-            // Line 4: Lat & Long Coordinates
+            // Line 4: Lat & Long Coordinates with Accuracy
             ctx.fillStyle = '#38bdf8'; // Sky blue
-            ctx.font = `bold ${13 * scale}px monospace`;
+            ctx.font = `bold ${12.5 * scale}px monospace`;
             const latStr = Number(gpsData.latitude).toFixed(6);
             const lngStr = Number(gpsData.longitude).toFixed(6);
-            ctx.fillText(`Lat ${latStr}  Long ${lngStr}`, textStartX, cardY + padding + (76 * scale), maxTextWidth);
+            const accStr = gpsData.accuracy ? ` (±${Math.round(gpsData.accuracy)}m)` : '';
+            ctx.fillText(`Lat ${latStr}  Long ${lngStr}${accStr}`, textStartX, cardY + padding + (72 * scale), maxTextWidth);
 
-            // Line 5: PinPoint & Brand Stamp
+            // Line 5: Distance & Facing
+            ctx.fillStyle = '#34d399'; // Emerald Mint
+            ctx.font = `bold ${12 * scale}px sans-serif`;
+            const distPart = siteInfo.distance ? `📏 Dist: ${siteInfo.distance}` : '📏 Within Range';
+            const facingPart = siteInfo.facing ? `🧭 ${siteInfo.facing}` : '🧭 Facing: Verified';
+            ctx.fillText(`${distPart}   |   ${facingPart}`, textStartX, cardY + padding + (92 * scale), maxTextWidth);
+
+            // Line 6: PinPoint & Brand Stamp
             ctx.fillStyle = '#f59e0b'; // Amber
-            ctx.font = `700 ${11 * scale}px sans-serif`;
-            ctx.fillText('🎯 GPS camera - PinPoint • HIRA Advertising Co.', textStartX, cardY + padding + (95 * scale), maxTextWidth);
+            ctx.font = `700 ${10.5 * scale}px sans-serif`;
+            ctx.fillText('🎯 GPS Map Camera • Verified OOH Audit • HIRA Advertising Co.', textStartX, cardY + padding + (112 * scale), maxTextWidth);
 
             canvas.toBlob((stampedBlob) => {
                 resolve(stampedBlob || blob);
@@ -510,15 +526,100 @@ const StaffUpload = () => {
     const [latestStillPending, setLatestStillPending] = React.useState(false);
     const [matchBanner, setMatchBanner] = React.useState(null); // { siteName, status, distance, confidence, warning, message }
     const [isAiMatching, setIsAiMatching] = React.useState(false);
+    const [hoardingsList, setHoardingsList] = React.useState([]);
+    const [compassHeading, setCompassHeading] = React.useState(null); // { degrees: number, direction: string }
 
     // Fetch hoardings once on mount for instant client-side GPS matching
     React.useEffect(() => {
         fetchHoardings().then(data => {
             if (Array.isArray(data)) {
                 hoardingsRef.current = data;
+                setHoardingsList(data);
             }
         }).catch(err => console.warn('Could not pre-load hoardings for GPS matching:', err));
     }, []);
+
+    // 🧭 Real-Time Digital Compass Orientation Listener
+    React.useEffect(() => {
+        let isMounted = true;
+
+        const handleOrientation = (e) => {
+            if (!isMounted) return;
+            let heading = null;
+
+            if (typeof e.webkitCompassHeading === 'number' && !isNaN(e.webkitCompassHeading)) {
+                // iOS Safari (0 = North, clockwise)
+                heading = Math.round(e.webkitCompassHeading);
+            } else if (e.alpha !== null && e.alpha !== undefined && !isNaN(e.alpha)) {
+                // Android Chrome / Standard DeviceOrientationEvent
+                heading = Math.round(360 - e.alpha);
+            }
+
+            if (heading !== null && !isNaN(heading)) {
+                heading = ((heading % 360) + 360) % 360;
+                setCompassHeading({
+                    degrees: heading,
+                    direction: getCardinalDirection(heading)
+                });
+            }
+        };
+
+        if ('ondeviceorientationabsolute' in window) {
+            window.addEventListener('deviceorientationabsolute', handleOrientation, true);
+        } else if (typeof window !== 'undefined' && 'DeviceOrientationEvent' in window) {
+            window.addEventListener('deviceorientation', handleOrientation, true);
+        }
+
+        return () => {
+            isMounted = false;
+            if ('ondeviceorientationabsolute' in window) {
+                window.removeEventListener('deviceorientationabsolute', handleOrientation, true);
+            }
+            if (typeof window !== 'undefined' && 'DeviceOrientationEvent' in window) {
+                window.removeEventListener('deviceorientation', handleOrientation, true);
+            }
+        };
+    }, []);
+
+    // 📍 Real-Time Nearest Hoarding, Distance Countdown & Traffic Facing
+    const liveNearest = React.useMemo(() => {
+        const list = hoardingsList.length > 0 ? hoardingsList : hoardingsRef.current;
+        if (!lastGps?.latitude || !lastGps?.longitude || !list || list.length === 0) {
+            return null;
+        }
+
+        let minDistance = Infinity;
+        let closestHoarding = null;
+
+        for (const h of list) {
+            const lat = parseFloat(h.Latitude || h.Lat || h['Lat.'] || (h['Lat-Long'] ? h['Lat-Long'].split(',')[0] : ''));
+            const lng = parseFloat(h.Longitude || h.Long || h['Long.'] || (h['Lat-Long'] ? h['Lat-Long'].split(',')[1] : ''));
+            if (isNaN(lat) || isNaN(lng)) continue;
+
+            const dist = distanceMeters(lastGps.latitude, lastGps.longitude, lat, lng);
+            if (dist < minDistance) {
+                minDistance = dist;
+                closestHoarding = h;
+            }
+        }
+
+        if (!closestHoarding) return null;
+
+        const siteName = closestHoarding["Location "] || closestHoarding.Location || closestHoarding.siteName || 'Hoarding Site';
+        const locality = closestHoarding.Locality || closestHoarding.Area || closestHoarding.City || '';
+        const trafficFacing = closestHoarding.Facing || closestHoarding['Traffic View'] || closestHoarding.facing || '';
+        const city = closestHoarding.City || 'Meerut';
+
+        return {
+            site: closestHoarding,
+            distance: Math.round(minDistance),
+            siteName,
+            locality,
+            trafficFacing,
+            city,
+            isLocked: minDistance <= 50
+        };
+    }, [lastGps, hoardingsList]);
 
     const refreshPendingCount = React.useCallback(async () => {
         setPendingCount(await countPendingStaffPhotos());
@@ -552,6 +653,8 @@ const StaffUpload = () => {
                         latitude: item.latitude,
                         longitude: item.longitude,
                         accuracy: item.accuracy,
+                        distance: item.distance || '',
+                        facing: item.facing || '',
                         orientationNormalized: true,
                         matchedSite: item.matchedSite || '',
                         siteStatus: item.siteStatus || '',
@@ -915,11 +1018,23 @@ const StaffUpload = () => {
                 }
             }
 
+            // 🎯 Distance and Facing Calculations for Watermark & History
+            const matchedDistance = Math.round(
+                matchedSiteData?.distanceM ?? (liveNearest?.distance ?? 0)
+            );
+            const trafficFacing = matchedSiteData?.Facing || matchedSiteData?.['Traffic View'] || matchedSiteData?.facing || liveNearest?.trafficFacing || '';
+            const compassStr = compassHeading ? `${compassHeading.direction} (${compassHeading.degrees}°)` : '';
+            const facingSummary = [compassStr, trafficFacing ? `Facing ${trafficFacing}` : ''].filter(Boolean).join(' • ') || 'Verified Facing';
+
             // 🎯 Stamp Authentic PinPoint GPS Card onto Image
             const siteInfoForStamp = {
-                city: matchedSiteData?.City || 'Meerut',
-                location: matchedSite || matchedSiteData?.["Location "] || matchedSiteData?.Locality || 'Verified OOH Site',
-                locality: matchedSiteData?.Locality || matchedSiteData?.Area || ''
+                city: matchedSiteData?.City || liveNearest?.city || 'Meerut',
+                location: matchedSite || matchedSiteData?.["Location "] || liveNearest?.siteName || 'Verified OOH Site',
+                locality: matchedSiteData?.Locality || matchedSiteData?.Area || liveNearest?.locality || '',
+                distance: matchedDistance > 0 ? `${matchedDistance}m` : (liveNearest?.distance ? `${liveNearest.distance}m` : ''),
+                facing: facingSummary,
+                trafficFacing: trafficFacing,
+                compassHeading: compassStr
             };
             const stampedBlob = await stampGpsWatermarkOnBlob(rawBlob, currentGps, siteInfoForStamp);
             const base64Data = await blobToDataUrl(stampedBlob);
@@ -931,6 +1046,8 @@ const StaffUpload = () => {
                 latitude: currentGps?.latitude || null,
                 longitude: currentGps?.longitude || null,
                 accuracy: currentGps?.accuracy || null,
+                distance: siteInfoForStamp.distance,
+                facing: siteInfoForStamp.facing,
                 matchedSite,
                 siteStatus,
                 status,
@@ -945,6 +1062,8 @@ const StaffUpload = () => {
                 Latitude: item.latitude,
                 Longitude: item.longitude,
                 Accuracy: item.accuracy,
+                Distance: item.distance,
+                Facing: item.facing,
                 ImageURL: base64Data,
                 Status: item.status || (matchedSite ? 'AUTO_APPROVED' : 'REVIEW_REQUIRED'),
                 Decision: item.aiDecision || (matchedSite ? 'GEMINI_GPS_AUTO_MATCH' : 'GPS_REVIEW'),
@@ -966,6 +1085,8 @@ const StaffUpload = () => {
                         timestamp: Date.now(),
                         date: new Date().toISOString(),
                         gps: gpsString,
+                        distance: item.distance,
+                        facing: item.facing,
                         source: 'Staff Live Capture',
                         status: matchedSiteData?.STATUS || 'Available'
                     };
@@ -1001,6 +1122,8 @@ const StaffUpload = () => {
                         fileData: base64Data,
                         mimeType: 'image/jpeg',
                         gps: gpsString,
+                        distance: item.distance,
+                        facing: item.facing,
                         mode: 'archive',
                         isDailyProof: true
                     }).then(res => {
@@ -1011,6 +1134,8 @@ const StaffUpload = () => {
                                 preview: driveUrl,
                                 timestamp: Date.now(),
                                 gps: gpsString,
+                                distance: item.distance,
+                                facing: item.facing,
                                 source: 'Staff Live Capture',
                                 status: siteStatus
                             });
@@ -1244,6 +1369,68 @@ const StaffUpload = () => {
                     <button type="button" onClick={startCamera}>Retry</button>
                 </div>
             )}
+
+            {/* 🧭 Live Heads-Up Display (HUD): Nearest Site, Distance, Compass Facing, GPS */}
+            <div className="staff-hud-container">
+                <div className={`staff-hud-card ${liveNearest?.isLocked ? 'locked' : ''}`}>
+                    <div className="staff-hud-header">
+                        <div className="staff-hud-target">
+                            <span className="staff-hud-pin-icon">📍</span>
+                            <div className="staff-hud-site-info">
+                                <strong className="staff-hud-site-name">
+                                    {liveNearest ? liveNearest.siteName : (lastGps?.latitude ? 'Scanning nearby hoardings...' : 'Waiting for GPS...')}
+                                </strong>
+                                {liveNearest?.locality && (
+                                    <span className="staff-hud-site-sub">
+                                        {liveNearest.locality}{liveNearest.city ? `, ${liveNearest.city}` : ''}
+                                    </span>
+                                )}
+                            </div>
+                        </div>
+                        {liveNearest && (
+                            <div className={`staff-hud-dist-badge ${liveNearest.isLocked ? 'in-range' : 'out-range'}`}>
+                                <Navigation size={13} className={liveNearest.isLocked ? 'dist-pulse' : ''} />
+                                <span>{liveNearest.distance}m</span>
+                            </div>
+                        )}
+                    </div>
+
+                    <div className="staff-hud-metrics">
+                        {/* 1. Digital Compass Facing */}
+                        <div className="staff-hud-metric-item">
+                            <Compass size={14} className="hud-metric-icon compass-icon" />
+                            <div className="hud-metric-text">
+                                <span className="hud-metric-label">Compass Facing</span>
+                                <strong className="hud-metric-val">
+                                    {compassHeading ? `${compassHeading.direction} (${compassHeading.degrees}°)` : '0° N'}
+                                </strong>
+                            </div>
+                        </div>
+
+                        {/* 2. Site Traffic Facing */}
+                        <div className="staff-hud-metric-item">
+                            <Navigation size={14} className="hud-metric-icon traffic-icon" />
+                            <div className="hud-metric-text">
+                                <span className="hud-metric-label">Traffic Facing</span>
+                                <strong className="hud-metric-val">
+                                    {liveNearest?.trafficFacing || 'Bidirectional'}
+                                </strong>
+                            </div>
+                        </div>
+
+                        {/* 3. Live High-Precision GPS Coordinates */}
+                        <div className="staff-hud-metric-item hud-span-full">
+                            <MapPin size={14} className="hud-metric-icon gps-icon" />
+                            <div className="hud-metric-text">
+                                <span className="hud-metric-label">Live GPS Fix</span>
+                                <span className="hud-metric-coords">
+                                    {lastGps?.latitude ? `${lastGps.latitude.toFixed(6)}, ${lastGps.longitude.toFixed(6)}${lastGps.accuracy ? ` (±${Math.round(lastGps.accuracy)}m)` : ''}` : 'Acquiring GPS fix...'}
+                                </span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
 
             {/* 📸 Bottom Shutter Controls */}
             <div className="staff-camera-bottom">
