@@ -22,11 +22,11 @@ jobs:
           node-version: 20
           cache: 'npm'
 
-      - name: ☕ Setup Java JDK 17
+      - name: ☕ Setup Java JDK 21 (Required for Capacitor 7)
         uses: actions/setup-java@v4
         with:
           distribution: 'zulu'
-          java-version: '17'
+          java-version: '21'
 
       - name: 🤖 Setup Android SDK
         uses: android-actions/setup-android@v3
@@ -42,7 +42,6 @@ jobs:
           if [ ! -d "android" ]; then
             npx cap add android
           fi
-          # Copy custom app icons if available
           if [ -d "resources/android/res" ]; then
             cp -r resources/android/res/* android/app/src/main/res/ 2>/dev/null || true
           fi
@@ -50,36 +49,29 @@ jobs:
 
       - name: 🛡️ Inject Android Permissions & Features
         run: |
-          MANIFEST="android/app/src/main/AndroidManifest.xml"
-          if [ -f "$MANIFEST" ]; then
-            python3 - << 'EOF'
-import re
-path = "android/app/src/main/AndroidManifest.xml"
-with open(path, "r", encoding="utf-8") as f:
-    content = f.read()
-
-permissions = """
-    <uses-permission android:name="android.permission.INTERNET" />
-    <uses-permission android:name="android.permission.CAMERA" />
-    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
-    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
-    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
-    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
-    <uses-feature android:name="android.hardware.camera" android:required="false" />
-    <uses-feature android:name="android.hardware.location.gps" android:required="false" />
-    <uses-feature android:name="android.hardware.sensor.compass" android:required="false" />
-    <uses-feature android:name="android.hardware.sensor.gyroscope" android:required="false" />
-"""
-
-if "<uses-permission android:name=\"android.permission.CAMERA\"" not in content:
-    content = content.replace("<application", permissions + "\n    <application", 1)
-    with open(path, "w", encoding="utf-8") as f:
-        f.write(content)
-    print("Permissions injected into AndroidManifest.xml")
-else:
-    print("Permissions already present in AndroidManifest.xml")
-EOF
-          fi
+          node -e '
+          const fs = require("fs");
+          const path = "android/app/src/main/AndroidManifest.xml";
+          if (!fs.existsSync(path)) process.exit(0);
+          let content = fs.readFileSync(path, "utf8");
+          const permissions = `
+              <uses-permission android:name="android.permission.INTERNET" />
+              <uses-permission android:name="android.permission.CAMERA" />
+              <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+              <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+              <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+              <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
+              <uses-feature android:name="android.hardware.camera" android:required="false" />
+              <uses-feature android:name="android.hardware.location.gps" android:required="false" />
+              <uses-feature android:name="android.hardware.sensor.compass" android:required="false" />
+              <uses-feature android:name="android.hardware.sensor.gyroscope" android:required="false" />
+          `;
+          if (!content.includes("android.permission.CAMERA")) {
+            content = content.replace("<application", permissions + "\n    <application");
+            fs.writeFileSync(path, content, "utf8");
+            console.log("Injected permissions into AndroidManifest.xml");
+          }
+          '
 
       - name: 🔨 Compile Android Debug APK with Gradle
         run: |
@@ -100,7 +92,6 @@ EOF
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          # Try uploading to existing release, or create fresh release
           gh release upload staff-apk-latest ./heera-staff-camera.apk --clobber || \
           gh release create staff-apk-latest ./heera-staff-camera.apk \
             --title "📱 Heera Staff Camera APK (Latest)" \
