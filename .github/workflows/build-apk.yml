@@ -1,0 +1,107 @@
+name: 📱 Build Android Staff Camera APK
+
+on:
+  push:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+jobs:
+  build-apk:
+    name: 📱 Build Android APK
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: 📥 Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: 🟢 Setup Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: ☕ Setup Java JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'zulu'
+          java-version: '17'
+
+      - name: 🤖 Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: 📦 Install Node Dependencies
+        run: npm install --legacy-peer-deps
+
+      - name: ⚡ Build Web Application (Vite)
+        run: npm run build
+
+      - name: 📱 Configure Capacitor & Android Platform
+        run: |
+          if [ ! -d "android" ]; then
+            npx cap add android
+          fi
+          # Copy custom app icons if available
+          if [ -d "resources/android/res" ]; then
+            cp -r resources/android/res/* android/app/src/main/res/ 2>/dev/null || true
+          fi
+          npx cap sync android
+
+      - name: 🛡️ Inject Android Permissions & Features
+        run: |
+          MANIFEST="android/app/src/main/AndroidManifest.xml"
+          if [ -f "$MANIFEST" ]; then
+            python3 - << 'EOF'
+          import re
+          path = "android/app/src/main/AndroidManifest.xml"
+          with open(path, "r", encoding="utf-8") as f:
+              content = f.read()
+
+          permissions = """
+              <uses-permission android:name="android.permission.INTERNET" />
+              <uses-permission android:name="android.permission.CAMERA" />
+              <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+              <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+              <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+              <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
+              <uses-feature android:name="android.hardware.camera" android:required="false" />
+              <uses-feature android:name="android.hardware.location.gps" android:required="false" />
+              <uses-feature android:name="android.hardware.sensor.compass" android:required="false" />
+              <uses-feature android:name="android.hardware.sensor.gyroscope" android:required="false" />
+          """
+
+          if "<uses-permission android:name=\"android.permission.CAMERA\"" not in content:
+              content = content.replace("<application", permissions + "\n    <application", 1)
+              with open(path, "w", encoding="utf-8") as f:
+                  f.write(content)
+              print("Permissions injected into AndroidManifest.xml")
+          else:
+              print("Permissions already present in AndroidManifest.xml")
+          EOF
+          fi
+
+      - name: 🔨 Compile Android Debug APK with Gradle
+        run: |
+          cd android
+          chmod +x ./gradlew
+          ./gradlew assembleDebug --stacktrace
+          cd ..
+          cp android/app/build/outputs/apk/debug/app-debug.apk ./heera-staff-camera.apk
+
+      - name: 📦 Upload APK as GitHub Actions Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: heera-staff-camera-apk
+          path: ./heera-staff-camera.apk
+          retention-days: 30
+
+      - name: 🚀 Publish APK to GitHub Releases (staff-apk-latest)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Try uploading to existing release, or create fresh release
+          gh release upload staff-apk-latest ./heera-staff-camera.apk --clobber || \
+          gh release create staff-apk-latest ./heera-staff-camera.apk \
+            --title "📱 Heera Staff Camera APK (Latest)" \
+            --notes "Latest Android APK for Field Staff Camera. Includes live GPS Geofence (50m), Compass Facing HUD, and direct inventory sync." || true
