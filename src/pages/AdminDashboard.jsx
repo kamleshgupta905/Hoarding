@@ -424,14 +424,14 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
         return '';
     };
 
-    // 📸 Daily Proof Upload State (Persists for 24 hours in localStorage or until user clicks cross)
+    // 📸 Daily Proof Upload State (Persists in localStorage + hydrates from cloud hoardings ExecutionHistory)
     const [dailyImages, setDailyImages] = useState(() => {
         try {
             const raw = localStorage.getItem('adh_daily_proof_images');
             if (!raw) return [];
             const parsed = JSON.parse(raw);
             if (!Array.isArray(parsed)) return [];
-            const cutoff = Date.now() - 24 * 60 * 60 * 1000;
+            const cutoff = Date.now() - 48 * 60 * 60 * 1000;
             const valid = parsed
                 .filter(item => item && typeof item === 'object' && (Number(item.timestamp) || 0) > cutoff)
                 .map(item => {
@@ -460,6 +460,171 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
             return [];
         }
     });
+
+    // ☁️ Helper: Hydrate Daily Images from cloud Hoardings History (Enables 2-Way Real-Time Web ⇄ Desktop Sync)
+    const hydrateDailyImagesFromHoardings = useCallback((hoardingsList) => {
+        if (!Array.isArray(hoardingsList) || hoardingsList.length === 0) return;
+
+        let dismissedKeys = new Set();
+        try {
+            const rawDismissed = localStorage.getItem('adh_dismissed_daily_proofs');
+            if (rawDismissed) {
+                const parsed = JSON.parse(rawDismissed);
+                if (Array.isArray(parsed)) {
+                    const cutoff = Date.now() - 48 * 60 * 60 * 1000;
+                    parsed.filter(d => (Number(d?.time) || 0) > cutoff).forEach(d => {
+                        if (d?.url) dismissedKeys.add(d.url);
+                        if (d?.id) dismissedKeys.add(d.id);
+                    });
+                }
+            }
+        } catch {}
+
+        const cloudCards = [];
+        const cutoff48h = Date.now() - 48 * 60 * 60 * 1000;
+
+        hoardingsList.forEach((h, hIdx) => {
+            const hist = Array.isArray(h.History) 
+                ? h.History 
+                : parseHistoryString(h.ExecutionHistory || h.History || '');
+
+            if (!Array.isArray(hist) || hist.length === 0) return;
+
+            const sl = h.SL || h['S. No.'] || h['SL NO'] || '';
+            const siteLocation = h["Locality Site Location"] || h["Location "] || h.Location || '';
+            const siteId = h._SiteID || h.UniqueID || h['Unique ID'] || h.ID || '';
+            const defaultFacing = h.Facing || h['Traffic View'] || '';
+
+            hist.forEach((entry, eIdx) => {
+                const rawUrl = typeof entry === 'object' ? (entry.url || entry.preview || '') : String(entry).split('|')[0].trim();
+                if (!rawUrl || rawUrl.startsWith('data:image/')) return;
+                const proofUrl = getDirectDriveLink(rawUrl) || rawUrl;
+                if (!proofUrl) return;
+
+                if (dismissedKeys.has(proofUrl) || dismissedKeys.has(rawUrl)) return;
+
+                const timestamp = Number(typeof entry === 'object' ? entry.timestamp : null) || (entry && entry.date ? new Date(entry.date).getTime() : Date.now());
+                const isRecent = timestamp > cutoff48h;
+                const hasProofMarker = typeof entry === 'object' && Boolean(
+                    (entry.source && (entry.source.includes('Daily') || entry.source.includes('Verified') || entry.source.includes('GPS') || entry.source.includes('Campaign'))) ||
+                    entry.gps
+                );
+
+                if (!isRecent && !hasProofMarker) return;
+
+                let gpsCoord = null;
+                const gpsString = typeof entry === 'object' ? (entry.gps || '') : '';
+                if (gpsString) {
+                    const parts = gpsString.split(/[,/]+/).map(s => parseFloat(s.trim())).filter(n => !isNaN(n));
+                    if (parts.length >= 2) {
+                        gpsCoord = { lat: parts[0], lng: parts[1] };
+                    }
+                } else if (h.Latitude && h.Longitude) {
+                    const lat = parseFloat(h.Latitude);
+                    const lng = parseFloat(h.Longitude);
+                    if (!isNaN(lat) && !isNaN(lng)) {
+                        gpsCoord = { lat, lng };
+                    }
+                }
+
+                cloudCards.push({
+                    id: `cloud_${sl || hIdx}_${timestamp}_${eIdx}`,
+                    preview: proofUrl,
+                    persistentPreview: proofUrl,
+                    uploadedUrl: proofUrl,
+                    sl: sl,
+                    matchedIndex: hIdx,
+                    matchedLocation: siteLocation,
+                    matchedSiteId: siteId,
+                    facing: (typeof entry === 'object' && entry.facing) || defaultFacing,
+                    status: (typeof entry === 'object' && entry.status) || h.STATUS || 'Available',
+                    confidence: (typeof entry === 'object' && entry.confidence) || 1.0,
+                    reasoning: (typeof entry === 'object' && entry.source) || 'Cloud Synced Daily Proof',
+                    analysis: (typeof entry === 'object' && entry.analysis) || '',
+                    gpsCoord: gpsCoord,
+                    distanceM: null,
+                    uploaded: true,
+                    uploading: false,
+                    aiLoading: false,
+                    matchFailed: false,
+                    timestamp: timestamp,
+                    uploadMode: (typeof entry === 'object' && entry.source && entry.source.includes('Campaign')) ? 'replace_master' : 'history_only',
+                    cloudSynced: true
+                });
+            });
+        });
+
+        if (cloudCards.length === 0) return;
+
+        setDailyImages(prev => {
+            const existing = Array.isArray(prev) ? prev : [];
+            const localPending = existing.filter(img => img.uploading || img.aiLoading || !img.uploaded);
+            
+            const existingByUrl = new Map();
+            existing.forEach(img => {
+                const u = img.uploadedUrl || img.preview || img.persistentPreview;
+                if (u) existingByUrl.set(u, img);
+            });
+
+            const mergedMap = new Map();
+            cloudCards.forEach(c => {
+                const key = c.uploadedUrl || c.preview;
+                const existingMatch = existingByUrl.get(key);
+                if (existingMatch) {
+                    mergedMap.set(key, {
+                        ...c,
+                        ...existingMatch,
+                        uploaded: true,
+                        uploading: false,
+                        aiLoading: false
+                    });
+                } else {
+                    mergedMap.set(key, c);
+                }
+            });
+
+            existing.forEach(img => {
+                const key = img.uploadedUrl || img.preview || img.persistentPreview;
+                if (key && !mergedMap.has(key) && !dismissedKeys.has(key)) {
+                    mergedMap.set(key, img);
+                }
+            });
+
+            const allCombined = [...localPending, ...Array.from(mergedMap.values()).filter(img => !localPending.includes(img))];
+            
+            allCombined.sort((a, b) => {
+                if ((a.uploading || a.aiLoading) && !(b.uploading || b.aiLoading)) return -1;
+                if (!(a.uploading || a.aiLoading) && (b.uploading || b.aiLoading)) return 1;
+                return (b.timestamp || 0) - (a.timestamp || 0);
+            });
+
+            return allCombined;
+        });
+    }, []);
+
+    // 🔄 Automatically hydrate daily images from hoardings whenever cloud data refreshes
+    useEffect(() => {
+        if (Array.isArray(hoardings) && hoardings.length > 0) {
+            hydrateDailyImagesFromHoardings(hoardings);
+        }
+    }, [hoardings, hydrateDailyImagesFromHoardings]);
+
+    // ⚡ Accelerate live sync when on 'daily-update' tab
+    useEffect(() => {
+        if (activeTab !== 'daily-update') return;
+        if (Array.isArray(hoardings) && hoardings.length > 0) {
+            hydrateDailyImagesFromHoardings(hoardings);
+        }
+        if (typeof window !== 'undefined') {
+            window.dispatchEvent(new CustomEvent('hoardings:sync-requested'));
+        }
+        const interval = setInterval(() => {
+            if (typeof window !== 'undefined') {
+                window.dispatchEvent(new CustomEvent('hoardings:sync-requested'));
+            }
+        }, 10000);
+        return () => clearInterval(interval);
+    }, [activeTab, hoardings, hydrateDailyImagesFromHoardings]);
 
     useEffect(() => {
         try {
@@ -526,6 +691,18 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
     };
 
     const removeDailyImage = (idxToRemove) => {
+        const itemToRemove = dailyImages[idxToRemove];
+        if (itemToRemove) {
+            const urlToRemove = itemToRemove.uploadedUrl || itemToRemove.preview || itemToRemove.persistentPreview;
+            if (urlToRemove) {
+                try {
+                    const raw = localStorage.getItem('adh_dismissed_daily_proofs');
+                    const list = raw ? JSON.parse(raw) : [];
+                    list.push({ url: urlToRemove, id: itemToRemove.id, time: Date.now() });
+                    localStorage.setItem('adh_dismissed_daily_proofs', JSON.stringify(list));
+                } catch {}
+            }
+        }
         setDailyImages(prev => prev.filter((_, idx) => idx !== idxToRemove));
         setExpandedDailyCards(prev => {
             const next = new Set();
@@ -535,6 +712,20 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
             });
             return next;
         });
+    };
+
+    const handleClearAllDailyImages = () => {
+        try {
+            const dismissed = dailyImages.map(img => ({
+                url: img.uploadedUrl || img.preview || img.persistentPreview,
+                id: img.id,
+                time: Date.now()
+            })).filter(x => Boolean(x.url));
+            const raw = localStorage.getItem('adh_dismissed_daily_proofs');
+            const list = raw ? JSON.parse(raw) : [];
+            localStorage.setItem('adh_dismissed_daily_proofs', JSON.stringify([...list, ...dismissed]));
+        } catch {}
+        setDailyImages([]);
     };
     const [selectedAssetFile, setSelectedAssetFile] = useState(null);
     const [isDragging, setIsDragging] = useState(false);
@@ -623,7 +814,46 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
     const [winCopied, setWinCopied] = useState(false);
     const [staffLinkCopied, setStaffLinkCopied] = useState(false);
 
+    // 🚀 Native Desktop Client Update State
+    const [desktopVersion, setDesktopVersion] = useState('');
+    const [desktopUpdateStatus, setDesktopUpdateStatus] = useState('idle'); // 'idle' | 'checking' | 'available' | 'latest' | 'downloading' | 'ready' | 'error'
+    const [desktopUpdatePercent, setDesktopUpdatePercent] = useState(0);
+    const [desktopUpdateError, setDesktopUpdateError] = useState('');
 
+    useEffect(() => {
+        if (typeof window === 'undefined' || !window.electronAPI) return;
+
+        if (window.electronAPI.getAppVersion) {
+            window.electronAPI.getAppVersion().then(v => setDesktopVersion(v)).catch(() => {});
+        }
+        if (window.electronAPI.onUpdateChecking) {
+            window.electronAPI.onUpdateChecking(() => setDesktopUpdateStatus('checking'));
+        }
+        if (window.electronAPI.onUpdateAvailable) {
+            window.electronAPI.onUpdateAvailable(() => setDesktopUpdateStatus('available'));
+        }
+        if (window.electronAPI.onUpdateNotAvailable) {
+            window.electronAPI.onUpdateNotAvailable(() => setDesktopUpdateStatus('latest'));
+        }
+        if (window.electronAPI.onUpdateProgress) {
+            window.electronAPI.onUpdateProgress((p) => {
+                setDesktopUpdateStatus('downloading');
+                setDesktopUpdatePercent(Math.round(p?.percent || 0));
+            });
+        }
+        if (window.electronAPI.onUpdateDownloaded) {
+            window.electronAPI.onUpdateDownloaded(() => {
+                setDesktopUpdateStatus('ready');
+                showToast('🚀 Update downloaded! It will automatically install on restart.', 'success');
+            });
+        }
+        if (window.electronAPI.onUpdateError) {
+            window.electronAPI.onUpdateError((err) => {
+                setDesktopUpdateStatus('error');
+                setDesktopUpdateError(String(err || 'Update check error'));
+            });
+        }
+    }, []);
 
     // Protect Route
     useEffect(() => {
@@ -1738,6 +1968,11 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                 } catch (cacheErr) {}
                 return nextList;
             });
+
+            // ⚡ Broadcast sync event so other devices & listeners refresh instantly
+            if (typeof window !== 'undefined') {
+                window.dispatchEvent(new CustomEvent('hoardings:sync-requested'));
+            }
         } catch (error) {
             console.error("Auto-sync failed with error:", error);
             setDailyImages(prev => {
@@ -2087,24 +2322,31 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
 
         showToast("Site released to Available!", "info");
 
+        const cleanFields = {
+            ...targetSite,
+            ...availableUpdates,
+            BookingSchedule: '[]',
+            SL: targetSL || targetSite.SL || '',
+            _SiteID: targetId || targetSite._SiteID || '',
+            status: 'Available',
+            Status: 'Available',
+            STATUS: 'Available',
+            BookedBy: '',
+            BookingStart: '',
+            BookingEnd: ''
+        };
+        // 🛡️ CRITICAL: Never pass History array as an object to prevent corrupting ExecutionHistory with [object Object]
+        delete cleanFields.History;
+        if (!cleanFields.ExecutionHistory || typeof cleanFields.ExecutionHistory !== 'string') {
+            delete cleanFields.ExecutionHistory;
+        }
+
         syncToGoogleSheet({
             action: 'updateHoarding',
             siteName: targetSite["Locality Site Location"] || targetSite["Location "] || targetSite.Location,
             siteId: targetId || '',
             sl: targetSL || '',
-            fields: {
-                ...targetSite,
-                ...availableUpdates,
-                BookingSchedule: '[]',
-                SL: targetSL || targetSite.SL || '',
-                _SiteID: targetId || targetSite._SiteID || '',
-                status: 'Available',
-                Status: 'Available',
-                STATUS: 'Available',
-                BookedBy: '',
-                BookingStart: '',
-                BookingEnd: ''
-            }
+            fields: cleanFields
         }).then(() => {
             if (typeof window !== 'undefined') {
                 window.dispatchEvent(new CustomEvent('hoardings:sync-requested'));
@@ -2261,11 +2503,14 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
             
             const cleanFields = { 
                 ...formData,
-                "ExecutionHistory": historyString
+                ...(historyString ? { "ExecutionHistory": historyString } : {})
             };
             
             const imageKeys = ['ImageURL', 'imageurl', 'Image URL', 'Site Photo', 'Photo'];
             delete cleanFields.History;
+            if (!cleanFields.ExecutionHistory || typeof cleanFields.ExecutionHistory !== 'string') {
+                delete cleanFields.ExecutionHistory;
+            }
             
             if (selectedAssetFile) {
                 imageKeys.forEach(key => delete cleanFields[key]);
@@ -4291,7 +4536,7 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                         <Zap size={18} />
                         <span>Daily Updates</span>
                     </button>
-                    <button className="nav-item" onClick={() => setIsAppDownloadModalOpen(true)}>
+                    <button className={`nav-item ${activeTab === 'download-apps' ? 'active' : ''}`} onClick={() => setActiveTab('download-apps')}>
                         <Download size={18} />
                         <span>Download Apps</span>
                     </button>
@@ -4853,7 +5098,7 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
                                          <button 
                                             type="button"
-                                            onClick={() => setIsAppDownloadModalOpen(true)}
+                                            onClick={() => setActiveTab('download-apps')}
                                             style={{
                                                 background: '#0f172a',
                                                 color: '#ffffff',
@@ -5327,7 +5572,7 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
 
                                                 <button 
                                                     type="button"
-                                                    onClick={() => setIsAppDownloadModalOpen(true)}
+                                                    onClick={() => setActiveTab('download-apps')}
                                                     style={{
                                                         background: '#ffffff',
                                                         color: '#0f172a',
@@ -5906,13 +6151,40 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                         <XCircle size={15} /> Dump All Red
                                     </button>
                                 )}
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        showToast('Refreshing cloud proofs from Google Sheets...', 'info');
+                                        if (typeof window !== 'undefined') {
+                                            window.dispatchEvent(new CustomEvent('hoardings:sync-requested'));
+                                        }
+                                    }}
+                                    style={{
+                                        display: 'inline-flex',
+                                        alignItems: 'center',
+                                        gap: '6px',
+                                        background: '#ecfdf5',
+                                        color: '#065f46',
+                                        border: '1px solid #a7f3d0',
+                                        padding: '7px 12px',
+                                        borderRadius: '8px',
+                                        fontSize: '0.78rem',
+                                        fontWeight: 700,
+                                        cursor: 'pointer',
+                                        boxShadow: 'none'
+                                    }}
+                                    title="Fetch latest photos uploaded from Web or Desktop"
+                                >
+                                    <RefreshCw size={13} />
+                                    <span>Cloud Synced (Live)</span>
+                                </button>
                                 {dailyImages.length > 0 && (
                                     <button
                                         type="button"
                                         className="ai-process-btn dump-btn"
                                         onClick={() => {
                                             if (window.confirm("Clear all items from Daily Upload?")) {
-                                                setDailyImages([]);
+                                                handleClearAllDailyImages();
                                                 setExpandedDailyCards(new Set());
                                                 localStorage.removeItem('adh_daily_proof_images');
                                             }
@@ -7661,6 +7933,512 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                         style={{ padding: '4px 0 24px 0' }}
                     >
                         <SystemGuide embedded={true} />
+                    </motion.div>
+                )}
+
+                {/* 📥 Native Applications & Downloads Dashboard View */}
+                {activeTab === 'download-apps' && (
+                    <motion.div 
+                        initial={{ opacity: 0, y: 12 }} 
+                        animate={{ opacity: 1, y: 0 }} 
+                        exit={{ opacity: 0, y: -8 }} 
+                        transition={{ duration: 0.28, ease: [0.16, 1, 0.3, 1] }} 
+                        className="dashboard-view" 
+                        style={{ maxWidth: '1080px', margin: '0 auto', padding: '12px 18px 48px' }}
+                    >
+                        {/* Page Header */}
+                        <div style={{
+                            background: '#ffffff',
+                            borderRadius: '20px',
+                            border: '1px solid #e2e8f0',
+                            padding: '24px 28px',
+                            marginBottom: '24px',
+                            boxShadow: '0 4px 20px -4px rgba(0, 0, 0, 0.05)',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            flexWrap: 'wrap',
+                            gap: '16px'
+                        }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+                                <div style={{ 
+                                    width: '48px', 
+                                    height: '48px', 
+                                    borderRadius: '14px', 
+                                    background: '#0f172a', 
+                                    color: '#ffffff', 
+                                    display: 'flex', 
+                                    alignItems: 'center', 
+                                    justifyContent: 'center',
+                                    boxShadow: '0 6px 16px rgba(15, 23, 42, 0.25)'
+                                }}>
+                                    <Download size={24} />
+                                </div>
+                                <div>
+                                    <h1 style={{ margin: 0, fontSize: '1.45rem', fontWeight: 800, color: '#0f172a', letterSpacing: '-0.02em' }}>
+                                        Official Applications & Client Suite
+                                    </h1>
+                                    <p style={{ margin: '4px 0 0', color: '#64748b', fontSize: '0.86rem' }}>
+                                        Native on-ground audit tools and desktop administration client with silent background updates.
+                                    </p>
+                                </div>
+                            </div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                                <span style={{
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: '6px',
+                                    background: '#f0fdf4',
+                                    border: '1px solid #bbf7d0',
+                                    color: '#15803d',
+                                    padding: '6px 14px',
+                                    borderRadius: '20px',
+                                    fontSize: '0.78rem',
+                                    fontWeight: 700
+                                }}>
+                                    <Sparkles size={14} color="#16a34a" />
+                                    {typeof window !== 'undefined' && window.electronAPI ? 'Desktop Client Active' : 'Web Console Active'}
+                                </span>
+                            </div>
+                        </div>
+
+                        {/* Two Main Cards Grid */}
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(360px, 1fr))', gap: '20px', marginBottom: '24px' }}>
+                            
+                            {/* 📱 Card 1: Staff Camera Android APK */}
+                            <div style={{ 
+                                background: '#ffffff', 
+                                border: '1px solid #e2e8f0', 
+                                borderRadius: '20px', 
+                                padding: '24px', 
+                                display: 'flex', 
+                                flexDirection: 'column',
+                                justifyContent: 'space-between',
+                                boxShadow: '0 4px 16px -2px rgba(0, 0, 0, 0.04)'
+                            }}>
+                                <div>
+                                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                                            <div style={{ 
+                                                width: '40px', 
+                                                height: '40px', 
+                                                borderRadius: '12px', 
+                                                background: '#16a34a', 
+                                                color: '#ffffff', 
+                                                display: 'flex', 
+                                                alignItems: 'center', 
+                                                justifyContent: 'center',
+                                                boxShadow: '0 4px 12px rgba(22, 163, 74, 0.25)'
+                                            }}>
+                                                <Smartphone size={22} />
+                                            </div>
+                                            <div>
+                                                <h2 style={{ margin: 0, fontSize: '1.1rem', fontWeight: 800, color: '#1e293b' }}>Heera Staff Camera</h2>
+                                                <span style={{ fontSize: '0.76rem', color: '#64748b' }}>Android APK v1.2</span>
+                                            </div>
+                                        </div>
+                                        <span style={{ 
+                                            background: '#dcfce7', 
+                                            color: '#15803d', 
+                                            fontSize: '0.74rem', 
+                                            fontWeight: 700, 
+                                            padding: '4px 10px', 
+                                            borderRadius: '20px' 
+                                        }}>
+                                            15 MB • Android
+                                        </span>
+                                    </div>
+
+                                    <div style={{ 
+                                        display: 'flex', 
+                                        flexDirection: 'column', 
+                                        gap: '8px', 
+                                        color: '#475569', 
+                                        fontSize: '0.82rem',
+                                        marginBottom: '16px',
+                                        background: '#f8fafc',
+                                        padding: '12px 14px',
+                                        borderRadius: '12px',
+                                        border: '1px solid #f1f5f9'
+                                    }}>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                            <Check size={14} color="#16a34a" /> <span>0s Instant Viewfinder with Geo-Tagging</span>
+                                        </div>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                            <Check size={14} color="#16a34a" /> <span>50m Geofenced GPS Matching</span>
+                                        </div>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                            <Check size={14} color="#16a34a" /> <span>Offline Queue with Automatic Cloud Upload</span>
+                                        </div>
+                                    </div>
+
+                                    {/* QR Code Card */}
+                                    <div style={{ 
+                                        background: '#f8fafc', 
+                                        border: '1px solid #e2e8f0', 
+                                        borderRadius: '14px', 
+                                        padding: '14px', 
+                                        display: 'flex', 
+                                        alignItems: 'center', 
+                                        gap: '16px',
+                                        marginBottom: '20px'
+                                    }}>
+                                        <img 
+                                            src="https://api.qrserver.com/v1/create-qr-code/?size=120x120&data=https%3A%2F%2Fgithub.com%2Fkamleshgupta905%2FHoarding%2Freleases%2Fdownload%2Fstaff-apk-latest%2Fheera-staff-camera.apk" 
+                                            alt="Scan to Download APK" 
+                                            style={{ width: '80px', height: '80px', borderRadius: '10px', border: '1px solid #e2e8f0', flexShrink: 0, background: '#fff' }}
+                                        />
+                                        <div style={{ fontSize: '0.78rem', color: '#64748b', lineHeight: 1.4 }}>
+                                            <div style={{ fontWeight: 700, color: '#0f172a', marginBottom: '3px', display: 'flex', alignItems: 'center', gap: '5px', fontSize: '0.84rem' }}>
+                                                <QrCode size={15} color="#16a34a" /> Scan with Mobile Phone
+                                            </div>
+                                            Point phone camera at QR to directly download and install APK on any Android phone.
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div style={{ display: 'flex', gap: '10px' }}>
+                                    <a 
+                                        href="https://github.com/kamleshgupta905/Hoarding/releases/download/staff-apk-latest/heera-staff-camera.apk" 
+                                        target="_blank" 
+                                        rel="noopener noreferrer"
+                                        style={{
+                                            flex: 1,
+                                            background: '#16a34a',
+                                            color: '#ffffff',
+                                            padding: '11px 16px',
+                                            borderRadius: '12px',
+                                            fontWeight: 700,
+                                            fontSize: '0.86rem',
+                                            textDecoration: 'none',
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            justifyContent: 'center',
+                                            gap: '8px',
+                                            boxShadow: '0 4px 12px rgba(22, 163, 74, 0.25)',
+                                            transition: 'opacity 0.15s ease'
+                                        }}
+                                        onMouseEnter={e => e.currentTarget.style.opacity = '0.9'}
+                                        onMouseLeave={e => e.currentTarget.style.opacity = '1'}
+                                    >
+                                        <Download size={16} /> Download APK (Direct)
+                                    </a>
+                                    <button 
+                                        type="button"
+                                        onClick={() => {
+                                            if (navigator.clipboard) {
+                                                navigator.clipboard.writeText('https://github.com/kamleshgupta905/Hoarding/releases/download/staff-apk-latest/heera-staff-camera.apk');
+                                                setApkCopied(true);
+                                                setTimeout(() => setApkCopied(false), 2000);
+                                            }
+                                        }}
+                                        style={{ 
+                                            background: apkCopied ? '#f0fdf4' : '#ffffff', 
+                                            border: `1.5px solid ${apkCopied ? '#16a34a' : '#cbd5e1'}`, 
+                                            color: apkCopied ? '#15803d' : '#0f172a', 
+                                            padding: '11px 16px', 
+                                            borderRadius: '12px', 
+                                            fontSize: '0.84rem', 
+                                            fontWeight: 700, 
+                                            cursor: 'pointer',
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            gap: '6px'
+                                        }}
+                                    >
+                                        {apkCopied ? <Check size={15} /> : <Share2 size={15} />}
+                                        <span>{apkCopied ? 'Link Copied' : 'Copy'}</span>
+                                    </button>
+                                </div>
+                            </div>
+
+                            {/* 💻 Card 2: Windows Desktop App (.exe) */}
+                            <div style={{ 
+                                background: '#ffffff', 
+                                border: '1px solid #e2e8f0', 
+                                borderRadius: '20px', 
+                                padding: '24px', 
+                                display: 'flex', 
+                                flexDirection: 'column',
+                                justifyContent: 'space-between',
+                                boxShadow: '0 4px 16px -2px rgba(0, 0, 0, 0.04)'
+                            }}>
+                                <div>
+                                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                                            <div style={{ 
+                                                width: '40px', 
+                                                height: '40px', 
+                                                borderRadius: '12px', 
+                                                background: '#0f172a', 
+                                                color: '#ffffff', 
+                                                display: 'flex', 
+                                                alignItems: 'center', 
+                                                justifyContent: 'center',
+                                                boxShadow: '0 4px 12px rgba(15, 23, 42, 0.25)'
+                                            }}>
+                                                <Monitor size={22} />
+                                            </div>
+                                            <div>
+                                                <h2 style={{ margin: 0, fontSize: '1.1rem', fontWeight: 800, color: '#1e293b' }}>Heera Hoardings PC</h2>
+                                                <span style={{ fontSize: '0.76rem', color: '#64748b' }}>Windows & Mac Client</span>
+                                            </div>
+                                        </div>
+                                        <span style={{ 
+                                            background: '#f1f5f9', 
+                                            color: '#334155', 
+                                            fontSize: '0.74rem', 
+                                            fontWeight: 700, 
+                                            padding: '4px 10px', 
+                                            borderRadius: '20px' 
+                                        }}>
+                                            64-bit Native
+                                        </span>
+                                    </div>
+
+                                    <div style={{ 
+                                        display: 'flex', 
+                                        flexDirection: 'column', 
+                                        gap: '8px', 
+                                        color: '#475569', 
+                                        fontSize: '0.82rem',
+                                        marginBottom: '16px',
+                                        background: '#f8fafc',
+                                        padding: '12px 14px',
+                                        borderRadius: '12px',
+                                        border: '1px solid #f1f5f9'
+                                    }}>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                            <Check size={14} color="#0f172a" /> <span>60 FPS Native Performance with Zero Browser Lag</span>
+                                        </div>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                            <Check size={14} color="#0f172a" /> <span>Fast Native PPT Upload & Direct Excel Sync</span>
+                                        </div>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                            <Check size={14} color="#0f172a" /> <span>Silent Background Auto-Updates (Zero-Touch)</span>
+                                        </div>
+                                    </div>
+
+                                    {/* Desktop Info Box */}
+                                    <div style={{ 
+                                        background: '#f8fafc', 
+                                        border: '1px solid #e2e8f0', 
+                                        borderRadius: '14px', 
+                                        padding: '14px', 
+                                        display: 'flex', 
+                                        alignItems: 'center', 
+                                        gap: '16px',
+                                        marginBottom: '20px'
+                                    }}>
+                                        <div style={{ 
+                                            width: '42px', 
+                                            height: '42px', 
+                                            borderRadius: '12px', 
+                                            background: '#ffffff', 
+                                            border: '1px solid #e2e8f0',
+                                            display: 'flex', 
+                                            alignItems: 'center', 
+                                            justifyContent: 'center', 
+                                            color: '#0f172a',
+                                            flexShrink: 0 
+                                        }}>
+                                            <Zap size={20} color="#4f46e5" />
+                                        </div>
+                                        <div style={{ fontSize: '0.78rem', color: '#64748b', lineHeight: 1.4 }}>
+                                            <div style={{ fontWeight: 700, color: '#0f172a', marginBottom: '3px', fontSize: '0.84rem' }}>
+                                                Native Desktop Installation
+                                            </div>
+                                            Direct hardware acceleration, native file dialogs, and instant cloud sync.
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div style={{ display: 'flex', gap: '10px' }}>
+                                    <a 
+                                        href="https://github.com/kamleshgupta905/hoarding-desktop-releases/releases/latest" 
+                                        target="_blank" 
+                                        rel="noopener noreferrer"
+                                        style={{
+                                            flex: 1,
+                                            background: '#0f172a',
+                                            color: '#ffffff',
+                                            padding: '11px 16px',
+                                            borderRadius: '12px',
+                                            fontWeight: 700,
+                                            fontSize: '0.86rem',
+                                            textDecoration: 'none',
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            justifyContent: 'center',
+                                            gap: '8px',
+                                            boxShadow: '0 4px 12px rgba(15, 23, 42, 0.2)',
+                                            transition: 'opacity 0.15s ease'
+                                        }}
+                                        onMouseEnter={e => e.currentTarget.style.opacity = '0.9'}
+                                        onMouseLeave={e => e.currentTarget.style.opacity = '1'}
+                                    >
+                                        <Download size={16} /> Download Setup (.exe)
+                                    </a>
+                                    <button 
+                                        type="button"
+                                        onClick={() => setActiveTab('guide')}
+                                        style={{ 
+                                            background: '#ffffff', 
+                                            border: '1.5px solid #cbd5e1', 
+                                            color: '#1e293b', 
+                                            padding: '11px 16px', 
+                                            borderRadius: '12px', 
+                                            fontSize: '0.84rem', 
+                                            fontWeight: 700, 
+                                            cursor: 'pointer',
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            gap: '6px'
+                                        }}
+                                        title="View System Guide"
+                                    >
+                                        <BookOpen size={15} />
+                                        <span>Guide</span>
+                                    </button>
+                                </div>
+                            </div>
+
+                        </div>
+
+                        {/* ⚡ Card 3: Zero-Touch Silent Background Auto-Updater */}
+                        <div style={{
+                            background: '#ffffff',
+                            borderRadius: '20px',
+                            border: '1.5px solid #e0e7ff',
+                            padding: '24px 28px',
+                            boxShadow: '0 4px 20px -4px rgba(79, 70, 229, 0.08)'
+                        }}>
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '16px', marginBottom: '16px' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+                                    <div style={{
+                                        width: '42px',
+                                        height: '42px',
+                                        borderRadius: '12px',
+                                        background: '#4f46e5',
+                                        color: '#ffffff',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'center',
+                                        boxShadow: '0 4px 12px rgba(79, 70, 229, 0.3)'
+                                    }}>
+                                        <RefreshCw size={20} />
+                                    </div>
+                                    <div>
+                                        <h3 style={{ margin: 0, fontSize: '1.1rem', fontWeight: 800, color: '#1e293b' }}>
+                                            Zero-Touch Background Auto-Updater
+                                        </h3>
+                                        <p style={{ margin: '3px 0 0', color: '#64748b', fontSize: '0.82rem' }}>
+                                            Desktop app automatically checks for releases and updates silently in the background. No manual installer required.
+                                        </p>
+                                    </div>
+                                </div>
+
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                                    {typeof window !== 'undefined' && window.electronAPI ? (
+                                        <button
+                                            type="button"
+                                            onClick={() => {
+                                                if (window.electronAPI.checkForUpdates) {
+                                                    setDesktopUpdateStatus('checking');
+                                                    window.electronAPI.checkForUpdates();
+                                                }
+                                            }}
+                                            style={{
+                                                background: '#4f46e5',
+                                                color: '#ffffff',
+                                                border: 'none',
+                                                padding: '9px 18px',
+                                                borderRadius: '10px',
+                                                fontSize: '0.82rem',
+                                                fontWeight: 700,
+                                                cursor: 'pointer',
+                                                display: 'inline-flex',
+                                                alignItems: 'center',
+                                                gap: '6px'
+                                            }}
+                                        >
+                                            <RefreshCw size={14} className={desktopUpdateStatus === 'checking' ? 'animate-spin' : ''} />
+                                            <span>{desktopUpdateStatus === 'checking' ? 'Checking...' : 'Check for Updates'}</span>
+                                        </button>
+                                    ) : (
+                                        <span style={{
+                                            background: '#f1f5f9',
+                                            color: '#475569',
+                                            padding: '6px 12px',
+                                            borderRadius: '8px',
+                                            fontSize: '0.78rem',
+                                            fontWeight: 700
+                                        }}>
+                                            Running in Web Browser
+                                        </span>
+                                    )}
+
+                                    {desktopUpdateStatus === 'ready' && typeof window !== 'undefined' && window.electronAPI && (
+                                        <button
+                                            type="button"
+                                            onClick={() => window.electronAPI.installUpdate?.()}
+                                            style={{
+                                                background: '#16a34a',
+                                                color: '#ffffff',
+                                                border: 'none',
+                                                padding: '9px 18px',
+                                                borderRadius: '10px',
+                                                fontSize: '0.82rem',
+                                                fontWeight: 700,
+                                                cursor: 'pointer',
+                                                display: 'inline-flex',
+                                                alignItems: 'center',
+                                                gap: '6px'
+                                            }}
+                                        >
+                                            <Sparkles size={14} />
+                                            <span>Restart & Apply Update Now</span>
+                                        </button>
+                                    )}
+                                </div>
+                            </div>
+
+                            {/* Status Bar */}
+                            <div style={{
+                                background: '#f8fafc',
+                                border: '1px solid #e2e8f0',
+                                borderRadius: '12px',
+                                padding: '14px 18px',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'space-between',
+                                flexWrap: 'wrap',
+                                gap: '10px'
+                            }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.84rem' }}>
+                                    <span style={{ color: '#64748b' }}>Current Version:</span>
+                                    <strong style={{ color: '#0f172a' }}>{desktopVersion ? `v${desktopVersion}` : 'v1.5.8 (Web / App)'}</strong>
+                                    <span style={{ color: '#94a3b8' }}>•</span>
+                                    <span style={{
+                                        color: desktopUpdateStatus === 'ready' ? '#16a34a' :
+                                               desktopUpdateStatus === 'downloading' ? '#2563eb' :
+                                               desktopUpdateStatus === 'checking' ? '#d97706' : '#64748b',
+                                        fontWeight: 600
+                                    }}>
+                                        {desktopUpdateStatus === 'ready' ? '🚀 New Update Downloaded! Ready to install.' :
+                                         desktopUpdateStatus === 'downloading' ? `⏳ Downloading new update in background (${desktopUpdatePercent}%)...` :
+                                         desktopUpdateStatus === 'checking' ? '🔍 Checking GitHub releases for updates...' :
+                                         desktopUpdateStatus === 'latest' ? '✅ You are running the latest version.' :
+                                         '⚡ Auto-Update Active (Updates download automatically on start & every 15 min)'}
+                                    </span>
+                                </div>
+
+                                <span style={{ fontSize: '0.76rem', color: '#94a3b8' }}>
+                                    Target: kamleshgupta905/hoarding-desktop-releases
+                                </span>
+                            </div>
+                        </div>
+
                     </motion.div>
                 )}
                 {uploadNotice && (
