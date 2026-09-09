@@ -35,15 +35,13 @@ jobs:
           $pkg = Get-Content -Raw -Path package.json | ConvertFrom-Json
           $tag = "v" + $pkg.version
           Write-Host "Checking if release tag $tag already exists..."
-          $tagExists = git tag -l $tag
-          if ($tagExists) {
+          while (git tag -l $tag) {
               Write-Host "Tag $tag already exists! Auto-bumping patch version so electron-updater triggers update..."
               npm version patch --no-git-tag-version
-              $newPkg = Get-Content -Raw -Path package.json | ConvertFrom-Json
-              Write-Host "Updated Version to: $($newPkg.version)"
-          } else {
-              Write-Host "Version $tag is ready."
+              $pkg = Get-Content -Raw -Path package.json | ConvertFrom-Json
+              $tag = "v" + $pkg.version
           }
+          Write-Host "Final target release version: $($pkg.version) ($tag)"
           node scripts/sync-version.js
 
       - name: ⚡ Build Latest Admin Web & Package Desktop App (.exe)
