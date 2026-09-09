@@ -18,6 +18,15 @@ window.addEventListener('vite:preloadError', (event) => {
 // Activate Protection
 disableInspect();
 
+// 🛡️ Register Service Worker for offline resilience & instant caching in mobile/PWA
+if (typeof window !== 'undefined' && 'serviceWorker' in navigator && !window.electronAPI?.isElectron) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/sw.js').catch((err) => {
+      console.warn('[SW Registration Notice]:', err);
+    });
+  });
+}
+
 createRoot(document.getElementById('root')).render(
   <StrictMode>
     <App />

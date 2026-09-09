@@ -1,12 +1,12 @@
 {
-  "version": "1.5.5",
-  "buildTimestamp": 1756867300000,
-  "buildDate": "2026-09-03T09:00:00Z",
-  "releaseTag": "v1.5.5",
-  "apkUrl": "https://github.com/kamleshgupta905/Hoarding/releases/download/staff-apk-latest/heera-staff-camera.apk",
   "features": [
     "Move Traffic To / From directly into the FACING & TRAFFIC column in Clients & Booking table",
     "Interactive Active and Upcoming slot filter tabs with live count badges in Clients & Booking (v1.5.4)",
     "Multi-Slot Date Range Booking Engine with Conflict Prevention and Pro-Rata Billing (v1.5.0)"
-  ]
+  ],
+  "version": "1.5.6",
+  "buildTimestamp": 1788943015284,
+  "buildDate": "2026-09-09T08:36:55.284Z",
+  "releaseTag": "v1.5.6",
+  "apkUrl": "https://github.com/kamleshgupta905/Hoarding/releases/download/staff-apk-latest/heera-staff-camera.apk"
 }

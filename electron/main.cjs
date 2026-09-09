@@ -199,7 +199,8 @@ ipcMain.on('check-for-updates', () => {
 });
 
 ipcMain.on('install-update-now', () => {
-    autoUpdater.quitAndInstall();
+    // isSilent = true (unattended), isForceRunAfter = true (auto-restart)
+    autoUpdater.quitAndInstall(true, true);
 });
 
 ipcMain.handle('get-app-version', () => {

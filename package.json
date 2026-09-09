@@ -1,12 +1,13 @@
 {
   "name": "hoarding-discovery",
   "private": true,
-  "version": "1.5.5",
+  "version": "1.5.6",
   "type": "module",
   "engines": {
     "node": ">=20"
   },
   "scripts": {
+    "prebuild": "node scripts/sync-version.js",
     "dev": "vite",
     "build": "vite build",
     "test": "vitest run",

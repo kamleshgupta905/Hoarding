@@ -4,6 +4,7 @@
   "webDir": "dist",
   "bundledWebRuntime": false,
   "server": {
+    "url": "https://hoarding-hd9a.vercel.app/?mode=staff",
     "androidScheme": "https",
     "cleartext": true
   },
