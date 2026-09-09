@@ -662,6 +662,19 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
         return () => window.removeEventListener('keydown', handleGlobalKeyDown);
     }, [isSheetFullscreen, previewHoarding, isAddModalOpen, isEditModalOpen, deleteTarget, bulkDeleteTarget, isExcelImportOpen, isInventoryFilterOpen]);
 
+    // Prevent default browser file navigation on Electron desktop app when dragging images
+    useEffect(() => {
+        const handlePreventDrag = (e) => {
+            e.preventDefault();
+        };
+        window.addEventListener('dragover', handlePreventDrag);
+        window.addEventListener('drop', handlePreventDrag);
+        return () => {
+            window.removeEventListener('dragover', handlePreventDrag);
+            window.removeEventListener('drop', handlePreventDrag);
+        };
+    }, []);
+
     useEffect(() => {
         let active = true;
         const refreshStaffUploads = async () => {
@@ -1817,18 +1830,36 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
         
         saveSiteBookingSlots(targetSite, updatedSlots);
 
-        const liveStatus = resolveSiteLiveStatus({ ...targetSite, BookingSchedule: updatedSlots });
-        const primarySlot = liveStatus.slot || updatedSlots[0];
+        const isNowEmpty = updatedSlots.length === 0;
+        let liveStatus = null;
+        let primarySlot = null;
 
-        const bookingUpdates = {
-            STATUS: liveStatus.status === 'Available' ? 'Available' : 'Booked',
-            status: liveStatus.status === 'Available' ? 'Available' : 'Booked',
-            Status: liveStatus.status === 'Available' ? 'Available' : 'Booked',
+        if (!isNowEmpty) {
+            liveStatus = resolveSiteLiveStatus({ ...targetSite, BookingSchedule: updatedSlots });
+            primarySlot = liveStatus.slot || updatedSlots[0];
+        }
+
+        const bookingUpdates = isNowEmpty ? {
+            STATUS: 'Available',
+            status: 'Available',
+            Status: 'Available',
+            BookedBy: '',
+            BookingStart: '',
+            BookingEnd: '',
+            BookingSchedule: []
+        } : {
+            STATUS: liveStatus?.status === 'Available' ? 'Available' : 'Booked',
+            status: liveStatus?.status === 'Available' ? 'Available' : 'Booked',
+            Status: liveStatus?.status === 'Available' ? 'Available' : 'Booked',
             BookedBy: primarySlot ? primarySlot.client : '',
             BookingStart: primarySlot ? primarySlot.start : '',
             BookingEnd: primarySlot ? primarySlot.end : '',
             BookingSchedule: updatedSlots
         };
+
+        if (isNowEmpty) {
+            removeSiteBooking(targetSite);
+        }
 
         const targetSL = targetSite.SL || targetSite["S. No."] || targetSite["SL NO"];
         const targetId = targetSite.UniqueID || targetSite["Unique ID"] || targetSite.ID || targetSite._SiteID;
@@ -1858,7 +1889,7 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
             });
         }
 
-        showToast("Booking slot released!", "info");
+        showToast(isNowEmpty ? "Site released to Available!" : "Booking slot released!", "info");
 
         syncToGoogleSheet({
             action: 'updateHoarding',
@@ -1873,7 +1904,14 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                 _SiteID: targetId || targetSite._SiteID || '',
                 status: bookingUpdates.STATUS,
                 Status: bookingUpdates.STATUS,
-                STATUS: bookingUpdates.STATUS
+                STATUS: bookingUpdates.STATUS,
+                BookedBy: bookingUpdates.BookedBy,
+                BookingStart: bookingUpdates.BookingStart,
+                BookingEnd: bookingUpdates.BookingEnd
+            }
+        }).then(() => {
+            if (typeof window !== 'undefined') {
+                window.dispatchEvent(new CustomEvent('hoardings:sync-requested'));
             }
         }).catch(err => console.warn("Remove slot background sync:", err));
     };
@@ -1988,6 +2026,10 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                 Status: bookingUpdates.STATUS,
                 STATUS: bookingUpdates.STATUS
             }
+        }).then(() => {
+            if (typeof window !== 'undefined') {
+                window.dispatchEvent(new CustomEvent('hoardings:sync-requested'));
+            }
         }).catch(err => console.warn("Booking background sync:", err));
     };
 
@@ -2058,7 +2100,14 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                 _SiteID: targetId || targetSite._SiteID || '',
                 status: 'Available',
                 Status: 'Available',
-                STATUS: 'Available'
+                STATUS: 'Available',
+                BookedBy: '',
+                BookingStart: '',
+                BookingEnd: ''
+            }
+        }).then(() => {
+            if (typeof window !== 'undefined') {
+                window.dispatchEvent(new CustomEvent('hoardings:sync-requested'));
             }
         }).catch(err => console.warn("Reset available background sync:", err));
     };
@@ -2341,14 +2390,22 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                 sl: targetSL || '',
                 fields: {
                     ...fullUpdatedFields,
+                    BookingSchedule: JSON.stringify(existingSlots),
                     SL: targetSL || fullUpdatedFields.SL || '',
                     _SiteID: targetId || fullUpdatedFields._SiteID || '',
                     status: fullUpdatedFields.STATUS,
                     Status: fullUpdatedFields.STATUS,
-                    STATUS: fullUpdatedFields.STATUS
+                    STATUS: fullUpdatedFields.STATUS,
+                    BookedBy: fullUpdatedFields.BookedBy || '',
+                    BookingStart: fullUpdatedFields.BookingStart || '',
+                    BookingEnd: fullUpdatedFields.BookingEnd || ''
                 },
                 fileData: fileData,
                 mimeType: mimeType
+            }).then(() => {
+                if (typeof window !== 'undefined') {
+                    window.dispatchEvent(new CustomEvent('hoardings:sync-requested'));
+                }
             }).catch(err => console.warn("Update background sync notice:", err));
         } catch (err) {
             showToast("Error updating asset: " + err.message, "error");
@@ -6092,7 +6149,7 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                                                 newImages[idx].matchFailed = false;
                                                                 newImages[idx].reasoning = `Manual selection: #${newImages[idx].sl} | ${newImages[idx].matchedLocation} [Facing: ${newImages[idx].facing}]`;
                                                                 setDailyImages(newImages);
-                                                                if (newImages[idx].uploaded && prevSl !== newImages[idx].sl) {
+                                                                if ((newImages[idx].uploaded && prevSl !== newImages[idx].sl) || (!newImages[idx].uploaded && newImages[idx].matchedLocation)) {
                                                                     await triggerAutoUpload(idx, newImages[idx]);
                                                                 }
                                                             } else {
@@ -6145,7 +6202,7 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                                                                 newImages[idx].reasoning = `Switched to #${newImages[idx].sl} | Facing: ${twin.facing} (${twin.distanceM}m away)`;
                                                                                 newImages[idx].matchFailed = false;
                                                                                 setDailyImages(newImages);
-                                                                                if (newImages[idx].uploaded && prevSl !== newImages[idx].sl) {
+                                                                                if ((newImages[idx].uploaded && prevSl !== newImages[idx].sl) || (!newImages[idx].uploaded && newImages[idx].matchedLocation)) {
                                                                                     await triggerAutoUpload(idx, newImages[idx]);
                                                                                 }
                                                                             }}

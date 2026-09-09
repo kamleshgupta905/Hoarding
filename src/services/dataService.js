@@ -272,16 +272,19 @@ export const normalizeHoarding = (item) => {
   let bookingEnd = item.BookingEnd || item.bookingEnd || '';
 
   if (localBooking) {
-    if (localBooking.STATUS === 'Available') {
-      status = 'Available';
-      bookedBy = '';
-      bookingStart = '';
-      bookingEnd = '';
-    } else if (localBooking.STATUS === 'Booked' || localBooking.STATUS === 'Occupied') {
-      status = localBooking.STATUS;
-      bookedBy = localBooking.BookedBy || bookedBy;
-      bookingStart = localBooking.BookingStart || bookingStart;
-      bookingEnd = localBooking.BookingEnd || bookingEnd;
+    const isRecentLocal = (Date.now() - (Number(localBooking.updatedAt) || 0)) < 45000;
+    if (isRecentLocal) {
+      if (localBooking.STATUS === 'Available') {
+        status = 'Available';
+        bookedBy = '';
+        bookingStart = '';
+        bookingEnd = '';
+      } else if (localBooking.STATUS === 'Booked' || localBooking.STATUS === 'Occupied') {
+        status = localBooking.STATUS;
+        bookedBy = localBooking.BookedBy || bookedBy;
+        bookingStart = localBooking.BookingStart || bookingStart;
+        bookingEnd = localBooking.BookingEnd || bookingEnd;
+      }
     }
   }
 
@@ -755,17 +758,34 @@ export const getSiteBookingSlots = (site = {}) => {
   let slots = [];
 
   // 1. Try reading from site.BookingSchedule
-  if (site.BookingSchedule) {
+  if (site.BookingSchedule !== undefined && site.BookingSchedule !== null) {
     if (Array.isArray(site.BookingSchedule)) {
       slots = [...site.BookingSchedule];
-    } else if (typeof site.BookingSchedule === 'string' && site.BookingSchedule.trim().startsWith('[')) {
-      try {
-        slots = JSON.parse(site.BookingSchedule);
-      } catch {}
+      // If site explicitly has an array (even if empty []), respect it!
+      if (slots.length > 0 || site.BookingSchedule.length === 0) {
+        return slots
+          .filter(s => s && s.start && s.end)
+          .sort((a, b) => String(a.start).localeCompare(String(b.start)));
+      }
+    } else if (typeof site.BookingSchedule === 'string') {
+      const trimmed = site.BookingSchedule.trim();
+      if (trimmed === '[]') {
+        return [];
+      }
+      if (trimmed.startsWith('[')) {
+        try {
+          const parsed = JSON.parse(trimmed);
+          if (Array.isArray(parsed)) {
+            return parsed
+              .filter(s => s && s.start && s.end)
+              .sort((a, b) => String(a.start).localeCompare(String(b.start)));
+          }
+        } catch {}
+      }
     }
   }
 
-  // 2. Check localStorage for local schedule overrides
+  // 2. Check localStorage for local schedule overrides (explicit empty or valid list)
   if (typeof window !== 'undefined') {
     try {
       const rawSchedules = localStorage.getItem('adh_booking_schedules');
@@ -773,28 +793,52 @@ export const getSiteBookingSlots = (site = {}) => {
         const schedules = JSON.parse(rawSchedules);
         const keys = getSiteBookingKeys(site);
         for (const k of keys) {
-          if (Array.isArray(schedules[k]) && schedules[k].length > 0) {
+          if (Array.isArray(schedules[k])) {
+            if (schedules[k].length === 0) {
+              return [];
+            }
             slots = [...schedules[k]];
-            break;
+            return slots
+              .filter(s => s && s.start && s.end)
+              .sort((a, b) => String(a.start).localeCompare(String(b.start)));
           }
         }
       }
     } catch {}
   }
 
-  // 3. Fallback: Synthesize from legacy single-slot fields (BookedBy, BookingStart, BookingEnd)
-  if (slots.length === 0) {
-    const isBooked = (site.STATUS || '').toLowerCase() === 'booked' || (site.STATUS || '').toLowerCase() === 'occupied';
-    const client = String(site.BookedBy || site.ClientName || '').trim();
-    if (isBooked || client) {
-      slots.push({
-        id: 'legacy-slot-1',
-        client: client || 'Occupied',
-        start: site.BookingStart || new Date().toISOString().split('T')[0],
-        end: site.BookingEnd || new Date(Date.now() + 30 * 86400000).toISOString().split('T')[0],
-        status: 'Booked'
-      });
-    }
+  // 3. Fallback: Synthesize from legacy single-slot fields ONLY if legitimate booking data exists.
+  // CRITICAL RULE: NEVER synthesize fake 30-day "Occupied" slots if client is empty AND dates are empty!
+  // If status is "Available", NEVER synthesize!
+  const statusStr = (site.STATUS || site.status || '').toLowerCase();
+  if (statusStr === 'available') {
+    return [];
+  }
+
+  const client = String(site.BookedBy || site['Booked By'] || site.ClientName || site['Client Name'] || '').trim();
+  const start = site.BookingStart || site['Booking Start'] || site.bookingStart || '';
+  const end = site.BookingEnd || site['Booking End'] || site.bookingEnd || '';
+  const isBooked = statusStr === 'booked' || statusStr === 'occupied';
+
+  // Legacy slot is ONLY synthesized if:
+  // (A) There is a legitimate client name (not empty, not placeholder "Occupied")
+  // OR (B) isBooked is true AND actual start or end dates exist!
+  if (client && client.toLowerCase() !== 'occupied') {
+    slots.push({
+      id: 'legacy-slot-1',
+      client: client,
+      start: start || new Date().toISOString().split('T')[0],
+      end: end || new Date(Date.now() + 30 * 86400000).toISOString().split('T')[0],
+      status: 'Booked'
+    });
+  } else if (isBooked && (start || end)) {
+    slots.push({
+      id: 'legacy-slot-1',
+      client: client || 'Occupied',
+      start: start || new Date().toISOString().split('T')[0],
+      end: end || new Date(Date.now() + 30 * 86400000).toISOString().split('T')[0],
+      status: 'Booked'
+    });
   }
 
   // Normalize and sort slots chronologically

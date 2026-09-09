@@ -44,7 +44,7 @@ const ClientReport = lazyWithRetry(() => import('./pages/ClientReport'));
 const StaffUpload = lazyWithRetry(() => import('./pages/StaffUpload'));
 const SystemGuide = lazyWithRetry(() => import('./pages/SystemGuide'));
 
-const LIVE_REFRESH_INTERVAL_MS = 60000;
+const LIVE_REFRESH_INTERVAL_MS = 15000;
 const LOCAL_SYNC_PRESERVATION_MS = 30000;
 
 // Lazy Image component
@@ -438,38 +438,43 @@ function App() {
           }
         }
 
-        // Overlay multi-slot schedule if present locally
+        // Overlay multi-slot schedule if present locally AND cloud does not provide authoritative schedule
         for (const k of keys) {
-          if (Array.isArray(localSchedules[k]) && localSchedules[k].length > 0) {
+          const cloudSched = mergedList[i].BookingSchedule;
+          const cloudHasSched = (Array.isArray(cloudSched) && cloudSched.length > 0) || (typeof cloudSched === 'string' && cloudSched.trim() === '[]');
+          if (!cloudHasSched && Array.isArray(localSchedules[k]) && localSchedules[k].length > 0) {
             mergedList[i].BookingSchedule = localSchedules[k];
             break;
           }
         }
 
-        // Overlay primary status/dates
+        // Overlay primary status/dates only if local booking is recent (< 45s)
         for (const k of keys) {
           const lb = localBookings[k];
           if (lb) {
-            if (lb.STATUS === 'Available') {
-              mergedList[i] = {
-                ...mergedList[i],
-                STATUS: 'Available',
-                status: 'Available',
-                Status: 'Available',
-                BookedBy: '',
-                BookingStart: '',
-                BookingEnd: ''
-              };
-            } else if (lb.STATUS === 'Booked' || lb.STATUS === 'Occupied') {
-              mergedList[i] = {
-                ...mergedList[i],
-                STATUS: lb.STATUS,
-                status: lb.STATUS,
-                Status: lb.STATUS,
-                BookedBy: lb.BookedBy || mergedList[i].BookedBy || '',
-                BookingStart: lb.BookingStart || mergedList[i].BookingStart || '',
-                BookingEnd: lb.BookingEnd || mergedList[i].BookingEnd || ''
-              };
+            const isRecentLocal = (Date.now() - (Number(lb.updatedAt) || 0)) < 45000;
+            if (isRecentLocal) {
+              if (lb.STATUS === 'Available') {
+                mergedList[i] = {
+                  ...mergedList[i],
+                  STATUS: 'Available',
+                  status: 'Available',
+                  Status: 'Available',
+                  BookedBy: '',
+                  BookingStart: '',
+                  BookingEnd: ''
+                };
+              } else if (lb.STATUS === 'Booked' || lb.STATUS === 'Occupied') {
+                mergedList[i] = {
+                  ...mergedList[i],
+                  STATUS: lb.STATUS,
+                  status: lb.STATUS,
+                  Status: lb.STATUS,
+                  BookedBy: lb.BookedBy || mergedList[i].BookedBy || '',
+                  BookingStart: lb.BookingStart || mergedList[i].BookingStart || '',
+                  BookingEnd: lb.BookingEnd || mergedList[i].BookingEnd || ''
+                };
+              }
             }
             break;
           }

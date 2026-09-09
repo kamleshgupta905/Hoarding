@@ -2,7 +2,7 @@ import React from 'react';
 import { useParams, Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { ChevronLeft, MapPin, Maximize2, Layers, Zap, Info, Calendar, Phone, Share2, Heart, ShieldCheck, Edit3, Trash2, X, Upload, Camera, Copy, Check, Download, ExternalLink } from 'lucide-react';
 import { Helmet } from 'react-helmet-async';
-import { getImageUrl, compressImage, syncToGoogleSheet, downloadHoardingImage, recordSiteBooking, removeSiteBooking, getLocalHistory, removeSiteHistory, parseHistoryString, getDirectDriveLink, getDeletedHistoryUrls, addDeletedHistoryUrl, isHistoryUrlDeleted } from '../services/dataService';
+import { getImageUrl, compressImage, syncToGoogleSheet, downloadHoardingImage, recordSiteBooking, removeSiteBooking, saveSiteBookingSlots, getLocalHistory, removeSiteHistory, parseHistoryString, getDirectDriveLink, getDeletedHistoryUrls, addDeletedHistoryUrl, isHistoryUrlDeleted } from '../services/dataService';
 import ImageLightbox from '../components/ImageLightbox';
 import './HoardingDetail.css';
 
@@ -179,6 +179,11 @@ const HoardingDetail = ({ hoardings, setHoardings }) => {
                 recordSiteBooking(hoarding, fullUpdatedFields);
             } else if (fullUpdatedFields.STATUS === 'Available') {
                 removeSiteBooking(hoarding);
+                saveSiteBookingSlots(hoarding, []);
+                fullUpdatedFields.BookedBy = '';
+                fullUpdatedFields.BookingStart = '';
+                fullUpdatedFields.BookingEnd = '';
+                fullUpdatedFields.BookingSchedule = '[]';
             }
 
             const targetSL = hoarding.SL || hoarding["S. No."] || hoarding["SL NO"] || formData.SL || '';
@@ -192,11 +197,21 @@ const HoardingDetail = ({ hoardings, setHoardings }) => {
                 fields: {
                     ...fullUpdatedFields,
                     SL: targetSL,
-                    _SiteID: targetId
+                    _SiteID: targetId,
+                    status: fullUpdatedFields.STATUS,
+                    Status: fullUpdatedFields.STATUS,
+                    STATUS: fullUpdatedFields.STATUS,
+                    BookedBy: fullUpdatedFields.BookedBy || '',
+                    BookingStart: fullUpdatedFields.BookingStart || '',
+                    BookingEnd: fullUpdatedFields.BookingEnd || '',
+                    BookingSchedule: fullUpdatedFields.BookingSchedule || (fullUpdatedFields.STATUS === 'Available' ? '[]' : undefined)
                 },
                 fileData: fileData,
                 mimeType: mimeType
             });
+            if (typeof window !== 'undefined') {
+                window.dispatchEvent(new CustomEvent('hoardings:sync-requested'));
+            }
             alert("✅ Asset Updated Successfully!");
             setHoardings(prev => {
                 const targetKey = String(hoarding["Location "] || hoarding.Location || hoarding["Locality Site Location"] || '').trim().toLowerCase();

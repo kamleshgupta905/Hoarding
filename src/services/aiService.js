@@ -676,31 +676,39 @@ export const analyzeHoardingImage = async (base64Image, locationList, rawFile = 
     // ─── STAGE 2: OCR GPS Stamp Extraction (Bottom-Right Pinpoint & Bottom Banners) ───────────
     let detectedOcrText = '';
     try {
-        const worker = await getOcrWorker();
-        // 1. Try bottom-right corner first (standard for GPS Camera - PinPoint, NoteCam)
-        const brCrop = await cropStampRegion(base64Image, 'bottom-right');
-        const brResult = await worker.recognize(brCrop);
-        detectedOcrText = String(brResult?.data?.text || '').replace(/\s+/g, ' ').trim();
+        const ocrPromise = (async () => {
+            const worker = await getOcrWorker();
+            // 1. Try bottom-right corner first (standard for GPS Camera - PinPoint, NoteCam)
+            const brCrop = await cropStampRegion(base64Image, 'bottom-right');
+            const brResult = await worker.recognize(brCrop);
+            let text = String(brResult?.data?.text || '').replace(/\s+/g, ' ').trim();
 
-        let ocrCoord = extractCoordinatesFromText(detectedOcrText);
+            let ocrCoord = extractCoordinatesFromText(text);
 
-        // 2. If bottom-right didn't yield valid GPS, try entire bottom banner
-        if (!ocrCoord) {
-            const bottomCrop = await cropStampRegion(base64Image, 'bottom');
-            const bottomResult = await worker.recognize(bottomCrop);
-            const bottomText = String(bottomResult?.data?.text || '').replace(/\s+/g, ' ').trim();
-            detectedOcrText += ' ' + bottomText;
-            ocrCoord = extractCoordinatesFromText(detectedOcrText);
-        }
+            // 2. If bottom-right didn't yield valid GPS, try entire bottom banner
+            if (!ocrCoord) {
+                const bottomCrop = await cropStampRegion(base64Image, 'bottom');
+                const bottomResult = await worker.recognize(bottomCrop);
+                const bottomText = String(bottomResult?.data?.text || '').replace(/\s+/g, ' ').trim();
+                text += ' ' + bottomText;
+                ocrCoord = extractCoordinatesFromText(text);
+            }
 
-        // 3. If still not found, try top banner
-        if (!ocrCoord) {
-            const topCrop = await cropStampRegion(base64Image, 'top');
-            const topResult = await worker.recognize(topCrop);
-            const topText = String(topResult?.data?.text || '').replace(/\s+/g, ' ').trim();
-            detectedOcrText += ' ' + topText;
-            ocrCoord = extractCoordinatesFromText(detectedOcrText);
-        }
+            // 3. If still not found, try top banner
+            if (!ocrCoord) {
+                const topCrop = await cropStampRegion(base64Image, 'top');
+                const topResult = await worker.recognize(topCrop);
+                const topText = String(topResult?.data?.text || '').replace(/\s+/g, ' ').trim();
+                text += ' ' + topText;
+                ocrCoord = extractCoordinatesFromText(text);
+            }
+
+            return { text, ocrCoord };
+        })();
+
+        const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('OCR timeout')), 6000));
+        const { text, ocrCoord } = await Promise.race([ocrPromise, timeoutPromise]);
+        detectedOcrText = text;
 
         if (ocrCoord && isValidLatLng(ocrCoord.lat, ocrCoord.lng)) {
             const gpsMatch = await matchHoardingByGps(ocrCoord, locationList, base64Image);
