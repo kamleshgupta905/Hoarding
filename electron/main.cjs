@@ -117,11 +117,18 @@ function createApplicationMenu() {
     Menu.setApplicationMenu(menu);
 }
 
-// 🚀 Zero-Touch Automated Silent Background Updater (GitHub Releases)
+// 🚀 Zero-Touch Automated Silent Background Updater (Public GitHub Releases)
 function checkForUpdatesSilently() {
     autoUpdater.autoDownload = true;
     autoUpdater.autoInstallOnAppQuit = true;
     autoUpdater.allowPrerelease = false;
+    try {
+        autoUpdater.setFeedURL({
+            provider: 'github',
+            owner: 'kamleshgupta905',
+            repo: 'hoarding-desktop-releases'
+        });
+    } catch (e) {}
 
     // Check silently on startup after 2.5s
     setTimeout(() => {
@@ -140,6 +147,13 @@ function checkForUpdatesSilently() {
 
 function checkForUpdatesManually() {
     autoUpdater.autoDownload = true;
+    try {
+        autoUpdater.setFeedURL({
+            provider: 'github',
+            owner: 'kamleshgupta905',
+            repo: 'hoarding-desktop-releases'
+        });
+    } catch (e) {}
     autoUpdater.checkForUpdates().then(result => {
         if (!result || !result.updateInfo) {
             if (mainWindow && !mainWindow.isDestroyed()) {

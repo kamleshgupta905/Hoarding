@@ -49,23 +49,32 @@ jobs:
       - name: ⚡ Build Latest Admin Web & Package Desktop App (.exe)
         run: npm run electron:release
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.RELEASE_TOKEN || secrets.GITHUB_TOKEN }}
           ELECTRON_BUILD: 'true'
 
       - name: 🚀 Ensure GitHub Release is Published with All Assets
         if: success()
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.RELEASE_TOKEN || secrets.GITHUB_TOKEN }}
         shell: pwsh
         run: |
           $pkg = Get-Content -Raw -Path package.json | ConvertFrom-Json
           $tag = "v" + $pkg.version
-          Write-Host "Publishing release $tag with latest.yml and exe installer..."
-          gh release create $tag --title "Heera Advertising Admin v$($pkg.version)" --notes "Automated release with silent auto-updater support." 2>$null || true
+          $pubRepo = "kamleshgupta905/hoarding-desktop-releases"
+
+          Write-Host "1. Publishing public auto-update release $tag to $pubRepo..."
+          gh release create $tag --repo $pubRepo --title "Heera Advertising Admin v$($pkg.version)" --notes "Automated release with silent auto-updater support." 2>$null || true
+          gh release edit $tag --repo $pubRepo --draft=false || true
+          Get-ChildItem dist_electron -Filter *.exe | ForEach-Object { gh release upload $tag $_.FullName --repo $pubRepo --clobber }
+          Get-ChildItem dist_electron -Filter latest.yml | ForEach-Object { gh release upload $tag $_.FullName --repo $pubRepo --clobber }
+          Get-ChildItem dist_electron -Filter *.blockmap | ForEach-Object { gh release upload $tag $_.FullName --repo $pubRepo --clobber }
+
+          Write-Host "2. Publishing local release $tag to current repo..."
+          gh release create $tag --title "Heera Advertising Admin v$($pkg.version)" --notes "Internal release build." 2>$null || true
           gh release edit $tag --draft=false || true
-          Get-ChildItem dist_electron -Filter *.exe | ForEach-Object { gh release upload $tag $_.FullName --clobber }
-          Get-ChildItem dist_electron -Filter latest.yml | ForEach-Object { gh release upload $tag $_.FullName --clobber }
-          Get-ChildItem dist_electron -Filter *.blockmap | ForEach-Object { gh release upload $tag $_.FullName --clobber }
+          Get-ChildItem dist_electron -Filter *.exe | ForEach-Object { gh release upload $tag $_.FullName --clobber } || true
+          Get-ChildItem dist_electron -Filter latest.yml | ForEach-Object { gh release upload $tag $_.FullName --clobber } || true
+          Get-ChildItem dist_electron -Filter *.blockmap | ForEach-Object { gh release upload $tag $_.FullName --clobber } || true
 
       - name: 🚀 Upload Windows Setup & Portable .exe Artifacts
         uses: actions/upload-artifact@v4

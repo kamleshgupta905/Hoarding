@@ -1,7 +1,7 @@
 {
   "name": "hoarding-discovery",
   "private": true,
-  "version": "1.5.6",
+  "version": "1.5.8",
   "type": "module",
   "engines": {
     "node": ">=20"
@@ -32,7 +32,7 @@
     "publish": {
       "provider": "github",
       "owner": "kamleshgupta905",
-      "repo": "Hoarding"
+      "repo": "hoarding-desktop-releases"
     },
     "win": {
       "target": [
