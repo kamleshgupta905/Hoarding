@@ -286,7 +286,7 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
     const navigate = useNavigate();
     const [activeTab, setActiveTabState] = useState(() => {
         const saved = localStorage.getItem('adhoardings_active_tab');
-        if (!saved || saved === 'proposal-builder') return 'inventory';
+        if (!saved || saved === 'proposal-builder') return 'dashboard';
         return saved;
     });
     const setActiveTab = (tab) => {
@@ -3018,6 +3018,15 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
         return slots.some(s => s && s.start && s.start > today);
     };
 
+    const isSiteOperable = (site) => {
+        if (!site) return false;
+        const statusRaw = String(site.STATUS || site.Status || '').trim().toLowerCase();
+        if (statusRaw.includes('offline') || statusRaw.includes('maint') || statusRaw.includes('inactive') || statusRaw.includes('repair') || statusRaw.includes('delete') || statusRaw.includes('remove')) {
+            return false;
+        }
+        return Boolean(site.CODE || site.Code || site.ID || site["Site Code"] || site.Location || site["Location "] || site.Locality || site.Area);
+    };
+
     const filteredInventory = useMemo(() => {
         const cleanSearch = searchTerm.trim().toLowerCase();
         return hoardings.filter(h => {
@@ -3097,19 +3106,21 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
 
             if (filterStartDate || filterEndDate) {
                 const isAvailInDates = isSiteAvailableForDateRange(h, filterStartDate, filterEndDate);
-                if (inventoryStatusFilter === 'Available') matchStatus = isAvailInDates;
-                else if (inventoryStatusFilter === 'Booked' || inventoryStatusFilter === 'Active Booked') matchStatus = !isAvailInDates;
-                else if (inventoryStatusFilter === 'Upcoming (Future Booked)') matchStatus = isSiteUpcoming(h);
+                if (inventoryStatusFilter === 'Available') matchStatus = isSiteOperable(h) && isAvailInDates;
+                else if (inventoryStatusFilter === 'Booked' || inventoryStatusFilter === 'Active Booked') matchStatus = isSiteOperable(h) && !isAvailInDates;
+                else if (inventoryStatusFilter === 'Upcoming (Future Booked)') matchStatus = isSiteOperable(h) && isSiteUpcoming(h);
             } else {
-                if (inventoryStatusFilter === 'Available') matchStatus = (live.status === 'Available');
-                else if (inventoryStatusFilter === 'Booked' || inventoryStatusFilter === 'Active Booked') matchStatus = (live.status === 'Booked');
-                else if (inventoryStatusFilter === 'Upcoming (Future Booked)') matchStatus = isSiteUpcoming(h);
+                if (inventoryStatusFilter === 'Available') matchStatus = isSiteOperable(h) && (live.status === 'Available');
+                else if (inventoryStatusFilter === 'Booked' || inventoryStatusFilter === 'Active Booked') matchStatus = isSiteOperable(h) && (live.status === 'Booked');
+                else if (inventoryStatusFilter === 'Upcoming (Future Booked)') matchStatus = isSiteOperable(h) && isSiteUpcoming(h);
             }
             if (!matchStatus) return false;
 
             const siteLocality = String(h["Locality"] || h["Area"] || "").trim().toLowerCase();
-            const isAllLocality = !inventoryLocalityFilter || inventoryLocalityFilter.length === 0 || inventoryLocalityFilter.includes('All');
-            const matchLocality = isAllLocality || (Array.isArray(inventoryLocalityFilter) && inventoryLocalityFilter.some(l => String(l).toLowerCase() === siteLocality));
+            const isAllLocality = !inventoryLocalityFilter || inventoryLocalityFilter.length === 0 || (Array.isArray(inventoryLocalityFilter) ? inventoryLocalityFilter.includes('All') : inventoryLocalityFilter === 'All');
+            const matchLocality = isAllLocality || (Array.isArray(inventoryLocalityFilter) 
+                ? inventoryLocalityFilter.some(l => String(l).toLowerCase() === siteLocality)
+                : String(inventoryLocalityFilter).toLowerCase() === siteLocality);
             if (!matchLocality) return false;
 
             const hMedia = String(h["Media Format (Front Lit / Back Lit / Non Lit)"] || h["Media Format"] || h["Media Type"] || h.Media || '');
@@ -3342,9 +3353,10 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
     const recentPhotoUpdates = matchedPhotoUpdates.slice(0, 16);
 
     // Dynamic Overview Analytics
-    const totalHoardingsCount = safeHoardings.length;
-    const bookedCount = safeHoardings.filter(h => h && ((h.STATUS || '').toLowerCase() === 'booked' || (h.STATUS || '').toLowerCase() === 'occupied')).length;
-    const availableCount = safeHoardings.filter(h => h && !((h.STATUS || '').toLowerCase() === 'booked' || (h.STATUS || '').toLowerCase() === 'occupied')).length;
+    const operableHoardings = safeHoardings.filter(isSiteOperable);
+    const totalHoardingsCount = operableHoardings.length;
+    const bookedCount = operableHoardings.filter(h => resolveSiteLiveStatus(h).status === 'Booked').length;
+    const availableCount = operableHoardings.filter(h => resolveSiteLiveStatus(h).status === 'Available').length;
     
     // 📅 Current Month Analytics (1st to Today & 1st to Month-End)
     const now = new Date();
@@ -3487,23 +3499,50 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
     const verifiedPercent = totalHoardingsCount > 0 ? Math.round((verifiedAssetsCount / totalHoardingsCount) * 100) : 0;
 
     // Recent Sites List for Activity Table (Real computed data)
-    const recentSites = safeHoardings.slice(0, 6).map((h, i) => {
-        const id = h["CODE"] || h["Code"] || h["ID"] || h["Site Code"] || `HIRA-${String(i + 1).padStart(3, '0')}`;
-        const location = h["Location"] || h["Area"] || h["Locality"] || h["City"] || 'Master Site';
-        const rate = parseFloat(String(h["Rental Per Month"] || h["Avg Monthly Cost (INR)"] || h["Rate"] || 0).replace(/[^0-9.]/g, '')) || 0;
-        const statusRaw = String(h["Status"] || '').trim().toLowerCase();
-        let status = 'Available';
-        if (statusRaw.includes('book') || statusRaw.includes('sold') || statusRaw.includes('occupied')) {
-            status = 'Booked';
-        } else if (statusRaw.includes('reserve') || statusRaw.includes('hold')) {
-            status = 'Reserved';
-        } else if (statusRaw.includes('prime')) {
-            status = 'Prime';
-        } else {
-            status = 'Available';
+    const bookedSiteKeys = new Set();
+    const sortedRecentBookings = [...overviewAllBookings]
+        .filter(b => b.site)
+        .sort((a, b) => (b.start || '').localeCompare(a.start || ''));
+
+    const recentSitesList = [];
+    sortedRecentBookings.forEach(b => {
+        const s = b.site;
+        const id = s["CODE"] || s["Code"] || s["ID"] || s["Site Code"] || s.SL || '';
+        const key = id || s.Location || Math.random();
+        if (!bookedSiteKeys.has(key) && recentSitesList.length < 6) {
+            bookedSiteKeys.add(key);
+            const location = s["Location"] || s["Area"] || s["Locality"] || s["City"] || 'Master Site';
+            const rate = b.monthlyRental || parseFloat(String(s["Rental Per Month"] || s["Avg Monthly Cost (INR)"] || s["Rate"] || 0).replace(/[^0-9.]/g, '')) || 0;
+            const status = b.isTodayActive ? 'Booked' : (b.isUpcoming ? 'Reserved' : 'Available');
+            recentSitesList.push({ id: id || 'Site', location, rate, status, raw: s });
         }
-        return { id, location, rate, status, raw: h };
     });
+
+    // If fewer than 6, fill with valid operable sites
+    if (recentSitesList.length < 6) {
+        operableHoardings.forEach(h => {
+            const id = h["CODE"] || h["Code"] || h["ID"] || h["Site Code"] || h.SL || '';
+            const key = id || h.Location;
+            if (!bookedSiteKeys.has(key) && recentSitesList.length < 6) {
+                bookedSiteKeys.add(key);
+                const location = h["Location"] || h["Area"] || h["Locality"] || h["City"] || 'Master Site';
+                const rate = parseFloat(String(h["Rental Per Month"] || h["Avg Monthly Cost (INR)"] || h["Rate"] || 0).replace(/[^0-9.]/g, '')) || 0;
+                const live = resolveSiteLiveStatus(h);
+                let status = 'Available';
+                if (live.status === 'Booked') status = 'Booked';
+                else if (live.status === 'Upcoming') status = 'Reserved';
+                else {
+                    const statusRaw = String(h.STATUS || h["Status"] || h.status || '').trim().toLowerCase();
+                    if (statusRaw.includes('book') || statusRaw.includes('sold') || statusRaw.includes('occupied')) status = 'Booked';
+                    else if (statusRaw.includes('reserve') || statusRaw.includes('hold')) status = 'Reserved';
+                    else if (statusRaw.includes('prime')) status = 'Prime';
+                    else status = 'Available';
+                }
+                recentSitesList.push({ id: id || 'Site', location, rate, status, raw: h });
+            }
+        });
+    }
+    const recentSites = recentSitesList;
 
     useEffect(() => {
         let cancelled = false;
@@ -4880,12 +4919,12 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                     role="button"
                                     tabIndex={0}
                                     onClick={() => {
-                                        setClientStatusFilter('all');
+                                        setClientStatusFilter('All');
                                         setActiveTab('clients');
                                     }}
                                     onKeyDown={(e) => {
                                         if (e.key === 'Enter') {
-                                            setClientStatusFilter('all');
+                                            setClientStatusFilter('All');
                                             setActiveTab('clients');
                                         }
                                     }}
@@ -4998,7 +5037,13 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                     </div>
 
                                     <div style={{ padding: '24px 0 0' }}>
-                                        <QuickMartTopLocationsChart data={mediaFormats} />
+                                        <QuickMartTopLocationsChart 
+                                            data={mediaFormats} 
+                                            onBarClick={(formatName) => {
+                                                setInventoryMediaFilter([formatName]);
+                                                setActiveTab('inventory');
+                                            }}
+                                        />
                                     </div>
                                 </motion.div>
 
@@ -5053,7 +5098,7 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                         <QuickMartTopLocationsChart 
                                             data={overviewTopZones}
                                             onBarClick={(zoneName) => {
-                                                setInventoryLocalityFilter(zoneName);
+                                                setInventoryLocalityFilter([zoneName]);
                                                 setActiveTab('inventory');
                                             }}
                                         />
@@ -5109,8 +5154,16 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
 
                                                     return (
                                                         <tr 
-                                                            key={site.id + sIdx}
-                                                            onClick={() => openInventory('All')}
+                                                            key={(site.id || '') + sIdx}
+                                                            onClick={() => {
+                                                                if (site.raw) {
+                                                                    const code = site.raw.CODE || site.raw.Code || site.raw.ID || site.raw["Site Code"] || site.id;
+                                                                    if (code && code !== 'Site') {
+                                                                        setSearchTerm(code);
+                                                                    }
+                                                                }
+                                                                openInventory('All');
+                                                            }}
                                                             style={{ 
                                                                 borderBottom: '1px solid #f8fafc',
                                                                 cursor: 'pointer',

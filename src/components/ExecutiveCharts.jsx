@@ -494,7 +494,6 @@ export const QuickMartDonutChart = ({ data, size = 190, strokeWidth = 32 }) => {
 export const QuickMartTopLocationsChart = ({ data, onBarClick }) => {
     const [hoveredIdx, setHoveredIdx] = useState(null);
     const [isLoaded, setIsLoaded] = useState(false);
-    const maxVal = Math.max(...(data || []).map(d => d.count), 1);
 
     useEffect(() => {
         const timer = setTimeout(() => {
@@ -503,13 +502,22 @@ export const QuickMartTopLocationsChart = ({ data, onBarClick }) => {
         return () => clearTimeout(timer);
     }, [data]);
 
-    const chartData = data && data.length > 0 ? data : [
-        { name: 'Ring Road & Expressway', count: 48 },
-        { name: 'Airport Road VIP Corridor', count: 36 },
-        { name: 'Civil Lines & High Street', count: 29 },
-        { name: 'Commercial Hub / Tech Park', count: 22 },
-        { name: 'Central Junction & Railway', count: 18 }
-    ];
+    const chartData = Array.isArray(data) ? data : [];
+    const maxVal = Math.max(...chartData.map(d => d.count), 1);
+
+    if (chartData.length === 0) {
+        return (
+            <div style={{
+                padding: '24px 16px',
+                textAlign: 'center',
+                color: '#64748b',
+                fontSize: '0.85rem',
+                fontFamily: "'Inter', sans-serif"
+            }}>
+                No data available
+            </div>
+        );
+    }
 
     return (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', padding: '6px 0', fontFamily: "'Inter', sans-serif" }}>
@@ -521,27 +529,27 @@ export const QuickMartTopLocationsChart = ({ data, onBarClick }) => {
                 return (
                     <div 
                         key={idx}
-                        onMouseEnter={() => setHoveredIdx(idx)}
-                        onMouseLeave={() => setHoveredIdx(null)}
+                        onMouseEnter={() => onBarClick && setHoveredIdx(idx)}
+                        onMouseLeave={() => onBarClick && setHoveredIdx(null)}
                         onClick={() => onBarClick && onBarClick(item.name)}
                         style={{
                             display: 'grid',
                             gridTemplateColumns: '140px 1fr 50px',
                             alignItems: 'center',
                             gap: '14px',
-                            cursor: 'pointer',
+                            cursor: onBarClick ? 'pointer' : 'default',
                             padding: '3px 6px',
                             borderRadius: '8px',
-                            background: isHovered ? '#f9fafb' : 'transparent',
+                            background: (onBarClick && isHovered) ? '#f9fafb' : 'transparent',
                             transition: 'all 0.2s ease',
-                            transform: isHovered ? 'translateX(2px)' : 'none'
+                            transform: (onBarClick && isHovered) ? 'translateX(2px)' : 'none'
                         }}
                     >
                         {/* Corridor / Location Name */}
                         <div style={{ 
                             fontSize: '0.8125rem', 
-                            fontWeight: isHovered ? 700 : 500, 
-                            color: isHovered ? '#10b981' : '#374151', 
+                            fontWeight: (onBarClick && isHovered) ? 700 : 500, 
+                            color: (onBarClick && isHovered) ? '#10b981' : '#374151', 
                             textAlign: 'right',
                             whiteSpace: 'nowrap', 
                             overflow: 'hidden', 
@@ -563,12 +571,12 @@ export const QuickMartTopLocationsChart = ({ data, onBarClick }) => {
                                 style={{
                                     height: '100%',
                                     width: isLoaded ? `${pct}%` : '0%',
-                                    background: isHovered 
+                                    background: (onBarClick && isHovered) 
                                         ? 'linear-gradient(90deg, #0284c7 0%, #06b6d4 100%)' 
                                         : 'linear-gradient(90deg, #0ea5e9 0%, #38bdf8 100%)',
                                     borderRadius: '9999px',
                                     transition: `width 0.9s cubic-bezier(0.16, 1, 0.3, 1) ${transitionDelay}, background 0.2s ease, box-shadow 0.2s ease`,
-                                    boxShadow: isHovered ? '0 2px 8px rgba(14, 165, 233, 0.4)' : 'none',
+                                    boxShadow: (onBarClick && isHovered) ? '0 2px 8px rgba(14, 165, 233, 0.4)' : 'none',
                                     position: 'relative',
                                     overflow: 'hidden'
                                 }}
