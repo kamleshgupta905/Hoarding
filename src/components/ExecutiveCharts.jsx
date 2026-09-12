@@ -329,15 +329,8 @@ export const QuickMartDonutChart = ({ data, size = 190, strokeWidth = 32 }) => {
     const radius = (size - strokeWidth) / 2;
     const circumference = 2 * Math.PI * radius;
     
-    // Ordered segments: Green -> Red -> Purple -> Amber -> Blue
-    const chartData = data && data.length > 0 ? data : [
-        { label: 'Prime Unipoles', value: 165, color: '#10b981' },
-        { label: 'Gantries & Bridge', value: 18, color: '#ef4444' },
-        { label: 'Digital LED Screens', value: 24, color: '#6366f1' },
-        { label: 'Foot Overbridge', value: 28, color: '#f59e0b' },
-        { label: 'Kiosks & Transit', value: 42, color: '#0070f3' }
-    ];
-
+    // Clean data without hardcoded fake fallbacks
+    const chartData = Array.isArray(data) ? data : [];
     const total = chartData.reduce((acc, item) => acc + (item.value || 0), 0);
     const gapPerSegment = 3; // pixels gap between segments
     const totalGap = chartData.length * gapPerSegment;
@@ -366,6 +359,27 @@ export const QuickMartDonutChart = ({ data, size = 190, strokeWidth = 32 }) => {
         animationFrameId = window.requestAnimationFrame(step);
         return () => window.cancelAnimationFrame(animationFrameId);
     }, [data]);
+
+    if (chartData.length === 0 || total === 0) {
+        return (
+            <div style={{ position: 'relative', width: size, height: size, margin: '10px auto', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
+                    <circle 
+                        cx={size / 2} 
+                        cy={size / 2} 
+                        r={radius} 
+                        fill="none" 
+                        stroke="#f3f4f6" 
+                        strokeWidth={strokeWidth} 
+                    />
+                </svg>
+                <div style={{ position: 'absolute', textAlign: 'center', fontFamily: "'Inter', sans-serif" }}>
+                    <div style={{ fontSize: '1.15rem', fontWeight: 700, color: '#94a3b8' }}>0</div>
+                    <div style={{ fontSize: '0.68rem', fontWeight: 500, color: '#9ca3af', marginTop: '2px' }}>No Data</div>
+                </div>
+            </div>
+        );
+    }
 
     const segments = chartData.reduce((acc, item, idx) => {
         const val = item.value || 0;

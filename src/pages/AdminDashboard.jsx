@@ -286,7 +286,10 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
     const navigate = useNavigate();
     const [activeTab, setActiveTabState] = useState(() => {
         const saved = localStorage.getItem('adhoardings_active_tab');
-        if (!saved || saved === 'proposal-builder') return 'dashboard';
+        if (!saved || saved === 'inventory' || saved === 'proposal-builder') {
+            try { localStorage.setItem('adhoardings_active_tab', 'dashboard'); } catch {}
+            return 'dashboard';
+        }
         return saved;
     });
     const setActiveTab = (tab) => {
@@ -3123,9 +3126,16 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                 : String(inventoryLocalityFilter).toLowerCase() === siteLocality);
             if (!matchLocality) return false;
 
-            const hMedia = String(h["Media Format (Front Lit / Back Lit / Non Lit)"] || h["Media Format"] || h["Media Type"] || h.Media || '');
-            const isAllMedia = !inventoryMediaFilter || inventoryMediaFilter.length === 0 || inventoryMediaFilter.includes('All');
-            const matchMedia = isAllMedia || (Array.isArray(inventoryMediaFilter) && inventoryMediaFilter.includes(hMedia));
+            const hMedia = String(h["Media Format (Front Lit / Back Lit / Non Lit)"] || h["Media Format"] || h["Media Type"] || h.Media || '').trim();
+            const hSiteType = String(h["Type of Site (Unipole/Billboard)"] || h["Type of Site (Unipole/ Billboard)"] || h["Type of Site"] || h["Media"] || h.Media || h.Type || '').trim();
+            const isAllMedia = !inventoryMediaFilter || inventoryMediaFilter.length === 0 || (Array.isArray(inventoryMediaFilter) ? inventoryMediaFilter.includes('All') : inventoryMediaFilter === 'All');
+            const matchMedia = isAllMedia || (Array.isArray(inventoryMediaFilter) 
+                ? inventoryMediaFilter.some(m => {
+                    const mLower = String(m).trim().toLowerCase();
+                    return mLower === hMedia.toLowerCase() || mLower === hSiteType.toLowerCase() || (hSiteType && hSiteType.toLowerCase().includes(mLower)) || (hMedia && hMedia.toLowerCase().includes(mLower));
+                })
+                : (String(inventoryMediaFilter).trim().toLowerCase() === hMedia.toLowerCase() || String(inventoryMediaFilter).trim().toLowerCase() === hSiteType.toLowerCase())
+            );
             if (!matchMedia) return false;
 
             const hSize = String(h["Size (Large/Medium/Small)"] || h["Size"] || (h.Width && h.Height ? `${h.Width}x${h.Height}` : ''));
@@ -3292,7 +3302,13 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
         ? safeHoardings
         : safeHoardings.filter(h => Array.isArray(inventoryCityFilter) && inventoryCityFilter.some(c => String(c).toLowerCase() === String(h.City || '').trim().toLowerCase()));
     const inventoryLocalities = ['All', ...new Set(inventoryTargetHoardings.map(h => String(h["Locality"] || h["Area"] || '').trim()).filter(Boolean))].sort((a, b) => a === 'All' ? -1 : b === 'All' ? 1 : a.localeCompare(b));
-    const inventoryMediaFormats = ['All', ...new Set(safeHoardings.map(h => h["Media Format (Front Lit / Back Lit / Non Lit)"]).filter(Boolean))];
+    const inventoryMediaFormats = ['All', ...new Set(safeHoardings.flatMap(h => [
+        h["Type of Site (Unipole/Billboard)"],
+        h["Type of Site (Unipole/ Billboard)"],
+        h["Type of Site"],
+        h["Media"],
+        h["Media Format (Front Lit / Back Lit / Non Lit)"]
+    ]).filter(Boolean).map(s => String(s).trim()))].sort((a, b) => a === 'All' ? -1 : b === 'All' ? 1 : a.localeCompare(b));
     const inventorySizes = ['All', ...new Set(safeHoardings.map(h => h["Size (Large/Medium/Small)"]).filter(Boolean))];
     const inventoryCategories = ['All', ...new Set(safeHoardings.map(h => h["Site Category"]).filter(Boolean))];
     const inventoryPriceRanges = [
@@ -3502,7 +3518,11 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
     const bookedSiteKeys = new Set();
     const sortedRecentBookings = [...overviewAllBookings]
         .filter(b => b.site)
-        .sort((a, b) => (b.start || '').localeCompare(a.start || ''));
+        .sort((a, b) => {
+            const score = (x) => x.isTodayActive ? 3 : (x.isUpcoming ? 2 : 1);
+            if (score(b) !== score(a)) return score(b) - score(a);
+            return (b.start || '').localeCompare(a.start || '');
+        });
 
     const recentSitesList = [];
     sortedRecentBookings.forEach(b => {
@@ -3513,7 +3533,7 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
             bookedSiteKeys.add(key);
             const location = s["Location"] || s["Area"] || s["Locality"] || s["City"] || 'Master Site';
             const rate = b.monthlyRental || parseFloat(String(s["Rental Per Month"] || s["Avg Monthly Cost (INR)"] || s["Rate"] || 0).replace(/[^0-9.]/g, '')) || 0;
-            const status = b.isTodayActive ? 'Booked' : (b.isUpcoming ? 'Reserved' : 'Available');
+            const status = b.isTodayActive ? 'Booked' : (b.isUpcoming ? 'Reserved' : (b.isCompleted ? 'Completed' : 'Available'));
             recentSitesList.push({ id: id || 'Site', location, rate, status, raw: s });
         }
     });
@@ -5148,6 +5168,7 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                                         'Booked': { bg: '#fee2e2', color: '#dc2626', dot: '#ef4444', text: 'Booked' },
                                                         'Prime': { bg: '#ecfdf5', color: '#047857', dot: '#059669', text: 'Prime Active' },
                                                         'Reserved': { bg: '#fef3c7', color: '#d97706', dot: '#f59e0b', text: 'Reserved' },
+                                                        'Completed': { bg: '#f1f5f9', color: '#475569', dot: '#94a3b8', text: 'Completed' },
                                                         'Maintenance': { bg: '#f1f5f9', color: '#475569', dot: '#64748b', text: 'Maintenance' }
                                                     };
                                                     const style = statusPillStyles[site.status] || statusPillStyles['Available'];
