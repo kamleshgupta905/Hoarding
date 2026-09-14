@@ -1,12 +1,12 @@
 /* 🌟 RenewalAlertRadar.css - Modern Executive Renewal Radar & Predictor */
 
 .renewal-radar-panel {
-  background: linear-gradient(145deg, #0f172a, #1e293b);
-  border: 1px solid rgba(245, 158, 11, 0.25);
+  background: #0f172a;
+  border: 1px solid rgba(245, 158, 11, 0.35);
   border-radius: 16px;
   padding: 22px;
   margin-bottom: 24px;
-  box-shadow: 0 10px 30px -5px rgba(0, 0, 0, 0.4), 0 0 20px -5px rgba(245, 158, 11, 0.15);
+  box-shadow: 0 10px 30px -5px rgba(0, 0, 0, 0.4);
   color: #f8fafc;
   position: relative;
   overflow: hidden;
@@ -19,7 +19,7 @@
   left: 0;
   right: 0;
   height: 3px;
-  background: linear-gradient(90deg, #ef4444, #f59e0b, #10b981, #6366f1);
+  background: #f59e0b;
 }
 
 .renewal-radar-empty {
@@ -344,12 +344,13 @@
 
 .radar-card-media {
   position: relative;
-  width: 90px;
-  height: 64px;
+  width: 110px;
+  height: 74px;
   border-radius: 8px;
   overflow: hidden;
   flex-shrink: 0;
   background: #0f172a;
+  border: 1px solid rgba(255, 255, 255, 0.1);
 }
 
 .radar-card-media img {
@@ -360,21 +361,23 @@
 
 .radar-status-badge {
   position: absolute;
-  bottom: 3px;
-  left: 3px;
-  right: 3px;
-  font-size: 0.65rem;
-  font-weight: 700;
-  padding: 2px 4px;
-  border-radius: 4px;
+  bottom: 4px;
+  left: 4px;
+  right: 4px;
+  font-size: 0.75rem;
+  font-weight: 800;
+  padding: 4px 6px;
+  border-radius: 6px;
   border: 1px solid;
   text-align: center;
-  backdrop-filter: blur(4px);
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 3px;
+  gap: 4px;
   white-space: nowrap;
+  letter-spacing: 0.02em;
+  line-height: 1.2;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.75);
 }
 
 .radar-card-info {

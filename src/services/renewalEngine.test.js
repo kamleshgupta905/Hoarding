@@ -62,8 +62,8 @@ describe('Occupancy Heatmap & Renewal Predictor Engine', () => {
     const status = getSiteOccupancyStatus(site, referenceDate);
     expect(status.status).toBe('EXPIRING_SOON');
     expect(status.daysLeft).toBe(3);
-    expect(status.statusTier).toBe('critical');
-    expect(status.badgeColor).toBe('#ef4444');
+    expect(status.badgeColor).toBe('#ffffff');
+    expect(status.badgeBg).toBe('#dc2626');
   });
 
   it('detects OVERDUE bookings (ended but not released) with purple indicator', () => {
