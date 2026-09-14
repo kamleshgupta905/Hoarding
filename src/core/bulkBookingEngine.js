@@ -7,7 +7,6 @@ import {
   recordSiteHistory,
   compressImage 
 } from '../services/dataService';
-import { scoreSite } from './pptxEngine';
 import { postDirect, getAdminSession } from '../services/secureApi';
 
 // Aliases for detecting headers in Excel sheets
@@ -281,69 +280,193 @@ export const parseBulkBookingRows = (grid = [], existingHoardings = []) => {
 };
 
 /**
- * 📦 Mode B: AI Slide-to-Site Matcher for PPT presentations
+ * 🛡️ Detects if a slide is an introductory cover slide, agenda, or thank you slide.
+ */
+export const isCoverOrIntroSlide = (text = '') => {
+  if (!text) return false;
+  const lower = String(text).toLowerCase();
+
+  // If it has clear site identifiers like SL:, S.No:, Rate:, Facing:, it's likely a site slide
+  if (/(s\.no|sl\s*[:#\d]|rate\s*[:₹]|facing\s*[:]|sq\.?ft|size\s*[:\d])/i.test(lower)) {
+    return false;
+  }
+
+  const coverKeywords = [
+    'proposal', 'media proposal', 'presentation', 'presented by', 
+    'prepared for', 'prepared by', 'outdoor plan', 'campaign overview',
+    'agenda', 'index', 'table of contents', 'thank you', 'thanks'
+  ];
+
+  return coverKeywords.some(k => lower.includes(k));
+};
+
+/**
+ * 🎯 Multi-factor score between a booking item and a PPT slide
+ */
+export const calculateSlideMatchScore = (item, slide) => {
+  if (!slide || !item) return 0;
+  let score = 0;
+  const slideText = String(slide.text || '').toLowerCase();
+
+  // Cover slide penalty
+  if (isCoverOrIntroSlide(slideText)) {
+    return -50;
+  }
+
+  // 1. S.No / SL Exact Match (+40 pts)
+  const itemSl = String(item.sl || item.matchedSite?.SL || '').trim().toLowerCase();
+  if (itemSl) {
+    const slRegexes = [
+      new RegExp(`(?:s\\.?no\\.?|sl|sr\\.?\\s*no\\.?|site\\s*#?)\\s*[:#-]?\\s*${itemSl}\\b`, 'i'),
+      new RegExp(`\\b${itemSl}\\.\\s`, 'i'),
+      new RegExp(`\\bsite\\s*#?${itemSl}\\b`, 'i')
+    ];
+    if (slRegexes.some(r => r.test(slideText))) {
+      score += 40;
+    }
+  }
+
+  // 2. Location Text Fuzzy Match (+30 pts)
+  const locStr = String(item.location || item.matchedSite?.['Location '] || item.matchedSite?.Location || '').toLowerCase();
+  if (locStr) {
+    if (slideText.includes(locStr)) {
+      score += 30;
+    } else {
+      const locTokens = locStr.split(/[\s,/-]+/).filter(t => t.length > 3 && !['road', 'street', 'near', 'opp', 'opposite', 'metro', 'station'].includes(t));
+      const matchedTokens = locTokens.filter(t => slideText.includes(t));
+      if (matchedTokens.length > 0) {
+        score += Math.min(25, matchedTokens.length * 10);
+      }
+    }
+  }
+
+  // 3. Facing / Direction Match (+15 pts)
+  const facingStr = String(item.facing || item.matchedSite?.Facing || '').toLowerCase();
+  if (facingStr && facingStr.length > 2) {
+    if (slideText.includes(facingStr)) {
+      score += 15;
+    }
+  }
+
+  // 4. Client Name Match (+10 pts)
+  const clientStr = String(item.clientName || '').toLowerCase();
+  if (clientStr && clientStr.length > 2 && clientStr !== 'valued client') {
+    if (slideText.includes(clientStr)) {
+      score += 10;
+    }
+  }
+
+  // 5. Existing PPT candidate bonus (+15 pts)
+  if (item.matchedSite && Array.isArray(slide.candidates)) {
+    const isCandidate = slide.candidates.some(c => 
+      (c.site?._SiteID && c.site._SiteID === item.matchedSite._SiteID) ||
+      (c.site?.SL && String(c.site.SL) === String(item.matchedSite.SL))
+    );
+    if (isCandidate) {
+      score += 15;
+    }
+  }
+
+  return score;
+};
+
+/**
+ * 📦 Mode B: AI Slide-to-Site Matcher for PPT presentations with 1-to-1 Global Assignment
  */
 export const matchPptSlidesToBookings = (slides = [], bookingItems = []) => {
   if (!Array.isArray(slides) || slides.length === 0) return bookingItems;
 
-  return bookingItems.map((item, idx) => {
-    let bestSlide = null;
-    let bestImage = null;
-
-    // 1. Check if PPT engine already matched this site candidate
-    if (item.matchedSite) {
-      for (const slide of slides) {
-        if (slide.candidates && slide.candidates.length > 0) {
-          const isMatch = slide.candidates.some(c => 
-            (c.site?._SiteID && c.site._SiteID === item.matchedSite._SiteID) ||
-            (c.site?.SL && String(c.site.SL) === String(item.matchedSite.SL))
-          );
-          if (isMatch && slide.images && slide.images.length > 0) {
-            bestSlide = slide;
-            bestImage = slide.images[0];
-            break;
-          }
-        }
-      }
-    }
-
-    // 2. Exact Slide index match (e.g. Row 1 -> Slide 1)
-    if (!bestSlide && slides[idx]) {
-      const candidateSlide = slides[idx];
-      if (candidateSlide.images && candidateSlide.images.length > 0) {
-        bestSlide = candidateSlide;
-        bestImage = candidateSlide.images[0];
-      }
-    }
-
-    // 3. Fallback: Text scoring with slide text
-    if (!bestSlide && item.matchedSite) {
-      let topScore = 0;
-      for (const slide of slides) {
-        const score = scoreSite(slide.text, item.matchedSite, slide.number);
-        if (score > topScore && slide.images && slide.images.length > 0) {
-          topScore = score;
-          bestSlide = slide;
-          bestImage = slide.images[0];
-        }
-      }
-    }
-
-    // Create preview URL from image blob if present
+  // Prepare slides with preview URLs and cover flag
+  const preparedSlides = slides.map(slide => {
+    const firstImage = slide.images && slide.images.length > 0 ? slide.images[0] : null;
     let previewUrl = '';
-    if (bestImage && bestImage.blob && typeof window !== 'undefined' && window.URL) {
+    if (firstImage && firstImage.blob && typeof window !== 'undefined' && window.URL) {
       try {
-        previewUrl = URL.createObjectURL(bestImage.blob);
+        previewUrl = URL.createObjectURL(firstImage.blob);
       } catch {}
     }
+    const isCover = isCoverOrIntroSlide(slide.text);
+    return {
+      number: slide.number,
+      text: slide.text || '',
+      textSnippet: (slide.text || '').slice(0, 100),
+      imageBlob: firstImage?.blob || null,
+      previewUrl,
+      isCover,
+      candidates: slide.candidates || []
+    };
+  });
+
+  // Calculate score matrix for 1-to-1 assignment
+  const pairs = [];
+  bookingItems.forEach((item, itemIdx) => {
+    preparedSlides.forEach(slide => {
+      if (!slide.imageBlob) return;
+      const score = calculateSlideMatchScore(item, slide);
+      let matchType = 'low';
+      if (score >= 70) matchType = 'exact_sl';
+      else if (score >= 40) matchType = 'location_facing';
+      else if (score >= 20) matchType = 'probable';
+
+      pairs.push({
+        itemIdx,
+        slideNum: slide.number,
+        score,
+        matchType
+      });
+    });
+  });
+
+  // Sort pairs by score descending (Greedy maximum-weight 1-to-1 assignment)
+  pairs.sort((a, b) => b.score - a.score);
+
+  const assignedSlideToItem = new Map(); // itemIdx -> slideNum
+  const usedSlideNumbers = new Set();
+  const assignedScoreMap = new Map();
+
+  for (const pair of pairs) {
+    if (pair.score < 20) break; // Stop before low or negative scoring pairs
+    if (!assignedSlideToItem.has(pair.itemIdx) && !usedSlideNumbers.has(pair.slideNum)) {
+      assignedSlideToItem.set(pair.itemIdx, pair.slideNum);
+      usedSlideNumbers.add(pair.slideNum);
+      assignedScoreMap.set(pair.itemIdx, { score: pair.score, matchType: pair.matchType });
+    }
+  }
+
+  // Smart sequential fallback for unassigned items (skipping cover slides and already assigned slides)
+  const availableContentSlides = preparedSlides.filter(s => s.imageBlob && !s.isCover && !usedSlideNumbers.has(s.number));
+
+  bookingItems.forEach((item, itemIdx) => {
+    if (!assignedSlideToItem.has(itemIdx) && availableContentSlides.length > 0) {
+      const fallbackSlide = availableContentSlides.shift();
+      if (fallbackSlide) {
+        assignedSlideToItem.set(itemIdx, fallbackSlide.number);
+        usedSlideNumbers.add(fallbackSlide.number);
+        assignedScoreMap.set(itemIdx, { score: 35, matchType: 'fallback_order' });
+      }
+    }
+  });
+
+  // Assemble final items with confidence scores and available slides metadata
+  return bookingItems.map((item, itemIdx) => {
+    const matchedSlideNum = assignedSlideToItem.get(itemIdx);
+    const matchedSlideObj = matchedSlideNum ? preparedSlides.find(s => s.number === matchedSlideNum) : null;
+    const scoreInfo = assignedScoreMap.get(itemIdx) || { score: 0, matchType: 'none' };
+
+    let confidenceScore = Math.min(100, Math.max(10, Math.round(scoreInfo.score * 1.15)));
+    if (scoreInfo.matchType === 'fallback_order') confidenceScore = 45;
+    if (!matchedSlideObj) confidenceScore = 0;
 
     return {
       ...item,
-      matchedSlide: bestSlide ? {
-        number: bestSlide.number,
-        textSnippet: bestSlide.text?.slice(0, 100),
-        imageBlob: bestImage?.blob || null,
-        previewUrl
+      availableSlides: preparedSlides,
+      matchedSlide: matchedSlideObj ? {
+        number: matchedSlideObj.number,
+        textSnippet: matchedSlideObj.textSnippet,
+        imageBlob: matchedSlideObj.imageBlob,
+        previewUrl: matchedSlideObj.previewUrl,
+        confidenceScore,
+        matchType: scoreInfo.matchType
       } : null
     };
   });

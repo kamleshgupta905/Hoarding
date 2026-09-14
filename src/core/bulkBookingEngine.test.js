@@ -122,7 +122,7 @@ describe('Bulk Campaign Onboarding Engine', () => {
     const mockSlides = [
       {
         number: 1,
-        text: 'Begum Bridge Flyover Meerut Unipole Display',
+        text: 'SL: 1 - Begum Bridge Flyover Meerut Unipole Display',
         candidates: [{ site: { _SiteID: 'site-1', SL: '1' } }],
         images: [{ blob: new Blob(['fake image'], { type: 'image/jpeg' }) }]
       }
@@ -131,5 +131,60 @@ describe('Bulk Campaign Onboarding Engine', () => {
     const matched = matchPptSlidesToBookings(mockSlides, bookingItems);
     expect(matched[0].matchedSlide).not.toBeNull();
     expect(matched[0].matchedSlide.number).toBe(1);
+    expect(matched[0].matchedSlide.confidenceScore).toBeGreaterThanOrEqual(70);
+  });
+
+  it('skips cover slides and avoids duplicate slide assignment across multiple rows', () => {
+    const bookingItems = [
+      {
+        id: 'item_1',
+        sl: '1',
+        location: 'Begum Bridge',
+        facing: 'Modipuram',
+        matchedSite: { _SiteID: 'site-1', SL: '1', 'Location ': 'Begum Bridge', Facing: 'Modipuram' }
+      },
+      {
+        id: 'item_2',
+        sl: '2',
+        location: 'Begum Bridge',
+        facing: 'City',
+        matchedSite: { _SiteID: 'site-2', SL: '2', 'Location ': 'Begum Bridge', Facing: 'City' }
+      }
+    ];
+
+    const mockSlides = [
+      // Slide 1: Cover presentation slide (Should be skipped!)
+      {
+        number: 1,
+        text: 'Outdoor Media Campaign Proposal 2026 - Presented by Heera Advertising',
+        images: [{ blob: new Blob(['cover'], { type: 'image/jpeg' }) }]
+      },
+      // Slide 2: Begum Bridge Facing City
+      {
+        number: 2,
+        text: 'Begum Bridge Meerut Facing City Traffic View SL: 2',
+        images: [{ blob: new Blob(['img2'], { type: 'image/jpeg' }) }]
+      },
+      // Slide 3: Begum Bridge Facing Modipuram
+      {
+        number: 3,
+        text: 'Begum Bridge Meerut Facing Modipuram S.No: 1',
+        images: [{ blob: new Blob(['img3'], { type: 'image/jpeg' }) }]
+      }
+    ];
+
+    const matched = matchPptSlidesToBookings(mockSlides, bookingItems);
+
+    // Item 1 should match Slide 3 (S.No 1 + Facing Modipuram)
+    expect(matched[0].matchedSlide?.number).toBe(3);
+    // Item 2 should match Slide 2 (SL 2 + Facing City)
+    expect(matched[1].matchedSlide?.number).toBe(2);
+
+    // Cover slide (Slide 1) must NOT be assigned to either item!
+    expect(matched[0].matchedSlide?.number).not.toBe(1);
+    expect(matched[1].matchedSlide?.number).not.toBe(1);
+
+    // 1-to-1 unique mapping (no duplicates)
+    expect(matched[0].matchedSlide?.number).not.toBe(matched[1].matchedSlide?.number);
   });
 });

@@ -5,7 +5,7 @@ import {
   RotateCcw, Sparkles, Filter, ChevronRight, Check, AlertCircle, Loader2
 } from 'lucide-react';
 import { readWorkbook } from '../core/workbookIO';
-import { parsePptx, releasePptxPreviews } from '../core/pptxEngine';
+import { parsePptx } from '../core/pptxEngine';
 import { 
   parseBulkBookingRows, 
   matchPptSlidesToBookings, 
@@ -128,6 +128,44 @@ export default function BulkBookingWizard({
       setIsProcessing(false);
       setProcessingMsg('');
     }
+  };
+
+  // Manual Admin Override for PPT Slide Assignment
+  const handleSlideChange = (itemId, newSlideNumber) => {
+    setParsedData(prev => {
+      if (!prev || !prev.items) return prev;
+      const num = newSlideNumber ? parseInt(newSlideNumber, 10) : null;
+
+      const updatedItems = prev.items.map(item => {
+        if (item.id === itemId) {
+          if (!num) {
+            return { ...item, matchedSlide: null };
+          }
+          const chosenSlide = item.availableSlides?.find(s => s.number === num);
+          if (!chosenSlide) return item;
+          return {
+            ...item,
+            matchedSlide: {
+              number: chosenSlide.number,
+              textSnippet: chosenSlide.textSnippet,
+              imageBlob: chosenSlide.imageBlob,
+              previewUrl: chosenSlide.previewUrl,
+              confidenceScore: 100,
+              matchType: 'manual_override'
+            }
+          };
+        }
+
+        // Maintain 1-to-1 uniqueness: if another item had this slide assigned, unassign it
+        if (num && item.matchedSlide?.number === num) {
+          return { ...item, matchedSlide: null };
+        }
+
+        return item;
+      });
+
+      return { ...prev, items: updatedItems };
+    });
   };
 
   // Execute Atomic Bulk Booking
@@ -477,14 +515,56 @@ export default function BulkBookingWizard({
                         <td className="col-rent">₹{Number(item.proRataRent || item.monthlyRent || 0).toLocaleString()}</td>
                         {mode === 'combo' && (
                           <td className="col-photo">
-                            {item.matchedSlide?.previewUrl ? (
-                              <div className="slide-thumb-preview" title={`Matched Slide ${item.matchedSlide.number}`}>
-                                <img src={item.matchedSlide.previewUrl} alt="Slide preview" />
-                                <span className="slide-tag">S{item.matchedSlide.number}</span>
+                            <div className="slide-selector-cell">
+                              <div className="slide-thumb-preview" title={item.matchedSlide ? `Slide ${item.matchedSlide.number}` : 'No photo'}>
+                                {item.matchedSlide?.previewUrl ? (
+                                  <>
+                                    <img src={item.matchedSlide.previewUrl} alt={`Slide ${item.matchedSlide.number}`} />
+                                    <span className="slide-tag">S{item.matchedSlide.number}</span>
+                                  </>
+                                ) : (
+                                  <span className="no-slide-tag">No Photo</span>
+                                )}
                               </div>
-                            ) : (
-                              <span className="no-slide-tag">No Photo</span>
-                            )}
+
+                              <div className="slide-selector-controls">
+                                <select 
+                                  className="slide-picker-dropdown"
+                                  value={item.matchedSlide?.number || ''}
+                                  onChange={(e) => handleSlideChange(item.id, e.target.value)}
+                                  title="Change matched slide artwork"
+                                >
+                                  <option value="">(No Photo)</option>
+                                  {item.availableSlides?.map(s => (
+                                    <option key={s.number} value={s.number}>
+                                      Slide {s.number} {s.isCover ? '[Cover]' : ''} {s.textSnippet ? `— ${s.textSnippet.slice(0, 20)}...` : ''}
+                                    </option>
+                                  ))}
+                                </select>
+
+                                {item.matchedSlide && (
+                                  <div className="slide-confidence-row">
+                                    {item.matchedSlide.matchType === 'manual_override' ? (
+                                      <span className="confidence-pill manual" title="Manually assigned by Admin">
+                                        ⚡ 100% Manual
+                                      </span>
+                                    ) : item.matchedSlide.confidenceScore >= 80 ? (
+                                      <span className="confidence-pill high" title="High Confidence Match (SL & Location Verified)">
+                                        🎯 {item.matchedSlide.confidenceScore}% Match
+                                      </span>
+                                    ) : item.matchedSlide.confidenceScore >= 50 ? (
+                                      <span className="confidence-pill medium" title="Location Text Matched">
+                                        🔍 {item.matchedSlide.confidenceScore}% Likely
+                                      </span>
+                                    ) : (
+                                      <span className="confidence-pill low" title="Sequential Fallback Assignment">
+                                        📑 {item.matchedSlide.confidenceScore}% Order
+                                      </span>
+                                    )}
+                                  </div>
+                                )}
+                              </div>
+                            </div>
                           </td>
                         )}
                         <td className="col-status">
