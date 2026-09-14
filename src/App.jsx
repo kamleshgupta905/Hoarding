@@ -318,7 +318,6 @@ function AppContent({ hoardings, setHoardings }) {
   return (
     <div className="app-container">
       <AutoUpdateBar />
-      <AppAutoUpdater />
       <CommandPalette />
       {!hideNav && <Navbar />}
       <main>

@@ -5,6 +5,7 @@ import './AppAutoUpdater.css';
 
 export default function AppAutoUpdater() {
   const isElectron = typeof window !== 'undefined' && Boolean(window.electronAPI?.isElectron);
+  const isNativeApp = typeof window !== 'undefined' && Boolean(window.Capacitor?.isNativePlatform?.());
 
   const [updateInfo, setUpdateInfo] = useState(null);
   const [isUpdating, setIsUpdating] = useState(false);
@@ -13,8 +14,9 @@ export default function AppAutoUpdater() {
   const countdownTimerRef = useRef(null);
 
   useEffect(() => {
-    // 🛡️ Native Electron desktop builds use electron-updater (AutoUpdateBar). Disable web auto-updater in Electron.
-    if (isElectron) return;
+    // 🛡️ Web browsers and Desktop apps MUST NEVER show this screen.
+    // Web automatically gets the latest code on page load/refresh from Vercel.
+    if (isElectron || !isNativeApp) return;
 
     const runCheck = async () => {
       if (typeof navigator !== 'undefined' && !navigator.onLine) return;
@@ -39,7 +41,7 @@ export default function AppAutoUpdater() {
       clearInterval(interval);
       window.removeEventListener('online', onOnline);
     };
-  }, []);
+  }, [isElectron, isNativeApp]);
 
   const handleStartUpdate = React.useCallback(async () => {
     if (countdownTimerRef.current) clearInterval(countdownTimerRef.current);
@@ -74,7 +76,7 @@ export default function AppAutoUpdater() {
     };
   }, [updateInfo, isUpdating, handleStartUpdate]);
 
-  if (isElectron || !updateInfo) return null;
+  if (isElectron || !isNativeApp || !updateInfo) return null;
 
   return (
     <div className="app-auto-updater-overlay">
