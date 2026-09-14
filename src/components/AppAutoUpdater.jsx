@@ -4,10 +4,7 @@ import { checkForAppUpdates, performLiveAppUpdate } from '../services/appUpdater
 import './AppAutoUpdater.css';
 
 export default function AppAutoUpdater() {
-  // 🛡️ Native Electron desktop builds use electron-updater (AutoUpdateBar). Disable web auto-updater in Electron.
-  if (typeof window !== 'undefined' && window.electronAPI?.isElectron) {
-    return null;
-  }
+  const isElectron = typeof window !== 'undefined' && Boolean(window.electronAPI?.isElectron);
 
   const [updateInfo, setUpdateInfo] = useState(null);
   const [isUpdating, setIsUpdating] = useState(false);
@@ -16,6 +13,9 @@ export default function AppAutoUpdater() {
   const countdownTimerRef = useRef(null);
 
   useEffect(() => {
+    // 🛡️ Native Electron desktop builds use electron-updater (AutoUpdateBar). Disable web auto-updater in Electron.
+    if (isElectron) return;
+
     const runCheck = async () => {
       if (typeof navigator !== 'undefined' && !navigator.onLine) return;
       const res = await checkForAppUpdates();
@@ -74,7 +74,7 @@ export default function AppAutoUpdater() {
     };
   }, [updateInfo, isUpdating, handleStartUpdate]);
 
-  if (!updateInfo) return null;
+  if (isElectron || !updateInfo) return null;
 
   return (
     <div className="app-auto-updater-overlay">

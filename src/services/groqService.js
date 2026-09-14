@@ -9,8 +9,7 @@ const DEFAULT_KEY = GK_PARTS.join('');
 
 const GROQ_MODELS = [
   'llama-3.1-8b-instant',      // ⚡ Ultra-Fast (~800+ tokens/sec, response <100ms)
-  'llama-3.3-70b-versatile',  // High-accuracy fallback
-  'gemma2-9b-it'
+  'llama-3.3-70b-versatile'   // High-accuracy fallback
 ];
 
 export const getGroqApiKey = () => {

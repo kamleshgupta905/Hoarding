@@ -108,7 +108,7 @@ export const parseImageDimensionsFromBytes = (bytes) => {
   return { width: 0, height: 0 };
 };
 
-const getImageDimensions = async (blob, bytes = null) => {
+export const getImageDimensions = async (blob, bytes = null) => {
   if (bytes) {
     const dim = parseImageDimensionsFromBytes(bytes);
     if (dim.width > 0 && dim.height > 0) return dim;
@@ -125,7 +125,7 @@ const getImageDimensions = async (blob, bytes = null) => {
   return { width: 0, height: 0 };
 };
 
-const hashBytes = async (bytes) => {
+export const hashBytes = async (bytes) => {
   try {
     if (typeof crypto !== 'undefined' && crypto.subtle) {
       const digest = await crypto.subtle.digest('SHA-256', bytes);
@@ -137,7 +137,7 @@ const hashBytes = async (bytes) => {
   return `${bytes.length || 0}-${Date.now()}`;
 };
 
-const hashBlob = async (blob) => {
+export const hashBlob = async (blob) => {
   try {
     const buffer = await blob.arrayBuffer();
     return await hashBytes(new Uint8Array(buffer));
@@ -276,7 +276,7 @@ const calculateDistanceMeters = (lat1, lon1, lat2, lon2) => {
   return R * c;
 };
 
-const scoreSite = (text, site, slideNumber = 0, siteIndex = -1) => {
+export const scoreSite = (text, site, slideNumber = 0, siteIndex = -1) => {
   const expandedText = expandSmartSynonyms(text);
   const normalized = normalizeText(expandedText);
   const siteId = normalizeText(site._SiteID);
@@ -288,16 +288,21 @@ const scoreSite = (text, site, slideNumber = 0, siteIndex = -1) => {
 
   let score = 0;
 
-  // 🎯 1. Ultra Priority: Slide Number == Serial No. / Sr No. in Google Sheet
+  // 🎯 1. Priority: Serial No. / Sr No. in slide text or modest slide index tiebreaker
   const rawSrNo = site['Sr No'] || site['S.No'] || site['S. No.'] || site['Sr. No.'] || site['Serial No'] || site['S No'] || site['Sr.'] || site['No.'] || site.ID;
   const parsedSrNo = parseInt(String(rawSrNo || '').replace(/[^0-9]/g, ''), 10);
   
-  if (slideNumber > 0) {
-    if (!isNaN(parsedSrNo) && parsedSrNo === slideNumber) {
-      score += 25000; // 🌟 100% Lock: Slide Number EXACTLY equals Sheet Sr. No.!
-    } else if (siteIndex >= 0 && (siteIndex + 1) === slideNumber) {
-      score += 20000; // 🌟 Sequence Match: Slide N equals Row N in Sheet!
+  const srMatch = text.match(/(?:sr|sl|s\.no|sr\.no|s\s*no|serial)\s*[:#.-]?\s*(\d+)/i);
+  if (srMatch) {
+    const textSrNo = parseInt(srMatch[1], 10);
+    if (!isNaN(parsedSrNo) && parsedSrNo === textSrNo) {
+      score += 15000; // Slide text explicitly states "Sr No: X" and matches sheet Sr. No.!
     }
+  } else if (slideNumber > 0 && !isNaN(parsedSrNo) && parsedSrNo === slideNumber) {
+    // Modest tie-breaker if slide index matches sheet Sr No, allowing GPS & landmark to verify
+    score += 1500;
+  } else if (slideNumber > 0 && siteIndex >= 0 && (siteIndex + 1) === slideNumber) {
+    score += 1000;
   }
 
   // 2. Unique ID Match
@@ -652,11 +657,40 @@ export const parsePptx = async (arrayBuffer, sites = [], onProgress = null) => {
                 slide.suggestedSiteId = groqRes.matchedSite._SiteID || groqRes.matchedSite.UniqueID || groqRes.matchedSite.ID || '';
                 slide.confidence = groqRes.confidence || 'HIGH';
                 slide.status = 'MATCHED';
-                slide.aiReason = groqRes.reason || 'Matched by Claude AI';
+                slide.aiReason = groqRes.reason || 'Matched by Groq AI';
+              }
+            }
+
+            // 🔄 Fallback to Gemini Multimodal AI if Groq matching did not lock a site
+            if (!slide.suggestedSiteId && topCandidates.length > 0) {
+              try {
+                const { matchSlideToInventoryWithGemini } = await import('../services/geminiService');
+                const geminiRes = await matchSlideToInventoryWithGemini(slide.text, topCandidates);
+                if (geminiRes && geminiRes.site) {
+                  slide.suggestedSiteId = geminiRes.site._SiteID || geminiRes.site.UniqueID || geminiRes.site.ID || '';
+                  slide.confidence = geminiRes.confidence || 'HIGH';
+                  slide.status = 'MATCHED';
+                  slide.aiReason = geminiRes.reason || 'Matched by Gemini AI Fallback';
+                }
+              } catch (geminiErr) {
+                console.warn('[Gemini Slide Fallback Notice]:', geminiErr);
               }
             }
           } catch (groqErr) {
-            console.warn('[Claude AI Engine Notice]:', groqErr);
+            console.warn('[AI Engine Notice]:', groqErr);
+            // 🔄 Fallback to Gemini on Groq network/parsing failure
+            try {
+              const { matchSlideToInventoryWithGemini } = await import('../services/geminiService');
+              const geminiRes = await matchSlideToInventoryWithGemini(slide.text, topCandidates);
+              if (geminiRes && geminiRes.site) {
+                slide.suggestedSiteId = geminiRes.site._SiteID || geminiRes.site.UniqueID || geminiRes.site.ID || '';
+                slide.confidence = geminiRes.confidence || 'HIGH';
+                slide.status = 'MATCHED';
+                slide.aiReason = geminiRes.reason || 'Matched by Gemini AI Fallback';
+              }
+            } catch (geminiErr) {
+              console.warn('[Gemini Slide Fallback Notice]:', geminiErr);
+            }
           }
         }
       }

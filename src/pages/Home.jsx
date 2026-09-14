@@ -33,13 +33,20 @@ const Home = ({ hoardings }) => {
 
     const handleSearch = (e) => {
         e.preventDefault();
-        if (searchTerm) {
+        const term = searchTerm.trim();
+        if (term) {
+            const lowerTerm = term.toLowerCase();
             const match = hoardings.find(h =>
-                h["Area"]?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                h["Location "]?.toLowerCase().includes(searchTerm.toLowerCase())
+                (h["Area"] || h["Locality"] || '')?.toLowerCase().includes(lowerTerm) ||
+                (h["Location "] || h.Location || h["Locality Site Location"] || '')?.toLowerCase().includes(lowerTerm) ||
+                (h.City || h.city || '')?.toLowerCase().includes(lowerTerm)
             );
             if (match) {
-                navigate(`/${match.City}?search=${searchTerm}`);
+                const targetCity = match.City || match.city || 'all';
+                navigate(`/${targetCity}?search=${encodeURIComponent(term)}`);
+            } else {
+                const fallbackCity = allCities[0] || 'all';
+                navigate(`/${fallbackCity}?search=${encodeURIComponent(term)}`);
             }
         }
     };

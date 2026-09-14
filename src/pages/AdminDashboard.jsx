@@ -13,9 +13,11 @@ import {
     Star, FileSpreadsheet, Presentation, Loader2
 } from 'lucide-react';
 import { analyzeHoardingImage, extractSiteCoordinates } from '../services/aiService';
-import { fetchHoardings, compressImage, syncToGoogleSheet, exportProposalExcel, PROPOSAL_COLUMNS, getImageUrl, downloadHoardingImage, fetchStaffUploads, reviewStaffPhoto, detectStaffPhotoOrientation, fetchSheetGrid, saveSheetGrid, addDeletedSite, parseHistoryString, saveLocalBooking, clearLocalBooking, recordSiteBooking, removeSiteBooking, getSiteBookingSlots, checkBookingConflict, calculateProRataRental, resolveSiteLiveStatus, saveSiteBookingSlots, recordSiteHistory, getLocalHistory, getDirectDriveLink, parseCellImageUrls, addDeletedHistoryUrl, isHistoryUrlDeleted, removeSiteHistory } from '../services/dataService';
+import { fetchHoardings, compressImage, syncToGoogleSheet, exportProposalExcel, PROPOSAL_COLUMNS, getImageUrl, downloadHoardingImage, fetchStaffUploads, reviewStaffPhoto, detectStaffPhotoOrientation, fetchSheetGrid, saveSheetGrid, addDeletedSite, parseHistoryString, saveLocalBooking, clearLocalBooking, recordSiteBooking, removeSiteBooking, getSiteBookingSlots, checkBookingConflict, calculateProRataRental, resolveSiteLiveStatus, saveSiteBookingSlots, recordSiteHistory, getLocalHistory, getDirectDriveLink, parseCellImageUrls, addDeletedHistoryUrl, isHistoryUrlDeleted, removeSiteHistory, getExpiringSites } from '../services/dataService';
 import { generateMasterMediaPlanPptx } from '../services/presentationService';
 import ImageLightbox from '../components/ImageLightbox';
+import RenewalAlertRadar from '../components/RenewalAlertRadar';
+import BulkBookingWizard from '../components/BulkBookingWizard';
 import { clearAdminSession, getAdminSession, getStaffUploadLink, postDirect } from '../services/secureApi';
 import { isInternalHeader } from '../core/hoardingSchema';
 import { blobToDataUrl, prepareImageOrientation } from '../core/imageOrientation';
@@ -298,6 +300,32 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
     };
     const [quickBookingTarget, setQuickBookingTarget] = useState(null); // { site, clientName, startDate, endDate }
     const [searchTerm, setSearchTerm] = useState('');
+
+    // 🚨 Live Expiring Renewal Alerts Count (<= 15 Days or Overdue)
+    const expiringAlertsCount = useMemo(() => {
+        return getExpiringSites(hoardings, 15).length;
+    }, [hoardings]);
+
+    const handleOpenRenewalBooking = useCallback((site) => {
+        if (!site) return;
+        const currentEnd = site.BookingEnd;
+        let nextStart = new Date().toISOString().split('T')[0];
+        if (currentEnd) {
+            const d = new Date(currentEnd);
+            if (!isNaN(d.getTime())) {
+                d.setDate(d.getDate() + 1);
+                nextStart = d.toISOString().split('T')[0];
+            }
+        }
+        const nextEndDate = new Date(new Date(nextStart).getTime() + 30 * 86400000).toISOString().split('T')[0];
+        setQuickBookingTarget({
+            site,
+            clientName: site.BookedBy || site['Booked By'] || '',
+            startDate: nextStart,
+            endDate: nextEndDate
+        });
+    }, []);
+
     const [inventorySearchCategories, setInventorySearchCategories] = useState(['all']);
     const [isSearchCategoryDropdownOpen, setIsSearchCategoryDropdownOpen] = useState(false);
 
@@ -352,6 +380,7 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
     const [isSettingsOpen, setIsSettingsOpen] = useState(false);
     const [isAddModalOpen, setIsAddModalOpen] = useState(false);
     const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+    const [isBulkBookingOpen, setIsBulkBookingOpen] = useState(false);
     const [selectedHoarding, setSelectedHoarding] = useState(null);
     const [formData, setFormData] = useState({});
 
@@ -3525,10 +3554,10 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
         });
 
     const recentSitesList = [];
-    sortedRecentBookings.forEach(b => {
+    sortedRecentBookings.forEach((b, bIdx) => {
         const s = b.site;
         const id = s["CODE"] || s["Code"] || s["ID"] || s["Site Code"] || s.SL || '';
-        const key = id || s.Location || Math.random();
+        const key = id || s.Location || (`site_${bIdx}`);
         if (!bookedSiteKeys.has(key) && recentSitesList.length < 6) {
             bookedSiteKeys.add(key);
             const location = s["Location"] || s["Area"] || s["Locality"] || s["City"] || 'Master Site';
@@ -4763,6 +4792,21 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                     <button className={`nav-item ${activeTab === 'clients' ? 'active' : ''}`} onClick={() => setActiveTab('clients')}>
                         <Users size={18} />
                         <span>Clients & Booking</span>
+                        {expiringAlertsCount > 0 && (
+                            <span 
+                                className="badge-new badge-count" 
+                                style={{ 
+                                    background: '#f59e0b', 
+                                    color: '#0f172a', 
+                                    fontWeight: 800,
+                                    fontSize: '0.72rem',
+                                    padding: '1px 7px'
+                                }}
+                                title={`${expiringAlertsCount} hoardings expiring within 15 days`}
+                            >
+                                {expiringAlertsCount} Due
+                            </span>
+                        )}
                     </button>
                     <button className={`nav-item ${activeTab === 'daily-update' ? 'active' : ''}`} onClick={() => setActiveTab('daily-update')}>
                         <Zap size={18} />
@@ -4914,6 +4958,14 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                     </p>
                                 </div>
                                 <div className="qm-header-controls">
+                                    <button 
+                                        className="qm-btn-secondary" 
+                                        onClick={() => setIsBulkBookingOpen(true)} 
+                                        title="Open Multi-Client Bulk Campaign Onboarding Wizard"
+                                        style={{ borderColor: '#c7d2fe', color: '#4338ca', background: '#eef2ff' }}
+                                    >
+                                        <Layers size={15} color="#4f46e5" /> Bulk Booking
+                                    </button>
                                     <button className="qm-btn-secondary" onClick={() => exportProposalExcel(hoardings)} title="Export complete inventory data to Excel">
                                         <FileDown size={15} /> Export Data
                                     </button>
@@ -4922,6 +4974,22 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                     </button>
                                 </div>
                             </motion.div>
+
+                            {/* 🚨 15-Days Renewal Predictor & Occupancy Alert Radar */}
+                            <RenewalAlertRadar
+                                hoardings={hoardings}
+                                onSelectSite={(site) => {
+                                    setSelectedHoarding(site);
+                                    setFormData(site);
+                                    setIsEditModalOpen(true);
+                                }}
+                                onOpenBookingModal={(site) => {
+                                    handleOpenRenewalBooking(site);
+                                }}
+                                onReleaseSite={(site) => {
+                                    handleStatusClick(site);
+                                }}
+                            />
 
                             {/* 📈 4 KPI Stat Cards (Matching Screenshot Proportions) */}
                             <motion.div 
@@ -7829,13 +7897,54 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                         >
                             
                             {/* 🌟 Header Section */}
-                            <div style={{ marginBottom: '20px' }}>
-                                <h1 style={{ fontSize: '1.625rem', fontWeight: 700, color: '#111827', margin: '0 0 2px 0', letterSpacing: '-0.02em' }}>
-                                    Clients & Booking
-                                </h1>
-                                <p style={{ color: '#6b7280', fontSize: '0.8125rem', margin: 0, fontWeight: 400 }}>
-                                    {allBookings.length} active & scheduled bookings across all media locations
-                                </p>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', flexWrap: 'wrap', gap: '14px' }}>
+                                <div>
+                                    <h1 style={{ fontSize: '1.625rem', fontWeight: 700, color: '#111827', margin: '0 0 2px 0', letterSpacing: '-0.02em' }}>
+                                        Clients & Booking
+                                    </h1>
+                                    <p style={{ color: '#6b7280', fontSize: '0.8125rem', margin: 0, fontWeight: 400 }}>
+                                        {allBookings.length} active & scheduled bookings across all media locations
+                                    </p>
+                                </div>
+                                <button 
+                                    type="button" 
+                                    onClick={() => setIsBulkBookingOpen(true)}
+                                    style={{
+                                        display: 'inline-flex',
+                                        alignItems: 'center',
+                                        gap: '8px',
+                                        padding: '10px 20px',
+                                        borderRadius: '10px',
+                                        background: 'linear-gradient(135deg, #6366f1, #4f46e5)',
+                                        color: '#ffffff',
+                                        fontWeight: 800,
+                                        fontSize: '0.86rem',
+                                        border: 'none',
+                                        cursor: 'pointer',
+                                        boxShadow: '0 4px 14px rgba(99, 102, 241, 0.3)'
+                                    }}
+                                    title="Open Multi-Client Bulk Campaign Onboarding Wizard"
+                                >
+                                    <Layers size={16} /> Bulk Campaign Onboarding
+                                </button>
+                            </div>
+
+                            {/* 🚨 15-Days Renewal Predictor Radar */}
+                            <div style={{ marginBottom: '22px' }}>
+                                <RenewalAlertRadar
+                                    hoardings={hoardings}
+                                    onSelectSite={(site) => {
+                                        setSelectedHoarding(site);
+                                        setFormData(site);
+                                        setIsEditModalOpen(true);
+                                    }}
+                                    onOpenBookingModal={(site) => {
+                                        handleOpenRenewalBooking(site);
+                                    }}
+                                    onReleaseSite={(site) => {
+                                        handleStatusClick(site);
+                                    }}
+                                />
                             </div>
 
                             {/* 🔍 Search Box & Slot Status Filter Bar */}
@@ -9463,6 +9572,21 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                     );
                 })()}
 
+                {/* ⚡ Bulk Campaign Onboarding Wizard */}
+                {isBulkBookingOpen && (
+                    <BulkBookingWizard
+                        isOpen={isBulkBookingOpen}
+                        onClose={() => setIsBulkBookingOpen(false)}
+                        hoardings={hoardings}
+                        onSuccess={(updatedList) => {
+                            if (updatedList && setHoardings) {
+                                setHoardings(updatedList);
+                            }
+                            setIsBulkBookingOpen(false);
+                            showToast("Bulk campaigns successfully booked!", "success");
+                        }}
+                    />
+                )}
 
                 {/* 🍞 Floating Glassmorphic Toast Notifications */}
                 {toast && (

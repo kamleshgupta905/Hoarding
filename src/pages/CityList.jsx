@@ -1,11 +1,11 @@
 import React, { useState, useMemo } from 'react';
 import { useParams, useSearchParams, Link } from 'react-router-dom';
-import { Filter, ChevronDown, ListFilter, Map as MapIcon, Grid, Zap, Info } from 'lucide-react';
+import { Filter, ListFilter, Map as MapIcon, Grid, Radio } from 'lucide-react';
 import { MapContainer, TileLayer, Marker, Popup } from 'react-leaflet';
 import L from 'leaflet';
 import { Helmet } from 'react-helmet-async';
 import HoardingCard from '../components/HoardingCard';
-import { getImageUrl } from '../services/dataService';
+import { getImageUrl, getSiteOccupancyStatus, generateWhatsAppRenewalMessage } from '../services/dataService';
 import './CityList.css';
 
 // Fix for default marker icon in Leaflet
@@ -44,6 +44,43 @@ const parseDate = (dateStr) => {
     return isNaN(parsed.getTime()) ? null : parsed;
 };
 
+// 🎨 Generate high-contrast dynamic Leaflet marker for each occupancy state
+const createOccupancyIcon = (occupancy) => {
+    const status = occupancy.status;
+    const daysLeft = occupancy.daysLeft;
+
+    let pinClass = 'marker-available';
+    let symbol = '🟢';
+    let badgeText = '';
+
+    if (status === 'EXPIRING_SOON') {
+        pinClass = 'marker-expiring-pulse';
+        symbol = '🟡';
+        badgeText = daysLeft !== null ? `${daysLeft}d` : '!';
+    } else if (status === 'OVERDUE') {
+        pinClass = 'marker-overdue';
+        symbol = '🟣';
+        badgeText = 'OD';
+    } else if (status === 'BOOKED') {
+        pinClass = 'marker-booked';
+        symbol = '🔴';
+    }
+
+    return L.divIcon({
+        className: 'occupancy-leaflet-marker-wrapper',
+        html: `
+            <div class="occupancy-pin-marker ${pinClass}" title="${occupancy.badgeLabel}">
+                <div class="pin-core">${symbol}</div>
+                ${badgeText ? `<div class="pin-days-tag">${badgeText}</div>` : ''}
+                ${status === 'EXPIRING_SOON' ? '<div class="pin-radar-ring"></div>' : ''}
+            </div>
+        `,
+        iconSize: [36, 36],
+        iconAnchor: [18, 36],
+        popupAnchor: [0, -36]
+    });
+};
+
 const CityList = ({ hoardings }) => {
     const { cityName } = useParams();
     const [searchParams] = useSearchParams();
@@ -56,6 +93,7 @@ const CityList = ({ hoardings }) => {
     const [filterCity, setFilterCity] = useState('All');
     const [filterLocality, setFilterLocality] = useState('All');
     const [priceRange, setPriceRange] = useState('All');
+    const [occupancyFilter, setOccupancyFilter] = useState('All'); // 'All', 'Available', 'Expiring', 'Booked'
     const [sortBy, setSortBy] = useState('price-low');
     const [campaignStart, setCampaignStart] = useState('');
     const [campaignEnd, setCampaignEnd] = useState('');
@@ -95,6 +133,30 @@ const CityList = ({ hoardings }) => {
         return ['All', ...unique];
     }, [activeCityHoardings]);
 
+    // Compute live radar counts for active city selection
+    const occupancyStats = useMemo(() => {
+        let available = 0;
+        let expiring = 0;
+        let booked = 0;
+        let overdue = 0;
+
+        activeCityHoardings.forEach(h => {
+            const occ = getSiteOccupancyStatus(h);
+            if (occ.status === 'AVAILABLE') available++;
+            else if (occ.status === 'EXPIRING_SOON') expiring++;
+            else if (occ.status === 'OVERDUE') overdue++;
+            else if (occ.status === 'BOOKED') booked++;
+        });
+
+        return {
+            total: activeCityHoardings.length,
+            available,
+            expiring,
+            booked,
+            overdue
+        };
+    }, [activeCityHoardings]);
+
     const filteredHoardings = useMemo(() => {
         let filtered = cityHoardings.filter(h => {
             const rawPrice = h["Avg Monthly Cost (INR)"] ?? h["Rental Per Month"] ?? 0;
@@ -115,6 +177,19 @@ const CityList = ({ hoardings }) => {
                 siteLocality.toLowerCase().includes(searchQuery.toLowerCase()) ||
                 String(h["Locality Site Location"] || h["Location "] || h["Location"] || '').toLowerCase().includes(searchQuery.toLowerCase());
 
+            // 🎯 Occupancy Status Filter
+            let matchOccupancy = true;
+            if (occupancyFilter !== 'All') {
+                const occ = getSiteOccupancyStatus(h);
+                if (occupancyFilter === 'Available') {
+                    matchOccupancy = occ.status === 'AVAILABLE';
+                } else if (occupancyFilter === 'Expiring') {
+                    matchOccupancy = occ.isExpiringSoon;
+                } else if (occupancyFilter === 'Booked') {
+                    matchOccupancy = occ.status === 'BOOKED' || occ.status === 'OVERDUE';
+                }
+            }
+
             // Date Range Filter Logic
             let matchDates = true;
             if (campaignStart && campaignEnd) {
@@ -128,7 +203,6 @@ const CityList = ({ hoardings }) => {
                         const bEnd = parseDate(h.BookingEnd);
                         
                         if (bStart && bEnd) {
-                            // Reset time components for accurate date comparisons
                             const cleanQueryStart = new Date(queryStart.getFullYear(), queryStart.getMonth(), queryStart.getDate());
                             const cleanQueryEnd = new Date(queryEnd.getFullYear(), queryEnd.getMonth(), queryEnd.getDate());
                             const cleanBStart = new Date(bStart.getFullYear(), bStart.getMonth(), bStart.getDate());
@@ -139,14 +213,13 @@ const CityList = ({ hoardings }) => {
                                 matchDates = false;
                             }
                         } else {
-                            // If marked Occupied but booking dates are not set or malformed, we treat it as fully booked
                             matchDates = false;
                         }
                     }
                 }
             }
 
-            return matchCity && matchLocality && matchPrice && matchSearch && matchDates;
+            return matchCity && matchLocality && matchPrice && matchSearch && matchDates && matchOccupancy;
         });
 
         if (sortBy === 'price-low') {
@@ -167,11 +240,26 @@ const CityList = ({ hoardings }) => {
         }
 
         return filtered;
-    }, [cityHoardings, filterCity, filterLocality, priceRange, searchQuery, sortBy, campaignStart, campaignEnd]);
+    }, [cityHoardings, filterCity, filterLocality, priceRange, searchQuery, sortBy, campaignStart, campaignEnd, occupancyFilter]);
 
-    const mapCenter = cityHoardings.length > 0
-        ? [Number(cityHoardings[0].Latitude), Number(cityHoardings[0].Longitude)]
-        : [28.6139, 77.2090]; // Delhi as default for 'all'
+    // Filter valid coordinates for map markers to prevent Leaflet NaN crashes
+    const validMapHoardings = useMemo(() => {
+        return filteredHoardings.filter(h => {
+            const lat = parseFloat(h.Latitude || h.Lat || h['Lat.']);
+            const lng = parseFloat(h.Longitude || h.Long || h['Long.']);
+            return !isNaN(lat) && !isNaN(lng) && lat !== 0 && lng !== 0;
+        });
+    }, [filteredHoardings]);
+
+    const firstValidSiteWithCoords = validMapHoardings[0] || cityHoardings.find(h => {
+        const lat = parseFloat(h.Latitude || h.Lat || h['Lat.']);
+        const lng = parseFloat(h.Longitude || h.Long || h['Long.']);
+        return !isNaN(lat) && !isNaN(lng) && lat !== 0 && lng !== 0;
+    });
+
+    const mapCenter = firstValidSiteWithCoords
+        ? [parseFloat(firstValidSiteWithCoords.Latitude || firstValidSiteWithCoords.Lat || firstValidSiteWithCoords['Lat.']), parseFloat(firstValidSiteWithCoords.Longitude || firstValidSiteWithCoords.Long || firstValidSiteWithCoords['Long.'])]
+        : [28.6139, 77.2090]; // Delhi fallback
 
     return (
         <div className="city-list-page container">
@@ -239,6 +327,16 @@ const CityList = ({ hoardings }) => {
                     )}
 
                     <div className="filter-group">
+                        <label>Occupancy Status</label>
+                        <select value={occupancyFilter} onChange={(e) => setOccupancyFilter(e.target.value)}>
+                            <option value="All">All Statuses ({occupancyStats.total})</option>
+                            <option value="Available">🟢 Available ({occupancyStats.available})</option>
+                            <option value="Expiring">🟡 Expiring Soon ≤15d ({occupancyStats.expiring})</option>
+                            <option value="Booked">🔴 Booked ({occupancyStats.booked + occupancyStats.overdue})</option>
+                        </select>
+                    </div>
+
+                    <div className="filter-group">
                         <label>Locality</label>
                         <select value={filterLocality} onChange={(e) => setFilterLocality(e.target.value)}>
                             {localities.map(l => <option key={l} value={l}>{l}</option>)}
@@ -272,7 +370,7 @@ const CityList = ({ hoardings }) => {
                             value={campaignEnd}
                             onChange={(e) => setCampaignEnd(e.target.value)}
                             className="date-input"
-                            min={campaignStart} // End date cannot be before start date
+                            min={campaignStart}
                         />
                     </div>
 
@@ -280,6 +378,7 @@ const CityList = ({ hoardings }) => {
                         setFilterCity('All');
                         setFilterLocality('All');
                         setPriceRange('All');
+                        setOccupancyFilter('All');
                         setSortBy('price-low');
                         setCampaignStart('');
                         setCampaignEnd('');
@@ -289,29 +388,138 @@ const CityList = ({ hoardings }) => {
                 <section className="results-grid">
                     {viewType === 'map' ? (
                         <div className="map-view-container">
-                            <MapContainer center={mapCenter} zoom={13} style={{ height: '600px', width: '100%', borderRadius: '12px' }}>
+                            {/* 🧭 Occupancy Heatmap Bar & Radar Quick Filter */}
+                            <div className="map-heatmap-bar">
+                                <div className="heatmap-bar-title">
+                                    <Radio size={16} className="radar-icon-pulse" />
+                                    <span>Occupancy Radar:</span>
+                                </div>
+                                <div className="heatmap-bar-chips">
+                                    <button 
+                                        type="button" 
+                                        className={`heatmap-chip chip-all ${occupancyFilter === 'All' ? 'active' : ''}`}
+                                        onClick={() => setOccupancyFilter('All')}
+                                    >
+                                        All ({occupancyStats.total})
+                                    </button>
+                                    <button 
+                                        type="button" 
+                                        className={`heatmap-chip chip-available ${occupancyFilter === 'Available' ? 'active' : ''}`}
+                                        onClick={() => setOccupancyFilter('Available')}
+                                    >
+                                        🟢 Available ({occupancyStats.available})
+                                    </button>
+                                    <button 
+                                        type="button" 
+                                        className={`heatmap-chip chip-expiring ${occupancyFilter === 'Expiring' ? 'active' : ''}`}
+                                        onClick={() => setOccupancyFilter('Expiring')}
+                                    >
+                                        🟡 Expiring ≤15d ({occupancyStats.expiring})
+                                    </button>
+                                    <button 
+                                        type="button" 
+                                        className={`heatmap-chip chip-booked ${occupancyFilter === 'Booked' ? 'active' : ''}`}
+                                        onClick={() => setOccupancyFilter('Booked')}
+                                    >
+                                        🔴 Booked ({occupancyStats.booked + occupancyStats.overdue})
+                                    </button>
+                                </div>
+                            </div>
+
+                            <MapContainer center={mapCenter} zoom={13} style={{ height: '620px', width: '100%', borderRadius: '14px' }}>
                                 <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
-                                {filteredHoardings.map((h, i) => (
-                                    <Marker key={i} position={[Number(h.Latitude), Number(h.Longitude)]}>
-                                        <Popup>
-                                            <div className="map-popup">
-                                                <img src={getImageUrl(h)} alt={h["Location "]}
-                                                    onError={(e) => e.target.src = 'https://placehold.co/200x120?text=Hoarding'} />
-                                                <h4>{h["Location "]}</h4>
-                                                <p>₹{Number(h["Rental Per Month"]).toLocaleString()} / month</p>
-                                                <Link to={`/${h.City}/${encodeURIComponent(h["Location "])}`} className="popup-link">
-                                                    View Details
-                                                </Link>
-                                            </div>
-                                        </Popup>
-                                    </Marker>
-                                ))}
+                                {validMapHoardings.map((h, i) => {
+                                    const lat = parseFloat(h.Latitude || h.Lat || h['Lat.']);
+                                    const lng = parseFloat(h.Longitude || h.Long || h['Long.']);
+                                    const occupancy = getSiteOccupancyStatus(h);
+                                    const locName = h["Location "] || h.Location || h["Locality Site Location"] || 'Hoarding Site';
+                                    const rentalPrice = Number(h["Rental Per Month"] || h["Avg Monthly Cost (INR)"] || 0);
+
+                                    return (
+                                        <Marker 
+                                            key={h._SiteID || h.UniqueID || h.SL || `${lat}-${lng}-${i}`} 
+                                            position={[lat, lng]}
+                                            icon={createOccupancyIcon(occupancy)}
+                                        >
+                                            <Popup>
+                                                <div className="map-popup custom-occupancy-popup">
+                                                    <div className="map-popup-thumb-wrap">
+                                                        <img 
+                                                            src={getImageUrl(h)} 
+                                                            alt={locName}
+                                                            onError={(e) => { e.target.src = 'https://placehold.co/220x130?text=Hoarding'; }} 
+                                                        />
+                                                        <span 
+                                                            className="popup-status-badge"
+                                                            style={{
+                                                                color: occupancy.badgeColor,
+                                                                background: occupancy.badgeBg,
+                                                                borderColor: occupancy.badgeBorder
+                                                            }}
+                                                        >
+                                                            {occupancy.badgeLabel}
+                                                        </span>
+                                                    </div>
+                                                    
+                                                    <div className="map-popup-body">
+                                                        <h4>{locName}</h4>
+                                                        <p className="popup-subtext">{h.City}{h.Locality ? ` • ${h.Locality}` : ''}</p>
+                                                        
+                                                        <div className="popup-price-row">
+                                                            <strong>₹{rentalPrice.toLocaleString()}</strong>
+                                                            <span>/ month</span>
+                                                        </div>
+
+                                                        {occupancy.client && occupancy.status !== 'AVAILABLE' && (
+                                                            <div className="popup-client-badge">
+                                                                <span>Client: <strong>{occupancy.client}</strong></span>
+                                                                {occupancy.formattedEndDate && (
+                                                                    <small> (Expires {occupancy.formattedEndDate})</small>
+                                                                )}
+                                                            </div>
+                                                        )}
+
+                                                        <div className="popup-cta-row">
+                                                            {occupancy.isExpiringSoon || occupancy.status === 'BOOKED' ? (
+                                                                <a
+                                                                    href={`https://wa.me/?text=${encodeURIComponent(generateWhatsAppRenewalMessage(h, occupancy.daysLeft))}`}
+                                                                    target="_blank"
+                                                                    rel="noopener noreferrer"
+                                                                    className="popup-action-btn popup-btn-wa"
+                                                                    title="Send 1-click renewal pitch to client"
+                                                                >
+                                                                    💬 WhatsApp Pitch
+                                                                </a>
+                                                            ) : (
+                                                                <a
+                                                                    href={`https://wa.me/?text=${encodeURIComponent(`Hi Heera Advertising, I am interested in booking your hoarding at ${locName} (${h.City}). Please share details.`)}`}
+                                                                    target="_blank"
+                                                                    rel="noopener noreferrer"
+                                                                    className="popup-action-btn popup-btn-wa"
+                                                                    title="Inquire on WhatsApp"
+                                                                >
+                                                                    💬 WhatsApp Inquiry
+                                                                </a>
+                                                            )}
+                                                            <Link 
+                                                                to={`/${h.City}/${encodeURIComponent(locName)}`} 
+                                                                className="popup-action-btn popup-btn-details"
+                                                            >
+                                                                View Details →
+                                                            </Link>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </Popup>
+                                        </Marker>
+                                    );
+                                })}
                             </MapContainer>
                         </div>
                     ) : filteredHoardings.length > 0 ? (
                         <div className="cards-wrapper">
                             {filteredHoardings.map((h, i) => (
-                                <HoardingCard key={i} hoarding={h} />
+                                <HoardingCard key={h._SiteID || h.UniqueID || h.SL || i} hoarding={h} />
                             ))}
                         </div>
                     ) : (

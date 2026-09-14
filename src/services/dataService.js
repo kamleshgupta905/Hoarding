@@ -163,7 +163,7 @@ export const parseHistoryString = (rawHistory) => {
   return [];
 };
 
-const imageValuesFromHistory = (history) => {
+export const imageValuesFromHistory = (history) => {
   if (Array.isArray(history)) {
     return history.map((item) => typeof item === 'string' ? item : item?.url);
   }
@@ -1062,8 +1062,9 @@ export const fetchHoardings = async () => {
     try {
       const normalized = parsedData
         .filter(item => {
-          if (!item || !item.City || item.City.toLowerCase() === 'total') return false;
-          if (item._DeletedAt) return false;
+          if (!item || item._DeletedAt) return false;
+          const rawCity = String(item.City || item.city || '').trim();
+          if (rawCity.toLowerCase() === 'total' || rawCity.toLowerCase() === 'grand total') return false;
           
           const loc = String(item['Location '] || item['Locality Site Location'] || item['Location'] || '').trim();
           const locality = String(item['Locality'] || item['Area'] || '').trim();
@@ -1470,4 +1471,200 @@ export const exportProposalExcel = (sites, fileName = 'hoarding-proposal.xls', s
   link.remove();
   URL.revokeObjectURL(url);
   return true;
+};
+
+/**
+ * 📅 Universal Date Parser for Hoarding Booking Dates
+ */
+export const parseBookingDate = (dateStr) => {
+  if (!dateStr) return null;
+  if (dateStr instanceof Date) return isNaN(dateStr.getTime()) ? null : dateStr;
+  const cleanStr = String(dateStr).trim();
+  if (!cleanStr) return null;
+
+  // YYYY-MM-DD or YYYY/MM/DD
+  if (/^\d{4}[-/]\d{1,2}[-/]\d{1,2}/.test(cleanStr)) {
+    const parts = cleanStr.split(/[-/]/);
+    const year = parseInt(parts[0], 10);
+    const month = parseInt(parts[1], 10) - 1;
+    const day = parseInt(parts[2], 10);
+    const d = new Date(year, month, day);
+    return isNaN(d.getTime()) ? null : d;
+  }
+
+  // DD/MM/YYYY or DD-MM-YYYY
+  const dmyMatch = cleanStr.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{4})/);
+  if (dmyMatch) {
+    const day = parseInt(dmyMatch[1], 10);
+    const month = parseInt(dmyMatch[2], 10) - 1;
+    const year = parseInt(dmyMatch[3], 10);
+    const d = new Date(year, month, day);
+    return isNaN(d.getTime()) ? null : d;
+  }
+
+  const parsed = new Date(cleanStr);
+  return isNaN(parsed.getTime()) ? null : parsed;
+};
+
+/**
+ * 🎯 Occupancy Status & 15-Days Renewal Predictor Engine
+ * Evaluates live occupancy status, days remaining, tier, and marker theme.
+ */
+export const getSiteOccupancyStatus = (site, refDate = new Date(), thresholdDays = 15) => {
+  if (!site || typeof site !== 'object') {
+    return {
+      status: 'AVAILABLE',
+      statusTier: 'available',
+      daysLeft: null,
+      client: '',
+      badgeColor: '#10b981',
+      badgeBg: 'rgba(16, 185, 129, 0.12)',
+      badgeBorder: '#10b98140',
+      badgeLabel: 'Available',
+      markerColor: 'green',
+      isExpiringSoon: false,
+      isOverdue: false,
+      formattedEndDate: ''
+    };
+  }
+
+  const statusRaw = String(site.STATUS || site.status || 'Available').trim().toLowerCase();
+  const isBookedOrOccupied = (statusRaw === 'booked' || statusRaw === 'occupied');
+  const client = String(site.BookedBy || site['Booked By'] || site.Client || site.client || '').trim();
+
+  // Parse BookingEnd
+  const endRaw = site.BookingEnd || site['Booking End'] || site.bookingEnd || '';
+  const endDate = parseBookingDate(endRaw);
+  const startRaw = site.BookingStart || site['Booking Start'] || site.bookingStart || '';
+  const startDate = parseBookingDate(startRaw);
+
+  const formattedEndDate = endDate 
+    ? endDate.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })
+    : '';
+
+  // If marked Available or no booking end on unbooked site
+  if (!isBookedOrOccupied || !endDate) {
+    return {
+      status: 'AVAILABLE',
+      statusTier: 'available',
+      daysLeft: null,
+      client: '',
+      startDate,
+      endDate,
+      formattedEndDate,
+      badgeColor: '#10b981',
+      badgeBg: 'rgba(16, 185, 129, 0.12)',
+      badgeBorder: '#10b98140',
+      badgeLabel: 'Available',
+      markerColor: 'green',
+      isExpiringSoon: false,
+      isOverdue: false
+    };
+  }
+
+  // Calculate day difference
+  let daysLeft = null;
+  if (endDate) {
+    const todayZero = new Date(refDate.getFullYear(), refDate.getMonth(), refDate.getDate());
+    const endZero = new Date(endDate.getFullYear(), endDate.getMonth(), endDate.getDate());
+    const diffMs = endZero.getTime() - todayZero.getTime();
+    daysLeft = Math.round(diffMs / (1000 * 60 * 60 * 24));
+  }
+
+  // Tier 1: OVERDUE (Ended but not yet released)
+  if (daysLeft !== null && daysLeft < 0) {
+    return {
+      status: 'OVERDUE',
+      statusTier: 'overdue',
+      daysLeft,
+      client: client || 'Occupied',
+      startDate,
+      endDate,
+      formattedEndDate,
+      badgeColor: '#a855f7',
+      badgeBg: 'rgba(168, 85, 247, 0.15)',
+      badgeBorder: '#a855f750',
+      badgeLabel: `Overdue by ${Math.abs(daysLeft)}d`,
+      markerColor: 'purple',
+      isExpiringSoon: true,
+      isOverdue: true
+    };
+  }
+
+  // Tier 2: EXPIRING SOON (0 to thresholdDays left) - High Alert
+  if (daysLeft !== null && daysLeft <= thresholdDays) {
+    const isCritical = daysLeft <= 4;
+    return {
+      status: 'EXPIRING_SOON',
+      statusTier: isCritical ? 'critical' : 'expiring',
+      daysLeft,
+      client: client || 'Occupied',
+      startDate,
+      endDate,
+      formattedEndDate,
+      badgeColor: isCritical ? '#ef4444' : '#f59e0b',
+      badgeBg: isCritical ? 'rgba(239, 68, 68, 0.15)' : 'rgba(245, 158, 11, 0.15)',
+      badgeBorder: isCritical ? '#ef444450' : '#f59e0b50',
+      badgeLabel: daysLeft === 0 ? 'Expires Today!' : daysLeft === 1 ? 'Expires Tomorrow!' : `${daysLeft} Days Left`,
+      markerColor: 'yellow',
+      isExpiringSoon: true,
+      isOverdue: false
+    };
+  }
+
+  // Tier 3: ACTIVE BOOKED (> thresholdDays)
+  return {
+    status: 'BOOKED',
+    statusTier: 'booked',
+    daysLeft,
+    client: client || 'Booked',
+    startDate,
+    endDate,
+    formattedEndDate,
+    badgeColor: '#ef4444',
+    badgeBg: 'rgba(239, 68, 68, 0.12)',
+    badgeBorder: '#ef444440',
+    badgeLabel: daysLeft !== null ? `Booked (${daysLeft}d left)` : 'Booked',
+    markerColor: 'red',
+    isExpiringSoon: false,
+    isOverdue: false
+  };
+};
+
+/**
+ * ⚡ Filter and sort hoardings that are expiring within the next N days
+ */
+export const getExpiringSites = (hoardings = [], thresholdDays = 15) => {
+  if (!Array.isArray(hoardings) || hoardings.length === 0) return [];
+  const refDate = new Date();
+
+  return hoardings
+    .map(h => {
+      const occupancy = getSiteOccupancyStatus(h, refDate, thresholdDays);
+      return { site: h, occupancy };
+    })
+    .filter(({ occupancy }) => occupancy.isExpiringSoon)
+    .sort((a, b) => {
+      // Prioritize overdue, then critical, then ascending days left
+      const dA = a.occupancy.daysLeft ?? 999;
+      const dB = b.occupancy.daysLeft ?? 999;
+      return dA - dB;
+    });
+};
+
+/**
+ * 💬 Generate Professional 1-Click WhatsApp Renewal Pitch
+ */
+export const generateWhatsAppRenewalMessage = (site, daysLeft) => {
+  const loc = site["Location "] || site.Location || site["Locality Site Location"] || 'Hoarding Site';
+  const city = site.City || site.city || 'Meerut';
+  const client = site.BookedBy || site['Booked By'] || 'Valued Client';
+  const endDate = site.BookingEnd || 'soon';
+  const daysText = daysLeft === 0 
+    ? 'aaj' 
+    : daysLeft === 1 
+      ? 'kal' 
+      : `${daysLeft} dino me (${endDate})`;
+
+  return `Namaste ${client} Ji,\n\nHeera Advertising se campaign renewal reminder.\n\nAapka outdoor campaign at *${loc}* (${city}) *${daysText}* complete ho raha hai.\n\nKya aap is prime location ko aage extend/renew karna chahte hain? Please batayein taaki hum ye slot aage kisi aur client ko allot na karein.\n\nDhanyawad,\nHeera Advertising Team\n📞 9837000000`;
 };

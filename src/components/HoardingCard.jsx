@@ -8,24 +8,32 @@ import './HoardingCard.css';
 const HoardingCard = ({ hoarding }) => {
     const navigate = useNavigate();
     const [isImageOpen, setIsImageOpen] = React.useState(false);
-    const [isFavorite, setIsFavorite] = useState(false);
     const clickTimer = React.useRef(null);
 
     const imageUrl = getImageUrl(hoarding);
     const locality = hoarding["Area"] || hoarding["Locality"] || 'Unknown Locality';
     const siteLocation = hoarding["Location "] || hoarding["Locality Site Location"] || hoarding["Location"] || 'Unknown Location';
-    const size = hoarding["Total SQ.ft"] || hoarding["Total Sq. Ft"] || hoarding["Size (Large/Medium/Small)"] || 'N/A';
-    const typeOfSite = hoarding["Media"] || hoarding["Type of Site (Unipole/Billboard)"] || 'N/A';
-    const cost = hoarding["Rental Per Month"] || hoarding["Avg Monthly Cost (INR)"] || '0';
     const status = (hoarding.STATUS || 'Available').trim().toLowerCase();
+    const targetCity = hoarding.City || hoarding.city || 'all';
 
-    const favoriteId = `${hoarding.City}-${siteLocation}`;
+    const favoriteId = `${targetCity}-${siteLocation}`;
 
-    // Initialize favorite status from localStorage
+    // Initialize favorite status from localStorage lazily
+    const [isFavorite, setIsFavorite] = useState(() => {
+        try {
+            const storedFavorites = JSON.parse(localStorage.getItem('favorite_hoardings') || '[]');
+            return storedFavorites.includes(favoriteId);
+        } catch {
+            return false;
+        }
+    });
+
     useEffect(() => {
-        const storedFavorites = JSON.parse(localStorage.getItem('favorite_hoardings') || '[]');
-        if (storedFavorites.includes(favoriteId)) {
-            setIsFavorite(true);
+        try {
+            const storedFavorites = JSON.parse(localStorage.getItem('favorite_hoardings') || '[]');
+            setIsFavorite(storedFavorites.includes(favoriteId));
+        } catch {
+            setIsFavorite(false);
         }
     }, [favoriteId]);
 
@@ -49,7 +57,7 @@ const HoardingCard = ({ hoarding }) => {
 
     const handleClick = () => {
         clickTimer.current = setTimeout(() => {
-            navigate(`/${hoarding.City}/${encodeURIComponent(siteLocation)}`);
+            navigate(`/${targetCity}/${encodeURIComponent(siteLocation)}`);
         }, 220);
     };
 
@@ -125,7 +133,7 @@ const HoardingCard = ({ hoarding }) => {
         </div>
         <ImageLightbox
             imageUrl={isImageOpen ? imageUrl : ''}
-            alt={hoarding["Location "]}
+            alt={siteLocation}
             onClose={() => setIsImageOpen(false)}
             onDownload={() => downloadHoardingImage(hoarding)}
         />

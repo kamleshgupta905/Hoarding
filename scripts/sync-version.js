@@ -16,10 +16,10 @@ const iso = new Date(now).toISOString();
 const publicVersionPath = path.join(rootDir, 'public', 'version.json');
 let publicVersionData = {
   features: [
-    "Over-the-air automatic updates for Desktop and Staff Mobile apps",
-    "Real-time GPS geofence matching (50m radius) with live distance indicator",
-    "Compass heading HUD and permanent watermark with site data",
-    "Multi-Slot Date Range Booking Engine with Conflict Prevention"
+    "Occupancy Heatmap & 15-Days Renewal Predictor with visual radar alerts",
+    "Bulk Multi-Client Campaign Onboarding Wizard (Excel & PPT Auto-Matcher)",
+    "Automated Inventory Conflict Radar & Overlap Prevention Engine",
+    "Over-the-air automatic updates for Desktop, Web, and Mobile apps"
   ]
 };
 

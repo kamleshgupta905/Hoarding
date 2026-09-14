@@ -97,9 +97,6 @@ const HoardingDetail = ({ hoardings, setHoardings }) => {
             }, 300);
         }
     }, []);
-    
-    const scriptUrl = 'https://script.google.com/macros/s/AKfycbwmtW7Y71md_XoIk8A0JWrsWKSN-YuFgCcdahe5R56mADlGtH-t9Pj98YhPt3-Z1DoI5g/exec';
-
 
 
     const handleEditAsset = async (e) => {
@@ -363,12 +360,28 @@ const HoardingDetail = ({ hoardings, setHoardings }) => {
             alert(mode === 'archive_existing' ? "✅ Existing Photo Archived & New Photo Updated!" : "✅ Photo Updated Successfully!");
             
             // Local state update (with cache sync via wrappedSetHoardings)
-            setHoardings(prev => prev.map(h => {
-                if (h["Location "] === hoarding["Location "]) {
-                    return { ...h, ImageURL: previewUrl, History: newHistory };
-                }
-                return h;
-            }));
+            const targetSL = hoarding.SL || hoarding["S. No."] || hoarding["SL NO"] || '';
+            const targetId = hoarding.UniqueID || hoarding["Unique ID"] || hoarding.ID || hoarding._SiteID || '';
+            const targetLoc = String(hoarding["Location "] || hoarding.Location || hoarding["Locality Site Location"] || '').trim().toLowerCase();
+
+            setHoardings(prev => {
+                const next = prev.map(h => {
+                    const hLoc = String(h["Location "] || h.Location || h["Locality Site Location"] || '').trim().toLowerCase();
+                    const isMatch = (h === hoarding) ||
+                        (targetId && (h._SiteID === targetId || h.UniqueID === targetId)) ||
+                        (targetSL && String(h.SL || h['S. No.'] || '').trim() === String(targetSL).trim()) ||
+                        (targetLoc && hLoc === targetLoc);
+                    if (isMatch) {
+                        return { ...h, ImageURL: previewUrl, History: newHistory };
+                    }
+                    return h;
+                });
+                try {
+                    localStorage.setItem('hoardings_cache', JSON.stringify(next));
+                    localStorage.setItem('last_hoardings_update', Date.now().toString());
+                } catch {}
+                return next;
+            });
         } catch (err) {
             alert("Error updating photo: " + err.message);
         } finally {
@@ -382,6 +395,9 @@ const HoardingDetail = ({ hoardings, setHoardings }) => {
         setIsLoading(true);
         const filesArray = Array.from(filesList);
         let successCount = 0;
+        const targetSL = hoarding.SL || hoarding["S. No."] || hoarding["SL NO"] || '';
+        const targetId = hoarding.UniqueID || hoarding["Unique ID"] || hoarding.ID || hoarding._SiteID || '';
+        const targetLoc = String(hoarding["Location "] || hoarding.Location || hoarding["Locality Site Location"] || '').trim().toLowerCase();
 
         try {
             for (const file of filesArray) {
@@ -394,18 +410,29 @@ const HoardingDetail = ({ hoardings, setHoardings }) => {
                 const previewUrl = URL.createObjectURL(file);
 
                 // Update local state using functional update to handle multiple photos in a loop
-                setHoardings(prev => prev.map(h => {
-                    if (h["Location "] === hoarding["Location "]) {
-                        const newAudit = { url: previewUrl, timestamp: new Date().getTime() };
-                        return { ...h, History: [newAudit, ...(h.History || [])] };
-                    }
-                    return h;
-                }));
+                setHoardings(prev => {
+                    const next = prev.map(h => {
+                        const hLoc = String(h["Location "] || h.Location || h["Locality Site Location"] || '').trim().toLowerCase();
+                        const isMatch = (h === hoarding) ||
+                            (targetId && (h._SiteID === targetId || h.UniqueID === targetId)) ||
+                            (targetSL && String(h.SL || h['S. No.'] || '').trim() === String(targetSL).trim()) ||
+                            (targetLoc && hLoc === targetLoc);
+                        if (isMatch) {
+                            const newAudit = { url: previewUrl, timestamp: new Date().getTime() };
+                            return { ...h, History: [newAudit, ...(h.History || [])] };
+                        }
+                        return h;
+                    });
+                    try {
+                        localStorage.setItem('hoardings_cache', JSON.stringify(next));
+                    } catch {}
+                    return next;
+                });
 
                 // 🔄 SYNC TO BACKEND
                 await syncToGoogleSheet({
                     action: 'updateHoarding',
-                    siteName: hoarding["Location "],
+                    siteName: hoarding["Location "] || hoarding.Location || hoarding["Locality Site Location"] || '',
                     fileData: fileData,
                     mimeType: mimeType,
                     mode: 'archive'
@@ -426,13 +453,17 @@ const HoardingDetail = ({ hoardings, setHoardings }) => {
     };
 
     const handleShareAudit = () => {
-        const auditLink = `${window.location.origin}/audit/${hoarding.City.toLowerCase()}/${encodeURIComponent(hoarding["Location "])}`;
-        const message = `👋 *Audit Required*\n\nSite: *${hoarding["Location "]}*\nCity: *${hoarding.City}*\n\nPlease click the link below to take a live site photo for verification:\n\n🔗 ${auditLink}`;
+        const cityStr = String(hoarding.City || hoarding.city || 'all').toLowerCase();
+        const siteLoc = hoarding["Location "] || hoarding.Location || hoarding["Locality Site Location"] || decodedSiteName || 'Site';
+        const auditLink = `${window.location.origin}/audit/${cityStr}/${encodeURIComponent(siteLoc)}`;
+        const message = `👋 *Audit Required*\n\nSite: *${siteLoc}*\nCity: *${hoarding.City || hoarding.city || 'Meerut'}*\n\nPlease click the link below to take a live site photo for verification:\n\n🔗 ${auditLink}`;
         window.open(`https://wa.me/?text=${encodeURIComponent(message)}`, '_blank');
     };
 
     const handleCopyLink = () => {
-        const auditLink = `${window.location.origin}/audit/${hoarding.City.toLowerCase()}/${encodeURIComponent(hoarding["Location "])}`;
+        const cityStr = String(hoarding.City || hoarding.city || 'all').toLowerCase();
+        const siteLoc = hoarding["Location "] || hoarding.Location || hoarding["Locality Site Location"] || decodedSiteName || 'Site';
+        const auditLink = `${window.location.origin}/audit/${cityStr}/${encodeURIComponent(siteLoc)}`;
         navigator.clipboard.writeText(auditLink);
         setCopySuccess(true);
         setTimeout(() => setCopySuccess(false), 2000);

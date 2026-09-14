@@ -239,36 +239,310 @@
     width: 100%;
 }
 
-.map-popup img {
-    width: 100%;
-    height: 120px;
-    object-fit: cover;
-    border-radius: 8px;
-    margin-bottom: 12px;
+/* 🧭 Map Heatmap Bar & Radar Chips */
+.map-heatmap-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 12px;
+    background: #ffffff;
+    padding: 12px 18px;
+    border-radius: 12px;
+    border: 1px solid #e2e8f0;
+    margin-bottom: 14px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
 }
 
-.map-popup h4 {
-    font-size: 1rem;
-    font-weight: 700;
-    margin-bottom: 4px;
+.heatmap-bar-title {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.88rem;
+    font-weight: 800;
+    color: #1e293b;
+    letter-spacing: -0.01em;
 }
 
-.map-popup p {
-    font-size: 0.85rem;
-    color: var(--primary);
-    font-weight: 700;
-    margin-bottom: 12px;
+.radar-icon-pulse {
+    color: #f59e0b;
+    animation: radar-icon-blink 1.8s infinite ease-in-out;
 }
 
-.popup-link {
-    display: block;
-    text-align: center;
-    padding: 10px;
-    background: var(--text-dark);
-    color: white;
-    border-radius: 6px;
+@keyframes radar-icon-blink {
+    0%, 100% { opacity: 0.5; transform: scale(0.95); }
+    50% { opacity: 1; transform: scale(1.1); }
+}
+
+.heatmap-bar-chips {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.heatmap-chip {
+    padding: 6px 14px;
+    border-radius: 999px;
     font-size: 0.8rem;
     font-weight: 700;
+    border: 1.5px solid #e2e8f0;
+    background: #f8fafc;
+    color: #475569;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.heatmap-chip:hover {
+    background: #f1f5f9;
+    border-color: #cbd5e1;
+    transform: translateY(-1px);
+}
+
+.heatmap-chip.active {
+    border-color: transparent;
+    color: #ffffff;
+    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.12);
+}
+
+.heatmap-chip.chip-all.active {
+    background: #1e293b;
+}
+
+.heatmap-chip.chip-available.active {
+    background: #059669;
+}
+
+.heatmap-chip.chip-expiring.active {
+    background: #d97706;
+}
+
+.heatmap-chip.chip-booked.active {
+    background: #dc2626;
+}
+
+/* 🎨 Dynamic Leaflet Occupancy Markers */
+.occupancy-leaflet-marker-wrapper {
+    background: transparent !important;
+    border: none !important;
+}
+
+.occupancy-pin-marker {
+    position: relative;
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.28);
+    transition: transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.occupancy-pin-marker:hover {
+    transform: scale(1.22) translateY(-4px);
+    z-index: 99999 !important;
+}
+
+.occupancy-pin-marker .pin-core {
+    font-size: 16px;
+    line-height: 1;
+}
+
+.occupancy-pin-marker.marker-available {
+    background: linear-gradient(135deg, #10b981, #047857);
+    border: 2px solid #ffffff;
+}
+
+.occupancy-pin-marker.marker-booked {
+    background: linear-gradient(135deg, #ef4444, #b91c1c);
+    border: 2px solid #ffffff;
+}
+
+.occupancy-pin-marker.marker-overdue {
+    background: linear-gradient(135deg, #8b5cf6, #6d28d9);
+    border: 2px solid #ffffff;
+}
+
+.occupancy-pin-marker.marker-expiring-pulse {
+    background: linear-gradient(135deg, #f59e0b, #b45309);
+    border: 2px solid #ffffff;
+    box-shadow: 0 0 16px rgba(245, 158, 11, 0.7);
+}
+
+.occupancy-pin-marker .pin-radar-ring {
+    position: absolute;
+    top: -6px;
+    left: -6px;
+    right: -6px;
+    bottom: -6px;
+    border-radius: 50%;
+    border: 2px solid #f59e0b;
+    animation: pin-radar-wave 1.8s infinite cubic-bezier(0.25, 0, 0.35, 1);
+    pointer-events: none;
+}
+
+@keyframes pin-radar-wave {
+    0% {
+        transform: scale(0.95);
+        opacity: 0.9;
+    }
+    70% {
+        transform: scale(1.65);
+        opacity: 0;
+    }
+    100% {
+        transform: scale(1.75);
+        opacity: 0;
+    }
+}
+
+.occupancy-pin-marker .pin-days-tag {
+    position: absolute;
+    top: -8px;
+    right: -8px;
+    background: #0f172a;
+    color: #fbbf24;
+    font-weight: 800;
+    font-size: 10px;
+    padding: 1px 5px;
+    border-radius: 999px;
+    border: 1.5px solid #ffffff;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.35);
+    white-space: nowrap;
+    line-height: 1.2;
+}
+
+/* 🏙️ Rich Map Popup */
+.custom-occupancy-popup {
+    min-width: 240px;
+    max-width: 270px;
+    padding: 2px;
+}
+
+.map-popup-thumb-wrap {
+    position: relative;
+    width: 100%;
+    height: 130px;
+    border-radius: 8px;
+    overflow: hidden;
+    margin-bottom: 10px;
+    background: #0f172a;
+}
+
+.map-popup-thumb-wrap img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+    margin: 0;
+}
+
+.popup-status-badge {
+    position: absolute;
+    top: 8px;
+    left: 8px;
+    font-size: 0.72rem;
+    font-weight: 800;
+    padding: 3px 8px;
+    border-radius: 6px;
+    border: 1px solid;
+    backdrop-filter: blur(8px);
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
+}
+
+.map-popup-body h4 {
+    font-size: 0.96rem;
+    font-weight: 800;
+    margin: 0 0 2px 0;
+    color: #0f172a;
+    line-height: 1.3;
+}
+
+.popup-subtext {
+    font-size: 0.78rem;
+    color: #64748b;
+    margin: 0 0 8px 0;
+}
+
+.popup-price-row {
+    display: flex;
+    align-items: baseline;
+    gap: 4px;
+    margin-bottom: 8px;
+}
+
+.popup-price-row strong {
+    font-size: 1.05rem;
+    color: #059669;
+    font-weight: 800;
+}
+
+.popup-price-row span {
+    font-size: 0.76rem;
+    color: #64748b;
+}
+
+.popup-client-badge {
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    padding: 5px 8px;
+    border-radius: 6px;
+    font-size: 0.74rem;
+    color: #334155;
+    margin-bottom: 10px;
+    line-height: 1.3;
+}
+
+.popup-client-badge strong {
+    color: #0f172a;
+}
+
+.popup-client-badge small {
+    color: #d97706;
+    font-weight: 700;
+}
+
+.popup-cta-row {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.popup-action-btn {
+    display: block;
+    text-align: center;
+    padding: 8px 10px;
+    border-radius: 6px;
+    font-size: 0.78rem;
+    font-weight: 700;
+    text-decoration: none;
+    transition: all 0.2s ease;
+}
+
+.popup-btn-wa {
+    background: #10b981;
+    color: #ffffff;
+    box-shadow: 0 2px 6px rgba(16, 185, 129, 0.25);
+}
+
+.popup-btn-wa:hover {
+    background: #059669;
+    color: #ffffff;
+}
+
+.popup-btn-details {
+    background: #1e293b;
+    color: #ffffff;
+}
+
+.popup-btn-details:hover {
+    background: #0f172a;
+    color: #ffffff;
 }
 
 @media (max-width: 1200px) {

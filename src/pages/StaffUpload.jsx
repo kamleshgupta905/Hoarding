@@ -604,7 +604,7 @@ const StaffUpload = () => {
 
     // 📍 Real-Time Nearest Hoarding, Distance Countdown & Traffic Facing
     const liveNearest = React.useMemo(() => {
-        const list = hoardingsList.length > 0 ? hoardingsList : hoardingsRef.current;
+        const list = hoardingsList;
         if (!lastGps?.latitude || !lastGps?.longitude || !list || list.length === 0) {
             return null;
         }

@@ -8,12 +8,22 @@ const PublicAudit = ({ hoardings, setHoardings }) => {
     const navigate = useNavigate();
     const videoRef = useRef(null);
     const canvasRef = useRef(null);
-    const decodedSiteName = decodeURIComponent(siteName);
+    const decodedSiteName = decodeURIComponent(siteName || '').trim();
+    const targetCity = String(city || '').trim().toLowerCase();
     
-    const hoarding = hoardings.find(h => 
-        h.City.toLowerCase() === city.toLowerCase() && 
-        h["Location "] === decodedSiteName
-    );
+    const hoarding = hoardings.find(h => {
+        if (!h) return false;
+        const hCity = String(h.City || h.city || '').trim().toLowerCase();
+        const hLoc = String(h["Location "] || h.Location || h["Locality Site Location"] || '').trim();
+        const cityMatch = !targetCity || targetCity === 'all' || hCity === targetCity;
+        const siteMatch = hLoc.toLowerCase() === decodedSiteName.toLowerCase() ||
+            hLoc.replace(/\s+/g, ' ').toLowerCase() === decodedSiteName.replace(/\s+/g, ' ').toLowerCase();
+        return cityMatch && siteMatch;
+    }) || hoardings.find(h => {
+        if (!h) return false;
+        const hLoc = String(h["Location "] || h.Location || h["Locality Site Location"] || '').trim();
+        return hLoc.toLowerCase() === decodedSiteName.toLowerCase();
+    });
 
     const [files, setFiles] = useState([]);
     const [previews, setPreviews] = useState([]);
@@ -144,17 +154,26 @@ const PublicAudit = ({ hoardings, setHoardings }) => {
 
                 await syncToGoogleSheet({
                     action: 'updateHoarding',
-                    siteName: hoarding["Location "],
+                    siteName: hoarding["Location "] || hoarding.Location || hoarding["Locality Site Location"] || '',
                     fields: { "ExecutionHistory": historyString },
                     fileData: compressedBase64,
                     mimeType: 'image/jpeg',
                     mode: 'archive'
                 });
             }
-            setHoardings(prev => prev.map(h => 
-                h["Location "] === hoarding["Location "] 
-                ? { ...h, History: currentHistory } : h
-            ));
+
+            const targetSL = hoarding.SL || hoarding["S. No."] || hoarding["SL NO"] || '';
+            const targetId = hoarding.UniqueID || hoarding["Unique ID"] || hoarding.ID || hoarding._SiteID || '';
+            const targetLoc = String(hoarding["Location "] || hoarding.Location || hoarding["Locality Site Location"] || '').trim().toLowerCase();
+
+            setHoardings(prev => prev.map(h => {
+                const hLoc = String(h["Location "] || h.Location || h["Locality Site Location"] || '').trim().toLowerCase();
+                const isMatch = (h === hoarding) ||
+                    (targetId && (h._SiteID === targetId || h.UniqueID === targetId)) ||
+                    (targetSL && String(h.SL || h['S. No.'] || '').trim() === String(targetSL).trim()) ||
+                    (targetLoc && hLoc === targetLoc);
+                return isMatch ? { ...h, History: currentHistory } : h;
+            }));
             setIsSuccess(true);
         } catch (err) {
             alert("Upload failed: " + err.message);
@@ -164,7 +183,21 @@ const PublicAudit = ({ hoardings, setHoardings }) => {
         }
     };
 
-    if (!hoarding) return null;
+    if (!hoarding) {
+        if (!hoardings || hoardings.length === 0) {
+            return (
+                <div className="audit-container" style={{ textAlign: 'center', padding: '100px 20px' }}>
+                    <h2>Loading site details...</h2>
+                </div>
+            );
+        }
+        return (
+            <div className="audit-container" style={{ textAlign: 'center', padding: '100px 20px' }}>
+                <h2>Hoarding site not found</h2>
+                <button onClick={() => navigate(-1)} className="btn-primary" style={{ marginTop: '16px' }}>Go Back</button>
+            </div>
+        );
+    }
 
     if (isSuccess) {
         return (
