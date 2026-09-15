@@ -2,24 +2,13 @@
 
 .renewal-radar-panel {
   background: #0f172a;
-  border: 1px solid rgba(245, 158, 11, 0.35);
+  border: 1px solid #334155;
   border-radius: 16px;
   padding: 22px;
   margin-bottom: 24px;
   box-shadow: 0 10px 30px -5px rgba(0, 0, 0, 0.4);
   color: #f8fafc;
   position: relative;
-  overflow: hidden;
-}
-
-.renewal-radar-panel::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: 3px;
-  background: #f59e0b;
 }
 
 .renewal-radar-empty {
@@ -151,39 +140,6 @@
   max-width: 600px;
 }
 
-/* Revenue Card */
-.radar-revenue-card {
-  background: rgba(30, 41, 59, 0.8);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  padding: 12px 18px;
-  border-radius: 12px;
-  display: flex;
-  flex-direction: column;
-  text-align: right;
-  min-width: 180px;
-}
-
-.revenue-label {
-  font-size: 0.72rem;
-  color: #94a3b8;
-  text-transform: uppercase;
-  font-weight: 600;
-  letter-spacing: 0.04em;
-}
-
-.revenue-value {
-  font-size: 1.4rem;
-  font-weight: 800;
-  color: #fbbf24;
-  letter-spacing: -0.02em;
-  margin: 2px 0;
-}
-
-.revenue-sub {
-  font-size: 0.7rem;
-  color: #64748b;
-}
-
 /* Metrics Row */
 .radar-metrics-grid {
   display: flex;
@@ -313,33 +269,34 @@
 }
 
 .radar-card {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 16px;
-  background: rgba(30, 41, 59, 0.7);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  padding: 12px 14px;
+  background: #1e293b;
+  border: 1px solid #334155;
+  padding: 14px 44px 14px 16px;
   border-radius: 12px;
   transition: all 0.2s ease;
   cursor: pointer;
 }
 
 .radar-card:hover {
-  background: rgba(51, 65, 85, 0.85);
-  border-color: rgba(245, 158, 11, 0.4);
+  background: #273549;
+  border-color: #475569;
   transform: translateY(-1px);
 }
 
 .radar-card.critical {
-  border-left: 4px solid #ef4444;
+  border-left: 4px solid #dc2626;
 }
 
 .radar-card.overdue {
-  border-left: 4px solid #a855f7;
+  border-left: 4px solid #7e22ce;
 }
 
 .radar-card.expiring {
-  border-left: 4px solid #f59e0b;
+  border-left: 4px solid #d97706;
 }
 
 .radar-card-media {
@@ -411,19 +368,28 @@
 }
 
 .radar-card-dismiss-btn {
-  background: none;
+  position: absolute;
+  top: 10px;
+  right: 12px;
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+  background: #334155;
+  color: #94a3b8;
   border: none;
-  color: #64748b;
-  font-size: 1.1rem;
-  cursor: pointer;
-  padding: 0 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.15rem;
   line-height: 1;
-  border-radius: 4px;
-  transition: color 0.15s;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  z-index: 2;
 }
 
 .radar-card-dismiss-btn:hover {
-  color: #ef4444;
+  background: #475569;
+  color: #ffffff;
 }
 
 .radar-meta-row {
@@ -470,11 +436,11 @@
   flex-shrink: 0;
 }
 
-.btn-radar-whatsapp {
-  background: #25d366;
-  color: #0b2e13;
-  border: none;
-  padding: 7px 12px;
+.btn-radar-extend {
+  background: #1e3a8a;
+  color: #93c5fd;
+  border: 1px solid #2563eb;
+  padding: 7px 13px;
   border-radius: 8px;
   font-size: 0.78rem;
   font-weight: 700;
@@ -483,42 +449,21 @@
   gap: 6px;
   cursor: pointer;
   transition: all 0.2s ease;
-  box-shadow: 0 2px 8px rgba(37, 211, 102, 0.3);
-}
-
-.btn-radar-whatsapp:hover {
-  background: #20ba5a;
-  transform: translateY(-1px);
-}
-
-.btn-radar-extend {
-  background: rgba(59, 130, 246, 0.15);
-  color: #60a5fa;
-  border: 1px solid rgba(59, 130, 246, 0.35);
-  padding: 7px 12px;
-  border-radius: 8px;
-  font-size: 0.78rem;
-  font-weight: 600;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  cursor: pointer;
-  transition: all 0.2s ease;
 }
 
 .btn-radar-extend:hover {
-  background: rgba(59, 130, 246, 0.25);
-  color: #93c5fd;
+  background: #2563eb;
+  color: #ffffff;
 }
 
 .btn-radar-release {
-  background: rgba(168, 85, 247, 0.15);
-  color: #c084fc;
-  border: 1px solid rgba(168, 85, 247, 0.35);
-  padding: 7px 12px;
+  background: #581c87;
+  color: #e9d5ff;
+  border: 1px solid #7e22ce;
+  padding: 7px 13px;
   border-radius: 8px;
   font-size: 0.78rem;
-  font-weight: 600;
+  font-weight: 700;
   display: flex;
   align-items: center;
   gap: 6px;
@@ -527,13 +472,14 @@
 }
 
 .btn-radar-release:hover {
-  background: rgba(168, 85, 247, 0.25);
+  background: #7e22ce;
+  color: #ffffff;
 }
 
 .btn-radar-details {
-  background: rgba(255, 255, 255, 0.05);
-  color: #94a3b8;
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: #334155;
+  color: #cbd5e1;
+  border: 1px solid #475569;
   width: 32px;
   height: 32px;
   border-radius: 8px;
@@ -541,12 +487,12 @@
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  transition: all 0.2s;
+  transition: all 0.2s ease;
 }
 
 .btn-radar-details:hover {
-  background: rgba(255, 255, 255, 0.12);
-  color: #fff;
+  background: #475569;
+  color: #ffffff;
 }
 
 /* Responsive */
@@ -557,6 +503,7 @@
   .radar-card {
     flex-direction: column;
     align-items: stretch;
+    padding-right: 16px;
   }
   .radar-card-media {
     width: 100%;
@@ -566,12 +513,8 @@
     justify-content: stretch;
     margin-top: 8px;
   }
-  .btn-radar-whatsapp, .btn-radar-extend, .btn-radar-release {
+  .btn-radar-extend, .btn-radar-release {
     flex: 1;
     justify-content: center;
-  }
-  .radar-revenue-card {
-    width: 100%;
-    text-align: left;
   }
 }

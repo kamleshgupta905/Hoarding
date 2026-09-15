@@ -4962,9 +4962,8 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                         className="qm-btn-secondary" 
                                         onClick={() => setIsBulkBookingOpen(true)} 
                                         title="Open Multi-Client Bulk Campaign Onboarding Wizard"
-                                        style={{ borderColor: '#c7d2fe', color: '#4338ca', background: '#eef2ff' }}
                                     >
-                                        <Layers size={15} color="#4f46e5" /> Bulk Booking
+                                        <Layers size={15} /> Bulk Booking
                                     </button>
                                     <button className="qm-btn-secondary" onClick={() => exportProposalExcel(hoardings)} title="Export complete inventory data to Excel">
                                         <FileDown size={15} /> Export Data
@@ -7915,13 +7914,13 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                         gap: '8px',
                                         padding: '10px 20px',
                                         borderRadius: '10px',
-                                        background: 'linear-gradient(135deg, #6366f1, #4f46e5)',
+                                        background: '#10b981',
                                         color: '#ffffff',
-                                        fontWeight: 800,
+                                        fontWeight: 700,
                                         fontSize: '0.86rem',
                                         border: 'none',
                                         cursor: 'pointer',
-                                        boxShadow: '0 4px 14px rgba(99, 102, 241, 0.3)'
+                                        boxShadow: '0 4px 12px rgba(16, 185, 129, 0.25)'
                                     }}
                                     title="Open Multi-Client Bulk Campaign Onboarding Wizard"
                                 >
@@ -8794,10 +8793,6 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                          '⚡ Auto-Update Active (Updates download automatically on start & every 15 min)'}
                                     </span>
                                 </div>
-
-                                <span style={{ fontSize: '0.76rem', color: '#94a3b8' }}>
-                                    Target: kamleshgupta905/hoarding-desktop-releases
-                                </span>
                             </div>
                         </div>
 

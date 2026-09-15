@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
-import { Bell, Clock, Calendar, CheckCircle, Send, RefreshCw, Search, ChevronRight } from 'lucide-react';
-import { getExpiringSites, generateWhatsAppRenewalMessage, getImageUrl } from '../services/dataService';
+import { Bell, Clock, Calendar, CheckCircle, RefreshCw, Search, ChevronRight } from 'lucide-react';
+import { getExpiringSites, getImageUrl } from '../services/dataService';
 import './RenewalAlertRadar.css';
 
 export default function RenewalAlertRadar({ 
@@ -32,26 +32,28 @@ export default function RenewalAlertRadar({
     let totalRevenueRisk = 0;
 
     expiringItems.forEach(({ site, occupancy }) => {
-      const price = parseFloat(String(site["Avg Monthly Cost (INR)"] ?? site["Rental Per Month"] ?? 0).replace(/[^0-9.]/g, '')) || 0;
-      totalRevenueRisk += price;
+      const siteId = site._SiteID || site.UniqueID || site.SL || site.Location || '';
+      if (dismissedSiteIds.has(siteId)) return;
 
-      if (occupancy.isOverdue) {
-        overdueCount++;
-      } else if (occupancy.statusTier === 'critical') {
-        criticalCount++;
-      } else {
-        standardCount++;
-      }
+      if (occupancy.isOverdue) overdueCount++;
+      else if (occupancy.statusTier === 'critical') criticalCount++;
+      else standardCount++;
+
+      const price = Number(site["Avg Monthly Cost (INR)"] ?? site["Rental Per Month"] ?? 0) || 0;
+      totalRevenueRisk += price;
     });
 
     return {
-      total: expiringItems.length,
+      total: criticalCount + overdueCount + standardCount,
       criticalCount,
       overdueCount,
       standardCount,
+      critical: criticalCount,
+      overdue: overdueCount,
+      standard: standardCount,
       totalRevenueRisk
     };
-  }, [expiringItems]);
+  }, [expiringItems, dismissedSiteIds]);
 
   // Filtered list
   const filteredItems = useMemo(() => {
@@ -75,13 +77,6 @@ export default function RenewalAlertRadar({
     });
   }, [expiringItems, activeFilter, searchTerm, dismissedSiteIds]);
 
-  const handleWhatsAppClick = (site, daysLeft, e) => {
-    e.stopPropagation();
-    const text = generateWhatsAppRenewalMessage(site, daysLeft);
-    const url = `https://wa.me/?text=${encodeURIComponent(text)}`;
-    window.open(url, '_blank');
-  };
-
   const handleDismiss = (siteId, e) => {
     e.stopPropagation();
     setDismissedSiteIds(prev => {
@@ -101,8 +96,8 @@ export default function RenewalAlertRadar({
           <CheckCircle size={24} className="text-emerald-400" />
         </div>
         <div className="radar-empty-content">
-          <h4>Sabhi Hoardings Secure Hain!</h4>
-          <p>Agle 15 dino me koi bhi hoarding expire nahi ho raha hai. Sabhi bookings active hain.</p>
+          <h4>All Hoardings Secure</h4>
+          <p>No hoardings are expiring in the next 15 days. All active campaign bookings are fully retained.</p>
         </div>
       </div>
     );
@@ -110,7 +105,7 @@ export default function RenewalAlertRadar({
 
   return (
     <div className="renewal-radar-panel animate-fade-in">
-      {/* Header with Glowing Live Beacon */}
+      {/* Header with Live Beacon */}
       <div className="radar-header">
         <div className="radar-header-left">
           <div className="radar-live-beacon">
@@ -126,16 +121,9 @@ export default function RenewalAlertRadar({
               </span>
             </div>
             <p className="radar-subtitle">
-              In hoardings ki booking agle 15 dino me complete ho rahi hai. Idle loss se bachne ke liye turant renewal pitch karein.
+              These hoarding bookings will conclude within the next 15 days. Initiate timely renewals to maintain continuous occupancy.
             </p>
           </div>
-        </div>
-
-        {/* Quick Revenue Summary */}
-        <div className="radar-revenue-card">
-          <span className="revenue-label">Monthly Revenue At Risk</span>
-          <span className="revenue-value">₹{Math.round(stats.totalRevenueRisk).toLocaleString('en-IN')}</span>
-          <span className="revenue-sub">across {stats.total} expiring sites</span>
         </div>
       </div>
 
@@ -216,6 +204,16 @@ export default function RenewalAlertRadar({
               className={`radar-card ${occupancy.statusTier}`}
               onClick={() => onSelectSite && onSelectSite(site)}
             >
+              <button 
+                type="button" 
+                className="radar-card-dismiss-btn"
+                title="Dismiss alert"
+                aria-label="Dismiss alert"
+                onClick={(e) => handleDismiss(siteId || siteLoc, e)}
+              >
+                ×
+              </button>
+
               <div className="radar-card-media">
                 <img 
                   src={imgUrl} 
@@ -240,14 +238,6 @@ export default function RenewalAlertRadar({
                     <h5 className="radar-site-title">{siteLoc}</h5>
                     <span className="radar-site-city">{city}{locality ? ` • ${locality}` : ''}</span>
                   </div>
-                  <button 
-                    type="button" 
-                    className="radar-card-dismiss-btn"
-                    title="Dismiss alert"
-                    onClick={(e) => handleDismiss(siteId || siteLoc, e)}
-                  >
-                    ×
-                  </button>
                 </div>
 
                 <div className="radar-meta-row">
@@ -273,15 +263,6 @@ export default function RenewalAlertRadar({
 
               {/* Action Buttons */}
               <div className="radar-card-actions">
-                <button
-                  type="button"
-                  className="btn-radar-whatsapp"
-                  onClick={(e) => handleWhatsAppClick(site, daysLeft, e)}
-                  title="Send 1-Click Renewal WhatsApp Message"
-                >
-                  <Send size={14} />
-                  <span>WhatsApp Pitch</span>
-                </button>
 
                 {onOpenBookingModal && (
                   <button
