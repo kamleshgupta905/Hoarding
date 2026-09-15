@@ -128,4 +128,24 @@ describe('Occupancy Heatmap & Renewal Predictor Engine', () => {
     expect(message).toContain('6 dino me');
     expect(message).toContain('Heera Advertising');
   });
+
+  it('accurately parses history timestamps without defaulting invalid dates to current time', async () => {
+    const { parseHistoryString } = await import('./dataService');
+    const pastTimestamp = Date.now() - (72 * 60 * 60 * 1000); // 72 hours ago
+    const recentTimestamp = Date.now() - (5 * 60 * 60 * 1000); // 5 hours ago
+    const historyString = `https://drive.google.com/file/d/test1|${pastTimestamp}|28.9,77.7,https://drive.google.com/file/d/test2|${recentTimestamp}|28.9,77.7,https://drive.google.com/file/d/test3|invalid_date|28.9,77.7`;
+
+    const parsed = parseHistoryString(historyString);
+    expect(parsed.length).toBe(3);
+    expect(parsed[0].timestamp).toBe(pastTimestamp);
+    expect(parsed[1].timestamp).toBe(recentTimestamp);
+    // Invalid date should be 0, never Date.now()
+    expect(parsed[2].timestamp).toBe(0);
+
+    // 48-Hour Cutoff test
+    const cutoff48h = Date.now() - (48 * 60 * 60 * 1000);
+    const activeDailyUpdates = parsed.filter(item => item.timestamp > cutoff48h);
+    expect(activeDailyUpdates.length).toBe(1);
+    expect(activeDailyUpdates[0].url).toContain('test2');
+  });
 });

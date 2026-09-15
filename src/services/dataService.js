@@ -112,15 +112,32 @@ export const parseHistoryString = (rawHistory) => {
     return trimmed.length > 0 && !trimmed.startsWith('data:image/') && trimmed.length < 3000;
   };
 
+  const parseTimestamp = (rawTs, rawDate) => {
+    const num = Number(rawTs);
+    if (!isNaN(num) && num > 1000000000) {
+      return num < 10000000000 ? num * 1000 : num;
+    }
+    if (typeof rawDate === 'string' && rawDate.trim()) {
+      const d = new Date(rawDate.trim()).getTime();
+      if (!isNaN(d) && d > 1000000000) return d;
+    }
+    if (typeof rawTs === 'string' && rawTs.trim()) {
+      const d = new Date(rawTs.trim()).getTime();
+      if (!isNaN(d) && d > 1000000000) return d;
+    }
+    return 0;
+  };
+
   if (Array.isArray(rawHistory)) {
     return rawHistory.map(item => {
       if (typeof item === 'object' && item !== null) {
         const raw = item.url || item.ImageURL || item.preview || '';
         if (!isCleanUrl(raw)) return null;
+        const ts = parseTimestamp(item.timestamp, item.date);
         return {
           url: getDirectDriveLink(raw),
-          timestamp: item.timestamp || (item.date ? new Date(item.date).getTime() : Date.now()),
-          date: item.date || (item.timestamp ? new Date(item.timestamp).toISOString() : new Date().toISOString()),
+          timestamp: ts,
+          date: item.date || (ts ? new Date(ts).toISOString() : ''),
           gps: item.gps || '',
           source: item.source || 'Verified Capture',
           status: item.status || 'Available'
@@ -130,10 +147,11 @@ export const parseHistoryString = (rawHistory) => {
       const parts = str.split('|');
       const raw = parts[0]?.trim() || '';
       if (!isCleanUrl(raw)) return null;
+      const ts = parseTimestamp(parts[1]?.trim(), parts[1]?.trim());
       return {
         url: getDirectDriveLink(raw),
-        timestamp: parseInt(parts[1]?.trim(), 10) || Date.now(),
-        date: new Date(parseInt(parts[1]?.trim(), 10) || Date.now()).toISOString(),
+        timestamp: ts,
+        date: ts ? new Date(ts).toISOString() : (parts[1]?.trim() || ''),
         gps: parts[2]?.trim() || '',
         source: 'Verified Capture',
         status: 'Available'
@@ -142,18 +160,20 @@ export const parseHistoryString = (rawHistory) => {
   }
 
   if (typeof rawHistory === 'string' && rawHistory.trim()) {
-    return rawHistory.split(',').map(entry => {
+    const rawEntries = rawHistory.includes('http') 
+      ? rawHistory.split(/,(?=\s*https?:\/\/)/i) 
+      : rawHistory.split(',');
+    return rawEntries.map(entry => {
       const parts = entry.split('|');
       const raw = parts[0]?.trim() || '';
       if (!isCleanUrl(raw)) return null;
       const url = getDirectDriveLink(raw);
-      const timestamp = parseInt(parts[1]?.trim(), 10) || Date.now();
-      const gps = parts[2]?.trim() || '';
+      const ts = parseTimestamp(parts[1]?.trim(), parts[1]?.trim());
       return {
         url,
-        timestamp,
-        date: new Date(timestamp).toISOString(),
-        gps,
+        timestamp: ts,
+        date: ts ? new Date(ts).toISOString() : (parts[1]?.trim() || ''),
+        gps: parts[2]?.trim() || '',
         source: 'Verified Capture',
         status: 'Available'
       };

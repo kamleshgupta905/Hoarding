@@ -609,14 +609,34 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                     continue;
                 }
 
-                const timestamp = Number(typeof entry === 'object' ? entry.timestamp : null) || (entry && entry.date ? new Date(entry.date).getTime() : Date.now());
-                const isRecent = timestamp > cutoff48h;
-                const hasProofMarker = typeof entry === 'object' && Boolean(
-                    (entry.source && (entry.source.includes('Daily') || entry.source.includes('Verified') || entry.source.includes('GPS') || entry.source.includes('Campaign'))) ||
-                    entry.gps
-                );
+                // Reliably determine the timestamp of the proof entry
+                let entryTimestamp = 0;
+                if (typeof entry === 'object' && entry !== null) {
+                    const rawTs = Number(entry.timestamp);
+                    if (!isNaN(rawTs) && rawTs > 1000000000) {
+                        entryTimestamp = rawTs < 10000000000 ? rawTs * 1000 : rawTs;
+                    } else if (entry.date) {
+                        const parsedDate = new Date(entry.date).getTime();
+                        if (!isNaN(parsedDate) && parsedDate > 1000000000) entryTimestamp = parsedDate;
+                    }
+                } else if (typeof entry === 'string') {
+                    const parts = entry.split('|');
+                    const rawTs = parseInt(parts[1]?.trim(), 10);
+                    if (!isNaN(rawTs) && rawTs > 1000000000) {
+                        entryTimestamp = rawTs < 10000000000 ? rawTs * 1000 : rawTs;
+                    } else if (parts[1]?.trim()) {
+                        const parsedDate = new Date(parts[1].trim()).getTime();
+                        if (!isNaN(parsedDate) && parsedDate > 1000000000) entryTimestamp = parsedDate;
+                    }
+                }
 
-                if (!isRecent && !hasProofMarker) continue;
+                // 🚨 STRICT 48-HOUR TTL ENFORCEMENT:
+                // Daily Updates is strictly a live rolling 48-hour monitoring window.
+                // Proofs older than 48 hours (or with unknown timestamps) remain safely in site history,
+                // but MUST NOT be injected into the Daily Updates queue.
+                if (!entryTimestamp || entryTimestamp <= cutoff48h) {
+                    continue;
+                }
 
                 let gpsCoord = null;
                 const gpsString = typeof entry === 'object' ? (entry.gps || '') : '';
@@ -637,7 +657,7 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                 // Keep only the single latest daily proof per site
                 if (!cloudCardsBySl.has(cardKey)) {
                     cloudCardsBySl.set(cardKey, {
-                        id: `cloud_${sl || hIdx}_${timestamp}`,
+                        id: `cloud_${sl || hIdx}_${entryTimestamp}`,
                         preview: proofUrl,
                         persistentPreview: proofUrl,
                         uploadedUrl: proofUrl,
@@ -656,7 +676,7 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                         uploading: false,
                         aiLoading: false,
                         matchFailed: false,
-                        timestamp: timestamp,
+                        timestamp: entryTimestamp,
                         uploadMode: (typeof entry === 'object' && entry.source && entry.source.includes('Campaign')) ? 'replace_master' : 'history_only',
                         cloudSynced: true
                     });
@@ -770,6 +790,33 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
         }, 10000);
         return () => clearInterval(interval);
     }, [activeTab, hoardings, hydrateDailyImagesFromHoardings]);
+
+    // ⏱️ Auto-expire Daily Updates older than 48 hours in real-time
+    useEffect(() => {
+        const pruneExpiredDailyImages = () => {
+            const cutoff = Date.now() - 48 * 60 * 60 * 1000;
+            setDailyImages(prev => {
+                if (!Array.isArray(prev) || prev.length === 0) return prev;
+                const filtered = prev.filter(img => {
+                    // Always preserve active in-flight uploads that the user is actively working on
+                    if (img.uploading || img.aiLoading) return true;
+                    const ts = Number(img.timestamp) || 0;
+                    return ts > cutoff;
+                });
+                if (filtered.length !== prev.length) {
+                    try {
+                        localStorage.setItem('adh_daily_proof_images', JSON.stringify(filtered));
+                    } catch {}
+                    return filtered;
+                }
+                return prev;
+            });
+        };
+
+        pruneExpiredDailyImages();
+        const interval = setInterval(pruneExpiredDailyImages, 60 * 1000);
+        return () => clearInterval(interval);
+    }, []);
 
     useEffect(() => {
         try {
