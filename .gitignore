@@ -19,6 +19,9 @@ dist-ssr
 .playwright-cli/
 output/
 *.local
+credentials.json
+token.json
+.apps-script-id
 
 # Editor directories and files
 .vscode/*

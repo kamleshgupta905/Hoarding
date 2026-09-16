@@ -1744,28 +1744,48 @@ function updateHoardingDetails(data) {
               idxHistory = newHistCol - 1;
             }
             sheet.getRange(rowIndex, idxHistory + 1).setValue(incomingHist);
-            SpreadsheetApp.flush();
-            logDebug("UPDATE WROTE ExecutionHistory to Row " + rowIndex + " Col " + (idxHistory + 1));
+            logDebug("UPDATE | Safely wrote ExecutionHistory from fields to Row " + rowIndex);
           }
           continue;
         }
 
-        var colIndex = headers.findIndex(function(h) { return cleanFull(h) === fieldKey; });
-        if (colIndex === -1 && fieldKey === 'status') {
+        var idx = headers.findIndex(function(h) {
+          var sheetKey = cleanFull(h);
+          if (sheetKey === fieldKey) return true;
+          // Map common synonyms
+          if ((fieldKey.includes('cost') || fieldKey.includes('price')) && 
+              (sheetKey.includes('cost') || sheetKey.includes('price'))) return true;
+          if (fieldKey.startsWith('lat') && sheetKey.startsWith('lat')) return true;
+          if (fieldKey.startsWith('long') && sheetKey.startsWith('long')) return true;
+          if (fieldKey === 'status' && sheetKey === 'status') return true;
+          if (fieldKey === 'bookedby' && sheetKey === 'bookedby') return true;
+          if (fieldKey === 'bookingstart' && sheetKey === 'bookingstart') return true;
+          if (fieldKey === 'bookingend' && sheetKey === 'bookingend') return true;
+          if (fieldKey === 'bookingschedule' && sheetKey === 'bookingschedule') return true;
+          return false;
+        });
+        
+        // Auto-add missing column if not found
+        if (idx === -1 && (fieldKey === 'status' || fieldKey === 'bookedby' || fieldKey === 'bookingstart' || fieldKey === 'bookingend' || fieldKey === 'bookingschedule')) {
+          var colName = fKey === 'STATUS' ? 'STATUS' : (fKey === 'BookedBy' ? 'BookedBy' : (fKey === 'BookingStart' ? 'BookingStart' : (fKey === 'BookingEnd' ? 'BookingEnd' : 'BookingSchedule')));
           var newColIndex = sheet.getLastColumn() + 1;
-          sheet.getRange(1, newColIndex).setValue('STATUS');
+          sheet.getRange(1, newColIndex).setValue(colName);
           headers = getAllHeaders(sheet);
-          colIndex = newColIndex - 1;
+          idx = newColIndex - 1;
         }
 
-        if (colIndex !== -1) {
-          var originalHeader = headers[colIndex];
-          var cellVal = data.fields[fKey];
-          var formattedVal = formatCellValue(cellVal, originalHeader);
-          sheet.getRange(rowIndex, colIndex + 1).setValue(formattedVal);
-          SpreadsheetApp.flush();
-          updatedIndices[colIndex] = true;
-          logDebug("UPDATE WROTE Field: " + fKey + " -> Col " + (colIndex + 1));
+        if (idx !== -1 && !updatedIndices[idx]) {
+          var newVal = data.fields[fKey];
+          // 🛡️ SAFETY CHECK: DO NOT erase a Drive link with an empty update
+          if (idx === idxImg && (!newVal || newVal === "")) {
+            var existing = sheet.getRange(rowIndex, idx + 1).getValue();
+            if (existing && (existing.toString().indexOf('drive.google.com') > -1 || existing.toString().indexOf('lh3.googleusercontent.com') > -1)) {
+              logDebug("UPDATE | Protected existing image from empty override.");
+              continue; 
+            }
+          }
+          sheet.getRange(rowIndex, idx + 1).setValue(newVal);
+          updatedIndices[idx] = true;
         }
       }
     }
@@ -1784,11 +1804,8 @@ function updateHoardingDetails(data) {
 
     // 4. Handle Image Upload - DIRECT WRITE to cell
     if (data.fileData) {
-      logDebug("UPDATE IMG START | FileData length: " + data.fileData.length + ", MIME: " + data.mimeType);
-      var folder = getHoardingsFolder();
-      var fileName = "Site_" + (data.sl || rowIndex) + "_" + new Date().getTime() + ".jpg";
-      var fileUrl = uploadImageToDrive(data.fileData, fileName, data.mimeType || 'image/jpeg', folder);
-
+      var fileUrl = uploadImageToDrive(data);
+      
       if (fileUrl) {
         logDebug("UPDATE IMG OK | URL: " + fileUrl);
         

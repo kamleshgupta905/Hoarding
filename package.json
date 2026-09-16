@@ -15,7 +15,11 @@
     "preview": "vite preview",
     "electron:dev": "cross-env ELECTRON_BUILD=true concurrently \"vite\" \"wait-on tcp:3000 && electron .\"",
     "electron:build": "cross-env ELECTRON_BUILD=true vite build && electron-builder --win --x64",
-    "electron:release": "cross-env ELECTRON_BUILD=true vite build && electron-builder --win --x64 --publish always"
+    "electron:release": "cross-env ELECTRON_BUILD=true vite build && electron-builder --win --x64 --publish always",
+    "google:connect": "node scripts/google-connect.js",
+    "google:test": "node scripts/test-google-services.js",
+    "script:push": "node scripts/appscript-sync.js push",
+    "script:pull": "node scripts/appscript-sync.js pull"
   },
   "main": "electron/main.cjs",
   "build": {
