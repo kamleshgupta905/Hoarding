@@ -1,4 +1,4 @@
-﻿import fs from 'fs';
+import fs from 'fs';
 
 const CREDENTIALS_PATH = './credentials.json';
 const TOKEN_PATH = './token.json';
@@ -10,8 +10,8 @@ export async function getValidAccessToken() {
 
   let tokenData = JSON.parse(fs.readFileSync(TOKEN_PATH, 'utf8'));
 
-  // Check if token expired (or expiring in next 60s)
-  const isExpired = tokenData.expiry_date && (Date.now() >= (tokenData.expiry_date - 60000));
+  // Check if token expired (or expiring in next 60s, or missing expiry_date)
+  const isExpired = !tokenData.expiry_date || (Date.now() >= (tokenData.expiry_date - 60000));
 
   if (!isExpired && tokenData.access_token) {
     return tokenData.access_token;
