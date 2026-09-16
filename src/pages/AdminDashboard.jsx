@@ -32,6 +32,9 @@ import { motion, AnimatePresence } from 'motion/react';
 import SystemGuide from './SystemGuide';
 import krishnaAvatar from '../assets/krishna_avatar.jpg';
 import './AdminDashboard.css';
+import GeoRadiusSelector from '../components/dashboard/GeoRadiusSelector';
+import { useInventoryStore } from '../stores/inventoryStore';
+import { calculateDistance } from '../services/geoService';
 
 const SHEET_HISTORY_LIMIT = 30;
 const HIDDEN_SHEET_COLUMN_LETTERS = new Set(['T', 'W', 'X', 'Y', 'Z']);
@@ -300,6 +303,7 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
     };
     const [quickBookingTarget, setQuickBookingTarget] = useState(null); // { site, clientName, startDate, endDate }
     const [searchTerm, setSearchTerm] = useState('');
+    const { geoRadius } = useInventoryStore();
 
     // 🚨 Live Expiring Renewal Alerts Count (<= 15 Days or Overdue)
     const expiringAlertsCount = useMemo(() => {
@@ -3111,6 +3115,16 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
         return hoardings.filter(h => {
             if (!h) return false;
 
+            // 🗺️ Turf.js Geospatial Catchment / Radius Filter
+            if (geoRadius && geoRadius.isEnabled && geoRadius.centerLat && geoRadius.centerLng) {
+                const coordStr = h.Geo_Location || h.Coordinates || (h.Latitude && h.Longitude ? `${h.Latitude},${h.Longitude}` : null);
+                if (!coordStr) return false;
+                const dist = calculateDistance(`${geoRadius.centerLat},${geoRadius.centerLng}`, coordStr);
+                if (dist === null || dist > geoRadius.radiusKm) {
+                    return false;
+                }
+            }
+
             // 🔍 Category-specific or Universal search
             let matchSearch = true;
             if (cleanSearch) {
@@ -3256,7 +3270,7 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
 
             return matchPrice;
         });
-    }, [hoardings, searchTerm, inventorySearchCategories, inventoryCityFilter, inventoryStatusFilter, filterStartDate, filterEndDate, inventoryLocalityFilter, inventoryMediaFilter, inventorySizeFilter, inventoryCategoryFilter, inventoryPriceFilter, showOnlyStarred, starredSiteKeys]);
+    }, [hoardings, searchTerm, inventorySearchCategories, inventoryCityFilter, inventoryStatusFilter, filterStartDate, filterEndDate, inventoryLocalityFilter, inventoryMediaFilter, inventorySizeFilter, inventoryCategoryFilter, inventoryPriceFilter, showOnlyStarred, starredSiteKeys, geoRadius]);
 
     const getSiteStableKey = useCallback((h) => {
         if (!h) return '';
@@ -7480,6 +7494,10 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                             setInventoryLocalityFilter(['All']);
                                         }}
                                     />
+                                    <div className="inventory-filter-group">
+                                        <label>Geospatial Catchment</label>
+                                        <GeoRadiusSelector />
+                                    </div>
                                     <div className="inventory-filter-group">
                                         <label>Live Status</label>
                                         <select
