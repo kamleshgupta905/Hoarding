@@ -536,6 +536,9 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
 
                 valid.push({
                     ...item,
+                    id: item.id || `proof_${item.timestamp || Date.now()}_${item.sl || Math.random().toString(36).substr(2, 6)}`,
+                    fileName: item.fileName || '',
+                    fileSize: item.fileSize || 0,
                     uploadMode: item.uploadMode || 'history_only',
                     preview: persistent || getSafeStringUrl(item.preview) || '',
                     persistentPreview: persistent || '',
@@ -692,7 +695,30 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
         setDailyImages(prev => {
             const existing = Array.isArray(prev) ? prev : [];
 
-            // 1. Keep active local in-flight items (user currently dropping or AI detecting right now)
+            // 🛡️ If user has local in-flight uploads or active files on screen, DO NOT inject unrelated cloud cards.
+            // Only update existing local cards with cloud Drive URLs if matched!
+            const hasLocalActive = existing.some(img => img.file || img.aiLoading || img.uploading);
+            if (hasLocalActive) {
+                return existing.map(img => {
+                    const sl = img.sl ? String(img.sl).trim() : '';
+                    if (sl && cloudCardsBySl.has(sl)) {
+                        const cloudMatch = cloudCardsBySl.get(sl);
+                        if (!img.uploadedUrl && cloudMatch.uploadedUrl) {
+                            return {
+                                ...img,
+                                uploadedUrl: cloudMatch.uploadedUrl,
+                                persistentPreview: cloudMatch.persistentPreview || img.persistentPreview,
+                                uploaded: true,
+                                uploading: false,
+                                cloudSynced: true
+                            };
+                        }
+                    }
+                    return img;
+                });
+            }
+
+            // 1. Keep active local in-flight items
             const localInFlight = existing.filter(img => 
                 (img.uploading || img.aiLoading || !img.uploaded) &&
                 (!img.sl || !dismissedSls.has(String(img.sl).trim()))
@@ -735,7 +761,7 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                     mergedCards.push({
                         ...c,
                         ...existingMatch,
-                        // Always enforce verified cloud properties
+                        id: existingMatch.id || c.id,
                         preview: c.preview,
                         persistentPreview: c.persistentPreview,
                         uploadedUrl: c.uploadedUrl,
@@ -760,14 +786,31 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                 }
             });
 
-            // 4. Sort: in-flight first, then newest timestamp first
-            mergedCards.sort((a, b) => {
+            // 4. Strict deduplication pass: keep at most 1 card per SL
+            const finalCards = [];
+            const seenCardSls = new Set();
+            const seenCardIds = new Set();
+
+            for (const card of mergedCards) {
+                if (!card || seenCardIds.has(card.id)) continue;
+                seenCardIds.add(card.id);
+
+                const cardSl = card.sl ? String(card.sl).trim() : '';
+                if (cardSl) {
+                    if (seenCardSls.has(cardSl)) continue;
+                    seenCardSls.add(cardSl);
+                }
+                finalCards.push(card);
+            }
+
+            // 5. Sort: in-flight first, then newest timestamp first
+            finalCards.sort((a, b) => {
                 if ((a.uploading || a.aiLoading) && !(b.uploading || b.aiLoading)) return -1;
                 if (!(a.uploading || a.aiLoading) && (b.uploading || b.aiLoading)) return 1;
                 return (b.timestamp || 0) - (a.timestamp || 0);
             });
 
-            return mergedCards;
+            return finalCards;
         });
     }, []);
 
@@ -837,6 +880,9 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                         : getPersistentProofUrl(img);
 
                     return {
+                        id: img.id || `proof_${img.timestamp || Date.now()}_${img.sl || Math.random().toString(36).substr(2, 6)}`,
+                        fileName: img.fileName || img.file?.name || '',
+                        fileSize: img.fileSize || img.file?.size || 0,
                         preview: persistent || getSafeStringUrl(img.preview) || '',
                         persistentPreview: persistent || '',
                         uploadedUrl: persistent || getSafeStringUrl(img.uploadedUrl) || '',
@@ -874,20 +920,79 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
     });
 
     const [expandedDailyCards, setExpandedDailyCards] = useState(() => new Set());
-    const toggleDailyCardExpand = (idx) => {
+    const toggleDailyCardExpand = (idOrIdx) => {
         setExpandedDailyCards(prev => {
             const next = new Set(prev);
-            if (next.has(idx)) {
-                next.delete(idx);
+            if (next.has(idOrIdx)) {
+                next.delete(idOrIdx);
             } else {
-                next.add(idx);
+                next.add(idOrIdx);
             }
             return next;
         });
     };
 
-    const removeDailyImage = (idxToRemove) => {
-        const itemToRemove = dailyImages[idxToRemove];
+    // 🛡️ Strict client-side deduplication for Daily Upload cards on screen
+    const displayDailyImages = useMemo(() => {
+        if (!Array.isArray(dailyImages)) return [];
+
+        const seenIds = new Set();
+        const seenFiles = new Set();
+        const seenDriveIds = new Set();
+        const seenLocalSls = new Set();
+        const result = [];
+
+        // 1. First collect all local cards (user uploaded files)
+        const localCards = dailyImages.filter(img => img && (img.file || img.id?.startsWith('proof_')));
+        const cloudCards = dailyImages.filter(img => img && !img.file && !img.id?.startsWith('proof_'));
+
+        // Local cards have highest priority
+        for (const img of localCards) {
+            if (!img || !img.id || seenIds.has(img.id)) continue;
+            seenIds.add(img.id);
+
+            // Deduplicate local files by name + size
+            const fileKey = (img.fileName || img.file?.name) && (img.fileSize || img.file?.size)
+                ? `${img.fileName || img.file?.name}_${img.fileSize || img.file?.size}`
+                : null;
+            if (fileKey) {
+                if (seenFiles.has(fileKey)) continue;
+                seenFiles.add(fileKey);
+            }
+
+            const driveId = extractDriveId(img.uploadedUrl || img.preview || img.persistentPreview);
+            if (driveId) seenDriveIds.add(driveId);
+
+            const slKey = img.sl ? String(img.sl).trim() : null;
+            if (slKey) seenLocalSls.add(slKey);
+
+            result.push(img);
+        }
+
+        // 2. Cloud cards: only add if not already represented by a local card or driveId
+        for (const img of cloudCards) {
+            if (!img || !img.id || seenIds.has(img.id)) continue;
+            seenIds.add(img.id);
+
+            const driveId = extractDriveId(img.uploadedUrl || img.preview || img.persistentPreview);
+            if (driveId && seenDriveIds.has(driveId)) continue;
+            if (driveId) seenDriveIds.add(driveId);
+
+            const slKey = img.sl ? String(img.sl).trim() : null;
+            // If a local card already matches this SL, ignore the duplicate cloud card!
+            if (slKey && seenLocalSls.has(slKey)) continue;
+
+            result.push(img);
+        }
+
+        return result;
+    }, [dailyImages]);
+
+    const removeDailyImage = (idOrIdx) => {
+        const itemToRemove = typeof idOrIdx === 'string'
+            ? dailyImages.find(img => img.id === idOrIdx)
+            : dailyImages[idOrIdx];
+
         if (itemToRemove) {
             const urlToRemove = itemToRemove.uploadedUrl || itemToRemove.preview || itemToRemove.persistentPreview;
             const directUrl = urlToRemove ? getDirectDriveLink(urlToRemove) : '';
@@ -924,7 +1029,7 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
         }
 
         setDailyImages(prev => {
-            const updated = prev.filter((_, idx) => idx !== idxToRemove);
+            const updated = prev.filter((img, idx) => typeof idOrIdx === 'string' ? img.id !== idOrIdx : idx !== idOrIdx);
             try {
                 localStorage.setItem('adh_daily_proof_images', JSON.stringify(updated));
             } catch {}
@@ -932,11 +1037,8 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
         });
 
         setExpandedDailyCards(prev => {
-            const next = new Set();
-            prev.forEach(id => {
-                if (id < idxToRemove) next.add(id);
-                else if (id > idxToRemove) next.add(id - 1);
-            });
+            const next = new Set(prev);
+            next.delete(idOrIdx);
             return next;
         });
     };
@@ -1808,6 +1910,8 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
 
     const handleDailyImageSelect = (e) => {
         const rawFiles = Array.from(e.target.files || e.dataTransfer?.files || []);
+        if (e.target) e.target.value = '';
+
         // Accept image MIME or common camera extensions
         const imageFiles = rawFiles.filter(file => 
             (file.type && file.type.startsWith('image/')) || 
@@ -1819,7 +1923,9 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
         const now = Date.now();
         const newImages = imageFiles.map((file, idx) => ({
             file,
-            id: `proof_${now}_${idx}`,
+            id: `proof_${now}_${idx}_${Math.random().toString(36).substr(2, 6)}`,
+            fileName: file.name,
+            fileSize: file.size,
             preview: URL.createObjectURL(file),
             persistentPreview: null,
             uploadedUrl: null,
@@ -1831,7 +1937,7 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
             analysis: null,
             gpsCoord: null,
             distanceM: null,
-            aiLoading: false,
+            aiLoading: true,
             uploaded: false,
             uploading: false,
             matchFailed: false,
@@ -1839,17 +1945,27 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
         }));
 
         setDailyImages(prev => {
-            const updatedList = [...prev, ...newImages];
-            setTimeout(() => processImagesWithAI(updatedList), 50);
+            const existing = Array.isArray(prev) ? prev : [];
+            const incomingKeys = new Set(newImages.map(n => `${n.fileName}_${n.fileSize}`));
+            // Keep in-flight uploads that are not being re-uploaded,
+            // but clear stale uploaded cards so user sees ONLY their fresh upload on screen!
+            const keptExisting = existing.filter(img => {
+                const key = `${img.fileName || img.file?.name}_${img.fileSize || img.file?.size}`;
+                if (incomingKeys.has(key)) return false; // Replace duplicate file
+                if (img.uploaded && !img.uploading && !img.aiLoading) return false; // Clear stale cards
+                return true;
+            });
+            const updatedList = [...keptExisting, ...newImages];
+            setTimeout(() => processImagesWithAI(newImages), 50);
             return updatedList;
         });
 
         // ⚡ Asynchronously generate persistent data URLs so refresh retains the photo
-        imageFiles.forEach(async (file, idx) => {
+        newImages.forEach(async (item) => {
             try {
-                const persistentDataUrl = await compressImage(file, 640, 0.65);
+                const persistentDataUrl = await compressImage(item.file, 640, 0.65);
                 setDailyImages(prev => prev.map(img => {
-                    if (img.id === `proof_${now}_${idx}` || img.file === file) {
+                    if (img.id === item.id) {
                         return {
                             ...img,
                             persistentPreview: persistentDataUrl,
@@ -1880,31 +1996,31 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
     };
 
     const processImagesWithAI = async (currentBatch = null) => {
-        const targetList = currentBatch || dailyImages;
-        const indicesToProcess = targetList
-            .map((img, idx) => (!img.matchedLocation && !img.uploaded && !img.uploading ? idx : -1))
-            .filter(idx => idx !== -1);
+        const targetList = Array.isArray(currentBatch) ? currentBatch : dailyImages;
+        const itemsToProcess = targetList.filter(img => 
+            img && (!img.matchedLocation || img.matchFailed) && !img.uploaded && !img.uploading
+        );
 
-        if (indicesToProcess.length === 0) return;
+        if (itemsToProcess.length === 0) return;
+
+        const targetIds = itemsToProcess.map(img => img.id);
 
         // Immediately flag all pending images as loading in the UI
-        setDailyImages(prev => {
-            const next = [...prev];
-            indicesToProcess.forEach(i => {
-                if (next[i]) next[i] = { ...next[i], aiLoading: true, matchFailed: false };
-            });
-            return next;
-        });
+        setDailyImages(prev => prev.map(img => 
+            targetIds.includes(img.id) ? { ...img, aiLoading: true, matchFailed: false } : img
+        ));
 
-        const processSingleItem = async (i) => {
+        const processSingleItem = async (itemId) => {
             try {
+                let currentItem = null;
                 setDailyImages(prev => {
-                    const next = [...prev];
-                    if (next[i]) next[i] = { ...next[i], aiLoading: true };
-                    return next;
+                    const found = prev.find(img => img.id === itemId);
+                    if (found) currentItem = found;
+                    return prev.map(img => img.id === itemId ? { ...img, aiLoading: true } : img);
                 });
-
-                const currentItem = (currentBatch || dailyImages)[i] || targetList[i];
+                if (!currentItem) {
+                    currentItem = itemsToProcess.find(img => img.id === itemId);
+                }
                 if (!currentItem) return;
 
                 // Convert file to base64 for AI & OCR
@@ -1912,7 +2028,7 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                     if (!currentItem.file) {
                         const fallbackUrl = currentItem.persistentPreview || currentItem.uploadedUrl || currentItem.preview;
                         if (fallbackUrl) return resolve(fallbackUrl);
-                        return reject(new Error('No file or data found for image ' + i));
+                        return reject(new Error('No file or data found for image ' + itemId));
                     }
                     const reader = new FileReader();
                     reader.onload = () => resolve(reader.result);
@@ -1975,36 +2091,32 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                     matchFailed: !finalLocation
                 };
 
-                // Update state progressively for this image
-                setDailyImages(prev => {
-                    const next = [...prev];
-                    if (next[i]) next[i] = { ...next[i], ...updatedItem, aiLoading: false };
-                    return next;
-                });
+                // Update state progressively for this image by unique ID
+                setDailyImages(prev => prev.map(img => 
+                    img.id === itemId ? { ...img, ...updatedItem, aiLoading: false } : img
+                ));
 
                 // 🚀 AUTO-SYNC: If matched, upload image & save directly to hoarding history!
                 if (finalLocation) {
-                    await triggerAutoUpload(i, updatedItem);
+                    await triggerAutoUpload(itemId, updatedItem);
                 }
 
             } catch (error) {
-                console.error(`AI Image Processing Error for index ${i}:`, error);
-                setDailyImages(prev => {
-                    const next = [...prev];
-                    if (next[i]) next[i] = { ...next[i], aiLoading: false, matchFailed: true };
-                    return next;
-                });
+                console.error(`AI Image Processing Error for item ${itemId}:`, error);
+                setDailyImages(prev => prev.map(img => 
+                    img.id === itemId ? { ...img, aiLoading: false, matchFailed: true } : img
+                ));
             }
         };
 
         // ⚡ Concurrency pool: run up to 2 image matching workers with pacing delay to avoid Gemini API rate limits
         const CONCURRENCY_LIMIT = 2;
         let cursor = 0;
-        const workerCount = Math.min(CONCURRENCY_LIMIT, indicesToProcess.length);
+        const workerCount = Math.min(CONCURRENCY_LIMIT, targetIds.length);
         const workers = Array.from({ length: workerCount }, async () => {
-            while (cursor < indicesToProcess.length) {
-                const targetIdx = indicesToProcess[cursor++];
-                await processSingleItem(targetIdx);
+            while (cursor < targetIds.length) {
+                const targetId = targetIds[cursor++];
+                await processSingleItem(targetId);
                 await new Promise(r => setTimeout(r, 600));
             }
         });
@@ -2012,12 +2124,12 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
         await Promise.all(workers);
     };
 
-    const triggerAutoUpload = async (index, imageData) => {
-        setDailyImages(prev => {
-            const next = [...prev];
-            if (next[index]) next[index].uploading = true;
-            return next;
-        });
+    const triggerAutoUpload = async (itemIdOrIndex, imageData) => {
+        setDailyImages(prev => prev.map(img => 
+            (img.id === itemIdOrIndex || (typeof itemIdOrIndex === 'number' && prev.indexOf(img) === itemIdOrIndex))
+                ? { ...img, uploading: true }
+                : img
+        ));
 
         try {
             let base64 = '';
@@ -2026,11 +2138,11 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
             } else if (imageData.persistentPreview || imageData.uploadedUrl || imageData.preview) {
                 base64 = imageData.persistentPreview || imageData.uploadedUrl || imageData.preview;
             } else {
-                setDailyImages(prev => {
-                    const next = [...prev];
-                    if (next[index]) next[index].uploading = false;
-                    return next;
-                });
+                setDailyImages(prev => prev.map(img => 
+                    (img.id === itemIdOrIndex || (typeof itemIdOrIndex === 'number' && prev.indexOf(img) === itemIdOrIndex))
+                        ? { ...img, uploading: false }
+                        : img
+                ));
                 return;
             }
 
@@ -2088,19 +2200,22 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
             console.log("☁️ [Daily Proof] Uploaded to Google Drive & Sheet ExecutionHistory:", driveUrl || finalProofUrl, "Mode:", effectiveMode);
 
             // Mark uploaded in UI with verified URL (fallback to in-memory preview during upload)
-            setDailyImages(prev => {
-                const next = [...prev];
-                if (next[index]) {
-                    next[index].uploaded = true;
-                    next[index].uploading = false;
-                    next[index].timestamp = Date.now();
-                    next[index].uploadedUrl = finalProofUrl;
-                    next[index].persistentPreview = finalProofUrl;
-                    next[index].preview = finalProofUrl;
-                    next[index].driveSaved = !!driveUrl;
+            setDailyImages(prev => prev.map(img => {
+                const matches = img.id === itemIdOrIndex || (typeof itemIdOrIndex === 'number' && prev.indexOf(img) === itemIdOrIndex);
+                if (matches) {
+                    return {
+                        ...img,
+                        uploaded: true,
+                        uploading: false,
+                        timestamp: Date.now(),
+                        uploadedUrl: finalProofUrl,
+                        persistentPreview: finalProofUrl,
+                        preview: finalProofUrl,
+                        driveSaved: !!driveUrl
+                    };
                 }
-                return next;
-            });
+                return img;
+            }));
 
             if (targetSL) {
                 try {
@@ -2249,54 +2364,46 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
 
         if (!confirm(`Are you sure you want to dump ${unmatched.length} unmatched images? They will be saved to the Dumping log and removed from here.`)) return;
 
-        // Process each unmatched image one by one
-        for (let i = 0; i < dailyImages.length; i++) {
-            const imgData = dailyImages[i];
-            if (imgData.matchFailed && !imgData.uploaded && !imgData.uploading) {
-                // Set uploading for this specific image
-                setDailyImages(prev => {
-                    const next = [...prev];
-                    next[i].uploading = true;
-                    return next;
+        // Process each unmatched image one by one using item.id
+        for (const imgData of unmatched) {
+            setDailyImages(prev => prev.map(img => img.id === imgData.id ? { ...img, uploading: true } : img));
+
+            try {
+                const base64 = await new Promise((resolve) => {
+                    if (!imgData.file) {
+                        return resolve(imgData.persistentPreview || imgData.uploadedUrl || imgData.preview || '');
+                    }
+                    const reader = new FileReader();
+                    reader.onload = () => resolve(reader.result);
+                    reader.readAsDataURL(imgData.file);
                 });
 
-                try {
-                    const base64 = await new Promise((resolve) => {
-                        const reader = new FileReader();
-                        reader.onload = () => resolve(reader.result);
-                        reader.readAsDataURL(imgData.file);
-                    });
+                await postToScript({
+                    action: 'dumpImage',
+                    siteName: 'UNIDENTIFIED',
+                    fileData: base64,
+                    mimeType: imgData.file?.type || 'image/jpeg',
+                    reasoning: imgData.reasoning || "AI could not match location"
+                });
 
-                    await postToScript({
-                        action: 'dumpImage',
-                        siteName: 'UNIDENTIFIED',
-                        fileData: base64,
-                        mimeType: imgData.file.type,
-                        reasoning: imgData.reasoning || "AI could not match location"
-                    });
-
-                    // Remove from list after success
-                    setDailyImages(prev => prev.filter((_, idx) => idx !== i));
-                    // Adjust loop counter since we removed an item
-                    i--;
-                } catch (err) {
-                    console.error("Dumping failed", err);
-                    setDailyImages(prev => {
-                        const next = [...prev];
-                        next[i].uploading = false;
-                        return next;
-                    });
-                }
+                // Remove from list after success by ID
+                setDailyImages(prev => prev.filter(img => img.id !== imgData.id));
+            } catch (err) {
+                console.error("Dumping failed for item", imgData.id, err);
+                setDailyImages(prev => prev.map(img => img.id === imgData.id ? { ...img, uploading: false } : img));
             }
         }
     };
 
-    const uploadDailyUpdate = async (index) => {
-        const img = dailyImages[index];
+    const uploadDailyUpdate = async (itemIdOrIndex) => {
+        const img = typeof itemIdOrIndex === 'string'
+            ? dailyImages.find(i => i.id === itemIdOrIndex)
+            : dailyImages[itemIdOrIndex];
+        if (!img) return;
         if (!img.matchedLocation) return alert("Please select a location first.");
 
         // Direct call to the unified triggerAutoUpload engine
-        await triggerAutoUpload(index, img);
+        await triggerAutoUpload(img.id || itemIdOrIndex, img);
     };
 
     // ------------------------------------------------------------------
@@ -6500,29 +6607,29 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                     <Plus size={15} /> Add Images
                                     <input type="file" multiple accept="image/*" onChange={handleDailyImageSelect} style={{ display: 'none' }} />
                                 </label>
-                                {dailyImages.length > 0 && (
-                                    <button className="ai-process-btn" onClick={processImagesWithAI}>
+                                {displayDailyImages.length > 0 && (
+                                    <button className="ai-process-btn" onClick={() => processImagesWithAI()}>
                                         <Zap size={15} fill="currentColor" /> Auto-Detect with AI
                                     </button>
                                 )}
-                                {dailyImages.length > 0 && (
+                                {displayDailyImages.length > 0 && (
                                     <button
                                         type="button"
                                         className="ai-process-btn"
                                         onClick={() => {
-                                            if (expandedDailyCards.size === dailyImages.length) {
+                                            if (expandedDailyCards.size >= displayDailyImages.length) {
                                                 setExpandedDailyCards(new Set());
                                             } else {
-                                                setExpandedDailyCards(new Set(dailyImages.map((_, i) => i)));
+                                                setExpandedDailyCards(new Set(displayDailyImages.map(img => img.id)));
                                             }
                                         }}
                                         style={{ background: '#f8fafc', color: '#4338ca', border: '1px solid #c7d2fe', boxShadow: 'none' }}
                                         title="Toggle show/hide all details"
                                     >
-                                        {expandedDailyCards.size === dailyImages.length ? '▲ Collapse All Details' : '▼ Expand All Details'}
+                                        {expandedDailyCards.size >= displayDailyImages.length ? '▲ Collapse All Details' : '▼ Expand All Details'}
                                     </button>
                                 )}
-                                {dailyImages.some(img => img.matchFailed && !img.uploaded) && (
+                                {displayDailyImages.some(img => img.matchFailed && !img.uploaded) && (
                                     <button className="ai-process-btn dump-btn" onClick={dumpUnmatchedImages} title="Move unmatched images to dumping log">
                                         <XCircle size={15} /> Dump All Red
                                     </button>
@@ -6554,7 +6661,7 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                     <RefreshCw size={13} />
                                     <span>Cloud Synced (Live)</span>
                                 </button>
-                                {dailyImages.length > 0 && (
+                                {displayDailyImages.length > 0 && (
                                     <button
                                         type="button"
                                         className="ai-process-btn dump-btn"
@@ -6572,17 +6679,18 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                 )}
                             </div>
 
-                            {dailyImages.length > 0 ? (
+                            {displayDailyImages.length > 0 ? (
                                 <div className="daily-images-grid">
-                                    {dailyImages.map((img, idx) => {
-                                        const isExpanded = expandedDailyCards.has(idx);
+                                    {displayDailyImages.map((img, idx) => {
+                                        const cardId = img.id || `daily_${idx}`;
+                                        const isExpanded = expandedDailyCards.has(cardId) || expandedDailyCards.has(idx);
                                         return (
-                                        <div key={idx} className={`daily-card ${img.uploaded ? 'uploaded' : ''} ${img.matchFailed && !img.uploaded ? 'match-failed' : ''}`} style={{ position: 'relative' }}>
+                                        <div key={cardId} className={`daily-card ${img.uploaded ? 'uploaded' : ''} ${img.matchFailed && !img.uploaded ? 'match-failed' : ''}`} style={{ position: 'relative' }}>
                                             <button
                                                 type="button"
                                                 onClick={(e) => {
                                                     e.stopPropagation();
-                                                    removeDailyImage(idx);
+                                                    removeDailyImage(cardId);
                                                 }}
                                                 title="Remove this image from Daily Upload"
                                                 style={{
@@ -6686,7 +6794,7 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                             {/* 🔽 Compact Dropdown Toggle Bar */}
                                             <div 
                                                 className="daily-card-collapse-bar"
-                                                onClick={() => toggleDailyCardExpand(idx)}
+                                                onClick={() => toggleDailyCardExpand(cardId)}
                                                 style={{
                                                     display: 'flex',
                                                     alignItems: 'center',
@@ -6791,28 +6899,43 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                                         value={img.matchedIndex != null && img.matchedIndex >= 0 ? img.matchedIndex : (img.matchedLocation || "")}
                                                         onChange={async (e) => {
                                                             const selectedIdx = parseInt(e.target.value, 10);
-                                                            const newImages = [...dailyImages];
                                                             if (!isNaN(selectedIdx) && selectedIdx >= 0 && selectedIdx < hoardings.length) {
                                                                 const h = hoardings[selectedIdx];
-                                                                const prevSl = newImages[idx].sl;
-                                                                newImages[idx].matchedIndex = selectedIdx;
-                                                                newImages[idx].sl = h.SL || h['S. No.'] || h['SL NO'] || '';
-                                                                newImages[idx].matchedLocation = h["Locality Site Location"] || h["Location "] || h.Location;
-                                                                newImages[idx].matchedSiteId = h._SiteID || h.UniqueID || h['Unique ID'] || h.ID || '';
-                                                                newImages[idx].facing = h.Facing || h['Traffic View'] || '';
-                                                                newImages[idx].matchFailed = false;
-                                                                newImages[idx].reasoning = `Manual selection: #${newImages[idx].sl} | ${newImages[idx].matchedLocation} [Facing: ${newImages[idx].facing}]`;
-                                                                setDailyImages(newImages);
-                                                                if ((newImages[idx].uploaded && prevSl !== newImages[idx].sl) || (!newImages[idx].uploaded && newImages[idx].matchedLocation)) {
-                                                                    await triggerAutoUpload(idx, newImages[idx]);
+                                                                const newSl = h.SL || h['S. No.'] || h['SL NO'] || '';
+                                                                const updates = {
+                                                                    matchedIndex: selectedIdx,
+                                                                    sl: newSl,
+                                                                    matchedLocation: h["Locality Site Location"] || h["Location "] || h.Location,
+                                                                    matchedSiteId: h._SiteID || h.UniqueID || h['Unique ID'] || h.ID || '',
+                                                                    facing: h.Facing || h['Traffic View'] || '',
+                                                                    matchFailed: false,
+                                                                    reasoning: `Manual selection: #${newSl} | ${h["Locality Site Location"] || h["Location "] || h.Location} [Facing: ${h.Facing || h['Traffic View'] || ''}]`
+                                                                };
+                                                                let updatedCard = null;
+                                                                setDailyImages(prev => prev.map(item => {
+                                                                    if (item.id === cardId || (item.id && item.id === img.id)) {
+                                                                        updatedCard = { ...item, ...updates };
+                                                                        return updatedCard;
+                                                                    }
+                                                                    return item;
+                                                                }));
+                                                                if ((img.uploaded && img.sl !== newSl) || (!img.uploaded && updates.matchedLocation)) {
+                                                                    await triggerAutoUpload(cardId, updatedCard || updates);
                                                                 }
                                                             } else {
-                                                                newImages[idx].matchedIndex = -1;
-                                                                newImages[idx].sl = '';
-                                                                newImages[idx].matchedLocation = '';
-                                                                newImages[idx].matchedSiteId = '';
-                                                                newImages[idx].facing = '';
-                                                                setDailyImages(newImages);
+                                                                setDailyImages(prev => prev.map(item => {
+                                                                    if (item.id === cardId || (item.id && item.id === img.id)) {
+                                                                        return {
+                                                                            ...item,
+                                                                            matchedIndex: -1,
+                                                                            sl: '',
+                                                                            matchedLocation: '',
+                                                                            matchedSiteId: '',
+                                                                            facing: ''
+                                                                        };
+                                                                    }
+                                                                    return item;
+                                                                }));
                                                             }
                                                         }}
                                                     >
@@ -6845,19 +6968,27 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                                                             key={tIdx}
                                                                             type="button"
                                                                             onClick={async () => {
-                                                                                const newImages = [...dailyImages];
                                                                                 const targetSite = hoardings[twin.index] || hoardings.find(h => String(h.SL || h['S. No.'] || '').trim() === String(twin.sl).trim());
-                                                                                const prevSl = newImages[idx].sl;
-                                                                                newImages[idx].matchedIndex = twin.index;
-                                                                                newImages[idx].sl = twin.sl || targetSite?.SL || targetSite?.['S. No.'] || '';
-                                                                                newImages[idx].matchedSiteId = twin.siteId;
-                                                                                newImages[idx].facing = twin.facing;
-                                                                                newImages[idx].matchedLocation = targetSite ? (targetSite["Locality Site Location"] || targetSite["Location "] || targetSite.Location) : twin.siteName;
-                                                                                newImages[idx].reasoning = `Switched to #${newImages[idx].sl} | Facing: ${twin.facing} (${twin.distanceM}m away)`;
-                                                                                newImages[idx].matchFailed = false;
-                                                                                setDailyImages(newImages);
-                                                                                if ((newImages[idx].uploaded && prevSl !== newImages[idx].sl) || (!newImages[idx].uploaded && newImages[idx].matchedLocation)) {
-                                                                                    await triggerAutoUpload(idx, newImages[idx]);
+                                                                                const targetSL = twin.sl || targetSite?.SL || targetSite?.['S. No.'] || '';
+                                                                                const updates = {
+                                                                                    matchedIndex: twin.index,
+                                                                                    sl: targetSL,
+                                                                                    matchedSiteId: twin.siteId,
+                                                                                    facing: twin.facing,
+                                                                                    matchedLocation: targetSite ? (targetSite["Locality Site Location"] || targetSite["Location "] || targetSite.Location) : twin.siteName,
+                                                                                    reasoning: `Switched to #${targetSL} | Facing: ${twin.facing} (${twin.distanceM}m away)`,
+                                                                                    matchFailed: false
+                                                                                };
+                                                                                let updatedCard = null;
+                                                                                setDailyImages(prev => prev.map(item => {
+                                                                                    if (item.id === cardId || (item.id && item.id === img.id)) {
+                                                                                        updatedCard = { ...item, ...updates };
+                                                                                        return updatedCard;
+                                                                                    }
+                                                                                    return item;
+                                                                                }));
+                                                                                if ((img.uploaded && img.sl !== targetSL) || (!img.uploaded && updates.matchedLocation)) {
+                                                                                    await triggerAutoUpload(cardId, updatedCard || updates);
                                                                                 }
                                                                             }}
                                                                             style={{
@@ -6892,22 +7023,32 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                                         <button
                                                             className={`toggle-btn ${img.status === 'Available' ? 'active-green' : ''}`}
                                                             onClick={async () => {
-                                                                const newImages = [...dailyImages];
-                                                                newImages[idx].status = 'Available';
-                                                                setDailyImages(newImages);
-                                                                if (newImages[idx].uploaded) {
-                                                                    await triggerAutoUpload(idx, newImages[idx]);
+                                                                let updatedCard = null;
+                                                                setDailyImages(prev => prev.map(item => {
+                                                                    if (item.id === cardId || (item.id && item.id === img.id)) {
+                                                                        updatedCard = { ...item, status: 'Available' };
+                                                                        return updatedCard;
+                                                                    }
+                                                                    return item;
+                                                                }));
+                                                                if (img.uploaded && updatedCard) {
+                                                                    await triggerAutoUpload(cardId, updatedCard);
                                                                 }
                                                             }}
                                                         >Available</button>
                                                         <button
                                                             className={`toggle-btn ${img.status === 'Occupied' ? 'active-red' : ''}`}
                                                             onClick={async () => {
-                                                                const newImages = [...dailyImages];
-                                                                newImages[idx].status = 'Occupied';
-                                                                setDailyImages(newImages);
-                                                                if (newImages[idx].uploaded) {
-                                                                    await triggerAutoUpload(idx, newImages[idx]);
+                                                                let updatedCard = null;
+                                                                setDailyImages(prev => prev.map(item => {
+                                                                    if (item.id === cardId || (item.id && item.id === img.id)) {
+                                                                        updatedCard = { ...item, status: 'Occupied' };
+                                                                        return updatedCard;
+                                                                    }
+                                                                    return item;
+                                                                }));
+                                                                if (img.uploaded && updatedCard) {
+                                                                    await triggerAutoUpload(cardId, updatedCard);
                                                                 }
                                                             }}
                                                         >Occupied</button>
@@ -6990,7 +7131,7 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                                 {!img.uploaded ? (
                                                     <button
                                                         className="upload-single-btn"
-                                                        onClick={() => uploadDailyUpdate(idx)}
+                                                        onClick={() => uploadDailyUpdate(cardId)}
                                                         disabled={!img.matchedLocation || img.uploading}
                                                     >
                                                         {img.uploading ? 'Syncing to History...' : 'Confirm & Sync'}
