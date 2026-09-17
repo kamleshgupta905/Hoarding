@@ -14,11 +14,11 @@ async function main() {
   }
 
   const SITES = [
-    { sl: 1, client: 'Patanjali', loc: 'Begum Bridge Metro Station', city: 'Meerut', facing: 'Modipuram', start: '2026-10-01', end: '2026-10-31', rent: 60000 },
-    { sl: 2, client: 'Patanjali', loc: 'Begum Bridge Metro Station', city: 'Meerut', facing: 'City', start: '2026-10-01', end: '2026-10-31', rent: 60000 },
-    { sl: 3, client: 'Kalyan Jewellers', loc: 'Begum Bridge Caltex', city: 'Meerut', facing: 'Modipuram', start: '2026-10-15', end: '2026-11-15', rent: 60000 },
-    { sl: 4, client: 'Kalyan Jewellers', loc: 'Begum Bridge Caltex', city: 'Meerut', facing: 'City', start: '2026-10-15', end: '2026-11-15', rent: 60000 },
-    { sl: 5, client: 'Tata Motors', loc: 'Begum Bridge Chauraha', city: 'Meerut', facing: 'Main Market', start: '2026-10-10', end: '2026-11-09', rent: 150000 }
+    { sl: 1, client: 'Patanjali', loc: 'Begum Bridge Metro Station', city: 'Meerut', facing: 'Modipuram', start: '2026-10-01', end: '2026-10-31', rent: 60000, size: '40x10', medium: 'Unipole', area: 'Begum Bridge' },
+    { sl: 2, client: 'Patanjali', loc: 'Begum Bridge Metro Station', city: 'Meerut', facing: 'Soti Ganj', start: '2026-10-01', end: '2026-10-31', rent: 60000, size: '40x10', medium: 'Unipole', area: 'Begum Bridge' },
+    { sl: 3, client: 'Kalyan Jewellers', loc: 'Begum Bridge Caltex', city: 'Meerut', facing: 'Zero Mile', start: '2026-10-15', end: '2026-11-15', rent: 60000, size: '40x10', medium: 'Unipole', area: 'Begum Bridge' },
+    { sl: 4, client: 'Kalyan Jewellers', loc: 'Begum Bridge Caltex', city: 'Meerut', facing: 'Soti Ganj', start: '2026-10-15', end: '2026-11-15', rent: 60000, size: '40x10', medium: 'Unipole', area: 'Begum Bridge' },
+    { sl: 5, client: 'Tata Motors', loc: 'Begum Bridge Chauraha', city: 'Meerut', facing: 'Modipuram', start: '2026-10-10', end: '2026-11-09', rent: 150000, size: '40x25', medium: 'Billboard', area: 'Begum Bridge' }
   ];
 
   // 1. Generate Excel Media Plan (.xlsx)
@@ -72,9 +72,9 @@ async function main() {
   const GPS_COORDS = [
     '28.998107, 77.705821',
     '28.998107, 77.705821',
-    '28.994713, 77.705890',
-    '28.994713, 77.705890',
-    '28.992638, 77.705736'
+    '28.997350, 77.705868',
+    '28.997350, 77.705868',
+    '28.995287, 77.705958'
   ];
 
   SITES.forEach((site, idx) => {
@@ -119,9 +119,9 @@ async function main() {
         { text: '', options: { fill: { color: 'FFFFFF' } } }
       ],
       [
-        { text: `Size: 40x10`, options: { fontSize: 9.5, fontFace: 'Calibri', color: '222222', fill: { color: 'FFFFFF' } } },
-        { text: `Medium - Unipole`, options: { fontSize: 9.5, fontFace: 'Calibri', color: '222222', fill: { color: 'FFFFFF' } } },
-        { text: `Area: Begum Bridge`, options: { fontSize: 9.5, fontFace: 'Calibri', color: '222222', fill: { color: 'FFFFFF' } } },
+        { text: `Size: ${site.size}`, options: { fontSize: 9.5, fontFace: 'Calibri', color: '222222', fill: { color: 'FFFFFF' } } },
+        { text: `Medium - ${site.medium}`, options: { fontSize: 9.5, fontFace: 'Calibri', color: '222222', fill: { color: 'FFFFFF' } } },
+        { text: `Area: ${site.area}`, options: { fontSize: 9.5, fontFace: 'Calibri', color: '222222', fill: { color: 'FFFFFF' } } },
         { text: '', options: { fill: { color: 'FFFFFF' } } }
       ]
     ];
