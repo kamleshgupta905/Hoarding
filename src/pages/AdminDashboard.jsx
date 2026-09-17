@@ -35,6 +35,7 @@ import './AdminDashboard.css';
 import GeoRadiusSelector from '../components/dashboard/GeoRadiusSelector';
 import { useInventoryStore } from '../stores/inventoryStore';
 import { calculateDistance } from '../services/geoService';
+import { APP_VERSION } from '../version';
 
 const SHEET_HISTORY_LIMIT = 30;
 const HIDDEN_SHEET_COLUMN_LETTERS = new Set(['T', 'W', 'X', 'Y', 'Z']);
@@ -1164,6 +1165,27 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
     const [desktopUpdateStatus, setDesktopUpdateStatus] = useState('idle'); // 'idle' | 'checking' | 'available' | 'latest' | 'downloading' | 'ready' | 'error'
     const [desktopUpdatePercent, setDesktopUpdatePercent] = useState(0);
     const [desktopUpdateError, setDesktopUpdateError] = useState('');
+    const [latestDesktopRelease, setLatestDesktopRelease] = useState(null);
+
+    useEffect(() => {
+        // Fetch latest published desktop release metadata from public releases repository
+        fetch('https://api.github.com/repos/kamleshgupta905/hoarding-desktop-releases/releases/latest')
+            .then(res => res.ok ? res.json() : null)
+            .then(data => {
+                if (data) {
+                    const setupAsset = data.assets?.find(a => a.name?.toLowerCase().endsWith('.exe') && a.name?.toLowerCase().includes('setup'));
+                    const portableAsset = data.assets?.find(a => a.name?.toLowerCase().endsWith('.exe') && a.name?.toLowerCase().includes('portable'));
+                    setLatestDesktopRelease({
+                        tag: data.tag_name,
+                        version: data.tag_name?.replace(/^v/, '') || data.name,
+                        setupUrl: setupAsset?.browser_download_url || data.html_url,
+                        portableUrl: portableAsset?.browser_download_url || null,
+                        pageUrl: data.html_url
+                    });
+                }
+            })
+            .catch(() => {});
+    }, []);
 
     useEffect(() => {
         if (typeof window === 'undefined' || !window.electronAPI) return;
@@ -8604,7 +8626,7 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                             </div>
                                             <div>
                                                 <h2 style={{ margin: 0, fontSize: '1.1rem', fontWeight: 800, color: '#1e293b' }}>Heera Staff Camera</h2>
-                                                <span style={{ fontSize: '0.76rem', color: '#64748b' }}>Android APK v1.2</span>
+                                                <span style={{ fontSize: '0.76rem', color: '#64748b' }}>Android APK v{APP_VERSION} (Latest)</span>
                                             </div>
                                         </div>
                                         <span style={{ 
@@ -8751,7 +8773,7 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                             </div>
                                             <div>
                                                 <h2 style={{ margin: 0, fontSize: '1.1rem', fontWeight: 800, color: '#1e293b' }}>Heera Hoardings PC</h2>
-                                                <span style={{ fontSize: '0.76rem', color: '#64748b' }}>Windows & Mac Client</span>
+                                                <span style={{ fontSize: '0.76rem', color: '#64748b' }}>Windows Setup (.exe) • {latestDesktopRelease?.tag || `v${APP_VERSION}`}</span>
                                             </div>
                                         </div>
                                         <span style={{ 
@@ -8825,7 +8847,7 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
 
                                 <div style={{ display: 'flex', gap: '10px' }}>
                                     <a 
-                                        href="https://github.com/kamleshgupta905/hoarding-desktop-releases/releases/latest" 
+                                        href={latestDesktopRelease?.setupUrl || "https://github.com/kamleshgupta905/hoarding-desktop-releases/releases/latest"} 
                                         target="_blank" 
                                         rel="noopener noreferrer"
                                         style={{
@@ -8987,7 +9009,7 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                             }}>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.84rem' }}>
                                     <span style={{ color: '#64748b' }}>Current Version:</span>
-                                    <strong style={{ color: '#0f172a' }}>{desktopVersion ? `v${desktopVersion}` : 'v1.5.8 (Web / App)'}</strong>
+                                    <strong style={{ color: '#0f172a' }}>{desktopVersion ? `v${desktopVersion} (Desktop App)` : `v${APP_VERSION} (Live Web App)`}</strong>
                                     <span style={{ color: '#94a3b8' }}>•</span>
                                     <span style={{
                                         color: desktopUpdateStatus === 'ready' ? '#16a34a' :
@@ -9259,7 +9281,7 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                                 </div>
                                                 <div>
                                                     <h3 style={{ margin: 0, fontSize: '0.96rem', fontWeight: 700, color: '#1d1d1f' }}>Heera Staff Camera</h3>
-                                                    <span style={{ fontSize: '0.72rem', color: '#86868b' }}>Android APK v1.2</span>
+                                                    <span style={{ fontSize: '0.72rem', color: '#86868b' }}>Android APK v{APP_VERSION}</span>
                                                 </div>
                                             </div>
                                             <span style={{ 
@@ -9399,7 +9421,7 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                                 </div>
                                                 <div>
                                                     <h3 style={{ margin: 0, fontSize: '0.96rem', fontWeight: 700, color: '#1d1d1f' }}>Heera Hoardings PC</h3>
-                                                    <span style={{ fontSize: '0.72rem', color: '#86868b' }}>Windows & Mac Desktop</span>
+                                                    <span style={{ fontSize: '0.72rem', color: '#86868b' }}>Windows Setup (.exe) • {latestDesktopRelease?.tag || `v${APP_VERSION}`}</span>
                                                 </div>
                                             </div>
                                             <span style={{ 
@@ -9468,7 +9490,7 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
 
                                     <div style={{ display: 'flex', gap: '8px' }}>
                                         <a 
-                                            href="https://github.com/kamleshgupta905/Hoarding/releases" 
+                                            href={latestDesktopRelease?.setupUrl || "https://github.com/kamleshgupta905/hoarding-desktop-releases/releases/latest"} 
                                             target="_blank" 
                                             rel="noopener noreferrer"
                                             style={{

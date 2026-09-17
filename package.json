@@ -37,7 +37,8 @@
     "publish": {
       "provider": "github",
       "owner": "kamleshgupta905",
-      "repo": "hoarding-desktop-releases"
+      "repo": "hoarding-desktop-releases",
+      "releaseType": "release"
     },
     "win": {
       "target": [
