@@ -110,8 +110,9 @@ export default function BulkBookingWizard({
           setProcessingMsg(`PPT: ${msg}`);
         });
 
-        if (pptResult && pptResult.slides) {
-          const matchedItems = matchPptSlidesToBookings(pptResult.slides, parsed.items);
+        const slidesList = Array.isArray(pptResult) ? pptResult : (pptResult?.slides || []);
+        if (slidesList.length > 0) {
+          const matchedItems = matchPptSlidesToBookings(slidesList, parsed.items);
           parsed = {
             ...parsed,
             items: matchedItems

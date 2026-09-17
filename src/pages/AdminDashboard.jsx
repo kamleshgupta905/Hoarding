@@ -3501,6 +3501,28 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
         exportProposalExcel(selectedProposalSites, `proposal-${cityPart}-${statusPart}-${new Date().toISOString().slice(0, 10)}.xls`, selectedProposalHeaders);
     };
 
+    const handleDownloadProposalPpt = async () => {
+        if (selectedProposalSites.length === 0 || isPptGenerating) return;
+        setIsPptGenerating(true);
+        setPptProgressText(`0/${selectedProposalSites.length}`);
+        try {
+            const cityPart = inventoryCityFilter === 'All' ? 'all-cities' : (Array.isArray(inventoryCityFilter) ? inventoryCityFilter.join('-') : String(inventoryCityFilter));
+            const dateStr = new Date().toISOString().slice(0, 10);
+            await generateMasterMediaPlanPptx(selectedProposalSites, {
+                fileName: `Heera_Proposal_${cityPart}_${dateStr}.pptx`,
+                onProgress: (curr, total, msg) => {
+                    setPptProgressText(`${curr}/${total}`);
+                }
+            });
+        } catch (err) {
+            console.error('Proposal PPT Generation Failed:', err);
+            alert(`PPT Generation Failed: ${err.message}`);
+        } finally {
+            setIsPptGenerating(false);
+            setPptProgressText('');
+        }
+    };
+
     const toggleProposalHeader = (label) => {
         setSelectedProposalHeaders(prev => {
             const list = Array.isArray(prev) ? prev : [];
@@ -8011,6 +8033,16 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                             <button className="btn-reset-filters" onClick={() => setSelectedProposalKeys([])}>Clear</button>
                                             <button className="btn-primary-admin" onClick={handleDownloadProposal}>
                                                 <Download size={18} /> Download Excel
+                                            </button>
+                                            <button 
+                                                className="btn-primary-admin" 
+                                                onClick={handleDownloadProposalPpt}
+                                                disabled={isPptGenerating}
+                                                style={{ background: '#ea580c', borderColor: '#ea580c', display: 'inline-flex', alignItems: 'center', gap: '6px' }}
+                                                title="Download Master 4:3 PowerPoint Presentation for selected proposal sites"
+                                            >
+                                                {isPptGenerating ? <Loader2 size={18} className="spin-animate" /> : <Presentation size={18} />}
+                                                <span>{isPptGenerating ? (pptProgressText || 'Packaging...') : `Download PPT (${selectedProposalSites.length})`}</span>
                                             </button>
                                         </div>
                                     </div>

@@ -55,65 +55,98 @@ async function main() {
   fs.writeFileSync(excelDestProject, excelBuffer);
   console.log(`✅ Excel file generated:\n  -> ${excelDestDesktop}\n  -> ${excelDestProject}`);
 
-  // 2. Generate PowerPoint Presentation (.pptx)
+  // 2. Generate PowerPoint Presentation (.pptx) - Exact 4:3 Master Media Plan Format
   const pres = new pptxgen();
-  pres.layout = 'LAYOUT_16x9';
+  pres.layout = 'LAYOUT_4x3'; // 10.0 x 7.5 inches (exact master presentation layout)
 
   const imagePath = path.join(__dirname, '..', 'src', 'assets', 'krishna_avatar.jpg');
   const hasImage = fs.existsSync(imagePath);
+  const hiraLogoPath = path.join(__dirname, '..', 'src', 'assets', 'hiraLogoData.js');
+  let hiraLogoData = '';
+  try {
+    const rawLogo = fs.readFileSync(hiraLogoPath, 'utf8');
+    const m = rawLogo.match(/HIRA_LOGO\s*=\s*["']([^"']+)["']/);
+    if (m && m[1]) hiraLogoData = m[1];
+  } catch (e) {}
 
-  SITES.forEach((site) => {
+  const GPS_COORDS = [
+    '28.998107, 77.705821',
+    '28.998107, 77.705821',
+    '28.994713, 77.705890',
+    '28.994713, 77.705890',
+    '28.992638, 77.705736'
+  ];
+
+  SITES.forEach((site, idx) => {
     const slide = pres.addSlide();
 
-    // Top Brand Bar
-    slide.addText("Heera Advertising — Outdoor Campaign Proof", {
-      x: 0.6, y: 0.35, w: 10, h: 0.45,
-      fontSize: 17, bold: true, color: '0F172A',
-      fontFace: 'Arial'
-    });
-
-    slide.addText(`Campaign Live Execution Proof • Site #${site.sl}`, {
-      x: 0.6, y: 0.8, w: 10, h: 0.35,
-      fontSize: 11, color: '64748B',
-      fontFace: 'Arial'
-    });
-
-    // Artwork Preview Image
+    // 1. Full Hoarding Photo fitting 10" x 7.5" slide canvas cleanly
     if (hasImage) {
       slide.addImage({
         path: imagePath,
-        x: 0.6, y: 1.25, w: 7.2, h: 5.5,
-        sizing: { type: 'cover', w: 7.2, h: 5.5 }
+        x: 0, y: 0, w: 10.0, h: 7.5
       });
     } else {
       slide.addShape(pres.ShapeType.rect, {
-        x: 0.6, y: 1.25, w: 7.2, h: 5.5,
-        fill: { color: 'E2E8F0' },
-        line: { color: 'CBD5E1', width: 2 }
-      });
-      slide.addText("HOARDING DISPLAY ARTWORK", {
-        x: 0.6, y: 3.5, w: 7.2, h: 0.8,
-        align: 'center', fontSize: 18, bold: true, color: '64748B'
+        x: 0, y: 0, w: 10.0, h: 7.5,
+        fill: { color: '1E293B' }
       });
     }
 
-    // Site Specification Card
-    slide.addText([
-      { text: `S.No: ${site.sl}\n`, options: { bold: true, fontSize: 16, color: '4338CA' } },
-      { text: `Client: ${site.client}\n`, options: { bold: true, fontSize: 14, color: '059669' } },
-      { text: `Location: ${site.loc}\n`, options: { bold: true, fontSize: 12, color: '1E293B' } },
-      { text: `City: ${site.city}\n`, options: { fontSize: 11, color: '475569' } },
-      { text: `Facing: ${site.facing}\n`, options: { fontSize: 11, color: '475569' } },
-      { text: `Campaign Window:\n${site.start} to ${site.end}\n`, options: { fontSize: 10, color: '64748B' } },
-      { text: `Monthly Rate: ₹${site.rent.toLocaleString()}`, options: { bold: true, fontSize: 12, color: 'D97706' } }
-    ], {
-      x: 8.1, y: 1.25, w: 4.6, h: 5.5,
-      fill: { color: 'F8FAFC' },
-      line: { color: 'CBD5E1', width: 1 },
-      margin: 14,
-      valign: 'top',
-      fontFace: 'Arial'
+    // 2. Top-Left Floating GPS Coordinates Badge
+    const coords = GPS_COORDS[idx] || '28.998107, 77.705821';
+    slide.addText(coords, {
+      x: 0,
+      y: 0.02,
+      w: 2.72,
+      h: 0.40,
+      fontSize: 10.5,
+      fontFace: 'Arial',
+      color: '000000',
+      bold: true,
+      fill: { color: 'FFFFFF' },
+      line: { color: '888888', width: 0.75 },
+      align: 'center',
+      valign: 'middle'
     });
+
+    // 3. Bottom Information Table (2 Rows x 4 Columns)
+    const tableRows = [
+      [
+        { text: `City: ${site.city}`, options: { fontSize: 10, fontFace: 'Calibri', bold: true, color: '000000', fill: { color: 'FFFFFF' } } },
+        { text: `Location: ${site.loc}`, options: { fontSize: 10, fontFace: 'Calibri', bold: true, color: '000000', fill: { color: 'FFFFFF' } } },
+        { text: `Facing: ${site.facing}`, options: { fontSize: 10, fontFace: 'Calibri', bold: true, color: '000000', fill: { color: 'FFFFFF' } } },
+        { text: '', options: { fill: { color: 'FFFFFF' } } }
+      ],
+      [
+        { text: `Size: 40x10`, options: { fontSize: 9.5, fontFace: 'Calibri', color: '222222', fill: { color: 'FFFFFF' } } },
+        { text: `Medium - Unipole`, options: { fontSize: 9.5, fontFace: 'Calibri', color: '222222', fill: { color: 'FFFFFF' } } },
+        { text: `Area: Begum Bridge`, options: { fontSize: 9.5, fontFace: 'Calibri', color: '222222', fill: { color: 'FFFFFF' } } },
+        { text: '', options: { fill: { color: 'FFFFFF' } } }
+      ]
+    ];
+
+    slide.addTable(tableRows, {
+      x: 0,
+      y: 6.69,
+      w: 10.0,
+      h: 0.81,
+      colW: [1.69, 4.41, 2.68, 1.22],
+      border: { type: 'solid', color: '888888', pt: 0.75 },
+      valign: 'middle'
+    });
+
+    // 4. Embedded Heera Advertising Logo inside Column 4 (Bottom-Right)
+    if (hiraLogoData) {
+      slide.addImage({
+        data: hiraLogoData,
+        x: 8.82,
+        y: 6.74,
+        w: 1.10,
+        h: 0.65,
+        sizing: { type: 'contain', w: 1.10, h: 0.65 }
+      });
+    }
   });
 
   const pptDestDesktop = path.join(desktopDir, 'Sample_Campaign_Artworks.pptx');

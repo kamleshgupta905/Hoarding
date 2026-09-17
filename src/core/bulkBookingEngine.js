@@ -378,7 +378,9 @@ export const matchPptSlidesToBookings = (slides = [], bookingItems = []) => {
 
   // Prepare slides with preview URLs and cover flag
   const preparedSlides = slides.map(slide => {
-    const firstImage = slide.images && slide.images.length > 0 ? slide.images[0] : null;
+    const firstImage = (slide.photoCandidates && slide.photoCandidates.length > 0) 
+      ? slide.photoCandidates[0] 
+      : (slide.images && slide.images.length > 0 ? slide.images[0] : null);
     let previewUrl = '';
     if (firstImage && firstImage.blob && typeof window !== 'undefined' && window.URL) {
       try {

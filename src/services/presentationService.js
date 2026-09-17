@@ -140,14 +140,13 @@ export const generateMasterMediaPlanPptx = async (sites = [], options = {}) => {
       );
     }
 
-    // Full-bleed Background Hoarding Photo (10" x 7.5")
+    // Clean Hoarding Photo fitting 10" x 7.5" slide canvas (zero bleed outside slide)
     slide.addImage({
       data: base64Image,
       x: 0,
       y: 0,
       w: 10.0,
-      h: 7.5,
-      sizing: { type: 'cover', w: 10.0, h: 7.5 }
+      h: 7.5
     });
 
     // 2. Top-Left Floating GPS Coordinates Badge
