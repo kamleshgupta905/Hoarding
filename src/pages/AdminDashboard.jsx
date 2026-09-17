@@ -2096,9 +2096,11 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                     img.id === itemId ? { ...img, ...updatedItem, aiLoading: false } : img
                 ));
 
-                // 🚀 AUTO-SYNC: If matched, upload image & save directly to hoarding history!
+                // 🚀 AUTO-SYNC: If matched, upload image & save directly to hoarding history in background
                 if (finalLocation) {
-                    await triggerAutoUpload(itemId, updatedItem);
+                    triggerAutoUpload(itemId, updatedItem).catch(err => {
+                        console.error(`Auto-upload background error for ${itemId}:`, err);
+                    });
                 }
 
             } catch (error) {
@@ -2109,15 +2111,15 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
             }
         };
 
-        // ⚡ Concurrency pool: run up to 2 image matching workers with pacing delay to avoid Gemini API rate limits
-        const CONCURRENCY_LIMIT = 2;
+        // ⚡ Concurrency pool: run up to 4 image matching workers in parallel for rapid detection
+        const CONCURRENCY_LIMIT = 4;
         let cursor = 0;
         const workerCount = Math.min(CONCURRENCY_LIMIT, targetIds.length);
         const workers = Array.from({ length: workerCount }, async () => {
             while (cursor < targetIds.length) {
                 const targetId = targetIds[cursor++];
                 await processSingleItem(targetId);
-                await new Promise(r => setTimeout(r, 600));
+                await new Promise(r => setTimeout(r, 200));
             }
         });
 

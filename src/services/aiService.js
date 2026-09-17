@@ -756,7 +756,7 @@ export const analyzeHoardingImage = async (base64Image, locationList, rawFile = 
             return { text, ocrCoord };
         })();
 
-        const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('OCR timeout')), 6000));
+        const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('OCR timeout')), 2500));
         const { text, ocrCoord } = await Promise.race([ocrPromise, timeoutPromise]);
         detectedOcrText = text;
 
