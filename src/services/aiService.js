@@ -443,6 +443,23 @@ export const matchHoardingByGps = async (coord, locationList, rawImageBase64 = n
                     targetCandidate = corridorCluster[0];
                 }
 
+                // 🎯 CRITICAL FOREGROUND DETERMINISTIC TIE-BREAKER FOR SAME-FACING SITES:
+                // When multiple hoardings share the exact same facing direction along a corridor
+                // (e.g. SL #211 at 45m and SL #210 at 70m both facing Pallavpuram),
+                // the camera photograph captures the FIRST/CLOSER foreground hoarding.
+                const resolvedFacing = resolved.facing || targetCandidate.facing;
+                if (resolvedFacing) {
+                    const normFinalFacing = normalizeText(resolvedFacing);
+                    const sameFacingCandidates = corridorCluster.filter(c => {
+                        const cFacing = normalizeText(c.facing || c.site?.Facing || '');
+                        return cFacing && (cFacing === normFinalFacing || normFinalFacing.includes(cFacing) || cFacing.includes(normFinalFacing));
+                    });
+                    if (sameFacingCandidates.length > 1) {
+                        sameFacingCandidates.sort((a, b) => (a.distanceM ?? 9999) - (b.distanceM ?? 9999));
+                        targetCandidate = sameFacingCandidates[0]; // Guaranteed closest foreground
+                    }
+                }
+
                 const resolvedSL = targetCandidate.site?.SL || targetCandidate.site?.['S. No.'] || targetCandidate.site?.['SL NO'] || (targetCandidate.index + 1);
 
                 return {
@@ -467,7 +484,7 @@ export const matchHoardingByGps = async (coord, locationList, rawImageBase64 = n
     // 🧭 Fallback facing prioritization if Gemini twin call was bypassed or failed but initial facing was detected
     if (corridorCluster.length > 1 && initialFacing) {
         const normFacing = normalizeText(initialFacing);
-        const facingMatch = corridorCluster.find(c => {
+        const matchingCandidates = corridorCluster.filter(c => {
             const cFacing = normalizeText(c.facing);
             const cFrom = normalizeText(c.site?.['Traffic From'] || '');
             const cTo = normalizeText(c.site?.['Traffic To'] || '');
@@ -475,7 +492,9 @@ export const matchHoardingByGps = async (coord, locationList, rawImageBase64 = n
                    (cFrom && normFacing.includes(cFrom)) ||
                    (cTo && normFacing.includes(cTo));
         });
-        if (facingMatch) {
+        if (matchingCandidates.length > 0) {
+            matchingCandidates.sort((a, b) => (a.distanceM ?? 9999) - (b.distanceM ?? 9999));
+            const facingMatch = matchingCandidates[0];
             const matchSL = facingMatch.site?.SL || facingMatch.site?.['S. No.'] || (facingMatch.index + 1);
             return {
                 index: facingMatch.index,

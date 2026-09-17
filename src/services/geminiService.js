@@ -22,13 +22,12 @@ export const getGeminiApiKeys = () => {
 };
 
 export const GEMINI_MODELS = [
-  'gemini-flash-latest',
+  'gemini-3.1-flash-lite',
+  'gemini-3-flash-preview',
   'gemini-3.5-flash',
-  'gemini-flash-lite-latest',
-  'gemini-3.5-flash-lite',
+  'gemini-flash-latest',
   'gemini-3.6-flash',
-  'gemini-3.7-flash',
-  'gemini-3.8-flash'
+  'gemini-3.7-flash'
 ];
 
 /**
@@ -76,19 +75,15 @@ export const callGeminiVision = async (payload) => {
   let lastError = null;
   const apiKeys = getGeminiApiKeys();
 
-  // 🛡️ Prevent thinking token truncation for Gemini 3.7 / 3.5 reasoning models
-  const safePayload = {
-    ...payload,
-    generationConfig: {
-      temperature: 0.1,
-      topP: 0.8,
-      maxOutputTokens: 2048,
-      thinkingConfig: { thinkingBudget: 0 },
-      ...(payload.generationConfig || {})
-    }
+  // 🛡️ Base payload configuration
+  const baseConfig = {
+    temperature: 0.1,
+    topP: 0.8,
+    maxOutputTokens: 2048,
+    ...(payload.generationConfig || {})
   };
-  if (safePayload.generationConfig.maxOutputTokens < 1000) {
-    safePayload.generationConfig.maxOutputTokens = 2048;
+  if (baseConfig.maxOutputTokens < 1000) {
+    baseConfig.maxOutputTokens = 2048;
   }
 
   for (const apiKey of apiKeys) {
@@ -96,6 +91,20 @@ export const callGeminiVision = async (payload) => {
 
     for (const model of GEMINI_MODELS) {
       try {
+        const isLite = model.includes('lite');
+        const modelConfig = { ...baseConfig };
+        // thinkingConfig budget 0 is supported on reasoning flash models, but causes 400 on lite models
+        if (!isLite && !modelConfig.thinkingConfig) {
+          modelConfig.thinkingConfig = { thinkingBudget: 0 };
+        } else if (isLite) {
+          delete modelConfig.thinkingConfig;
+        }
+
+        const safePayload = {
+          ...payload,
+          generationConfig: modelConfig
+        };
+
         const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
         const response = await fetch(endpoint, {
           method: 'POST',
@@ -110,7 +119,11 @@ export const callGeminiVision = async (payload) => {
           const errorText = await response.text();
           console.warn(`Gemini [${model}] status ${response.status}:`, errorText);
           lastError = new Error(`Gemini API Error (${model}): ${response.status}`);
-          continue; // Try next model or next key
+          // If quota is exhausted on this key, switch immediately to next API key
+          if (response.status === 429) {
+            break;
+          }
+          continue; // Try next model on this key
         }
 
         const data = await response.json();
@@ -361,10 +374,10 @@ CRITICAL RULES FOR ACCURATE MATCHING:
 4. ⚠️ AVOID BACKGROUND LANDMARK BIAS:
    - Do NOT select a candidate simply because a background building, school, or secondary sign (such as 'GD GOENKA Toddler House' or a roadside stall) is visible in both photos! 
    - A single landmark can be visible from multiple nearby poles along a 200m corridor. You must match the PRIMARY BILLBOARD POLE itself, not distant background landmarks!
-5. SAME-FACING DISAMBIGUATION (e.g. Both facing Pallavpuram):
-   - When multiple candidates have the same facing direction (e.g. two poles along NH-58 both facing Pallavpuram):
-     * Match the exact pillar alignment with the elevated metro viaduct.
-     * Match whether the billboard is a median Unipole (e.g. SL #210) versus an intersection gantry / corner board (e.g. SL #211).
+5. 🎯 SAME-FACING DISAMBIGUATION & FOREGROUND DISTANCE PRIORITY:
+   - When multiple candidates along the road corridor share the exact same facing direction (e.g. Candidate 0 [SL #211 at 45m] and Candidate 2 [SL #210 at 70m] both facing Pallavpuram):
+   - In outdoor advertising, the camera photo captures the PRIMARY FOREGROUND billboard that appears first along the vehicle/pedestrian approach.
+   - You MUST choose the FOREGROUND candidate closest to the camera lens (the smaller distance in meters from camera GPS, e.g. Candidate 0 [SL #211]). NEVER skip past the foreground structure to select a distant background pole!
 6. Status detection: "Occupied" (active commercial brand ad mounted) or "Available" (blank, white, torn, or To-Let).
 
 Return ONLY a single valid JSON object (no markdown, no backticks):
@@ -441,6 +454,24 @@ Return ONLY a single valid JSON object (no markdown, no backticks):
     }
 
     if (matchedCandidate) {
+      // 🎯 Deterministic foreground tie-breaker for same-facing candidates:
+      // If multiple candidates share the exact same facing direction as the resolved candidate,
+      // pick the one closest to the camera (smallest distanceM).
+      const resolvedFacing = result.facing || (matchedCandidate.site || matchedCandidate).Facing || '';
+      const normFacing = (resolvedFacing || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+      if (normFacing) {
+        const sameFacingList = candidates.filter(c => {
+          const raw = c.site || c;
+          const cf = (raw.Facing || raw['Traffic View'] || c.facing || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+          return cf && (cf === normFacing || normFacing.includes(cf) || cf.includes(normFacing));
+        });
+        if (sameFacingList.length > 1) {
+          sameFacingList.sort((a, b) => (a.distanceM ?? 9999) - (b.distanceM ?? 9999));
+          matchedCandidate = sameFacingList[0];
+          idx = candidates.indexOf(matchedCandidate);
+        }
+      }
+
       const rawSelected = matchedCandidate.site || matchedCandidate;
       const resolvedSL = rawSelected.SL || rawSelected['S. No.'] || rawSelected['SL NO'] || (matchedCandidate.index !== undefined ? matchedCandidate.index + 1 : idx + 1);
       return {
