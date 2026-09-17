@@ -22,10 +22,12 @@ export const getGeminiApiKeys = () => {
 };
 
 export const GEMINI_MODELS = [
+  'gemini-flash-latest',
+  'gemini-3.5-flash',
+  'gemini-flash-lite-latest',
+  'gemini-3.5-flash-lite',
   'gemini-3.6-flash',
   'gemini-3.7-flash',
-  'gemini-2.5-flash',
-  'gemini-flash-latest',
   'gemini-3.8-flash'
 ];
 
@@ -39,6 +41,32 @@ export const parseBase64 = (dataUrl) => {
     return { mimeType: match[1], base64: match[2] };
   }
   return { mimeType: 'image/jpeg', base64: dataUrl };
+};
+
+/**
+ * Robust JSON parse handling unescaped control characters in LLM responses
+ */
+export const safeJsonParse = (rawText) => {
+  if (!rawText || typeof rawText !== 'string') return null;
+  const cleanJson = rawText.replace(/```json\s*/i, '').replace(/```\s*$/i, '').trim();
+  const jsonMatch = cleanJson.match(/\{[\s\S]*\}/);
+  if (!jsonMatch) return null;
+
+  try {
+    return JSON.parse(jsonMatch[0]);
+  } catch {
+    const sanitized = jsonMatch[0].replace(/[\u0000-\u001F\u007F-\u009F]/g, (c) => {
+      if (c === '\n') return '\\n';
+      if (c === '\r') return '\\r';
+      if (c === '\t') return '\\t';
+      return ' ';
+    });
+    try {
+      return JSON.parse(sanitized);
+    } catch {
+      return null;
+    }
+  }
 };
 
 /**
@@ -73,8 +101,7 @@ export const callGeminiVision = async (payload) => {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            'x-goog-api-key': apiKey,
-            'User-Agent': 'aistudio-build'
+            'x-goog-api-key': apiKey
           },
           body: JSON.stringify(safePayload)
         });
@@ -318,14 +345,18 @@ CANDIDATE HOARDINGS AT / NEAR THIS CORRIDOR:
 ${candidateDescriptions}
 
 CRITICAL RULES FOR ACCURATE MATCHING:
-1. ⚠️ DO NOT be deceived by any advertiser store/showroom/branch address printed on the flex ad banner itself (for example: "205, Begum Bridge Road", phone numbers). That is just the advertiser's showroom address, NOT the billboard's facing direction or location!
-2. In outdoor advertising (OOH): "Facing [X]" means the billboard face is physically oriented looking towards direction X, so traffic approaching/coming FROM direction X sees this face directly through their windshield!
-3. 🏗️ BILLBOARD MOUNTING STRUCTURE TYPE (HIGHEST PRIORITY):
+1. 🎯 HIGHEST PRIORITY: BILLBOARD FACING & TRAFFIC DIRECTION:
+   - In outdoor advertising (OOH): "Facing [X]" means the billboard face points towards direction X and is directly visible to oncoming traffic approaching/coming FROM direction X heading towards the opposite direction.
+   - At this location, multiple/twin hoardings exist with identical or nearby coordinates (e.g. opposite faces on a median unipole like Begum Bridge vs Modipuram, or consecutive corridor structures).
+   - In the photo clicked by the camera, carefully inspect which direction traffic is flowing and which candidate's Facing directly aligns with the camera's line-of-sight!
+   - Always match the primary hoarding in the foreground closest to the camera lens over any secondary or distant structures.
+2. ⚠️ DO NOT be deceived by any advertiser store/showroom/branch address printed on the flex ad banner itself (for example: "205, Begum Bridge Road", phone numbers). That is just the advertiser's showroom address, NOT the billboard's facing direction or location!
+3. 🏗️ BILLBOARD MOUNTING STRUCTURE TYPE:
    - Carefully inspect the exact structural engineering of the primary billboard being captured:
      * UNIPOLE: A massive horizontal billboard mounted atop a single tall circular steel/concrete pole or pillar, often standing in the road median directly underneath or parallel to the elevated metro/flyover viaduct.
      * OVERHEAD GANTRY: A steel truss bridge spanning horizontally directly over traffic lanes.
      * DOUBLE-POLE / STREET-CORNER: Supported on two vertical side posts or mounted on the side of a roundabout / chauraha junction.
-     * ROOFTOP / WALL-MOUNTED: Fixed onto a building facade or terrace.
+     * ROOFTOP / WALL-MOUNTED: Fixed onto a building facade or boundary wall/fence.
    - Look at each candidate's reference photo: The correct candidate MUST have the IDENTICAL structural frame type and mounting location.
 4. ⚠️ AVOID BACKGROUND LANDMARK BIAS:
    - Do NOT select a candidate simply because a background building, school, or secondary sign (such as 'GD GOENKA Toddler House' or a roadside stall) is visible in both photos! 
@@ -385,11 +416,9 @@ Return ONLY a single valid JSON object (no markdown, no backticks):
 
   try {
     const rawResponse = await callGeminiVision(payload);
-    const cleanJson = rawResponse.replace(/```json\s*/i, '').replace(/```\s*$/i, '').trim();
-    const jsonMatch = cleanJson.match(/\{[\s\S]*\}/);
-    if (!jsonMatch) return null;
+    const result = safeJsonParse(rawResponse);
+    if (!result) return null;
 
-    const result = JSON.parse(jsonMatch[0]);
     let matchedCandidate = null;
     let idx = parseInt(result.matchedIndex, 10);
     
@@ -502,35 +531,41 @@ If no GPS coordinates are stamped on the image, set "latitude": null, "longitude
     generationConfig: {
       temperature: 0.1,
       topP: 0.8,
-      maxOutputTokens: 600
+      maxOutputTokens: 2048,
+      thinkingConfig: { thinkingBudget: 0 }
     }
   };
 
   try {
     const rawResponse = await callGeminiVision(payload);
-    const cleanJson = rawResponse.replace(/```json\s*/i, '').replace(/```\s*$/i, '').trim();
-    const jsonMatch = cleanJson.match(/\{[\s\S]*\}/);
-    if (!jsonMatch) throw new Error('Invalid JSON response from Vision AI.');
+    const result = safeJsonParse(rawResponse);
+    if (!result) throw new Error('Invalid JSON response from Vision AI.');
     
-    const result = JSON.parse(jsonMatch[0]);
-    let lat = result.latitude != null ? parseFloat(result.latitude) : null;
-    let lng = result.longitude != null ? parseFloat(result.longitude) : null;
+    const rawLat = result.latitude != null ? result.latitude : (result.gps_watermark?.latitude != null ? result.gps_watermark.latitude : (result.gps?.lat != null ? result.gps.lat : null));
+    const rawLng = result.longitude != null ? result.longitude : (result.gps_watermark?.longitude != null ? result.gps_watermark.longitude : (result.gps?.lng != null ? result.gps.lng : null));
+
+    let lat = rawLat != null ? parseFloat(rawLat) : null;
+    let lng = rawLng != null ? parseFloat(rawLng) : null;
     if (lat !== null && lng !== null && (isNaN(lat) || isNaN(lng) || (lat === 0 && lng === 0))) {
       lat = null;
       lng = null;
     }
 
     const gpsCoord = (lat !== null && lng !== null) ? { lat, lng } : null;
+    const address = result.address || result.watermark_address || result.gps_watermark?.address || result.location || '';
+    const facing = result.facing || result.facing_and_traffic || result.camera_road_view || '';
 
     return {
       gpsCoord,
       gpsStampDetected: gpsCoord ? `${gpsCoord.lat.toFixed(6)}, ${gpsCoord.lng.toFixed(6)}` : null,
-      address: result.address || '',
-      city: result.city || '',
-      adBrand: result.adBrand || '',
+      address,
+      facing,
+      city: result.city || result.gps_watermark?.city || '',
+      adBrand: result.adBrand || result.brand || '',
+      structureType: result.structure_type || result.structure || '',
       status: result.status === 'Occupied' ? 'Occupied' : 'Available',
       confidence: typeof result.confidence === 'number' ? result.confidence : 0.95,
-      reasoning: result.reasoning || (gpsCoord ? `GPS detected: ${gpsCoord.lat}, ${gpsCoord.lng}` : 'Landmarks detected'),
+      reasoning: result.reasoning || (gpsCoord ? `GPS detected: ${gpsCoord.lat}, ${gpsCoord.lng}` : (address ? `Address detected: ${address}` : 'Landmarks detected')),
       matchedIndex: -1,
       matchedSiteName: null
     };

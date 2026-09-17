@@ -1997,14 +1997,15 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
             }
         };
 
-        // ⚡ Concurrency pool: run up to 6 image matching workers simultaneously
-        const CONCURRENCY_LIMIT = 6;
+        // ⚡ Concurrency pool: run up to 2 image matching workers with pacing delay to avoid Gemini API rate limits
+        const CONCURRENCY_LIMIT = 2;
         let cursor = 0;
         const workerCount = Math.min(CONCURRENCY_LIMIT, indicesToProcess.length);
         const workers = Array.from({ length: workerCount }, async () => {
             while (cursor < indicesToProcess.length) {
                 const targetIdx = indicesToProcess[cursor++];
                 await processSingleItem(targetIdx);
+                await new Promise(r => setTimeout(r, 600));
             }
         });
 

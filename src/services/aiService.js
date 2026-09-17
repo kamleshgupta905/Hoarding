@@ -1,5 +1,5 @@
 import ExifReader from 'exifreader';
-import { matchGeofencedHoardingWithGemini, matchDailyExecutionProofWithAI, extractSitesFromRawDataWithGemini, resolveTwinSiteFacingWithGemini } from './geminiService';
+import { matchGeofencedHoardingWithGemini, matchDailyExecutionProofWithAI, extractSitesFromRawDataWithGemini, resolveTwinSiteFacingWithGemini } from './geminiService.js';
 
 export { matchGeofencedHoardingWithGemini, matchDailyExecutionProofWithAI, extractSitesFromRawDataWithGemini, resolveTwinSiteFacingWithGemini };
 
@@ -359,7 +359,7 @@ export const calculateDistanceMeters = (lat1, lon1, lat2, lon2) => {
  * 🎯 Match GPS Coordinates against the entire Master Inventory
  * Computes distances to all known hoardings and chooses the closest candidate with tiered confidence.
  */
-export const matchHoardingByGps = async (coord, locationList, rawImageBase64 = null) => {
+export const matchHoardingByGps = async (coord, locationList, rawImageBase64 = null, initialFacing = null) => {
     if (!coord || !Array.isArray(locationList) || !locationList.length) return null;
 
     const candidates = [];
@@ -461,6 +461,35 @@ export const matchHoardingByGps = async (coord, locationList, rawImageBase64 = n
             }
         } catch (twinErr) {
             console.warn('[Corridor / Twin-Site AI Auto-Facing Notice]:', twinErr);
+        }
+    }
+
+    // 🧭 Fallback facing prioritization if Gemini twin call was bypassed or failed but initial facing was detected
+    if (corridorCluster.length > 1 && initialFacing) {
+        const normFacing = normalizeText(initialFacing);
+        const facingMatch = corridorCluster.find(c => {
+            const cFacing = normalizeText(c.facing);
+            const cFrom = normalizeText(c.site?.['Traffic From'] || '');
+            const cTo = normalizeText(c.site?.['Traffic To'] || '');
+            return (cFacing && (normFacing.includes(cFacing) || cFacing.includes(normFacing))) ||
+                   (cFrom && normFacing.includes(cFrom)) ||
+                   (cTo && normFacing.includes(cTo));
+        });
+        if (facingMatch) {
+            const matchSL = facingMatch.site?.SL || facingMatch.site?.['S. No.'] || (facingMatch.index + 1);
+            return {
+                index: facingMatch.index,
+                sl: matchSL,
+                site: facingMatch.site,
+                siteName: facingMatch.siteName,
+                siteCoord: facingMatch.siteCoord,
+                distanceM: facingMatch.distanceM,
+                facing: facingMatch.facing,
+                status: facingMatch.site?.STATUS || 'Available',
+                confidence: 95,
+                twinCandidates: twinCandidatesList,
+                reasoning: `🧭 Priority Facing Match: SL #${matchSL} [Facing: ${facingMatch.facing}] matching camera perspective "${initialFacing}" (${facingMatch.distanceM}m)`
+            };
         }
     }
 
@@ -615,7 +644,16 @@ const scoreLocationByText = (detectedText, location) => {
     const siteName = location?.["Locality Site Location"] || location?.['Location '] || location?.Location || '';
     const normalizedSite = normalizeText(siteName);
     if (!normalizedSite) return 0;
-    if (normalizedDetected.includes(normalizedSite)) return 100;
+    if (normalizedDetected.includes(normalizedSite) || normalizedSite.includes(normalizedDetected)) return 100;
+
+    // Check for distinctive 2-word key phrases (e.g. "alexander club", "company garden", "begum bridge")
+    const siteWords = normalizedSite.split(/\s+/).filter(w => w.length >= 3);
+    for (let i = 0; i < siteWords.length - 1; i++) {
+        const bigram = `${siteWords[i]} ${siteWords[i+1]}`;
+        if (bigram.length >= 7 && normalizedDetected.includes(bigram)) {
+            return 95;
+        }
+    }
 
     const siteTokens = meaningfulTokens(siteName);
     if (!siteTokens.length) return 0;
@@ -780,7 +818,7 @@ export const analyzeHoardingImage = async (base64Image, locationList, rawFile = 
 
             // 🎯 PRIORITY 1: If Vision AI found GPS, do full mathematical inventory search across ALL sites!
             if (extractedGps && isValidLatLng(extractedGps.lat, extractedGps.lng)) {
-                const gpsMatch = await matchHoardingByGps(extractedGps, locationList, base64Image);
+                const gpsMatch = await matchHoardingByGps(extractedGps, locationList, base64Image, aiResult.facing);
                 if (gpsMatch) {
                     return {
                         matchedIndex: gpsMatch.index,
@@ -834,16 +872,20 @@ export const analyzeHoardingImage = async (base64Image, locationList, rawFile = 
 
                 const best = candidates[0];
                 if (best && best.score >= 50) {
+                    const bestSL = best.location?.SL || best.location?.['S. No.'] || best.location?.['SL NO'] || (best.index + 1);
                     return {
                         matchedIndex: best.index,
+                        sl: bestSL,
+                        site: best.location,
                         matchedLocation: best.siteName,
                         matchedSiteId: best.location._SiteID || best.location.UniqueID || best.location['Unique ID'] || '',
                         facing: best.location.Facing || best.location['Traffic View'] || '',
                         twinCandidates: null,
                         status: aiResult.status || 'Available',
                         confidence: best.score,
-                        reasoning: `🔤 Vision AI Address Match: ${best.siteName} (${best.score}% confidence)`,
-                        analysis: `Watermark Address: "${aiResult.address}"`
+                        reasoning: `🔤 Vision AI Watermark Address Match: SL #${bestSL} · ${best.siteName} (${best.score}% confidence)`,
+                        analysis: `Watermark Address: "${aiResult.address}"`,
+                        distanceM: null
                     };
                 }
             }
