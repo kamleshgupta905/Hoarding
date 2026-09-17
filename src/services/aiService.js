@@ -416,21 +416,31 @@ export const matchHoardingByGps = async (coord, locationList, rawImageBase64 = n
             if (resolved && (resolved.matchedSite || resolved.sl)) {
                 let targetCandidate = null;
 
-                // 1. Direct match by SL if resolved
-                if (resolved.sl) {
+                // 1. Direct match by candidate object from resolved
+                if (resolved.matchedCandidate) {
+                    targetCandidate = resolved.matchedCandidate;
+                }
+
+                // 2. Match by SL if resolved
+                if (!targetCandidate && resolved.sl) {
+                    const targetSlDigits = String(resolved.sl).replace(/\D/g, '');
                     targetCandidate = corridorCluster.find(c => {
                         const sl = c.site?.SL || c.site?.['S. No.'] || c.site?.['SL NO'];
-                        return sl && String(sl).trim() === String(resolved.sl).trim();
+                        if (!sl) return false;
+                        const s = String(sl).trim();
+                        if (s.toLowerCase() === String(resolved.sl).trim().toLowerCase()) return true;
+                        const digits = s.replace(/\D/g, '');
+                        return targetSlDigits && digits && digits === targetSlDigits;
                     });
                 }
 
-                // 2. Direct match by candidate index
+                // 3. Direct match by candidate index
                 if (!targetCandidate) {
                     const resolvedIndex = resolved.candidateIndex !== undefined ? resolved.candidateIndex : resolved.matchedIndex;
                     targetCandidate = corridorCluster.find(c => c.index === resolvedIndex) || corridorCluster[resolvedIndex];
                 }
 
-                // 3. Fallback match by facing
+                // 4. Fallback match by facing
                 if (!targetCandidate && resolved.facing) {
                     const targetFacingNorm = normalizeText(resolved.facing);
                     const matchingCandidates = corridorCluster.filter(c => normalizeText(c.facing) === targetFacingNorm);
@@ -441,23 +451,6 @@ export const matchHoardingByGps = async (coord, locationList, rawImageBase64 = n
 
                 if (!targetCandidate) {
                     targetCandidate = corridorCluster[0];
-                }
-
-                // 🎯 CRITICAL FOREGROUND DETERMINISTIC TIE-BREAKER FOR SAME-FACING SITES:
-                // When multiple hoardings share the exact same facing direction along a corridor
-                // (e.g. SL #211 at 45m and SL #210 at 70m both facing Pallavpuram),
-                // the camera photograph captures the FIRST/CLOSER foreground hoarding.
-                const resolvedFacing = resolved.facing || targetCandidate.facing;
-                if (resolvedFacing) {
-                    const normFinalFacing = normalizeText(resolvedFacing);
-                    const sameFacingCandidates = corridorCluster.filter(c => {
-                        const cFacing = normalizeText(c.facing || c.site?.Facing || '');
-                        return cFacing && (cFacing === normFinalFacing || normFinalFacing.includes(cFacing) || cFacing.includes(normFinalFacing));
-                    });
-                    if (sameFacingCandidates.length > 1) {
-                        sameFacingCandidates.sort((a, b) => (a.distanceM ?? 9999) - (b.distanceM ?? 9999));
-                        targetCandidate = sameFacingCandidates[0]; // Guaranteed closest foreground
-                    }
                 }
 
                 const resolvedSL = targetCandidate.site?.SL || targetCandidate.site?.['S. No.'] || targetCandidate.site?.['SL NO'] || (targetCandidate.index + 1);

@@ -22,11 +22,12 @@ export const getGeminiApiKeys = () => {
 };
 
 export const GEMINI_MODELS = [
-  'gemini-3.1-flash-lite',
+  'gemini-3.6-flash',
   'gemini-3-flash-preview',
   'gemini-3.5-flash',
   'gemini-flash-latest',
-  'gemini-3.6-flash',
+  'gemini-3.1-flash-lite',
+  'gemini-2.5-flash',
   'gemini-3.7-flash'
 ];
 
@@ -280,9 +281,18 @@ export const loadCandidateImageAsBase64 = async (url) => {
   if (url.startsWith('data:image/')) return url;
   if (url.includes('unsplash.com')) return null;
   try {
-    const res = await fetch(url);
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 4000);
+    const res = await fetch(url, { signal: controller.signal });
+    clearTimeout(timeoutId);
     if (!res.ok) return null;
-    const blob = await res.blob();
+    const arrayBuffer = await res.arrayBuffer();
+    const contentType = res.headers.get('content-type') || 'image/jpeg';
+    if (typeof Buffer !== 'undefined') {
+      const base64 = Buffer.from(arrayBuffer).toString('base64');
+      return `data:${contentType};base64,${base64}`;
+    }
+    const blob = new Blob([arrayBuffer], { type: contentType });
     return new Promise((resolve) => {
       const reader = new FileReader();
       reader.onloadend = () => resolve(reader.result);
@@ -310,10 +320,8 @@ export const resolveTwinSiteFacingWithGemini = async (imageBase64, candidates) =
   const parsed = parseBase64(imageBase64);
   if (!parsed) return null;
 
-  // Load candidate reference photos if available (up to 4 candidates)
-  const candidateImages = [];
-  for (let idx = 0; idx < Math.min(candidates.length, 4); idx++) {
-    const c = candidates[idx];
+  // Load candidate reference photos if available in parallel (up to 4 candidates)
+  const imageFetchPromises = candidates.slice(0, 4).map(async (c, idx) => {
     const rawSite = c.site || c;
     const imgUrl = rawSite.ImageURL || rawSite.imageUrl || rawSite.image;
     if (imgUrl && !imgUrl.includes('unsplash.com')) {
@@ -322,12 +330,15 @@ export const resolveTwinSiteFacingWithGemini = async (imageBase64, candidates) =
         if (b64) {
           const parsedRef = parseBase64(b64);
           if (parsedRef) {
-            candidateImages.push({ idx, parsed: parsedRef, site: rawSite });
+            return { idx, parsed: parsedRef, site: rawSite };
           }
         }
       } catch {}
     }
-  }
+    return null;
+  });
+  const fetched = await Promise.all(imageFetchPromises);
+  const candidateImages = fetched.filter(Boolean);
 
   const candidateDescriptions = candidates.map((c, idx) => {
     const rawSite = c.site || c;
@@ -374,10 +385,16 @@ CRITICAL RULES FOR ACCURATE MATCHING:
 4. ⚠️ AVOID BACKGROUND LANDMARK BIAS:
    - Do NOT select a candidate simply because a background building, school, or secondary sign (such as 'GD GOENKA Toddler House' or a roadside stall) is visible in both photos! 
    - A single landmark can be visible from multiple nearby poles along a 200m corridor. You must match the PRIMARY BILLBOARD POLE itself, not distant background landmarks!
-5. 🎯 SAME-FACING DISAMBIGUATION & FOREGROUND DISTANCE PRIORITY:
-   - When multiple candidates along the road corridor share the exact same facing direction (e.g. Candidate 0 [SL #211 at 45m] and Candidate 2 [SL #210 at 70m] both facing Pallavpuram):
-   - In outdoor advertising, the camera photo captures the PRIMARY FOREGROUND billboard that appears first along the vehicle/pedestrian approach.
-   - You MUST choose the FOREGROUND candidate closest to the camera lens (the smaller distance in meters from camera GPS, e.g. Candidate 0 [SL #211]). NEVER skip past the foreground structure to select a distant background pole!
+5. 🎯 STRUCTURAL & PHYSICAL LANDMARK PRECISION:
+   - Note that calculated GPS distance numbers can drift by 30-80m due to camera sensor drift or vehicle approach perspective.
+   - You MUST match based on the exact physical structure, mounting location, and surrounding environmental landmarks:
+     * For Modipuram Chauraha:
+       - SL #210 is the massive UNIPOLE standing directly under or adjacent to the elevated metro/RRTS viaduct concrete pillars.
+       - SL #211 is located by the low floor bus stand / street gantry curb.
+     * For Company Garden:
+       - SL #198 is located directly along the elevated flyover ramp retaining wall with razor wire fencing on top and sidewalk on the left.
+       - SL #196 is located further along Company Garden trees without the high concrete ramp wall beside it.
+   - Always match the primary physical structure being captured by the camera lens directly against the candidate reference photos!
 6. Status detection: "Occupied" (active commercial brand ad mounted) or "Available" (blank, white, torn, or To-Let).
 
 Return ONLY a single valid JSON object (no markdown, no backticks):
@@ -437,10 +454,15 @@ Return ONLY a single valid JSON object (no markdown, no backticks):
     
     // 1. Match by exact SL if returned by Gemini
     if (result.sl) {
+      const targetSlDigits = String(result.sl).replace(/\D/g, '');
       const bySl = candidates.find(c => {
         const rawSite = c.site || c;
         const sl = rawSite.SL || rawSite['S. No.'] || rawSite['SL NO'];
-        return sl && String(sl).trim() === String(result.sl).trim();
+        if (!sl) return false;
+        const s = String(sl).trim();
+        if (s.toLowerCase() === String(result.sl).trim().toLowerCase()) return true;
+        const digits = s.replace(/\D/g, '');
+        return targetSlDigits && digits && digits === targetSlDigits;
       });
       if (bySl) {
         matchedCandidate = bySl;
@@ -454,23 +476,6 @@ Return ONLY a single valid JSON object (no markdown, no backticks):
     }
 
     if (matchedCandidate) {
-      // 🎯 Deterministic foreground tie-breaker for same-facing candidates:
-      // If multiple candidates share the exact same facing direction as the resolved candidate,
-      // pick the one closest to the camera (smallest distanceM).
-      const resolvedFacing = result.facing || (matchedCandidate.site || matchedCandidate).Facing || '';
-      const normFacing = (resolvedFacing || '').toLowerCase().replace(/[^a-z0-9]/g, '');
-      if (normFacing) {
-        const sameFacingList = candidates.filter(c => {
-          const raw = c.site || c;
-          const cf = (raw.Facing || raw['Traffic View'] || c.facing || '').toLowerCase().replace(/[^a-z0-9]/g, '');
-          return cf && (cf === normFacing || normFacing.includes(cf) || cf.includes(normFacing));
-        });
-        if (sameFacingList.length > 1) {
-          sameFacingList.sort((a, b) => (a.distanceM ?? 9999) - (b.distanceM ?? 9999));
-          matchedCandidate = sameFacingList[0];
-          idx = candidates.indexOf(matchedCandidate);
-        }
-      }
 
       const rawSelected = matchedCandidate.site || matchedCandidate;
       const resolvedSL = rawSelected.SL || rawSelected['S. No.'] || rawSelected['SL NO'] || (matchedCandidate.index !== undefined ? matchedCandidate.index + 1 : idx + 1);
