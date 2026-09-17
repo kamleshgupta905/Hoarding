@@ -477,6 +477,7 @@ export default function BulkBookingWizard({
                     <th>#</th>
                     <th>Client</th>
                     <th>Site Location</th>
+                    <th>Facing</th>
                     <th>City</th>
                     <th>Booking Dates</th>
                     <th>Rent</th>
@@ -506,7 +507,14 @@ export default function BulkBookingWizard({
                         </td>
                         <td className="col-location">
                           <strong>{item.location}</strong>
-                          {item.facing && <small className="facing-badge">{item.facing}</small>}
+                          {(item.matchedSite?.SL || item.sl) && (
+                            <span className="site-sl-tag">SL #{item.matchedSite?.SL || item.sl}</span>
+                          )}
+                        </td>
+                        <td className="col-facing">
+                          <span className="facing-tag-prominent">
+                            {item.facing || item.matchedSite?.Facing || 'Default View'}
+                          </span>
                         </td>
                         <td className="col-city">{item.city}</td>
                         <td className="col-dates">
@@ -570,10 +578,17 @@ export default function BulkBookingWizard({
                         )}
                         <td className="col-status">
                           {item.hasConflict ? (
-                            <span className="status-badge conflict" title={item.conflictReason}>
-                              <AlertCircle size={12} />
-                              <span>{isSkipped ? 'Skipped (Conflict)' : 'Date Conflict'}</span>
-                            </span>
+                            <div className="status-conflict-cell">
+                              <span className="status-badge conflict" title={item.conflictReason || 'Date conflict'}>
+                                <AlertCircle size={12} />
+                                <span>{isSkipped ? 'Skipped (Conflict)' : 'Date Conflict'}</span>
+                              </span>
+                              {item.conflictReason && (
+                                <small className="conflict-reason-text">
+                                  {item.conflictReason}
+                                </small>
+                              )}
+                            </div>
                           ) : (
                             <span className="status-badge clear">
                               <CheckCircle2 size={12} />

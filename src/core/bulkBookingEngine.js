@@ -118,59 +118,108 @@ export const detectBulkBookingHeaders = (grid = []) => {
   return { headerRowIndex: bestRow, colMap: bestMap };
 };
 
+export const normalizeFacingString = (str = '') => {
+  return String(str || '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, '')
+    .replace(/towards|side|facing|view|direction/g, '');
+};
+
+export const isFacingMatch = (f1, f2) => {
+  if (!f1 || !f2) return false;
+  const n1 = normalizeFacingString(f1);
+  const n2 = normalizeFacingString(f2);
+  if (!n1 || !n2) return false;
+  if (n1 === n2 || n1.includes(n2) || n2.includes(n1)) return true;
+  // Common regional synonyms (e.g., Soti Ganj vs City / Central Market)
+  if ((n1.includes('soti') || n1.includes('ganj')) && (n2.includes('soti') || n2.includes('ganj') || n2.includes('city'))) return true;
+  if ((n2.includes('soti') || n2.includes('ganj')) && (n1.includes('city'))) return true;
+  return false;
+};
+
+export const isLocationMatch = (l1, l2) => {
+  if (!l1 || !l2) return false;
+  const s1 = String(l1).toLowerCase().replace(/[^a-z0-9]/g, '');
+  const s2 = String(l2).toLowerCase().replace(/[^a-z0-9]/g, '');
+  if (!s1 || !s2) return false;
+  return s1 === s2 || s1.includes(s2) || s2.includes(s1);
+};
+
 /**
  * 🎯 Fuzzy matches an incoming Excel row with existing hoarding records
  */
 export const findMatchingSite = (row, existingHoardings = []) => {
-  if (!row || !Array.isArray(existingHoardings)) return null;
+  if (!row || !Array.isArray(existingHoardings) || existingHoardings.length === 0) return null;
 
-  // 1. Exact match by SL / S.No.
-  if (row.sl) {
-    const cleanSl = String(row.sl).trim().toLowerCase();
-    const found = existingHoardings.find(h => {
-      const hSl = String(h.SL || h['S. No.'] || h['S.No'] || h.sl || '').trim().toLowerCase();
-      return hSl && hSl === cleanSl;
-    });
-    if (found) return found;
-  }
+  const rowSl = row.sl !== undefined && row.sl !== null && String(row.sl).trim() !== '' ? String(row.sl).trim().toLowerCase() : '';
+  const rowLoc = String(row.location || '').trim();
+  const rowFacing = String(row.facing || '').trim();
+  const rowCity = String(row.city || '').trim().toLowerCase();
+  const rowId = row.siteId ? String(row.siteId).trim().toLowerCase() : '';
 
-  // 2. Exact match by _SiteID or UniqueID
-  if (row.siteId) {
-    const cleanId = String(row.siteId).trim().toLowerCase();
+  // 1. Exact match by _SiteID or UniqueID
+  if (rowId) {
     const found = existingHoardings.find(h => {
       const hId = String(h._SiteID || h.UniqueID || h.ID || '').trim().toLowerCase();
-      return hId && hId === cleanId;
+      return hId && hId === rowId;
     });
     if (found) return found;
   }
 
-  // 3. Match by Location + Facing + City
-  const rowLoc = String(row.location || '').trim().toLowerCase();
-  const rowFacing = String(row.facing || '').trim().toLowerCase();
-  const rowCity = String(row.city || '').trim().toLowerCase();
+  // 2. Exact match by SL + Facing (Highest confidence when both are provided)
+  if (rowSl && rowFacing) {
+    const found = existingHoardings.find(h => {
+      const hSl = String(h.SL || h['S. No.'] || h['S.No'] || h.sl || '').trim().toLowerCase();
+      const hFacing = String(h.Facing || h['Traffic View'] || '').trim();
+      return hSl === rowSl && isFacingMatch(hFacing, rowFacing);
+    });
+    if (found) return found;
+  }
 
-  if (rowLoc) {
-    // Exact or inclusion match with location & city
-    let matched = existingHoardings.find(h => {
-      const hLoc = String(h['Location '] || h.Location || h['Locality Site Location'] || '').trim().toLowerCase();
-      const hFacing = String(h.Facing || h['Traffic View'] || '').trim().toLowerCase();
+  // 3. Match by Location + Facing + City (Disambiguates twin sites at same landmark like Begum Bridge Metro Station)
+  if (rowLoc && rowFacing) {
+    const found = existingHoardings.find(h => {
+      const hLoc = String(h['Location '] || h.Location || h['Locality Site Location'] || '').trim();
+      const hFacing = String(h.Facing || h['Traffic View'] || '').trim();
       const hCity = String(h.City || '').trim().toLowerCase();
 
-      const locMatch = hLoc && (hLoc === rowLoc || hLoc.includes(rowLoc) || rowLoc.includes(hLoc));
-      const facingMatch = !rowFacing || !hFacing || hFacing.includes(rowFacing) || rowFacing.includes(hFacing);
-      const cityMatch = !rowCity || !hCity || hCity === rowCity;
+      const locMatch = isLocationMatch(hLoc, rowLoc);
+      const facingMatch = isFacingMatch(hFacing, rowFacing);
+      const cityMatch = !rowCity || !hCity || hCity === rowCity || hCity.includes(rowCity) || rowCity.includes(hCity);
 
       return locMatch && facingMatch && cityMatch;
     });
+    if (found) return found;
+  }
 
-    if (matched) return matched;
-
-    // Fallback: match by location text only
-    matched = existingHoardings.find(h => {
-      const hLoc = String(h['Location '] || h.Location || h['Locality Site Location'] || '').trim().toLowerCase();
-      return hLoc && (hLoc === rowLoc || hLoc.includes(rowLoc) || rowLoc.includes(hLoc));
+  // 4. Match by SL + Location (Confirms SL against location text)
+  if (rowSl && rowLoc) {
+    const found = existingHoardings.find(h => {
+      const hSl = String(h.SL || h['S. No.'] || h['S.No'] || h.sl || '').trim().toLowerCase();
+      const hLoc = String(h['Location '] || h.Location || h['Locality Site Location'] || '').trim();
+      return hSl === rowSl && isLocationMatch(hLoc, rowLoc);
     });
+    if (found) return found;
+  }
 
+  // 5. Match by SL / S.No. alone
+  if (rowSl) {
+    const found = existingHoardings.find(h => {
+      const hSl = String(h.SL || h['S. No.'] || h['S.No'] || h.sl || '').trim().toLowerCase();
+      return hSl && hSl === rowSl;
+    });
+    if (found) return found;
+  }
+
+  // 6. Fallback: Match by Location + City
+  if (rowLoc) {
+    const matched = existingHoardings.find(h => {
+      const hLoc = String(h['Location '] || h.Location || h['Locality Site Location'] || '').trim();
+      const hCity = String(h.City || '').trim().toLowerCase();
+      const locMatch = isLocationMatch(hLoc, rowLoc);
+      const cityMatch = !rowCity || !hCity || hCity === rowCity;
+      return locMatch && cityMatch;
+    });
     if (matched) return matched;
   }
 

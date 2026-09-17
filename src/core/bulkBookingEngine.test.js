@@ -53,6 +53,18 @@ describe('Bulk Campaign Onboarding Engine', () => {
     // Match by Location text
     const match3 = findMatchingSite({ location: 'Delhi Road' }, existing);
     expect(match3._SiteID).toBe('site-102');
+
+    // Twin-site disambiguation at identical location by Facing
+    const twinSites = [
+      { SL: '1', _SiteID: 'site-metro-1', 'Location ': 'Begum Bridge Metro Station', City: 'Meerut', Facing: 'Modipuram' },
+      { SL: '2', _SiteID: 'site-metro-2', 'Location ': 'Begum Bridge Metro Station', City: 'Meerut', Facing: 'Soti Ganj' }
+    ];
+
+    const matchTwin1 = findMatchingSite({ location: 'Begum Bridge Metro Station', facing: 'Towards Modipuram' }, twinSites);
+    expect(matchTwin1.SL).toBe('1');
+
+    const matchTwin2 = findMatchingSite({ location: 'Begum Bridge Metro Station', facing: 'Sotiganj' }, twinSites);
+    expect(matchTwin2.SL).toBe('2');
   });
 
   it('groups multiple clients and flags date conflicts with existing bookings', () => {

@@ -14,8 +14,8 @@ async function main() {
   }
 
   const SITES = [
-    { sl: 1, client: 'Patanjali', loc: 'Begum Bridge Metro Station', city: 'Meerut', facing: 'Modipuram', start: '2026-10-01', end: '2026-10-31', rent: 60000, size: '40x10', medium: 'Unipole', area: 'Begum Bridge' },
-    { sl: 2, client: 'Patanjali', loc: 'Begum Bridge Metro Station', city: 'Meerut', facing: 'Soti Ganj', start: '2026-10-01', end: '2026-10-31', rent: 60000, size: '40x10', medium: 'Unipole', area: 'Begum Bridge' },
+    { sl: 1, client: 'Patanjali', loc: 'Begum Bridge Metro Station', city: 'Meerut', facing: 'Modipuram', start: '2026-10-10', end: '2026-11-09', rent: 60000, size: '40x10', medium: 'Unipole', area: 'Begum Bridge' },
+    { sl: 2, client: 'Patanjali', loc: 'Begum Bridge Metro Station', city: 'Meerut', facing: 'Soti Ganj', start: '2026-10-10', end: '2026-11-09', rent: 60000, size: '40x10', medium: 'Unipole', area: 'Begum Bridge' },
     { sl: 3, client: 'Kalyan Jewellers', loc: 'Begum Bridge Caltex', city: 'Meerut', facing: 'Zero Mile', start: '2026-10-15', end: '2026-11-15', rent: 60000, size: '40x10', medium: 'Unipole', area: 'Begum Bridge' },
     { sl: 4, client: 'Kalyan Jewellers', loc: 'Begum Bridge Caltex', city: 'Meerut', facing: 'Soti Ganj', start: '2026-10-15', end: '2026-11-15', rent: 60000, size: '40x10', medium: 'Unipole', area: 'Begum Bridge' },
     { sl: 5, client: 'Tata Motors', loc: 'Begum Bridge Chauraha', city: 'Meerut', facing: 'Modipuram', start: '2026-10-10', end: '2026-11-09', rent: 150000, size: '40x25', medium: 'Billboard', area: 'Begum Bridge' }
@@ -48,12 +48,23 @@ async function main() {
   ];
 
   const excelDestDesktop = path.join(desktopDir, 'Sample_MultiClient_MediaPlan.xlsx');
+  const excelDestDesktopClean = path.join(desktopDir, 'Sample_MultiClient_MediaPlan_Clean.xlsx');
   const excelDestProject = path.join(projectSampleDir, 'Sample_MultiClient_MediaPlan.xlsx');
 
   const excelBuffer = await writeXlsxFile(excelRows).toBuffer();
-  fs.writeFileSync(excelDestDesktop, excelBuffer);
   fs.writeFileSync(excelDestProject, excelBuffer);
-  console.log(`✅ Excel file generated:\n  -> ${excelDestDesktop}\n  -> ${excelDestProject}`);
+
+  try {
+    fs.writeFileSync(excelDestDesktop, excelBuffer);
+    console.log(`✅ Excel file generated:\n  -> ${excelDestDesktop}`);
+  } catch (err) {
+    if (err.code === 'EBUSY') {
+      fs.writeFileSync(excelDestDesktopClean, excelBuffer);
+      console.log(`⚠️ Original file is open in Excel. Generated clean file:\n  -> ${excelDestDesktopClean}`);
+    } else {
+      throw err;
+    }
+  }
 
   // 2. Generate PowerPoint Presentation (.pptx) - Exact 4:3 Master Media Plan Format
   const pres = new pptxgen();
@@ -150,11 +161,22 @@ async function main() {
   });
 
   const pptDestDesktop = path.join(desktopDir, 'Sample_Campaign_Artworks.pptx');
+  const pptDestDesktopClean = path.join(desktopDir, 'Sample_Campaign_Artworks_Clean.pptx');
   const pptDestProject = path.join(projectSampleDir, 'Sample_Campaign_Artworks.pptx');
 
-  await pres.writeFile({ fileName: pptDestDesktop });
   await pres.writeFile({ fileName: pptDestProject });
-  console.log(`✅ PPTX file generated:\n  -> ${pptDestDesktop}\n  -> ${pptDestProject}`);
+
+  try {
+    await pres.writeFile({ fileName: pptDestDesktop });
+    console.log(`✅ PPTX file generated:\n  -> ${pptDestDesktop}`);
+  } catch (err) {
+    if (err.message && err.message.includes('EBUSY')) {
+      await pres.writeFile({ fileName: pptDestDesktopClean });
+      console.log(`⚠️ Original PPTX is open in PowerPoint. Generated clean file:\n  -> ${pptDestDesktopClean}`);
+    } else {
+      throw err;
+    }
+  }
 
   console.log("🎉 All sample files successfully created!");
 }
