@@ -198,16 +198,61 @@ export const imageValuesFromHistory = (history) => {
 // A primary Drive link can be stale while an approved image still exists in history.
 // Keep each usable candidate so the app can fall back without hiding a real photo.
 export const getHoardingImageCandidates = (hoarding = {}) => {
+  if (!hoarding || typeof hoarding !== 'object') return [];
+
+  const historyUrls = [];
+  if (Array.isArray(hoarding.History)) {
+    hoarding.History.forEach(h => {
+      if (typeof h === 'string' && h.trim()) historyUrls.push(h);
+      else if (h && typeof h === 'object' && (h.url || h.preview)) historyUrls.push(h.url || h.preview);
+    });
+  }
+  if (Array.isArray(hoarding.ExecutionHistory)) {
+    hoarding.ExecutionHistory.forEach(h => {
+      if (typeof h === 'string' && h.trim()) historyUrls.push(h);
+      else if (h && typeof h === 'object' && (h.url || h.preview)) historyUrls.push(h.url || h.preview);
+    });
+  }
+
   const values = [
     hoarding.ImageURL,
     hoarding.imageurl,
     hoarding['Image URL'],
-    hoarding.Photo
+    hoarding['Image Link'],
+    hoarding.imageLink,
+    hoarding.Image,
+    hoarding.image,
+    hoarding.Photo,
+    hoarding.photo,
+    ...historyUrls
   ];
 
   return [...new Set(values
     .map((value) => getDirectDriveLink(value))
     .filter(Boolean))];
+};
+
+/**
+ * ⚡ Fastest & most resilient thumbnail URL for cards, tables, and radar previews
+ * Uses Google Drive's CDN thumbnail endpoint (sz=w400) which avoids referrer blocks and loads instantly.
+ */
+export const getHoardingThumbnailUrl = (hoarding = {}) => {
+  const candidates = getHoardingImageCandidates(hoarding);
+  if (!candidates.length) return getImageUrl(hoarding);
+
+  // Check for Google Drive file IDs
+  for (const url of candidates) {
+    if (typeof url === 'string') {
+      const fileIdMatch = url.match(/lh3\.googleusercontent\.com\/d\/([^/?#\s]+)/) ||
+                          url.match(/\/file\/d\/([^/?#\s]+)/) ||
+                          url.match(/[?&]id=([^&#/\s]+)/);
+      if (fileIdMatch && fileIdMatch[1]) {
+        return `https://drive.google.com/thumbnail?id=${fileIdMatch[1]}&sz=w400`;
+      }
+    }
+  }
+
+  return candidates[0] || getImageUrl(hoarding);
 };
 
 export const normalizeHoarding = (item) => {

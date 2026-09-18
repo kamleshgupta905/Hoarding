@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { Bell, Clock, Calendar, CheckCircle, RefreshCw, Search, ChevronRight } from 'lucide-react';
-import { getExpiringSites, getImageUrl } from '../services/dataService';
+import { getExpiringSites, getImageUrl, getHoardingThumbnailUrl, getHoardingImageCandidates } from '../services/dataService';
 import './RenewalAlertRadar.css';
 
 export default function RenewalAlertRadar({ 
@@ -195,7 +195,7 @@ export default function RenewalAlertRadar({
           const locality = site.Area || site.Locality || '';
           const city = site.City || site.city || 'Meerut';
           const price = site["Avg Monthly Cost (INR)"] ?? site["Rental Per Month"] ?? 0;
-          const imgUrl = getImageUrl(site);
+          const imgUrl = getHoardingThumbnailUrl(site);
           const daysLeft = occupancy.daysLeft;
 
           return (
@@ -218,7 +218,72 @@ export default function RenewalAlertRadar({
                 <img 
                   src={imgUrl} 
                   alt={siteLoc} 
-                  onError={(e) => { e.target.src = 'https://placehold.co/120x80?text=Site'; }}
+                  loading="lazy"
+                  referrerPolicy="no-referrer"
+                  onError={(e) => {
+                    const el = e.target;
+                    const currentSrc = el.src || '';
+
+                    // 1. Try Google Drive thumbnail format (sz=w400)
+                    if (!el.dataset.triedThumb) {
+                      el.dataset.triedThumb = 'true';
+                      const fileIdMatch = currentSrc.match(/lh3\.googleusercontent\.com\/d\/([^/?#\s]+)/) ||
+                                          currentSrc.match(/\/file\/d\/([^/?#\s]+)/) ||
+                                          currentSrc.match(/[?&]id=([^&#/\s]+)/);
+                      if (fileIdMatch && fileIdMatch[1]) {
+                        el.src = `https://drive.google.com/thumbnail?id=${fileIdMatch[1]}&sz=w400`;
+                        return;
+                      }
+                    }
+
+                    // 2. Try Google Drive export=view format
+                    if (!el.dataset.triedView) {
+                      el.dataset.triedView = 'true';
+                      const fileIdMatch = currentSrc.match(/[?&]id=([^&#/\s]+)/) ||
+                                          currentSrc.match(/lh3\.googleusercontent\.com\/d\/([^/?#\s]+)/) ||
+                                          currentSrc.match(/\/file\/d\/([^/?#\s]+)/);
+                      if (fileIdMatch && fileIdMatch[1]) {
+                        el.src = `https://drive.google.com/uc?export=view&id=${fileIdMatch[1]}`;
+                        return;
+                      }
+                    }
+
+                    // 3. Try lh3 direct Google CDN
+                    if (!el.dataset.triedLh3) {
+                      el.dataset.triedLh3 = 'true';
+                      const fileIdMatch = currentSrc.match(/[?&]id=([^&#/\s]+)/) ||
+                                          currentSrc.match(/\/file\/d\/([^/?#\s]+)/);
+                      if (fileIdMatch && fileIdMatch[1]) {
+                        el.src = `https://lh3.googleusercontent.com/d/${fileIdMatch[1]}`;
+                        return;
+                      }
+                    }
+
+                    // 4. Try site history photo or alternative candidate images
+                    if (!el.dataset.triedCandidates) {
+                      el.dataset.triedCandidates = 'true';
+                      const candidates = getHoardingImageCandidates(site);
+                      const altImg = candidates.find(c => c && c !== currentSrc && !c.includes(currentSrc));
+                      if (altImg) {
+                        el.src = altImg;
+                        return;
+                      }
+                    }
+
+                    // 5. Retry once after 1s for transient network lag
+                    if (!el.dataset.retriedOnce) {
+                      el.dataset.retriedOnce = 'true';
+                      setTimeout(() => {
+                        if (el && el.parentElement) {
+                          el.src = `${currentSrc.split('?')[0]}?retry=${Date.now()}`;
+                        }
+                      }, 1000);
+                      return;
+                    }
+
+                    // 6. Graceful premium billboard fallback
+                    el.src = 'https://images.unsplash.com/photo-1541535650810-10d26f592a7d?auto=format&fit=crop&q=80&w=400';
+                  }}
                 />
                 <span 
                   className="radar-status-badge"

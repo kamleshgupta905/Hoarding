@@ -78,8 +78,37 @@ const HoardingCard = ({ hoarding }) => {
                     src={imageUrl}
                     alt={siteLocation}
                     loading="lazy"
+                    referrerPolicy="no-referrer"
                     onError={(e) => {
-                        e.target.src = 'https://placehold.co/600x400?text=Premium+Hoarding';
+                        const el = e.target;
+                        const currentSrc = el.src || '';
+
+                        // 1. Try Drive thumbnail
+                        if (!el.dataset.triedThumb) {
+                            el.dataset.triedThumb = 'true';
+                            const fileIdMatch = currentSrc.match(/lh3\.googleusercontent\.com\/d\/([^/?#\s]+)/) ||
+                                                currentSrc.match(/\/file\/d\/([^/?#\s]+)/) ||
+                                                currentSrc.match(/[?&]id=([^&#/\s]+)/);
+                            if (fileIdMatch && fileIdMatch[1]) {
+                                el.src = `https://drive.google.com/thumbnail?id=${fileIdMatch[1]}&sz=w800`;
+                                return;
+                            }
+                        }
+
+                        // 2. Try export=view
+                        if (!el.dataset.triedView) {
+                            el.dataset.triedView = 'true';
+                            const fileIdMatch = currentSrc.match(/[?&]id=([^&#/\s]+)/) ||
+                                                currentSrc.match(/lh3\.googleusercontent\.com\/d\/([^/?#\s]+)/) ||
+                                                currentSrc.match(/\/file\/d\/([^/?#\s]+)/);
+                            if (fileIdMatch && fileIdMatch[1]) {
+                                el.src = `https://drive.google.com/uc?export=view&id=${fileIdMatch[1]}`;
+                                return;
+                            }
+                        }
+
+                        // 3. Fallback to high-quality billboard image
+                        el.src = 'https://images.unsplash.com/photo-1541535650810-10d26f592a7d?auto=format&fit=crop&q=80&w=800';
                     }}
                 />
                 <div className="shot-top-actions">
