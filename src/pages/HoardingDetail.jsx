@@ -488,7 +488,7 @@ const HoardingDetail = ({ hoardings, setHoardings }) => {
             message: "Are you sure you want to delete this specific audit photo?",
             bullets: [
                 "This photo will be permanently removed from this site's audit history.",
-                "The change will sync immediately to Google Sheets."
+                "The change will sync immediately to Google Cloud."
             ],
             confirmText: "Delete Photo",
             cancelText: "Cancel",

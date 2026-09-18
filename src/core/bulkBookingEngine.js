@@ -700,8 +700,8 @@ export const commitBulkBookings = async ({
     await Promise.all(workers);
   }
 
-  // 3. Commit Google Sheet Batch Updates
-  if (onProgress) onProgress(80, `Saving ${batchUpdates.length} bookings to Google Sheet...`);
+  // 3. Commit Google Cloud Batch Updates
+  if (onProgress) onProgress(80, `Saving ${batchUpdates.length} bookings to Google Cloud...`);
   try {
     await postDirect({
       action: 'batchUpdateSheet',

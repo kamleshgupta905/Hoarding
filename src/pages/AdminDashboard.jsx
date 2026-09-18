@@ -1532,10 +1532,10 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                     localStorage.setItem('hoardings_cache', JSON.stringify(freshData));
                     localStorage.setItem('last_hoardings_update', Date.now().toString());
                 } catch {}
-                showToast(`Data Synced! Loaded ${freshData.length} sites from Google Sheets.`, "success");
+                showToast(`Data Synced! Loaded ${freshData.length} sites from Google Cloud.`, "success");
                 window.dispatchEvent(new CustomEvent('hoardings:sync-requested', { detail: { action: 'manual-sync' } }));
             } else {
-                showToast("No data returned from Google Sheets.", "warning");
+                showToast("No data returned from Google Cloud.", "warning");
             }
         } catch (err) {
             showToast("Sync Failed: " + err.message, "error");
@@ -1745,7 +1745,7 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
         await Promise.all(workers);
 
         if (batchUpdates.length > 0) {
-            updateFileProcessing({ phase: 'Syncing re-uploaded photos to Google Sheet...', progress: 95 });
+            updateFileProcessing({ phase: 'Syncing re-uploaded photos to Google Cloud...', progress: 95 });
             try {
                 await postDirect({
                     action: 'batchUpdateSheet',
@@ -2034,9 +2034,9 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
 
                 await Promise.all(workerThreads);
 
-                // 🚀 Phase 2: Atomic Batch Sync to Google Sheet
+                // 🚀 Phase 2: Atomic Batch Sync to Google Cloud
                 if (batchUpdates.length > 0) {
-                    updateFileProcessing({ phase: 'Phase 2: Atomic Batch Syncing to Google Sheet (1 sec)...', progress: 95 });
+                    updateFileProcessing({ phase: 'Phase 2: Atomic Batch Syncing to Google Cloud (1 sec)...', progress: 95 });
                     try {
                         const batchRes = await postDirect({
                             action: 'batchUpdateSheet',
@@ -2072,8 +2072,8 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
         if (!excelImportToken) return;
         setIsExcelApproving(true);
         setIsExcelImportOpen(false);
-        setFileProcessing({ type: 'excel', fileName: excelImportPreview?.fileName || 'Excel import', phase: 'Importing approved rows to Google Sheet', progress: 100, startedAt: Date.now() });
-        setUploadNotice({ status: 'processing', type: 'excel', fileName: excelImportPreview?.fileName || 'Excel import', estimate: '30-90 seconds', message: 'Estimated time: 30-90 seconds. Your Google Sheet import is running in the background.' });
+        setFileProcessing({ type: 'excel', fileName: excelImportPreview?.fileName || 'Excel import', phase: 'Importing approved rows to Google Cloud', progress: 100, startedAt: Date.now() });
+        setUploadNotice({ status: 'processing', type: 'excel', fileName: excelImportPreview?.fileName || 'Excel import', estimate: '30-90 seconds', message: 'Estimated time: 30-90 seconds. Your Google Cloud import is running in the background.' });
         void (async () => {
             try {
                 await postToScript({ action: 'approveExcelImport', sessionToken: getAdminSession(), token: excelImportToken });
@@ -4069,7 +4069,7 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
         const actionLabel = reviewAction === 'approve' ? 'Approve and update' : reviewAction === 'historyOnly' ? 'Save to history' : 'Reject';
         setPendingStaffReviewIds(current => ({ ...current, [upload.UploadId]: true }));
         setStaffUploads(current => current.filter(item => item.UploadId !== upload.UploadId));
-        setReviewNotice({ status: 'processing', title: `${actionLabel} sent`, message: 'Google Sheet sync is completing in the background. You can continue reviewing other photos.' });
+        setReviewNotice({ status: 'processing', title: `${actionLabel} sent`, message: 'Google Cloud sync is completing in the background. You can continue reviewing other photos.' });
 
         void (async () => {
             try {
@@ -4089,7 +4089,7 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                     delete next[upload.UploadId];
                     return next;
                 });
-                setReviewNotice({ status: 'completed', title: `${actionLabel} complete`, message: 'Google Sheet and live dashboard are updated.' });
+                setReviewNotice({ status: 'completed', title: `${actionLabel} complete`, message: 'Google Cloud and live dashboard are updated.' });
             } catch (error) {
                 setStaffUploads(current => current.some(item => item.UploadId === upload.UploadId) ? current : [upload, ...current]);
                 setPendingStaffReviewIds(current => {
@@ -4593,7 +4593,7 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                         {excelImportPreview?.status || 'PROCESSING'}
                                     </span>
                                 </div>
-                                <p>Upload is only a dry run. Google Sheet will change after approval.</p>
+                                <p>Upload is only a dry run. Google Cloud will change after approval.</p>
                             </div>
 
                             {!excelImportPreview?.summary ? (
@@ -6909,7 +6909,7 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                 <button
                                     type="button"
                                     onClick={() => {
-                                        showToast('Refreshing cloud proofs from Google Sheets...', 'info');
+                                        showToast('Refreshing cloud proofs from Google Cloud...', 'info');
                                         if (typeof window !== 'undefined') {
                                             window.dispatchEvent(new CustomEvent('hoardings:sync-requested'));
                                         }
