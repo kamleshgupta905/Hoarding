@@ -1026,6 +1026,16 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                             (slToRemove && hoardings.find(h => String(h.SL || h['S. No.'] || '').trim() === slToRemove));
             if (siteObj && urlToRemove) {
                 removeSiteHistory(siteObj, urlToRemove);
+                const siteLocName = siteObj["Location "] || siteObj.Location || siteObj["Locality Site Location"] || '';
+                const targetSL = siteObj.SL || siteObj['S. No.'] || siteObj['SL NO'] || slToRemove;
+                const siteId = siteObj._SiteID || siteObj.UniqueID || siteIdToRemove;
+                syncToGoogleSheet({
+                    action: 'deleteHistoryItem',
+                    siteName: siteLocName,
+                    sl: targetSL,
+                    siteId: siteId,
+                    imageUrl: urlToRemove
+                }, 0).catch(err => console.warn('Daily remove remote sync notice:', err));
             }
         }
 

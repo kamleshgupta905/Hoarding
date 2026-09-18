@@ -171,7 +171,8 @@ export const submitAdminOperation = async ({ type, payload = {}, siteId = '', ba
     ...payload
   };
 
-  if (options.async || type === 'deleteHoarding' || (payload && payload.action === 'deleteHoarding')) {
+  const asyncFastActions = ['deleteHoarding', 'deleteHistoryItem', 'deleteAllHoardings', 'deleteCityHoardings', 'dumpImage'];
+  if (options.async || asyncFastActions.includes(type) || (payload && asyncFastActions.includes(payload.action))) {
     postOpaque(combinedPayload).catch(err => console.warn('Operation post warning:', err));
     return { status: 'QUEUED', operationId };
   }

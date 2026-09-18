@@ -487,7 +487,7 @@ const HoardingDetail = ({ hoardings, setHoardings }) => {
             return next;
         });
 
-        setIsLoading(true);
+        // Optimistic instant delete: Update local state & caches immediately with zero UI delay
         try {
             const siteLocName = hoarding["Location "] || hoarding.Location || hoarding["Locality Site Location"] || decodedSiteName || '';
             const targetSL = hoarding.SL || hoarding['S. No.'] || hoarding['SL NO'] || '';
@@ -533,20 +533,18 @@ const HoardingDetail = ({ hoardings, setHoardings }) => {
                 return next;
             });
 
-            // 4. Sync deletion to Google Apps Script / Sheet backend
-            await syncToGoogleSheet({
+            // 4. Background fire-and-forget sync to Google Apps Script / Sheet backend (zero UI freeze)
+            syncToGoogleSheet({
                 action: 'deleteHistoryItem',
                 siteName: siteLocName,
                 sl: targetSL,
                 siteId: siteId,
                 imageUrl: imageUrl
-            }).catch(err => console.warn('Remote history delete notice:', err));
+            }, 0).catch(err => console.warn('Remote history delete notice:', err));
 
         } catch (err) {
             console.error("Error deleting history item:", err);
             alert("Error deleting history item: " + err.message);
-        } finally {
-            setIsLoading(false);
         }
     };
 
