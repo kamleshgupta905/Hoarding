@@ -24,7 +24,8 @@ const SCOPES = [
   'https://www.googleapis.com/auth/spreadsheets',
   'https://www.googleapis.com/auth/gmail.modify',
   'https://www.googleapis.com/auth/youtube',
-  'https://www.googleapis.com/auth/script.projects'
+  'https://www.googleapis.com/auth/script.projects',
+  'https://www.googleapis.com/auth/script.deployments'
 ].join(' ');
 
 // Start temporary local server to capture redirect

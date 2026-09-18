@@ -6,11 +6,11 @@ const SESSION_KEY = 'adh_admin_session';
 const ADMIN_ID_KEY = 'adh_admin_id';
 const POLL_DELAY_MS = 700;
 
-const sleep = (duration) => new Promise((resolve) => window.setTimeout(resolve, duration));
+const sleep = (duration) => new Promise((resolve) => setTimeout(resolve, duration));
 
 const fetchWithTimeout = async (url, options = {}, timeoutMs = 60000) => {
   const controller = new AbortController();
-  const timer = window.setTimeout(() => controller.abort(new Error(`Request timed out after ${timeoutMs}ms`)), timeoutMs);
+  const timer = setTimeout(() => controller.abort(new Error(`Request timed out after ${timeoutMs}ms`)), timeoutMs);
   try {
     return await fetch(url, { ...options, signal: controller.signal });
   } catch (err) {
@@ -19,19 +19,23 @@ const fetchWithTimeout = async (url, options = {}, timeoutMs = 60000) => {
     }
     throw err;
   } finally {
-    window.clearTimeout(timer);
+    clearTimeout(timer);
   }
 };
 
-export const getAdminSession = () => sessionStorage.getItem(SESSION_KEY) || localStorage.getItem(SESSION_KEY) || (localStorage.getItem('isAdminAuthenticated') === 'true' ? 'session-local-admin' : '');
-export const getAuthenticatedAdminId = () => sessionStorage.getItem(ADMIN_ID_KEY) || localStorage.getItem(ADMIN_ID_KEY) || 'admin';
+export const getAdminSession = () => (typeof sessionStorage !== 'undefined' ? sessionStorage.getItem(SESSION_KEY) : '') || (typeof localStorage !== 'undefined' ? localStorage.getItem(SESSION_KEY) : '') || ((typeof localStorage !== 'undefined' && localStorage.getItem('isAdminAuthenticated') === 'true') ? 'session-local-admin' : '');
+export const getAuthenticatedAdminId = () => (typeof sessionStorage !== 'undefined' ? sessionStorage.getItem(ADMIN_ID_KEY) : '') || (typeof localStorage !== 'undefined' ? localStorage.getItem(ADMIN_ID_KEY) : '') || 'admin';
 
 export const clearAdminSession = () => {
-  sessionStorage.removeItem(SESSION_KEY);
-  sessionStorage.removeItem(ADMIN_ID_KEY);
-  localStorage.removeItem(SESSION_KEY);
-  localStorage.removeItem(ADMIN_ID_KEY);
-  localStorage.removeItem('isAdminAuthenticated');
+  if (typeof sessionStorage !== 'undefined') {
+    sessionStorage.removeItem(SESSION_KEY);
+    sessionStorage.removeItem(ADMIN_ID_KEY);
+  }
+  if (typeof localStorage !== 'undefined') {
+    localStorage.removeItem(SESSION_KEY);
+    localStorage.removeItem(ADMIN_ID_KEY);
+    localStorage.removeItem('isAdminAuthenticated');
+  }
 };
 
 const getJson = async (params, timeoutMs = 60000) => {
@@ -84,11 +88,15 @@ export const loginAdmin = async (adminId, password) => {
       const status = await getJson({ action: 'loginStatus', requestId }, 5000);
       if (status && status.status === 'AUTHENTICATED') {
         const token = status.sessionToken || ('adm_' + Date.now());
-        sessionStorage.setItem(SESSION_KEY, token);
-        sessionStorage.setItem(ADMIN_ID_KEY, status.adminId || cleanId);
-        localStorage.setItem(SESSION_KEY, token);
-        localStorage.setItem(ADMIN_ID_KEY, status.adminId || cleanId);
-        localStorage.setItem('isAdminAuthenticated', 'true');
+        if (typeof sessionStorage !== 'undefined') {
+          sessionStorage.setItem(SESSION_KEY, token);
+          sessionStorage.setItem(ADMIN_ID_KEY, status.adminId || cleanId);
+        }
+        if (typeof localStorage !== 'undefined') {
+          localStorage.setItem(SESSION_KEY, token);
+          localStorage.setItem(ADMIN_ID_KEY, status.adminId || cleanId);
+          localStorage.setItem('isAdminAuthenticated', 'true');
+        }
         return status;
       }
       if (status && status.status === 'FAILED') {
@@ -222,10 +230,13 @@ export const submitAdminOperation = async ({ type, payload = {}, siteId = '', ba
 };
 
 export const getStaffTokenFromLocation = () => {
-  const params = new URLSearchParams(window.location.search);
+  if (typeof window === 'undefined') {
+    return (typeof localStorage !== 'undefined' ? localStorage.getItem('adh_staff_upload_token') : '') || '';
+  }
+  const params = new URLSearchParams(window.location?.search || '');
   const incoming = params.get('token');
-  if (incoming) localStorage.setItem('adh_staff_upload_token', incoming);
-  return incoming || localStorage.getItem('adh_staff_upload_token') || '';
+  if (incoming && typeof localStorage !== 'undefined') localStorage.setItem('adh_staff_upload_token', incoming);
+  return incoming || (typeof localStorage !== 'undefined' ? localStorage.getItem('adh_staff_upload_token') : '') || '';
 };
 
 export const postStaffPhoto = async (payload) => {
@@ -239,14 +250,18 @@ export const postStaffPhoto = async (payload) => {
       try {
         const status = await getJson({ action: 'staffUploadStatus', staffToken, clientUploadId }, 10000);
         if (status.status === 'COMPLETED') return { ...status.result, success: true, clientUploadId };
-        if (status.status === 'FAILED') throw new Error(status.error || 'Photo upload failed.');
+        if (status.status === 'FAILED') {
+          const failErr = new Error(status.error || 'Photo upload failed.');
+          failErr.isUploadFailure = true;
+          throw failErr;
+        }
       } catch (err) {
-        if (err.message && err.message.includes('failed')) throw err;
+        if (err.isUploadFailure || (err.message && err.message.toLowerCase().includes('failed'))) throw err;
       }
       await sleep(Math.min(2000, 600 + attempt * 120));
     }
   } catch (err) {
-    if (err.message && err.message.includes('failed')) {
+    if (err.isUploadFailure || (err.message && err.message.toLowerCase().includes('failed'))) {
       return { success: false, error: err.message, clientUploadId };
     }
     console.warn('Staff photo status polling notice:', err);

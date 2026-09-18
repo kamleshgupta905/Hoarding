@@ -18,6 +18,7 @@ var CONFIG = {
   COL_SITE_NAME: 'Locality Site Location',
   COL_IMAGE_URL: 'ImageURL',
   STAFF_UPLOADS_SHEET: 'Staff_Uploads',
+  ENQUIRIES_SHEET: 'Enquiries',
   EXCEL_IMPORTS_SHEET: 'Excel_Import_Previews',
   OPERATIONS_SHEET: 'Sync_Operations',
   PENDING_IMPORT_PREFIX: 'PENDING_IMPORT__',
@@ -109,7 +110,7 @@ function doPost(e) {
     if (p.action === 'previewExcelImport') return previewExcelImport(p);
     if (p.action === 'approveExcelImport') return approveExcelImport(p);
     if (p.action === 'dumpImage') return dumpImageToDrive_(p);
-
+    if (p.action === 'submitEnquiry') return submitEnquiry_(p);
     // Legacy: File Upload to Input Folder (fallback for unknown actions with fileData)
     if (p.fileData) {
       if (!isValidAdminSession_(p.sessionToken)) return res({ success: false, error: 'Authentication required.' });
@@ -3748,6 +3749,77 @@ function getStateFromCity(city) {
   };
 
   return stateMap[cleanCity] || "Uttar Pradesh"; // Default to UP for your primary region
+}
+
+/**
+ * 📩 Client Campaign Enquiry Handler
+ * Records website client enquiries into the dedicated 'Enquiries' sheet in the master spreadsheet.
+ */
+function submitEnquiry_(p) {
+  try {
+    p = p || {};
+    var name = String(p.fullName || p.name || '').trim();
+    var phone = String(p.phone || '').trim();
+
+    if (!name || !phone) {
+      return res({ success: false, error: 'Full name and phone number are required.' });
+    }
+
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var sheetName = CONFIG.ENQUIRIES_SHEET || 'Enquiries';
+    var sheet = ss.getSheetByName(sheetName);
+
+    if (!sheet) {
+      sheet = ss.insertSheet(sheetName);
+      sheet.appendRow([
+        'EnquiryID',
+        'Timestamp',
+        'Full Name',
+        'Phone',
+        'Site Name',
+        'City',
+        'Start Date',
+        'Message',
+        'Status'
+      ]);
+      try {
+        var headerRange = sheet.getRange(1, 1, 1, 9);
+        headerRange.setFontWeight('bold');
+        headerRange.setBackground('#0f172a');
+        headerRange.setFontColor('#ffffff');
+        sheet.setFrozenRows(1);
+      } catch (styleErr) {}
+    }
+
+    var now = new Date();
+    var enquiryId = 'ENQ-' + Utilities.formatDate(now, 'GMT+5:30', 'yyyyMMdd') + '-' + Math.floor(Math.random() * 9000 + 1000);
+    var timestampStr = p.timestamp || Utilities.formatDate(now, 'GMT+5:30', 'yyyy-MM-dd HH:mm:ss');
+
+    sheet.appendRow([
+      enquiryId,
+      timestampStr,
+      name,
+      phone,
+      String(p.siteName || '').trim(),
+      String(p.city || '').trim(),
+      String(p.startDate || '').trim(),
+      String(p.message || '').trim(),
+      'NEW'
+    ]);
+
+    SpreadsheetApp.flush();
+
+    logDebug('ENQUIRY SUBMITTED | ID: ' + enquiryId + ' | Client: ' + name + ' | Phone: ' + phone + ' | Site: ' + (p.siteName || 'N/A'));
+
+    return res({
+      success: true,
+      enquiryId: enquiryId,
+      message: 'Enquiry received successfully. Our media team will contact you shortly.'
+    });
+  } catch (err) {
+    logDebug('ENQUIRY SUBMISSION FAILED | ' + err.toString());
+    return res({ success: false, error: 'Failed to record enquiry: ' + err.toString() });
+  }
 }
 
 function res(o) {
