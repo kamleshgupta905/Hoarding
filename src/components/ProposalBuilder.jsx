@@ -1,7 +1,8 @@
 import React, { useState, useRef } from 'react';
 import readXlsxFile from 'read-excel-file/browser';
-import { Upload, FileSpreadsheet, CheckCircle2, AlertCircle, Link as LinkIcon, ExternalLink, RefreshCw, Presentation, Search, Image as ImageIcon } from 'lucide-react';
-import { getImageUrl } from '../services/dataService';
+import { Upload, FileSpreadsheet, CheckCircle2, AlertCircle, Link as LinkIcon, ExternalLink, RefreshCw, Presentation, Search, Image as ImageIcon, Download, FileText } from 'lucide-react';
+import { getImageUrl, exportProposalExcel } from '../services/dataService';
+import { generateMasterMediaPlanPptx } from '../services/presentationService';
 import { parsePptx } from '../core/pptxEngine';
 import { appToast } from './ToastContext';
 
@@ -146,38 +147,128 @@ const ProposalBuilder = ({ hoardings }) => {
                         <p style={{ margin: 0, color: '#6b7280', fontSize: '0.9rem' }}>Or click to browse (.xlsx, .pptx)</p>
                     </div>
 
-                    {parsedRows.length > 0 && (
-                        <div style={{ background: '#fff', padding: '24px', borderRadius: '12px', border: '1px solid #e5e7eb', marginTop: '24px', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.05)' }}>
-                            <h3 style={{ margin: '0 0 16px', fontSize: '1.1rem', fontWeight: 600 }}>Proposal Settings</h3>
-                            <div style={{ marginBottom: '16px' }}>
-                                <label style={{ display: 'block', marginBottom: '6px', fontSize: '0.85rem', fontWeight: 600, color: '#374151' }}>Client/Brand Name</label>
-                                <input 
-                                    type="text" 
-                                    value={clientName}
-                                    onChange={(e) => setClientName(e.target.value)}
-                                    placeholder="e.g. Pears Soap"
-                                    style={{ width: '100%', padding: '10px 12px', border: '1px solid #d1d5db', borderRadius: '6px', outline: 'none' }}
-                                />
-                            </div>
-                            
-                            <button 
-                                onClick={generateProposalLink}
-                                style={{ width: '100%', padding: '12px', background: '#4f46e5', color: '#fff', border: 'none', borderRadius: '6px', fontWeight: 600, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', cursor: 'pointer' }}
-                            >
-                                <Presentation size={18} /> Generate Deck
-                            </button>
+                    {parsedRows.length > 0 && (() => {
+                        const matchedSites = parsedRows.map(r => r.matchedSite).filter(Boolean);
+                        const totalBaseRent = matchedSites.reduce((sum, s) => {
+                            const raw = s['Rental Per Month'] ?? s['Avg Monthly Cost (INR)'] ?? s.Price ?? 0;
+                            return sum + (typeof raw === 'string' ? parseFloat(raw.replace(/[^0-9.]/g, '')) || 0 : Number(raw) || 0);
+                        }, 0);
+                        const totalGst = Math.round(totalBaseRent * 0.18);
+                        const totalWithGst = totalBaseRent + totalGst;
+                        const totalSqFt = matchedSites.reduce((sum, s) => {
+                            const raw = s['Total SQ.ft'] || s['Total Sq. Ft'] || s['Area Sq Ft'] || 0;
+                            return sum + (typeof raw === 'string' ? parseFloat(raw.replace(/[^0-9.]/g, '')) || 0 : Number(raw) || 0);
+                        }, 0);
+                        const totalPrinting = Math.round(totalSqFt * 12);
+                        const totalMounting = Math.round(totalSqFt * 3);
 
-                            {proposalUrl && (
-                                <div style={{ marginTop: '20px', padding: '16px', background: '#ecfdf5', border: '1px solid #10b981', borderRadius: '8px' }}>
-                                    <h4 style={{ margin: '0 0 8px', color: '#065f46', display: 'flex', alignItems: 'center', gap: '6px' }}><CheckCircle2 size={16} /> Proposal Ready!</h4>
-                                    <div style={{ display: 'flex', gap: '8px' }}>
-                                        <input type="text" readOnly value={proposalUrl} style={{ flex: 1, padding: '8px', border: '1px solid #a7f3d0', borderRadius: '4px', background: '#fff', fontSize: '0.8rem' }} />
-                                        <button onClick={() => window.open(proposalUrl, '_blank')} style={{ padding: '8px 12px', background: '#10b981', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer' }}><ExternalLink size={16} /></button>
+                        const handleExportExcel = () => {
+                            if (matchedSites.length === 0) {
+                                appToast.warning("No sites matched to export.");
+                                return;
+                            }
+                            exportProposalExcel(matchedSites, `${clientName || 'Client'}_Media_Proposal.xls`);
+                            appToast.success(`Exported ${matchedSites.length} sites with 18% GST & SAC 998361!`);
+                        };
+
+                        const handleDownloadPptx = async () => {
+                            if (matchedSites.length === 0) {
+                                appToast.warning("No sites matched for PPT generation.");
+                                return;
+                            }
+                            setIsProcessing(true);
+                            try {
+                                await generateMasterMediaPlanPptx(matchedSites, {
+                                    fileName: `${clientName || 'Client'}_Media_Plan.pptx`
+                                });
+                                appToast.success(`Downloaded Master 4:3 PPT presentation for ${matchedSites.length} sites!`);
+                            } catch (err) {
+                                appToast.error("Failed to generate PPT: " + err.message);
+                            } finally {
+                                setIsProcessing(false);
+                            }
+                        };
+
+                        return (
+                            <div style={{ background: '#fff', padding: '24px', borderRadius: '12px', border: '1px solid #e5e7eb', marginTop: '24px', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.05)' }}>
+                                <h3 style={{ margin: '0 0 16px', fontSize: '1.1rem', fontWeight: 600 }}>Proposal Settings & Commercials</h3>
+                                <div style={{ marginBottom: '16px' }}>
+                                    <label style={{ display: 'block', marginBottom: '6px', fontSize: '0.85rem', fontWeight: 600, color: '#374151' }}>Client/Brand Name</label>
+                                    <input 
+                                        type="text" 
+                                        value={clientName}
+                                        onChange={(e) => setClientName(e.target.value)}
+                                        placeholder="e.g. Pears Soap"
+                                        style={{ width: '100%', padding: '10px 12px', border: '1px solid #d1d5db', borderRadius: '6px', outline: 'none' }}
+                                    />
+                                </div>
+
+                                {/* 📊 OOH Commercials Summary Card */}
+                                <div style={{ background: '#f8fafc', padding: '14px', borderRadius: '8px', border: '1px solid #e2e8f0', marginBottom: '16px', fontSize: '0.85rem' }}>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px', color: '#475569' }}>
+                                        <span>Matched Sites:</span>
+                                        <strong>{matchedSites.length} sites ({totalSqFt.toLocaleString('en-IN')} sq.ft)</strong>
+                                    </div>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px', color: '#475569' }}>
+                                        <span>Base Monthly Rental:</span>
+                                        <strong style={{ color: '#0f172a' }}>₹{totalBaseRent.toLocaleString('en-IN')}</strong>
+                                    </div>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px', color: '#64748b' }}>
+                                        <span>GST @ 18% (SAC 998361):</span>
+                                        <strong>+ ₹{totalGst.toLocaleString('en-IN')}</strong>
+                                    </div>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0', borderTop: '1px dashed #cbd5e1', borderBottom: '1px dashed #cbd5e1', marginBottom: '6px', color: '#0f172a', fontWeight: 700 }}>
+                                        <span>Total with GST:</span>
+                                        <span style={{ color: '#10b981' }}>₹{totalWithGst.toLocaleString('en-IN')}</span>
+                                    </div>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.78rem', color: '#64748b' }}>
+                                        <span>Flex Printing (₹12/sqft):</span>
+                                        <span>₹{totalPrinting.toLocaleString('en-IN')}</span>
+                                    </div>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.78rem', color: '#64748b' }}>
+                                        <span>Mounting Labor (₹3/sqft):</span>
+                                        <span>₹{totalMounting.toLocaleString('en-IN')}</span>
                                     </div>
                                 </div>
-                            )}
-                        </div>
-                    )}
+                                
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                                    <button 
+                                        type="button"
+                                        onClick={generateProposalLink}
+                                        style={{ width: '100%', padding: '11px', background: '#4f46e5', color: '#fff', border: 'none', borderRadius: '6px', fontWeight: 600, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', cursor: 'pointer', fontSize: '0.875rem' }}
+                                    >
+                                        <Presentation size={17} /> Generate Web Deck
+                                    </button>
+
+                                    <button 
+                                        type="button"
+                                        onClick={handleDownloadPptx}
+                                        style={{ width: '100%', padding: '11px', background: '#d97706', color: '#fff', border: 'none', borderRadius: '6px', fontWeight: 600, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', cursor: 'pointer', fontSize: '0.875rem' }}
+                                    >
+                                        <Download size={17} /> Download 4:3 Master PPTX
+                                    </button>
+
+                                    <button 
+                                        type="button"
+                                        onClick={handleExportExcel}
+                                        style={{ width: '100%', padding: '11px', background: '#059669', color: '#fff', border: 'none', borderRadius: '6px', fontWeight: 600, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', cursor: 'pointer', fontSize: '0.875rem' }}
+                                    >
+                                        <FileSpreadsheet size={17} /> Export Excel (GST & SAC 998361)
+                                    </button>
+                                </div>
+
+                                {proposalUrl && (
+                                    <div style={{ marginTop: '16px', padding: '14px', background: '#ecfdf5', border: '1px solid #10b981', borderRadius: '8px' }}>
+                                        <h4 style={{ margin: '0 0 6px', color: '#065f46', display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.9rem' }}><CheckCircle2 size={16} /> Web Deck Link Ready!</h4>
+                                        <div style={{ display: 'flex', gap: '6px' }}>
+                                            <input type="text" readOnly value={proposalUrl} style={{ flex: 1, padding: '7px 10px', border: '1px solid #a7f3d0', borderRadius: '4px', background: '#fff', fontSize: '0.78rem' }} />
+                                            <button onClick={() => window.open(proposalUrl, '_blank')} style={{ padding: '7px 12px', background: '#10b981', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer' }} title="Open Deck"><ExternalLink size={15} /></button>
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+                        );
+                    })()}
                 </div>
 
                 <div style={{ flex: '2 1 600px', minWidth: '400px' }}>

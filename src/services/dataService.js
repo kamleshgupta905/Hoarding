@@ -907,9 +907,15 @@ export const calculateProRataRental = (monthlyRental, startDateStr, endDateStr) 
   if (!startDateStr || !endDateStr || rent <= 0) {
     return { days: 30, total: rent, dayRate: Math.round(rent / 30) };
   }
-  const s = new Date(startDateStr);
-  const e = new Date(endDateStr);
-  const diffTime = e - s;
+  const s = parseBookingDate(startDateStr);
+  const e = parseBookingDate(endDateStr);
+  if (!s || !e) {
+    return { days: 30, total: rent, dayRate: Math.round(rent / 30) };
+  }
+  // Midnight UTC timestamp comparison prevents timezone/DST off-by-one shifts
+  const sUtc = Date.UTC(s.getFullYear(), s.getMonth(), s.getDate());
+  const eUtc = Date.UTC(e.getFullYear(), e.getMonth(), e.getDate());
+  const diffTime = eUtc - sUtc;
   const days = Math.max(1, Math.round(diffTime / (1000 * 60 * 60 * 24)) + 1);
   const dayRate = rent / 30;
   const total = Math.round(dayRate * days);
@@ -1437,7 +1443,28 @@ export const PROPOSAL_COLUMNS = [
   ['Qty', site => site.Qty || site.Units || 1],
   ['Total SQ.ft', site => site['Total SQ.ft'] || site['Total Sq. Ft'] || ''],
   ['Type', site => site.Type || site['Media Format (Front Lit / Back Lit / Non Lit)'] || 'NL'],
+  ['SAC Code', () => '998361'],
   ['Rental Per Month', site => site['Rental Per Month'] || site['Avg Monthly Cost (INR)'] || ''],
+  ['GST @ 18%', site => {
+    const raw = site['Rental Per Month'] ?? site['Avg Monthly Cost (INR)'] ?? site.Price ?? 0;
+    const rent = typeof raw === 'string' ? parseFloat(raw.replace(/[^0-9.]/g, '')) || 0 : Number(raw) || 0;
+    return rent > 0 ? Math.round(rent * 0.18) : 0;
+  }],
+  ['Total with GST', site => {
+    const raw = site['Rental Per Month'] ?? site['Avg Monthly Cost (INR)'] ?? site.Price ?? 0;
+    const rent = typeof raw === 'string' ? parseFloat(raw.replace(/[^0-9.]/g, '')) || 0 : Number(raw) || 0;
+    return rent > 0 ? Math.round(rent * 1.18) : 0;
+  }],
+  ['Flex Printing Est.', site => {
+    const rawSq = site['Total SQ.ft'] || site['Total Sq. Ft'] || site['Area Sq Ft'] || '';
+    const sqft = typeof rawSq === 'string' ? parseFloat(rawSq.replace(/[^0-9.]/g, '')) || 0 : Number(rawSq) || 0;
+    return sqft > 0 ? Math.round(sqft * 12) : 0;
+  }],
+  ['Mounting Est.', site => {
+    const rawSq = site['Total SQ.ft'] || site['Total Sq. Ft'] || site['Area Sq Ft'] || '';
+    const sqft = typeof rawSq === 'string' ? parseFloat(rawSq.replace(/[^0-9.]/g, '')) || 0 : Number(rawSq) || 0;
+    return sqft > 0 ? Math.round(sqft * 3) : 0;
+  }],
   ['Lat-Long', site => site['Lat-Long'] || [site.Latitude, site.Longitude].filter(Boolean).join(', ')],
   ['Latitude', site => site.Latitude || ''],
   ['Longitude', site => site.Longitude || ''],
@@ -1454,7 +1481,24 @@ export const exportProposalExcel = (sites, fileName = 'hoarding-proposal.xls', s
   const selectedSet = new Set(selectedHeaders && selectedHeaders.length ? selectedHeaders : PROPOSAL_COLUMNS.map(([label]) => label));
   const columns = PROPOSAL_COLUMNS.filter(([label]) => selectedSet.has(label));
 
+  let totalRent = 0;
+  let totalGst = 0;
+  let totalWithGst = 0;
+  let totalPrinting = 0;
+  let totalMounting = 0;
+
   const rows = sites.map((site, index) => {
+    const rawRent = site['Rental Per Month'] ?? site['Avg Monthly Cost (INR)'] ?? site.Price ?? 0;
+    const rent = typeof rawRent === 'string' ? parseFloat(rawRent.replace(/[^0-9.]/g, '')) || 0 : Number(rawRent) || 0;
+    const rawSq = site['Total SQ.ft'] || site['Total Sq. Ft'] || site['Area Sq Ft'] || '';
+    const sqft = typeof rawSq === 'string' ? parseFloat(rawSq.replace(/[^0-9.]/g, '')) || 0 : Number(rawSq) || 0;
+
+    totalRent += rent;
+    totalGst += Math.round(rent * 0.18);
+    totalWithGst += Math.round(rent * 1.18);
+    totalPrinting += Math.round(sqft * 12);
+    totalMounting += Math.round(sqft * 3);
+
     const cells = columns
       .map((column) => {
         const value = column[1](site, index);
@@ -1467,6 +1511,16 @@ export const exportProposalExcel = (sites, fileName = 'hoarding-proposal.xls', s
     return `<tr>${cells}</tr>`;
   }).join('');
 
+  const summaryCells = columns.map(([label]) => {
+    if (label === 'SL') return `<td><strong>Total (${sites.length})</strong></td>`;
+    if (label === 'Rental Per Month') return `<td><strong>₹${totalRent.toLocaleString('en-IN')}</strong></td>`;
+    if (label === 'GST @ 18%') return `<td><strong>₹${totalGst.toLocaleString('en-IN')}</strong></td>`;
+    if (label === 'Total with GST') return `<td><strong>₹${totalWithGst.toLocaleString('en-IN')}</strong></td>`;
+    if (label === 'Flex Printing Est.') return `<td><strong>₹${totalPrinting.toLocaleString('en-IN')}</strong></td>`;
+    if (label === 'Mounting Est.') return `<td><strong>₹${totalMounting.toLocaleString('en-IN')}</strong></td>`;
+    return `<td></td>`;
+  }).join('');
+
   const html = `<!doctype html>
 <html>
 <head>
@@ -1475,6 +1529,7 @@ export const exportProposalExcel = (sites, fileName = 'hoarding-proposal.xls', s
     table { border-collapse: collapse; font-family: Arial, sans-serif; font-size: 11px; }
     th { background: #ff9900; color: #000; font-weight: 700; text-align: center; }
     th, td { border: 1px solid #777; padding: 6px; vertical-align: middle; white-space: nowrap; }
+    tfoot td { background: #fef3c7; color: #1e293b; font-weight: 700; border-top: 2px solid #334155; }
     .image-link a { color: #1155cc; text-decoration: underline; font-weight: 700; }
   </style>
 </head>
@@ -1484,6 +1539,9 @@ export const exportProposalExcel = (sites, fileName = 'hoarding-proposal.xls', s
       <tr>${columns.map(([label]) => `<th>${escapeHtml(label)}</th>`).join('')}</tr>
     </thead>
     <tbody>${rows}</tbody>
+    <tfoot>
+      <tr>${summaryCells}</tr>
+    </tfoot>
   </table>
 </body>
 </html>`;
@@ -1555,14 +1613,30 @@ export const getSiteOccupancyStatus = (site, refDate = new Date(), thresholdDays
     };
   }
 
+  const slots = getSiteBookingSlots(site);
+  const refDateObj = refDate instanceof Date ? refDate : new Date(refDate);
+  const y = refDateObj.getFullYear();
+  const m = String(refDateObj.getMonth() + 1).padStart(2, '0');
+  const d = String(refDateObj.getDate()).padStart(2, '0');
+  const todayRefStr = `${y}-${m}-${d}`;
+
+  // Find slot active on reference date
+  const activeSlot = slots.find(s => s.start && s.end && todayRefStr >= s.start && todayRefStr <= s.end);
+  // Next upcoming slot
+  const nextSlot = !activeSlot ? slots.find(s => s.start && s.start > todayRefStr) : null;
+  // Recent past slot
+  const pastSlot = (!activeSlot && !nextSlot && slots.length > 0) ? slots[slots.length - 1] : null;
+
+  const relevantSlot = activeSlot || pastSlot;
+
   const statusRaw = String(site.STATUS || site.status || 'Available').trim().toLowerCase();
-  const isBookedOrOccupied = (statusRaw === 'booked' || statusRaw === 'occupied');
-  const client = String(site.BookedBy || site['Booked By'] || site.Client || site.client || '').trim();
+  const isBookedOrOccupied = (statusRaw === 'booked' || statusRaw === 'occupied') || Boolean(activeSlot);
+  const client = String((relevantSlot ? relevantSlot.client : null) || site.BookedBy || site['Booked By'] || site.Client || site.client || '').trim();
 
   // Parse BookingEnd
-  const endRaw = site.BookingEnd || site['Booking End'] || site.bookingEnd || '';
+  const endRaw = (relevantSlot ? relevantSlot.end : null) || site.BookingEnd || site['Booking End'] || site.bookingEnd || '';
   const endDate = parseBookingDate(endRaw);
-  const startRaw = site.BookingStart || site['Booking Start'] || site.bookingStart || '';
+  const startRaw = (relevantSlot ? relevantSlot.start : null) || site.BookingStart || site['Booking Start'] || site.bookingStart || '';
   const startDate = parseBookingDate(startRaw);
 
   const formattedEndDate = endDate 
@@ -1575,24 +1649,25 @@ export const getSiteOccupancyStatus = (site, refDate = new Date(), thresholdDays
       status: 'AVAILABLE',
       statusTier: 'available',
       daysLeft: null,
-      client: '',
+      client: nextSlot ? (nextSlot.client || 'Reserved') : '',
       startDate,
       endDate,
       formattedEndDate,
       badgeColor: '#10b981',
       badgeBg: 'rgba(16, 185, 129, 0.12)',
       badgeBorder: '#10b98140',
-      badgeLabel: 'Available',
+      badgeLabel: nextSlot ? `Available (Booked from ${nextSlot.start})` : 'Available',
       markerColor: 'green',
       isExpiringSoon: false,
-      isOverdue: false
+      isOverdue: false,
+      nextSlot: nextSlot || null
     };
   }
 
   // Calculate day difference
   let daysLeft = null;
   if (endDate) {
-    const todayZero = new Date(refDate.getFullYear(), refDate.getMonth(), refDate.getDate());
+    const todayZero = new Date(refDateObj.getFullYear(), refDateObj.getMonth(), refDateObj.getDate());
     const endZero = new Date(endDate.getFullYear(), endDate.getMonth(), endDate.getDate());
     const diffMs = endZero.getTime() - todayZero.getTime();
     daysLeft = Math.round(diffMs / (1000 * 60 * 60 * 24));
