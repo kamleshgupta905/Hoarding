@@ -343,11 +343,13 @@ export const resolveTwinSiteFacingWithGemini = async (imageBase64, candidates) =
     const from = rawSite['Traffic From'] || rawSite.from || '';
     const to = rawSite['Traffic To'] || rawSite.to || '';
     const traffic = from && to ? `Traffic from ${from} towards ${to}` : (from || to || '');
+    const siteType = rawSite['Type of Site (Unipole/Billboard)'] || rawSite['Type of Site (Unipole/ Billboard)'] || rawSite['Type of Site'] || rawSite['Media'] || rawSite.Type || 'Unipole';
     const refUrl = rawSite.ImageURL && !rawSite.ImageURL.includes('unsplash.com') ? rawSite.ImageURL : '';
-    const distText = c.distanceM !== undefined ? `${c.distanceM}m away from camera GPS` : '';
+    const distText = c.distanceM !== undefined ? `~${c.distanceM}m (GPS estimate)` : '';
     const hasRefPhoto = candidateImages.some(img => img.idx === idx) ? ' (Visual Reference Photo Attached Below)' : '';
     return `[Candidate ${idx}]:
 - S.No / SL: #${sl}
+- Structure Type: ${siteType}
 - Location: "${name}"
 - Facing Direction: "${facing}" (Face points towards ${facing}, visible to traffic coming from ${from || facing} heading towards ${to || 'opposite'})
 ${distText ? `- Distance to Camera GPS: ${distText}` : ''}
@@ -364,42 +366,50 @@ CANDIDATE HOARDINGS AT / NEAR THIS CORRIDOR:
 ${candidateDescriptions}
 
 CRITICAL RULES FOR ACCURATE MATCHING:
-1. 🎯 HIGHEST PRIORITY: BILLBOARD FACING & TRAFFIC DIRECTION:
-   - In outdoor advertising (OOH): "Facing [X]" means the billboard face points towards direction X and is directly visible to oncoming traffic approaching/coming FROM direction X heading towards the opposite direction.
-   - At this location, multiple/twin hoardings exist with identical or nearby coordinates (e.g. opposite faces on a median unipole like Begum Bridge vs Modipuram, or consecutive corridor structures).
-   - In the photo clicked by the camera, carefully inspect which direction traffic is flowing and which candidate's Facing directly aligns with the camera's line-of-sight!
-   - Always match the primary hoarding in the foreground closest to the camera lens over any secondary or distant structures.
-2. ⚠️ DO NOT be deceived by any advertiser store/showroom/branch address printed on the flex ad banner itself (for example: "205, Begum Bridge Road", phone numbers). That is just the advertiser's showroom address, NOT the billboard's facing direction or location!
-3. 🏗️ BILLBOARD MOUNTING STRUCTURE TYPE:
-   - Carefully inspect the exact structural engineering of the primary billboard being captured:
-     * UNIPOLE: A massive horizontal billboard mounted atop a single tall circular steel/concrete pole or pillar, often standing in the road median directly underneath or parallel to the elevated metro/flyover viaduct.
-     * OVERHEAD GANTRY: A steel truss bridge spanning horizontally directly over traffic lanes.
-     * DOUBLE-POLE / STREET-CORNER: Supported on two vertical side posts or mounted on the side of a roundabout / chauraha junction.
-     * ROOFTOP / WALL-MOUNTED: Fixed onto a building facade or boundary wall/fence.
-   - Look at each candidate's reference photo: The correct candidate MUST have the IDENTICAL structural frame type and mounting location.
-4. ⚠️ AVOID BACKGROUND LANDMARK BIAS:
-   - Do NOT select a candidate simply because a background building, school, or secondary sign (such as 'GD GOENKA Toddler House' or a roadside stall) is visible in both photos! 
-   - A single landmark can be visible from multiple nearby poles along a 200m corridor. You must match the PRIMARY BILLBOARD POLE itself, not distant background landmarks!
-5. 🎯 STRUCTURAL & PHYSICAL LANDMARK PRECISION:
-   - Note that calculated GPS distance numbers can drift by 30-80m due to camera sensor drift or vehicle approach perspective.
-   - You MUST match based on the exact physical structure, mounting location, and surrounding environmental landmarks:
-     * For Modipuram Chauraha:
-       - SL #210 is the massive UNIPOLE standing directly under or adjacent to the elevated metro/RRTS viaduct concrete pillars.
-       - SL #211 is located by the low floor bus stand / street gantry curb.
-     * For Company Garden:
-       - SL #198 is located directly along the elevated flyover ramp retaining wall with razor wire fencing on top and sidewalk on the left.
-       - SL #196 is located further along Company Garden trees without the high concrete ramp wall beside it.
-   - Always match the primary physical structure being captured by the camera lens directly against the candidate reference photos!
+1. 🎯 HIGHEST PRIORITY: PRIMARY FOREGROUND BILLBOARD (CLOSEST TO CAMERA):
+   - In live field audit photos, the photographer captures ONE specific primary billboard that dominates the center foreground.
+   - You MUST match this prominent FOREGROUND billboard, NOT secondary or background structures!
+   - ⚠️ NEVER select a candidate just because a distant background building, pedestrian gantry, or small roadside sign (such as "GD GOENKA Toddler House", coaching sign, or shop banner) is visible in the background!
+   - A distant background sign does NOT determine the site. The massive billboard right in the center foreground determines the site!
+
+2. 🏗️ BILLBOARD MOUNTING STRUCTURE & CORRIDOR MATCHING:
+   - Carefully identify the physical structure type of the FOREGROUND billboard:
+     * UNIPOLE IN MEDIAN: A massive horizontal billboard mounted atop a single tall steel/concrete pillar in the road median, often directly underneath or parallel to the elevated metro/RRTS track pillars.
+     * OVERHEAD GANTRY: A steel truss bridge spanning horizontally across traffic lanes.
+     * SIDEWALK / CORNER POST: Supported on curbside posts.
+   - The correct candidate MUST match the physical structure in the foreground!
+
+3. 📍 SPECIFIC CORRIDOR LOCATIONS & CANDIDATE RESOLUTION:
+   * Modipuram Chauraha:
+     - The massive central UNIPOLE standing in the road median directly under/beside the elevated metro/RRTS viaduct track is:
+       * SL #210 (Facing Pallavpuram, seen by traffic heading towards Begum Bridge)
+       * SL #209 (Facing Begum Bridge, seen by traffic heading towards Pallavpuram)
+     - SL #211 / #212 is the roadside / bus-stand gantry structure on the curb.
+     - ⚠️ If the live audit photo shows the elevated metro pillars with the large central UNIPOLE billboard in the foreground, you MUST MATCH SL #210 (if facing Pallavpuram) or SL #209 (if facing Begum Bridge) — NEVER match SL #211 or #212!
+   * Company Garden Flyover:
+     - SL #198 is located directly along the elevated flyover ramp retaining wall with razor-wire fencing on top and sidewalk on the left.
+     - SL #196 is located further along Company Garden park trees without the concrete ramp wall beside it.
+
+4. 📏 GPS DISTANCE IS ONLY AN ESTIMATE (±50m variance):
+   - Calculated GPS distance numbers (e.g. 45m vs 70m) reflect where the vehicle/camera stopped or small coordinate inaccuracies in the master database.
+   - NEVER let a 20-30 meter GPS difference override the visual structure! The primary foreground billboard's visual structure and facing always takes precedence over slight GPS distance differences.
+
+5. 🧭 BILLBOARD FACING & TRAFFIC DIRECTION:
+   - "Facing [X]" means the billboard face points towards direction X and is directly visible to traffic coming FROM direction X heading towards the opposite direction.
+   - In outdoor advertising (OOH), multiple hoardings exist with identical or nearby coordinates (e.g. opposite faces on a median unipole like Begum Bridge vs Pallavpuram).
+   - In the audit photo, check which direction the vehicle/camera is looking. If looking towards Begum Bridge from Pallavpuram, the face is pointing towards Pallavpuram (Facing Pallavpuram).
+   - ⚠️ DO NOT be deceived by advertiser store addresses or phone numbers printed on the flex ad banner! That is just the advertiser's showroom address, NOT the billboard's facing direction!
+
 6. Status detection: "Occupied" (active commercial brand ad mounted) or "Available" (blank, white, torn, or To-Let).
 
 Return ONLY a single valid JSON object (no markdown, no backticks):
 {
   "matchedIndex": 0,
-  "sl": 198,
+  "sl": 210,
   "facing": "exact facing from selected candidate",
   "status": "Occupied",
   "confidence": 0.98,
-  "reasoning": "Detailed visual explanation of physical structure (unipole/gantry/etc), flyover alignment, why this candidate was chosen over other nearby same-facing poles"
+  "reasoning": "Detailed visual explanation of physical structure (unipole/gantry/etc), elevated metro alignment, why this candidate was chosen over other nearby poles"
 }`;
 
   const parts = [

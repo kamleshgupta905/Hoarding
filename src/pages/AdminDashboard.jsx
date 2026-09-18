@@ -7166,12 +7166,11 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                                         <div style={{
                                                             display: 'flex',
                                                             alignItems: 'center',
+                                                            flexWrap: 'wrap',
                                                             gap: '6px',
-                                                            padding: '7px 12px',
-                                                            overflowX: 'auto',
-                                                            whiteSpace: 'nowrap'
+                                                            padding: '7px 12px'
                                                         }}>
-                                                            <span style={{ fontSize: '0.72rem', fontWeight: 700, color: '#4338ca', flexShrink: 0, display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                                            <span style={{ fontSize: '0.72rem', fontWeight: 700, color: '#4338ca', flexShrink: 0, display: 'flex', alignItems: 'center', gap: '4px', marginRight: '2px' }}>
                                                                 <span>🧭</span>
                                                                 <span>Facing:</span>
                                                             </span>
@@ -7206,8 +7205,7 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                                                             background: isCandSelected ? '#4f46e5' : '#ffffff',
                                                                             color: isCandSelected ? '#ffffff' : '#475569',
                                                                             boxShadow: isCandSelected ? '0 1px 4px rgba(79, 70, 229, 0.25)' : 'none',
-                                                                            transition: 'all 0.15s ease',
-                                                                            flexShrink: 0
+                                                                            transition: 'all 0.15s ease'
                                                                         }}
                                                                         title={`Switch to Pole #${cand.sl} | Facing: ${cand.facing} (${cand.distanceM != null ? `${cand.distanceM}m away` : 'Site'})`}
                                                                     >
