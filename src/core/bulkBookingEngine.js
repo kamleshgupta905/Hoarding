@@ -5,7 +5,8 @@ import {
   saveSiteBookingSlots, 
   resolveSiteLiveStatus, 
   recordSiteHistory,
-  compressImage 
+  compressImage,
+  syncToGoogleSheet
 } from '../services/dataService';
 import { postDirect, getAdminSession } from '../services/secureApi';
 
@@ -592,12 +593,17 @@ export const commitBulkBookings = async ({
       siteId: targetSite._SiteID || '',
       sl: targetSite.SL || '',
       siteName: targetSite['Location '] || targetSite.Location || item.location,
+      facing: targetSite.Facing || targetSite['Traffic View'] || '',
+      status: liveStatus.status || 'Booked',
       fields: {
-        STATUS: 'Booked',
-        Status: 'Booked',
+        STATUS: liveStatus.status || 'Booked',
+        Status: liveStatus.status || 'Booked',
         BookedBy: liveStatus.client || item.clientName,
+        'Booked By': liveStatus.client || item.clientName,
         BookingStart: liveStatus.slot?.start || item.startDate,
+        'Booking Start': liveStatus.slot?.start || item.startDate,
         BookingEnd: liveStatus.slot?.end || item.endDate,
+        'Booking End': liveStatus.slot?.end || item.endDate,
         BookingSchedule: JSON.stringify(updatedSlots)
       }
     });
@@ -711,6 +717,20 @@ export const commitBulkBookings = async ({
   } catch (sheetErr) {
     console.warn("[Bulk Booking Sheet Sync Warning]:", sheetErr);
   }
+
+  // Secondary cloud redundancy guarantee: trigger background updates for all booked sites
+  try {
+    batchUpdates.forEach(b => {
+      syncToGoogleSheet({
+        action: 'updateHoarding',
+        siteId: b.siteId,
+        sl: b.sl,
+        siteName: b.siteName,
+        facing: b.facing,
+        updatedFields: b.fields
+      }).catch(err => console.warn(`[Redundancy sync notice for site ${b.siteName}]:`, err));
+    });
+  } catch {}
 
   if (onProgress) onProgress(100, "Bulk onboarding completed successfully!");
 

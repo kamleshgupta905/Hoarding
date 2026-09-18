@@ -8315,7 +8315,44 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                                         onClick={() => setPreviewHoarding(h)}
                                                         title="Open full screen preview"
                                                         onError={(e) => {
-                                                            e.target.src = 'https://placehold.co/120x84?text=No+Image';
+                                                            const el = e.target;
+                                                            const currentSrc = el.src || '';
+
+                                                            // 1. Try Drive thumbnail endpoint if file ID is present
+                                                            if (!el.dataset.triedDriveThumb) {
+                                                                el.dataset.triedDriveThumb = 'true';
+                                                                const fileIdMatch = currentSrc.match(/lh3\.googleusercontent\.com\/d\/([^/?#\s]+)/) ||
+                                                                                    currentSrc.match(/\/file\/d\/([^/?#\s]+)/) ||
+                                                                                    currentSrc.match(/[?&]id=([^&#/\s]+)/);
+                                                                if (fileIdMatch && fileIdMatch[1]) {
+                                                                    el.src = `https://drive.google.com/thumbnail?id=${fileIdMatch[1]}&sz=w400`;
+                                                                    return;
+                                                                }
+                                                            }
+
+                                                            // 2. Try site history photo if available
+                                                            if (!el.dataset.triedHistory && Array.isArray(h.History) && h.History.length > 0) {
+                                                                el.dataset.triedHistory = 'true';
+                                                                const histUrl = typeof h.History[0] === 'object' ? (h.History[0].url || h.History[0].preview) : h.History[0];
+                                                                if (histUrl && histUrl !== currentSrc) {
+                                                                    el.src = histUrl;
+                                                                    return;
+                                                                }
+                                                            }
+
+                                                            // 3. Retry once after 1.5s for transient Drive propagation
+                                                            if (!el.dataset.retriedOnce) {
+                                                                el.dataset.retriedOnce = 'true';
+                                                                setTimeout(() => {
+                                                                    if (el && el.parentElement) {
+                                                                        el.src = `${currentSrc.split('?')[0]}?retry=${Date.now()}`;
+                                                                    }
+                                                                }, 1500);
+                                                                return;
+                                                            }
+
+                                                            // 4. Final placeholder
+                                                            el.src = 'https://placehold.co/120x84?text=No+Image';
                                                         }}
                                                     />
                                                 </td>

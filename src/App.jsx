@@ -7,9 +7,7 @@ import CommandPalette from './components/CommandPalette';
 import Navbar from './components/Navbar';
 import Footer from './components/Footer';
 import AdminLogin from './pages/AdminLogin';
-import AppAutoUpdater from './components/AppAutoUpdater';
-import { fetchHoardings, getLocalBookings, getSiteBookingKeys, getLocalHistory } from './services/dataService';
-import { HelmetProvider } from 'react-helmet-async';
+import { fetchHoardings, getLocalBookings, getSiteBookingKeys, getLocalHistory, resolveSiteLiveStatus } from './services/dataService';
 
 // Helper to auto-recover dynamic imports when a new build is deployed on Vercel
 const lazyWithRetry = (componentImport) =>
@@ -437,12 +435,42 @@ function App() {
           }
         }
 
-        // Overlay multi-slot schedule if present locally AND cloud does not provide authoritative schedule
+        // Overlay multi-slot schedule if present locally (merging with cloud schedule if both exist)
         for (const k of keys) {
           const cloudSched = mergedList[i].BookingSchedule;
-          const cloudHasSched = (Array.isArray(cloudSched) && cloudSched.length > 0) || (typeof cloudSched === 'string' && cloudSched.trim() === '[]');
-          if (!cloudHasSched && Array.isArray(localSchedules[k]) && localSchedules[k].length > 0) {
-            mergedList[i].BookingSchedule = localSchedules[k];
+          let cloudSlots = [];
+          if (Array.isArray(cloudSched)) {
+            cloudSlots = [...cloudSched];
+          } else if (typeof cloudSched === 'string' && cloudSched.trim().startsWith('[')) {
+            try {
+              const parsed = JSON.parse(cloudSched.trim());
+              if (Array.isArray(parsed)) cloudSlots = parsed;
+            } catch {}
+          }
+
+          if (Array.isArray(localSchedules[k]) && localSchedules[k].length > 0) {
+            const seen = new Set(cloudSlots.map(s => `${String(s.client || '').trim().toLowerCase()}_${s.start}_${s.end}`));
+            const mergedSlots = [...cloudSlots];
+            for (const ls of localSchedules[k]) {
+              if (ls && ls.start && ls.end) {
+                const sKey = `${String(ls.client || '').trim().toLowerCase()}_${ls.start}_${ls.end}`;
+                if (!seen.has(sKey)) {
+                  mergedSlots.push(ls);
+                  seen.add(sKey);
+                }
+              }
+            }
+            mergedList[i].BookingSchedule = mergedSlots;
+            const live = resolveSiteLiveStatus({ ...mergedList[i], BookingSchedule: mergedSlots });
+            mergedList[i].STATUS = live.status;
+            mergedList[i].status = live.status;
+            mergedList[i].Status = live.status;
+            mergedList[i].BookedBy = live.client || mergedList[i].BookedBy || '';
+            mergedList[i].BookingStart = live.slot?.start || mergedList[i].BookingStart || '';
+            mergedList[i].BookingEnd = live.slot?.end || mergedList[i].BookingEnd || '';
+            break;
+          } else if (cloudSlots.length > 0) {
+            mergedList[i].BookingSchedule = cloudSlots;
             break;
           }
         }

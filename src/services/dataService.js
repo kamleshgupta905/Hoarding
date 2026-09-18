@@ -781,31 +781,20 @@ export const getSiteBookingSlots = (site = {}) => {
   if (site.BookingSchedule !== undefined && site.BookingSchedule !== null) {
     if (Array.isArray(site.BookingSchedule)) {
       slots = [...site.BookingSchedule];
-      // If site explicitly has an array (even if empty []), respect it!
-      if (slots.length > 0 || site.BookingSchedule.length === 0) {
-        return slots
-          .filter(s => s && s.start && s.end)
-          .sort((a, b) => String(a.start).localeCompare(String(b.start)));
-      }
     } else if (typeof site.BookingSchedule === 'string') {
       const trimmed = site.BookingSchedule.trim();
-      if (trimmed === '[]') {
-        return [];
-      }
       if (trimmed.startsWith('[')) {
         try {
           const parsed = JSON.parse(trimmed);
           if (Array.isArray(parsed)) {
-            return parsed
-              .filter(s => s && s.start && s.end)
-              .sort((a, b) => String(a.start).localeCompare(String(b.start)));
+            slots = [...parsed];
           }
         } catch {}
       }
     }
   }
 
-  // 2. Check localStorage for local schedule overrides (explicit empty or valid list)
+  // 2. Check localStorage for local schedule overrides or additions
   if (typeof window !== 'undefined') {
     try {
       const rawSchedules = localStorage.getItem('adh_booking_schedules');
@@ -814,17 +803,35 @@ export const getSiteBookingSlots = (site = {}) => {
         const keys = getSiteBookingKeys(site);
         for (const k of keys) {
           if (Array.isArray(schedules[k])) {
-            if (schedules[k].length === 0) {
+            const localList = schedules[k];
+            // If local is explicitly empty array and cloud also has no slots, return []
+            if (localList.length === 0 && slots.length === 0) {
               return [];
             }
-            slots = [...schedules[k]];
-            return slots
-              .filter(s => s && s.start && s.end)
-              .sort((a, b) => String(a.start).localeCompare(String(b.start)));
+            if (localList.length > 0) {
+              // Merge local slots with cloud slots (deduping by client + start + end)
+              const seen = new Set(slots.map(s => `${String(s.client || '').trim().toLowerCase()}_${s.start}_${s.end}`));
+              for (const ls of localList) {
+                if (ls && ls.start && ls.end) {
+                  const idKey = `${String(ls.client || '').trim().toLowerCase()}_${ls.start}_${ls.end}`;
+                  if (!seen.has(idKey)) {
+                    slots.push(ls);
+                    seen.add(idKey);
+                  }
+                }
+              }
+            }
+            break;
           }
         }
       }
     } catch {}
+  }
+
+  if (slots.length > 0) {
+    return slots
+      .filter(s => s && s.start && s.end)
+      .sort((a, b) => String(a.start).localeCompare(String(b.start)));
   }
 
   // 3. Fallback: Synthesize from legacy single-slot fields ONLY if legitimate booking data exists.

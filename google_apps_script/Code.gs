@@ -1322,14 +1322,25 @@ function batchUpdateSheet_(data) {
     var idxFacing = headers.findIndex(function(h) { return cleanFull(h) === 'facing' || cleanFull(h) === 'trafficview'; });
     var idxLatLong = headers.findIndex(function(h) { return cleanFull(h).indexOf('lat') !== -1 && cleanFull(h).indexOf('long') !== -1; });
     var idxSite = findSiteColumn(headers);
+    var idxSl = headers.findIndex(function(h) { 
+      var c = cleanFull(h);
+      return c === 'sl' || c === 'sno' || c === 's.no.' || c === 's.no' || c === 'serialno'; 
+    });
 
     // Build fast lookup maps
     var siteIdMap = {};
     var siteNameMap = {};
+    var slMap = {};
     if (idxSiteId !== -1) {
       for (var r = 1; r < rows.length; r++) {
         var sid = String(rows[r][idxSiteId]).trim().toLowerCase();
         if (sid) siteIdMap[sid] = r; // Store the 0-based array index!
+      }
+    }
+    if (idxSl !== -1) {
+      for (var r = 1; r < rows.length; r++) {
+        var sVal = String(rows[r][idxSl]).trim().toLowerCase();
+        if (sVal) slMap[sVal] = r;
       }
     }
     if (idxSite !== -1) {
@@ -1356,6 +1367,12 @@ function batchUpdateSheet_(data) {
         if (siteIdMap[tgt] !== undefined) r = siteIdMap[tgt];
       }
 
+      // Try SL Match
+      if (r === -1 && up.sl && idxSl !== -1) {
+        var tgtSl = String(up.sl).trim().toLowerCase();
+        if (slMap[tgtSl] !== undefined) r = slMap[tgtSl];
+      }
+
       // Try exact Site Name + Facing Match
       if (r === -1 && up.siteName && idxSite !== -1) {
         var tgtName = cleanFull(up.siteName);
@@ -1376,13 +1393,33 @@ function batchUpdateSheet_(data) {
 
       if (r !== -1) {
         // Safe existing row update (r is already 0-based index of rows array)
-        if (idxImg !== -1) rows[r][idxImg] = up.url;
+        // 🛡️ CRITICAL: Never overwrite ImageURL with undefined/empty unless explicitly provided
+        if (idxImg !== -1 && up.url && String(up.url).trim() !== '') {
+          rows[r][idxImg] = up.url;
+        }
         if (idxStatus !== -1 && up.status) rows[r][idxStatus] = up.status;
         if (idxRowVersion !== -1) {
           var currV = rows[r][idxRowVersion];
           rows[r][idxRowVersion] = (parseInt(currV) || 0) + 1;
         }
         if (idxUpdatedAt !== -1) rows[r][idxUpdatedAt] = new Date().toISOString();
+
+        // 🌟 Apply arbitrary fields (BookingSchedule, BookedBy, BookingStart, BookingEnd, etc.)
+        if (up.fields && typeof up.fields === 'object') {
+          for (var fKey in up.fields) {
+            if (up.fields.hasOwnProperty(fKey)) {
+              var fVal = up.fields[fKey];
+              if (fVal !== undefined && fVal !== null) {
+                var cIdx = headers.findIndex(function(h) { return cleanFull(h) === cleanFull(fKey); });
+                if (cIdx !== -1) {
+                  // Do not wipe image if field is empty
+                  if (cIdx === idxImg && !String(fVal).trim()) continue;
+                  rows[r][cIdx] = fVal;
+                }
+              }
+            }
+          }
+        }
         countUpdated++;
       } else if (up.newSiteData) {
         // Brand new site
