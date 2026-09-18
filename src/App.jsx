@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState, lazy, Suspense } from 'react';
 import { BrowserRouter, HashRouter, Routes, Route, useLocation } from 'react-router-dom';
+import { HelmetProvider } from 'react-helmet-async';
 import ErrorBoundary from './components/ErrorBoundary';
 import { ToastProvider } from './components/ToastContext';
 import { DarkModeProvider } from './components/DarkModeContext';
