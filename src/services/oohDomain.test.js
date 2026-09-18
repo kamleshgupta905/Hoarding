@@ -1,4 +1,4 @@
-﻿import { describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { 
   calculateProRataRental, 
   getSiteOccupancyStatus, 
@@ -103,31 +103,25 @@ describe('OOH Advertising Domain Standards & Commercial Calculations', () => {
     });
   });
 
-  describe('GST Compliance (18% SAC Code 998361) & Proposal Columns', () => {
-    it('includes SAC Code 998361 and 18% GST in PROPOSAL_COLUMNS', () => {
-      const sacCol = PROPOSAL_COLUMNS.find(([name]) => name === 'SAC Code');
-      expect(sacCol).toBeDefined();
-      expect(sacCol[1]()).toBe('998361');
-
-      const gstCol = PROPOSAL_COLUMNS.find(([name]) => name === 'GST @ 18%');
-      expect(gstCol).toBeDefined();
-      const mockSite = { 'Rental Per Month': 100000, 'Total SQ.ft': 400 };
-      expect(gstCol[1](mockSite)).toBe(18000);
-
-      const totalCol = PROPOSAL_COLUMNS.find(([name]) => name === 'Total with GST');
-      expect(totalCol).toBeDefined();
-      expect(totalCol[1](mockSite)).toBe(118000);
+  describe('Proposal Export Standard Columns', () => {
+    it('includes standard core OOH columns in PROPOSAL_COLUMNS without GST', () => {
+      const colNames = PROPOSAL_COLUMNS.map(([name]) => name);
+      expect(colNames).toContain('City');
+      expect(colNames).toContain('Location');
+      expect(colNames).toContain('Total SQ.ft');
+      expect(colNames).toContain('Rental Per Month');
+      expect(colNames).toContain('Image Link');
+      expect(colNames).toContain('STATUS');
+      expect(colNames).not.toContain('SAC Code');
+      expect(colNames).not.toContain('GST @ 18%');
+      expect(colNames).not.toContain('Total with GST');
     });
 
-    it('estimates pass-through Flex Printing (₹12/sqft) and Mounting (₹3/sqft)', () => {
-      const flexCol = PROPOSAL_COLUMNS.find(([name]) => name === 'Flex Printing Est.');
-      expect(flexCol).toBeDefined();
-      const mockSite = { 'Total SQ.ft': 500 };
-      expect(flexCol[1](mockSite)).toBe(6000);
-
-      const mountCol = PROPOSAL_COLUMNS.find(([name]) => name === 'Mounting Est.');
-      expect(mountCol).toBeDefined();
-      expect(mountCol[1](mockSite)).toBe(1500);
+    it('formats rental per month cleanly in proposal', () => {
+      const rentalCol = PROPOSAL_COLUMNS.find(([name]) => name === 'Rental Per Month');
+      expect(rentalCol).toBeDefined();
+      const mockSite = { 'Rental Per Month': 50000 };
+      expect(rentalCol[1](mockSite)).toBe(50000);
     });
   });
 });

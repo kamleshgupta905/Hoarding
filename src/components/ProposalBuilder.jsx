@@ -153,8 +153,6 @@ const ProposalBuilder = ({ hoardings }) => {
                             const raw = s['Rental Per Month'] ?? s['Avg Monthly Cost (INR)'] ?? s.Price ?? 0;
                             return sum + (typeof raw === 'string' ? parseFloat(raw.replace(/[^0-9.]/g, '')) || 0 : Number(raw) || 0);
                         }, 0);
-                        const totalGst = Math.round(totalBaseRent * 0.18);
-                        const totalWithGst = totalBaseRent + totalGst;
                         const totalSqFt = matchedSites.reduce((sum, s) => {
                             const raw = s['Total SQ.ft'] || s['Total Sq. Ft'] || s['Area Sq Ft'] || 0;
                             return sum + (typeof raw === 'string' ? parseFloat(raw.replace(/[^0-9.]/g, '')) || 0 : Number(raw) || 0);
@@ -168,7 +166,7 @@ const ProposalBuilder = ({ hoardings }) => {
                                 return;
                             }
                             exportProposalExcel(matchedSites, `${clientName || 'Client'}_Media_Proposal.xls`);
-                            appToast.success(`Exported ${matchedSites.length} sites with 18% GST & SAC 998361!`);
+                            appToast.success(`Exported ${matchedSites.length} sites proposal excel!`);
                         };
 
                         const handleDownloadPptx = async () => {
@@ -209,17 +207,9 @@ const ProposalBuilder = ({ hoardings }) => {
                                         <span>Matched Sites:</span>
                                         <strong>{matchedSites.length} sites ({totalSqFt.toLocaleString('en-IN')} sq.ft)</strong>
                                     </div>
-                                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px', color: '#475569' }}>
-                                        <span>Base Monthly Rental:</span>
-                                        <strong style={{ color: '#0f172a' }}>₹{totalBaseRent.toLocaleString('en-IN')}</strong>
-                                    </div>
-                                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px', color: '#64748b' }}>
-                                        <span>GST @ 18% (SAC 998361):</span>
-                                        <strong>+ ₹{totalGst.toLocaleString('en-IN')}</strong>
-                                    </div>
                                     <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0', borderTop: '1px dashed #cbd5e1', borderBottom: '1px dashed #cbd5e1', marginBottom: '6px', color: '#0f172a', fontWeight: 700 }}>
-                                        <span>Total with GST:</span>
-                                        <span style={{ color: '#10b981' }}>₹{totalWithGst.toLocaleString('en-IN')}</span>
+                                        <span>Total Monthly Rental:</span>
+                                        <span style={{ color: '#10b981' }}>₹{totalBaseRent.toLocaleString('en-IN')}</span>
                                     </div>
                                     <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.78rem', color: '#64748b' }}>
                                         <span>Flex Printing (₹12/sqft):</span>
@@ -253,7 +243,7 @@ const ProposalBuilder = ({ hoardings }) => {
                                         onClick={handleExportExcel}
                                         style={{ width: '100%', padding: '11px', background: '#059669', color: '#fff', border: 'none', borderRadius: '6px', fontWeight: 600, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', cursor: 'pointer', fontSize: '0.875rem' }}
                                     >
-                                        <FileSpreadsheet size={17} /> Export Excel (GST & SAC 998361)
+                                        <FileSpreadsheet size={17} /> Export Excel Proposal
                                     </button>
                                 </div>
 

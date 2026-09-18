@@ -1443,28 +1443,7 @@ export const PROPOSAL_COLUMNS = [
   ['Qty', site => site.Qty || site.Units || 1],
   ['Total SQ.ft', site => site['Total SQ.ft'] || site['Total Sq. Ft'] || ''],
   ['Type', site => site.Type || site['Media Format (Front Lit / Back Lit / Non Lit)'] || 'NL'],
-  ['SAC Code', () => '998361'],
   ['Rental Per Month', site => site['Rental Per Month'] || site['Avg Monthly Cost (INR)'] || ''],
-  ['GST @ 18%', site => {
-    const raw = site['Rental Per Month'] ?? site['Avg Monthly Cost (INR)'] ?? site.Price ?? 0;
-    const rent = typeof raw === 'string' ? parseFloat(raw.replace(/[^0-9.]/g, '')) || 0 : Number(raw) || 0;
-    return rent > 0 ? Math.round(rent * 0.18) : 0;
-  }],
-  ['Total with GST', site => {
-    const raw = site['Rental Per Month'] ?? site['Avg Monthly Cost (INR)'] ?? site.Price ?? 0;
-    const rent = typeof raw === 'string' ? parseFloat(raw.replace(/[^0-9.]/g, '')) || 0 : Number(raw) || 0;
-    return rent > 0 ? Math.round(rent * 1.18) : 0;
-  }],
-  ['Flex Printing Est.', site => {
-    const rawSq = site['Total SQ.ft'] || site['Total Sq. Ft'] || site['Area Sq Ft'] || '';
-    const sqft = typeof rawSq === 'string' ? parseFloat(rawSq.replace(/[^0-9.]/g, '')) || 0 : Number(rawSq) || 0;
-    return sqft > 0 ? Math.round(sqft * 12) : 0;
-  }],
-  ['Mounting Est.', site => {
-    const rawSq = site['Total SQ.ft'] || site['Total Sq. Ft'] || site['Area Sq Ft'] || '';
-    const sqft = typeof rawSq === 'string' ? parseFloat(rawSq.replace(/[^0-9.]/g, '')) || 0 : Number(rawSq) || 0;
-    return sqft > 0 ? Math.round(sqft * 3) : 0;
-  }],
   ['Lat-Long', site => site['Lat-Long'] || [site.Latitude, site.Longitude].filter(Boolean).join(', ')],
   ['Latitude', site => site.Latitude || ''],
   ['Longitude', site => site.Longitude || ''],
@@ -1482,22 +1461,11 @@ export const exportProposalExcel = (sites, fileName = 'hoarding-proposal.xls', s
   const columns = PROPOSAL_COLUMNS.filter(([label]) => selectedSet.has(label));
 
   let totalRent = 0;
-  let totalGst = 0;
-  let totalWithGst = 0;
-  let totalPrinting = 0;
-  let totalMounting = 0;
 
   const rows = sites.map((site, index) => {
     const rawRent = site['Rental Per Month'] ?? site['Avg Monthly Cost (INR)'] ?? site.Price ?? 0;
     const rent = typeof rawRent === 'string' ? parseFloat(rawRent.replace(/[^0-9.]/g, '')) || 0 : Number(rawRent) || 0;
-    const rawSq = site['Total SQ.ft'] || site['Total Sq. Ft'] || site['Area Sq Ft'] || '';
-    const sqft = typeof rawSq === 'string' ? parseFloat(rawSq.replace(/[^0-9.]/g, '')) || 0 : Number(rawSq) || 0;
-
     totalRent += rent;
-    totalGst += Math.round(rent * 0.18);
-    totalWithGst += Math.round(rent * 1.18);
-    totalPrinting += Math.round(sqft * 12);
-    totalMounting += Math.round(sqft * 3);
 
     const cells = columns
       .map((column) => {
@@ -1514,10 +1482,6 @@ export const exportProposalExcel = (sites, fileName = 'hoarding-proposal.xls', s
   const summaryCells = columns.map(([label]) => {
     if (label === 'SL') return `<td><strong>Total (${sites.length})</strong></td>`;
     if (label === 'Rental Per Month') return `<td><strong>₹${totalRent.toLocaleString('en-IN')}</strong></td>`;
-    if (label === 'GST @ 18%') return `<td><strong>₹${totalGst.toLocaleString('en-IN')}</strong></td>`;
-    if (label === 'Total with GST') return `<td><strong>₹${totalWithGst.toLocaleString('en-IN')}</strong></td>`;
-    if (label === 'Flex Printing Est.') return `<td><strong>₹${totalPrinting.toLocaleString('en-IN')}</strong></td>`;
-    if (label === 'Mounting Est.') return `<td><strong>₹${totalMounting.toLocaleString('en-IN')}</strong></td>`;
     return `<td></td>`;
   }).join('');
 
