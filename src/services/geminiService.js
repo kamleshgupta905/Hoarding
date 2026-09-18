@@ -22,12 +22,11 @@ export const getGeminiApiKeys = () => {
 };
 
 export const GEMINI_MODELS = [
-  'gemini-3.6-flash',
-  'gemini-3-flash-preview',
+  'gemini-3.1-flash-lite',
   'gemini-3.5-flash',
   'gemini-flash-latest',
-  'gemini-3.1-flash-lite',
-  'gemini-2.5-flash',
+  'gemini-3.6-flash',
+  'gemini-3-flash-preview',
   'gemini-3.7-flash'
 ];
 
@@ -120,11 +119,7 @@ export const callGeminiVision = async (payload) => {
           const errorText = await response.text();
           console.warn(`Gemini [${model}] status ${response.status}:`, errorText);
           lastError = new Error(`Gemini API Error (${model}): ${response.status}`);
-          // If quota is exhausted on this key, switch immediately to next API key
-          if (response.status === 429) {
-            break;
-          }
-          continue; // Try next model on this key
+          continue; // Try next available model seamlessly
         }
 
         const data = await response.json();

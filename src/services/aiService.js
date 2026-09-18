@@ -282,14 +282,17 @@ export const extractGpsFromExif = async (fileOrBlob) => {
 export const extractCoordinatesFromText = (text) => {
     if (!text || typeof text !== 'string') return null;
 
-    // Normalize OCR text: fix common OCR digit confusions (O/o -> 0, l/I -> 1)
+    // Normalize OCR text: fix common OCR digit confusions (O/o -> 0, l/I -> 1) and comma decimals
     const clean = text
         .replace(/[\u2018\u2019\u201C\u201D]/g, "'")
         .replace(/(\d)[Oo](\d)/g, '$10$2')
-        .replace(/([LlIi])(?=\.\d{3})/g, '1');
+        .replace(/([LlIi])(?=\.\d{3})/g, '1')
+        // Fix comma used as decimal point between digits (e.g. 28,955047 -> 28.955047)
+        .replace(/(\d{1,3}),(\d{3,9})/g, '$1.$2');
 
-    // 1. Labeled Lat/Long (e.g., "Lat: 28.998107, Long: 77.705821" or "Latitude: 28.998107 N, Longitude: 77.705821 E")
-    const labeledRegex = /(?:lat|latitude|lati|lt)[:\s]*([+-]?\d{1,3}\.\d{3,9})\s*(?:°|[NSEWnsew])?[^\d\n\r]*(?:long|longitude|lng|longi|lg)[:\s]*([+-]?\d{1,3}\.\d{3,9})\s*(?:°|[NSEWnsew])?/i;
+    // 1. Labeled Lat/Long (e.g., "Lat: 28.998107, Long: 77.705821" or "Lat 28.955047 Long 77.734039")
+    // Highly tolerant to OCR misreadings of "lat" (lal, lot, 1at, tat, la) and "long" (lang, lona, 1ong, lon)
+    const labeledRegex = /(?:lat|latitude|lati|lt|lal|lot|1at|tat|la)[:\s]*([+-]?\d{1,3}\.\d{3,9})\s*(?:°|[NSEWnsew])?[^\d\n\r]*(?:long|longitude|lng|longi|lg|lang|lona|1ong|lon)[:\s]*([+-]?\d{1,3}\.\d{3,9})\s*(?:°|[NSEWnsew])?/i;
     const labeledMatch = clean.match(labeledRegex);
     if (labeledMatch) {
         const lat = parseFloat(labeledMatch[1]);
@@ -298,7 +301,7 @@ export const extractCoordinatesFromText = (text) => {
     }
 
     // 2. Reversed Labeled Long/Lat
-    const revRegex = /(?:long|longitude|lng|longi|lg)[:\s]*([+-]?\d{1,3}\.\d{3,9})\s*(?:°|[NSEWnsew])?[^\d\n\r]*(?:lat|latitude|lati|lt)[:\s]*([+-]?\d{1,3}\.\d{3,9})\s*(?:°|[NSEWnsew])?/i;
+    const revRegex = /(?:long|longitude|lng|longi|lg|lang|lona|1ong|lon)[:\s]*([+-]?\d{1,3}\.\d{3,9})\s*(?:°|[NSEWnsew])?[^\d\n\r]*(?:lat|latitude|lati|lt|lal|lot|1at|tat|la)[:\s]*([+-]?\d{1,3}\.\d{3,9})\s*(?:°|[NSEWnsew])?/i;
     const revMatch = clean.match(revRegex);
     if (revMatch) {
         const lng = parseFloat(revMatch[1]);
@@ -306,7 +309,17 @@ export const extractCoordinatesFromText = (text) => {
         if (isValidLatLng(lat, lng)) return { lat, lng, source: 'ocr_rev_labeled' };
     }
 
-    // 3. DMS Coordinates (e.g. 28°59'53.2"N 77°42'21.0"E or 28° 59' 53.2" N, 77° 42' 21.0" E)
+    // 3. Indian Geolocation Pair Matcher (Lat 8-38° N, Long 68-98° E)
+    // Matches GPS camera lines like "28.955047 77.734039" or "28.955047, 77.734039"
+    const indiaPairRegex = /(?:^|[^\d.])([1-3]\d\.\d{3,9})\s*(?:°|[NSEWnsew])?[,\s/|]+([6-9]\d\.\d{3,9})\s*(?:°|[NSEWnsew])?(?:[^\d.]|$)/;
+    const indiaMatch = clean.match(indiaPairRegex);
+    if (indiaMatch) {
+        const lat = parseFloat(indiaMatch[1]);
+        const lng = parseFloat(indiaMatch[2]);
+        if (isValidLatLng(lat, lng)) return { lat, lng, source: 'ocr_india_pair' };
+    }
+
+    // 4. DMS Coordinates (e.g. 28°59'53.2"N 77°42'21.0"E or 28° 59' 53.2" N, 77° 42' 21.0" E)
     const dmsRegex = /(\d{1,2})[°d\s]+(\d{1,2})['m\s]+(\d{1,2}(?:\.\d+)?)["s]?\s*([NSns])[,\s]+(\d{1,3})[°d\s]+(\d{1,2})['m\s]+(\d{1,2}(?:\.\d+)?)["s]?\s*([EWew])/i;
     const dmsMatch = clean.match(dmsRegex);
     if (dmsMatch) {
@@ -317,7 +330,7 @@ export const extractCoordinatesFromText = (text) => {
         if (isValidLatLng(lat, lng)) return { lat, lng, source: 'ocr_dms' };
     }
 
-    // 4. DDM Coordinates (e.g. 28° 59.071' N, 77° 42.385' E)
+    // 5. DDM Coordinates (e.g. 28° 59.071' N, 77° 42.385' E)
     const ddmRegex = /(\d{1,2})[°d\s]+(\d{1,2}(?:\.\d+)?)['\s]*([NSns])[,\s]+(\d{1,3})[°d\s]+(\d{1,2}(?:\.\d+)?)['\s]*([EWew])/i;
     const ddmMatch = clean.match(ddmRegex);
     if (ddmMatch) {
@@ -328,8 +341,8 @@ export const extractCoordinatesFromText = (text) => {
         if (isValidLatLng(lat, lng)) return { lat, lng, source: 'ocr_ddm' };
     }
 
-    // 5. Raw Coordinate Pair in Decimal (e.g. "28.998107, 77.705821" or "28.998107 N, 77.705821 E")
-    const pairRegex = /(?:\b|[^\d.])([0-3]?\d\.\d{4,9})\s*(?:°|[NSEWnsew])?[,\s/|]+([0-9]{2,3}\.\d{4,9})\s*(?:°|[NSEWnsew])?(?:\b|[^\d.])/g;
+    // 6. Generic Raw Coordinate Pair in Decimal
+    const pairRegex = /(?:\b|[^\d.])([0-3]?\d\.\d{3,9})\s*(?:°|[NSEWnsew])?[,\s/|]+([0-9]{2,3}\.\d{3,9})\s*(?:°|[NSEWnsew])?(?:\b|[^\d.])/g;
     let match;
     while ((match = pairRegex.exec(clean)) !== null) {
         const lat = parseFloat(match[1]);
@@ -597,40 +610,42 @@ const loadImage = (source) => new Promise((resolve, reject) => {
     image.src = source;
 });
 
-const cropStampRegion = async (source, region = 'bottom-right') => {
+const cropStampRegion = async (source, region = 'bottom-right', options = {}) => {
     const image = await loadImage(source);
     const canvas = document.createElement('canvas');
     const origW = image.naturalWidth || 800;
     const origH = image.naturalHeight || 600;
 
-    // Rescale to optimal OCR resolution (max width 1200px) for speed & sharpness
-    const maxDimension = 1200;
-    const scale = Math.min(1, maxDimension / Math.max(origW, origH));
+    // Rescale to optimal OCR resolution (max width 1600px) for speed & sharpness
+    const maxDimension = 1600;
+    const scale = Math.min(1.5, Math.max(1, maxDimension / Math.max(origW, origH)));
     const w = Math.round(origW * scale);
     const h = Math.round(origH * scale);
 
+    const isInvert = Boolean(options.invert);
+
     if (region === 'bottom-right') {
         // Specifically for GPS Camera - PinPoint, NoteCam, Timestamp cameras in bottom-right corner
-        const startX = Math.floor(w * 0.40);
-        const startY = Math.floor(h * 0.60);
+        const startX = Math.floor(w * 0.35);
+        const startY = Math.floor(h * 0.55);
         canvas.width = w - startX;
         canvas.height = h - startY;
         const ctx = canvas.getContext('2d', { willReadFrequently: true });
-        ctx.filter = 'contrast(1.4) grayscale(0.8)';
-        ctx.drawImage(image, Math.floor(origW * 0.40), Math.floor(origH * 0.60), origW - Math.floor(origW * 0.40), origH - Math.floor(origH * 0.60), 0, 0, canvas.width, canvas.height);
+        ctx.filter = isInvert ? 'invert(1) contrast(2.2) grayscale(1)' : 'contrast(1.6) grayscale(0.8)';
+        ctx.drawImage(image, Math.floor(origW * 0.35), Math.floor(origH * 0.55), origW - Math.floor(origW * 0.35), origH - Math.floor(origH * 0.55), 0, 0, canvas.width, canvas.height);
     } else if (region === 'bottom') {
-        const startY = Math.floor(h * 0.55);
+        const startY = Math.floor(h * 0.50);
         canvas.width = w;
         canvas.height = h - startY;
         const ctx = canvas.getContext('2d', { willReadFrequently: true });
-        ctx.filter = 'contrast(1.4) grayscale(0.8)';
-        ctx.drawImage(image, 0, Math.floor(origH * 0.55), origW, origH - Math.floor(origH * 0.55), 0, 0, canvas.width, canvas.height);
+        ctx.filter = isInvert ? 'invert(1) contrast(2.2) grayscale(1)' : 'contrast(1.6) grayscale(0.8)';
+        ctx.drawImage(image, 0, Math.floor(origH * 0.50), origW, origH - Math.floor(origH * 0.50), 0, 0, canvas.width, canvas.height);
     } else if (region === 'top') {
         const endY = Math.floor(h * 0.40);
         canvas.width = w;
         canvas.height = endY;
         const ctx = canvas.getContext('2d', { willReadFrequently: true });
-        ctx.filter = 'contrast(1.4) grayscale(0.8)';
+        ctx.filter = isInvert ? 'invert(1) contrast(2.2) grayscale(1)' : 'contrast(1.6) grayscale(0.8)';
         ctx.drawImage(image, 0, 0, origW, Math.floor(origH * 0.40), 0, 0, canvas.width, canvas.height);
     } else {
         // Full Image
@@ -658,20 +673,31 @@ const scoreLocationByText = (detectedText, location) => {
     if (!normalizedSite) return 0;
     if (normalizedDetected.includes(normalizedSite) || normalizedSite.includes(normalizedDetected)) return 100;
 
-    // Check for distinctive 2-word key phrases (e.g. "alexander club", "company garden", "begum bridge")
+    let score = 0;
+
+    // Check for distinctive 2-word key phrases (e.g. "shastri nagar", "central market", "begum bridge")
     const siteWords = normalizedSite.split(/\s+/).filter(w => w.length >= 3);
     for (let i = 0; i < siteWords.length - 1; i++) {
         const bigram = `${siteWords[i]} ${siteWords[i+1]}`;
         if (bigram.length >= 7 && normalizedDetected.includes(bigram)) {
-            return 95;
+            score = Math.max(score, 75);
+        }
+    }
+
+    // Check for Block letter matching (e.g., "block k" <-> "k block", "block a" <-> "a block")
+    const blockMatch = normalizedSite.match(/\b([a-z0-9])\s*block\b|\bblock\s*([a-z0-9])\b/);
+    if (blockMatch) {
+        const letter = blockMatch[1] || blockMatch[2];
+        if (letter && (normalizedDetected.includes(`block ${letter}`) || normalizedDetected.includes(`${letter} block`))) {
+            score += 25;
         }
     }
 
     const siteTokens = meaningfulTokens(siteName);
-    if (!siteTokens.length) return 0;
-
-    const hits = siteTokens.filter((token) => normalizedDetected.includes(token)).length;
-    let score = Math.round((hits / siteTokens.length) * 75);
+    if (siteTokens.length) {
+        const hits = siteTokens.filter((token) => normalizedDetected.includes(token)).length;
+        score += Math.round((hits / siteTokens.length) * 50);
+    }
 
     const locality = location.Locality || location.Area || '';
     if (locality && normalizedDetected.includes(normalizeText(locality))) score += 15;
@@ -728,25 +754,33 @@ export const analyzeHoardingImage = async (base64Image, locationList, rawFile = 
     try {
         const ocrPromise = (async () => {
             const worker = await getOcrWorker();
-            // 1. Try bottom-right corner first (standard for GPS Camera - PinPoint, NoteCam)
-            const brCrop = await cropStampRegion(base64Image, 'bottom-right');
-            const brResult = await worker.recognize(brCrop);
+            // 1. Try bottom-right corner with inverted contrast (dark GPS badges like GPS Map Camera, PinPoint, NoteCam)
+            const brInverted = await cropStampRegion(base64Image, 'bottom-right', { invert: true });
+            const brResult = await worker.recognize(brInverted);
             let text = String(brResult?.data?.text || '').replace(/\s+/g, ' ').trim();
-
             let ocrCoord = extractCoordinatesFromText(text);
 
-            // 2. If bottom-right didn't yield valid GPS, try entire bottom banner
+            // 2. If inverted didn't yield valid GPS, try standard bottom-right
             if (!ocrCoord) {
-                const bottomCrop = await cropStampRegion(base64Image, 'bottom');
+                const brCrop = await cropStampRegion(base64Image, 'bottom-right', { invert: false });
+                const res = await worker.recognize(brCrop);
+                const t2 = String(res?.data?.text || '').replace(/\s+/g, ' ').trim();
+                text += ' ' + t2;
+                ocrCoord = extractCoordinatesFromText(text);
+            }
+
+            // 3. If bottom-right didn't yield valid GPS, try entire bottom banner (inverted)
+            if (!ocrCoord) {
+                const bottomCrop = await cropStampRegion(base64Image, 'bottom', { invert: true });
                 const bottomResult = await worker.recognize(bottomCrop);
                 const bottomText = String(bottomResult?.data?.text || '').replace(/\s+/g, ' ').trim();
                 text += ' ' + bottomText;
                 ocrCoord = extractCoordinatesFromText(text);
             }
 
-            // 3. If still not found, try top banner
+            // 4. If still not found, try top banner (inverted)
             if (!ocrCoord) {
-                const topCrop = await cropStampRegion(base64Image, 'top');
+                const topCrop = await cropStampRegion(base64Image, 'top', { invert: true });
                 const topResult = await worker.recognize(topCrop);
                 const topText = String(topResult?.data?.text || '').replace(/\s+/g, ' ').trim();
                 text += ' ' + topText;
@@ -756,7 +790,8 @@ export const analyzeHoardingImage = async (base64Image, locationList, rawFile = 
             return { text, ocrCoord };
         })();
 
-        const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('OCR timeout')), 2500));
+        // Robust 8.0s timeout ensures Tesseract worker finishes even under multi-image load
+        const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('OCR timeout')), 8000));
         const { text, ocrCoord } = await Promise.race([ocrPromise, timeoutPromise]);
         detectedOcrText = text;
 
@@ -907,7 +942,7 @@ export const analyzeHoardingImage = async (base64Image, locationList, rawFile = 
     }
 
     // ─── STAGE 4: Text Keyword & Locality Matching Fallback ───────────────────
-    if (detectedOcrText && detectedOcrText.length >= 5) {
+    if (detectedOcrText && detectedOcrText.length >= 4) {
         const candidates = locationList
             .map((location, index) => ({
                 location,
@@ -915,25 +950,45 @@ export const analyzeHoardingImage = async (base64Image, locationList, rawFile = 
                 siteName: location["Locality Site Location"] || location["Location "] || location.Location || '',
                 score: scoreLocationByText(detectedOcrText, location)
             }))
+            .filter(c => c.score >= 40)
             .sort((a, b) => b.score - a.score);
 
         const best = candidates[0];
-        const second = candidates[1];
-        const decisive = best?.score >= 60 && (!second || best.score - second.score >= 15);
-
-        if (decisive) {
+        if (best && best.score >= 45) {
             const normalized = normalizeText(detectedOcrText);
             const status = normalized.includes('occupied') || normalized.includes('booked') ? 'Occupied' : 'Available';
+            const bestSL = best.location?.SL || best.location?.['S. No.'] || best.location?.['SL NO'] || (best.index + 1);
+
+            // Cluster top candidate sites with matching road/locality for 1-click twin switching
+            const clusterCandidates = candidates
+                .slice(0, 6)
+                .filter(c => c.score >= Math.max(45, best.score - 20))
+                .map(c => ({
+                    index: c.index,
+                    sl: c.location?.SL || c.location?.['S. No.'] || c.location?.['SL NO'] || (c.index + 1),
+                    siteId: c.location?._SiteID || c.location?.UniqueID || c.location?.['Unique ID'] || c.location?.ID || `site_${c.index}`,
+                    siteName: c.siteName,
+                    facing: c.location?.Facing || c.location?.['Traffic View'] || c.location?.facing || 'N/A',
+                    distanceM: 'Locality Match',
+                    trafficFrom: c.location?.['Traffic From'] || '',
+                    trafficTo: c.location?.['Traffic To'] || '',
+                    imageUrl: c.location?.ImageURL || '',
+                    site: c.location
+                }));
+
             return {
                 matchedIndex: best.index,
+                sl: bestSL,
+                site: best.location,
                 matchedLocation: best.siteName,
                 matchedSiteId: best.location._SiteID || best.location.UniqueID || best.location['Unique ID'] || '',
                 facing: best.location.Facing || best.location['Traffic View'] || '',
-                twinCandidates: null,
+                twinCandidates: clusterCandidates.length > 1 ? clusterCandidates : null,
                 status: status,
                 confidence: best.score,
-                reasoning: `🔤 OCR Address Text Match (${best.score}% confidence)`,
-                analysis: `Matched tokens in: "${detectedOcrText.substring(0, 80)}..."`
+                reasoning: `🔤 Watermark Locality Match: SL #${bestSL} · ${best.siteName} (${best.score}% match)`,
+                analysis: `Matched tokens in: "${detectedOcrText.substring(0, 80)}..."`,
+                matchFailed: false
             };
         }
     }
