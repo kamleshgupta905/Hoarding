@@ -4,8 +4,6 @@
  */
 
 const GROQ_ENDPOINT = 'https://api.groq.com/openai/v1/chat/completions';
-const GK_PARTS = ['gsk_', '0WOqI42zpoYm1', 'QzGHGDFWGdyb3', 'FY7mIZHC8pHa', 'AY9WpVvyVfUpi0'];
-const DEFAULT_KEY = GK_PARTS.join('');
 
 const GROQ_MODELS = [
   'llama-3.1-8b-instant',      // ⚡ Ultra-Fast (~800+ tokens/sec, response <100ms)
@@ -16,7 +14,7 @@ export const getGroqApiKey = () => {
   return (
     (typeof window !== 'undefined' && window.localStorage?.getItem('adh_groq_api_key')) ||
     import.meta.env?.VITE_GROQ_API_KEY ||
-    DEFAULT_KEY
+    null
   );
 };
 
@@ -30,7 +28,7 @@ export const setGroqApiKey = (key) => {
  * ⚡ ULTRA-FAST COMBINED EXTRACTION & INVENTORY MATCHING (Single Roundtrip in ~100ms)
  */
 export const parseAndMatchSlideWithGroq = async (slideText, candidates = [], apiKey = getGroqApiKey()) => {
-  const key = apiKey || DEFAULT_KEY;
+  const key = apiKey;
   if (!key || !slideText || slideText.trim().length === 0) return null;
 
   const candidateSummary = (candidates || []).slice(0, 10).map((c, i) => ({
@@ -119,7 +117,7 @@ Return a single JSON object with EXACTLY this structure:
             height: parsed.height || null
           },
           matchedSite,
-          confidence: parsed.confidence || 'HIGH',
+          confidence: parsed.confidence || 'LOW',
           reason: parsed.reason || 'Matched by Groq AI'
         };
       }

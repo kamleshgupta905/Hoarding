@@ -69,7 +69,10 @@ const mapIncomingRecord = (row, targetHeaders, mapping) => Object.fromEntries(
   })
 );
 
-const hasRequiredValue = (record, header) => !EMPTY_VALUES.has(record[header]);
+const hasRequiredValue = (record, header) => {
+  const val = record[header];
+  return val !== null && val !== undefined && String(val).trim() !== '';
+};
 
 export const analyzeImport = ({
   grid,
@@ -81,7 +84,10 @@ export const analyzeImport = ({
   const detectedHeaderRow = headerRowIndex ?? detectHeaderRow(grid, targetHeaders);
   const incomingHeaders = (grid[detectedHeaderRow] || []).map((value) => String(value ?? '').trim());
   const mapping = buildHeaderMapping(incomingHeaders, targetHeaders, mappingOverrides);
-  const incomingRows = grid.slice(detectedHeaderRow + 1).filter((row) => row.some((value) => String(value ?? '').trim()));
+  const rawSlice = grid.slice(detectedHeaderRow + 1);
+  const incomingRows = rawSlice
+    .map((row, idx) => ({ row, originalOffset: idx }))
+    .filter(({ row }) => row.some((value) => String(value ?? '').trim()));
   const existingById = new Map(existingRecords.filter((row) => row._SiteID).map((row) => [String(row._SiteID), row]));
   const existingByComposite = new Map();
   existingRecords.forEach((record) => {
@@ -98,8 +104,8 @@ export const analyzeImport = ({
   const invalidCoordinates = [];
   const missingRequired = [];
 
-  incomingRows.forEach((rawRow, offset) => {
-    const sourceRow = detectedHeaderRow + offset + 2;
+  incomingRows.forEach(({ row: rawRow, originalOffset }) => {
+    const sourceRow = detectedHeaderRow + originalOffset + 2;
     const incoming = mapIncomingRecord(rawRow, targetHeaders, mapping);
     const missing = REQUIRED_IMPORT_HEADERS.filter((header) => !hasRequiredValue(incoming, header));
     if (missing.length) missingRequired.push({ row: sourceRow, site: incoming['Location '], fields: missing });

@@ -4,6 +4,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
 import { Send, CheckCircle } from 'lucide-react';
 import { appToast } from './ToastContext';
+import { postDirect } from '../services/secureApi';
 import './EnquiryForm.css';
 
 const schema = z.object({
@@ -27,17 +28,21 @@ const EnquiryForm = ({ siteName, city }) => {
             ...data,
             siteName,
             city,
-            timestamp: new Date().toLocaleString(),
+            timestamp: new Date().toISOString(),
+            action: 'submitEnquiry'
         };
 
         try {
-            // Simulated submission
-            console.log('Simplified Enquiry Data:', formData);
-            await new Promise(resolve => setTimeout(resolve, 1500));
-            setSubmitted(true);
+            const result = await postDirect(formData, 15000);
+            if (result && result.success) {
+                setSubmitted(true);
+                appToast.success('Enquiry sent successfully!');
+            } else {
+                throw new Error(result?.error || 'Could not send enquiry. Please try again.');
+            }
         } catch (error) {
-            console.error('Submission error:', error);
-            appToast.error('Something went wrong. Please try again.');
+            console.error('Enquiry submission error:', error);
+            appToast.error(error.message || 'Something went wrong. Please try again.');
         } finally {
             setLoading(false);
         }

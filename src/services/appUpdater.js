@@ -31,7 +31,17 @@ export const checkForAppUpdates = async () => {
     const localTimestamp = Number(APP_BUILD_TIMESTAMP) || 0;
 
     const storedVersion = localStorage.getItem(INSTALLED_VERSION_KEY) || APP_VERSION;
-    const isNewerVersion = data.version && data.version !== storedVersion;
+    // Proper semantic version comparison: only trigger update if remote is strictly newer
+    const compareSemver = (a, b) => {
+      const pa = (a || '0.0.0').split('.').map(Number);
+      const pb = (b || '0.0.0').split('.').map(Number);
+      for (let i = 0; i < 3; i++) {
+        if ((pa[i] || 0) > (pb[i] || 0)) return 1;
+        if ((pa[i] || 0) < (pb[i] || 0)) return -1;
+      }
+      return 0;
+    };
+    const isNewerVersion = data.version && compareSemver(data.version, storedVersion) > 0;
     const isNewerBuild = remoteTimestamp > localTimestamp + 1000;
 
     const hasUpdate = Boolean(isNewerVersion || isNewerBuild);
@@ -71,7 +81,7 @@ export const performLiveAppUpdate = async (remoteInfo, onProgress) => {
       } catch {}
     }
 
-    onProgress?.({ percent: 75, status: 'Verifying package integrity...' });
+    onProgress?.({ percent: 75, status: 'Clearing cached assets...' });
     await new Promise(r => setTimeout(r, 500));
 
     if (remoteInfo?.version) {

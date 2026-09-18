@@ -76,38 +76,34 @@ export const loginAdmin = async (adminId, password) => {
   // Fire background auth to Google Apps Script
   postOpaque({ action: 'login', adminId: cleanId, password: cleanPass, requestId }).catch(() => {});
 
-  // Try quick check with 1.2s timeout
-  try {
-    const status = await getJson({ action: 'loginStatus', requestId }, 1200);
-    if (status && status.status === 'AUTHENTICATED') {
-      const token = status.sessionToken || ('adm_' + Date.now());
-      sessionStorage.setItem(SESSION_KEY, token);
-      sessionStorage.setItem(ADMIN_ID_KEY, status.adminId || cleanId);
-      localStorage.setItem(SESSION_KEY, token);
-      localStorage.setItem(ADMIN_ID_KEY, status.adminId || cleanId);
-      localStorage.setItem('isAdminAuthenticated', 'true');
-      return status;
+  // Poll server for definitive authentication result (up to 3 attempts over ~8s)
+  let lastError = null;
+  for (let poll = 0; poll < 3; poll++) {
+    await sleep(poll === 0 ? 1500 : 2500);
+    try {
+      const status = await getJson({ action: 'loginStatus', requestId }, 5000);
+      if (status && status.status === 'AUTHENTICATED') {
+        const token = status.sessionToken || ('adm_' + Date.now());
+        sessionStorage.setItem(SESSION_KEY, token);
+        sessionStorage.setItem(ADMIN_ID_KEY, status.adminId || cleanId);
+        localStorage.setItem(SESSION_KEY, token);
+        localStorage.setItem(ADMIN_ID_KEY, status.adminId || cleanId);
+        localStorage.setItem('isAdminAuthenticated', 'true');
+        return status;
+      }
+      if (status && status.status === 'FAILED') {
+        throw new Error(status.error || 'Invalid Admin ID or Password.');
+      }
+    } catch (err) {
+      if (err.message && (err.message.toLowerCase().includes('failed') || err.message.toLowerCase().includes('invalid'))) {
+        throw err;
+      }
+      lastError = err;
     }
-    if (status && status.status === 'FAILED') {
-      throw new Error(status.error || 'Login failed.');
-    }
-  } catch (err) {
-    if (err.message && err.message.toLowerCase().includes('failed')) throw err;
   }
 
-  // Instant fast-login fallback
-  const sessionToken = 'adm_session_' + Date.now() + '_' + Math.random().toString(36).substring(2, 8);
-  sessionStorage.setItem(SESSION_KEY, sessionToken);
-  sessionStorage.setItem(ADMIN_ID_KEY, cleanId);
-  localStorage.setItem(SESSION_KEY, sessionToken);
-  localStorage.setItem(ADMIN_ID_KEY, cleanId);
-  localStorage.setItem('isAdminAuthenticated', 'true');
-
-  return {
-    status: 'AUTHENTICATED',
-    sessionToken,
-    adminId: cleanId
-  };
+  // Server did not confirm — do NOT create a local session
+  throw new Error('Login server did not respond in time. Please check your network and try again.');
 };
 
 export const refreshAdminSession = async () => {
@@ -121,7 +117,8 @@ export const refreshAdminSession = async () => {
     }
     return true;
   } catch (err) {
-    return true;
+    // Network error = session validity unverified = treat as expired
+    return false;
   }
 };
 
@@ -173,23 +170,30 @@ export const submitAdminOperation = async ({ type, payload = {}, siteId = '', ba
 
   const asyncFastActions = ['deleteHoarding', 'deleteHistoryItem', 'deleteAllHoardings', 'deleteCityHoardings', 'dumpImage'];
   if (options.async || asyncFastActions.includes(type) || (payload && asyncFastActions.includes(payload.action))) {
-    postOpaque(combinedPayload).catch(err => console.warn('Operation post warning:', err));
-    return { status: 'QUEUED', operationId };
+    // Fire-and-forget with warning — caller should not treat QUEUED as COMPLETED
+    postOpaque(combinedPayload).catch(err => console.warn('Delete operation post warning:', err));
+    console.warn(`⚠️ [Delete] Operation ${operationId} queued but unconfirmed. Track via operationId.`);
+    return { status: 'QUEUED', operationId, confirmed: false };
   }
 
-  // 🚀 Fast-Path: Try postDirect first so Google Apps Script immediately returns imageUrl
+  // 🚀 Fast-Path: Try postDirect first so Google Apps Script immediately returns result
+  let directAttempted = false;
   try {
+    directAttempted = true;
     const directResult = await postDirect(combinedPayload, 35000);
     if (directResult && (directResult.success || directResult.status === 'COMPLETED' || directResult.imageUrl)) {
       console.log('⚡ [Fast-Sync] Direct Apps Script response received:', directResult);
       return { ...directResult, operationId, status: 'COMPLETED' };
     }
   } catch (directErr) {
-    console.log('ℹ️ Fast-path direct post falling back to background queue:', directErr.message || directErr);
+    console.log('ℹ️ Fast-path direct post falling back to status polling:', directErr.message || directErr);
   }
 
-  const postPromise = postOpaque(combinedPayload).catch(err => console.warn('Operation post warning:', err));
-  await postPromise;
+  // Only send opaque POST if direct path was NOT attempted (avoids duplicate writes)
+  if (!directAttempted) {
+    const postPromise = postOpaque(combinedPayload).catch(err => console.warn('Operation post warning:', err));
+    await postPromise;
+  }
 
   // Image uploads need more time — base64 decode + Drive save + Sheet update is slow
   const hasFileData = !!(payload.fileData || combinedPayload.fileData);
@@ -213,7 +217,8 @@ export const submitAdminOperation = async ({ type, payload = {}, siteId = '', ba
     await sleep(Math.min(3000, baseDelay + attempt * 200));
   }
 
-  return { status: 'QUEUED', operationId };
+  console.warn(`⚠️ Operation ${operationId} status unknown after ${attempts} polls.`);
+  return { status: 'QUEUED', operationId, confirmed: false };
 };
 
 export const getStaffTokenFromLocation = () => {
@@ -233,7 +238,7 @@ export const postStaffPhoto = async (payload) => {
     for (let attempt = 0; attempt < 12; attempt += 1) {
       try {
         const status = await getJson({ action: 'staffUploadStatus', staffToken, clientUploadId }, 10000);
-        if (status.status === 'COMPLETED') return status.result;
+        if (status.status === 'COMPLETED') return { ...status.result, success: true, clientUploadId };
         if (status.status === 'FAILED') throw new Error(status.error || 'Photo upload failed.');
       } catch (err) {
         if (err.message && err.message.includes('failed')) throw err;
@@ -241,7 +246,11 @@ export const postStaffPhoto = async (payload) => {
       await sleep(Math.min(2000, 600 + attempt * 120));
     }
   } catch (err) {
+    if (err.message && err.message.includes('failed')) {
+      return { success: false, error: err.message, clientUploadId };
+    }
     console.warn('Staff photo status polling notice:', err);
   }
-  return { success: true, clientUploadId };
+  // Upload confirmation timed out — do NOT claim success
+  return { success: false, pending: true, clientUploadId, error: 'Upload confirmation timed out. Photo queued for retry.' };
 };

@@ -114,8 +114,8 @@ const roundedCoordinate = (value) => {
 
 export const buildCompositeIdentity = (row) => [
   normalizeText(row.City),
-  normalizeText(row['Location ']),
-  normalizeText(row["Area"]),
+  normalizeText(row['Location '] ?? row.Location),
+  normalizeText(row.Locality ?? row["Area"] ?? row.Zone),
   normalizeText(row['Traffic From']),
   normalizeText(row['Traffic To']),
   normalizeText(row.Width),
