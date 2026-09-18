@@ -737,6 +737,36 @@ export default function BulkBookingWizard({
               </table>
             </div>
 
+            {/* Live Progress Bar during Commit */}
+            {isCommitting && (
+              <div style={{
+                margin: '14px 0 8px 0',
+                padding: '12px 16px',
+                background: '#f8fafc',
+                borderRadius: '10px',
+                border: '1px solid #e2e8f0',
+                boxShadow: '0 2px 4px rgba(0,0,0,0.03)'
+              }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                  <span style={{ fontSize: '0.84rem', fontWeight: 600, color: '#334155' }}>
+                    {commitProgress.message || `Booking ${eligibleCount} sites...`}
+                  </span>
+                  <span style={{ fontSize: '0.84rem', fontWeight: 700, color: '#4f46e5' }}>
+                    {commitProgress.percent || 15}%
+                  </span>
+                </div>
+                <div style={{ width: '100%', height: '8px', background: '#e2e8f0', borderRadius: '4px', overflow: 'hidden' }}>
+                  <div style={{
+                    width: `${commitProgress.percent || 15}%`,
+                    height: '100%',
+                    background: 'linear-gradient(90deg, #6366f1 0%, #10b981 100%)',
+                    borderRadius: '4px',
+                    transition: 'width 0.3s ease'
+                  }} />
+                </div>
+              </div>
+            )}
+
             {/* Commit Action Footer */}
             <div className="bulk-wizard-actions">
               <button type="button" className="btn-wizard-cancel" onClick={handleReset} disabled={isCommitting}>
