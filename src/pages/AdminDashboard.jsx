@@ -18,6 +18,7 @@ import { generateMasterMediaPlanPptx } from '../services/presentationService';
 import ImageLightbox from '../components/ImageLightbox';
 import RenewalAlertRadar from '../components/RenewalAlertRadar';
 import BulkBookingWizard from '../components/BulkBookingWizard';
+import { appConfirm, appToast } from '../components/ToastContext';
 import { clearAdminSession, getAdminSession, getStaffUploadLink, postDirect } from '../services/secureApi';
 import { isInternalHeader } from '../core/hoardingSchema';
 import { blobToDataUrl, prepareImageOrientation } from '../core/imageOrientation';
@@ -1061,8 +1062,18 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
 
         if (!itemToRemove) return;
 
-        const confirmMsg = "Are you sure you want to REJECT this upload?\n\n• The photo will be permanently deleted from History and Daily Updates.\n• If it replaced the site's Main Master Photo, the original master photo will be restored immediately.";
-        if (!window.confirm(confirmMsg)) {
+        const confirmed = await appConfirm({
+            title: "Reject This Daily Upload?",
+            message: "Are you sure you want to REJECT this upload?",
+            bullets: [
+                "The photo will be permanently deleted from History and Daily Updates.",
+                "If it replaced the site's Main Master Photo, the original master photo will be restored immediately."
+            ],
+            confirmText: "Reject & Rollback",
+            cancelText: "Cancel",
+            type: "danger"
+        });
+        if (!confirmed) {
             return;
         }
 
@@ -1575,7 +1586,7 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                 await sheetEditorRef.current.requestFullscreen();
             }
         } catch {
-            alert('Fullscreen could not be opened in this browser.');
+            showToast('Fullscreen could not be opened in this browser.', 'warning');
         }
     };
 
@@ -2548,11 +2559,22 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
     const dumpUnmatchedImages = async () => {
         const unmatched = dailyImages.filter(img => img.matchFailed && !img.uploaded && !img.uploading);
         if (unmatched.length === 0) {
-            alert("No unmatched images to dump.");
+            showToast("No unmatched images to dump.", "info");
             return;
         }
 
-        if (!confirm(`Are you sure you want to dump ${unmatched.length} unmatched images? They will be saved to the Dumping log and removed from here.`)) return;
+        const confirmed = await appConfirm({
+            title: "Dump Unmatched Images?",
+            message: `Are you sure you want to dump ${unmatched.length} unmatched images?`,
+            bullets: [
+                "They will be saved to the Dumping log for audit records.",
+                "They will be removed from the active Daily Updates view."
+            ],
+            confirmText: "Dump Images",
+            cancelText: "Cancel",
+            type: "warning"
+        });
+        if (!confirmed) return;
 
         // Process each unmatched image one by one using item.id
         for (const imgData of unmatched) {
@@ -2590,7 +2612,7 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
             ? dailyImages.find(i => i.id === itemIdOrIndex)
             : dailyImages[itemIdOrIndex];
         if (!img) return;
-        if (!img.matchedLocation) return alert("Please select a location first.");
+        if (!img.matchedLocation) return showToast("Please select a location first.", "warning");
 
         // Direct call to the unified triggerAutoUpload engine
         await triggerAutoUpload(img.id || itemIdOrIndex, img);
@@ -2601,7 +2623,7 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
             ? dailyImages.find(i => i.id === itemIdOrIndex)
             : dailyImages[itemIdOrIndex];
         if (!img) return;
-        if (!img.matchedLocation) return alert("Please select a location first.");
+        if (!img.matchedLocation) return showToast("Please select a location first.", "warning");
 
         const targetSL = img.sl ? String(img.sl).trim() : '';
         const lastSyncedSL = img.lastSyncedSl ? String(img.lastSyncedSl).trim() : '';
@@ -3322,7 +3344,7 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
 
         const isDeleteAll = bulkDeleteTarget.type === 'all';
         if (isDeleteAll && bulkDeleteConfirmText.trim().toUpperCase() !== 'DELETE ALL') {
-            alert('Type DELETE ALL to confirm deleting every site.');
+            showToast('Type DELETE ALL to confirm deleting every site.', 'error');
             return;
         }
 
@@ -3340,12 +3362,12 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                 detail: { action: bulkDeleteTarget.type }
             }));
 
-            alert(isDeleteAll ? 'All site data deleted.' : `${bulkDeleteTarget.city} city data deleted.`);
+            showToast(isDeleteAll ? 'All site data deleted.' : `${bulkDeleteTarget.city} city data deleted.`, 'info');
             setBulkDeleteTarget(null);
             setBulkDeleteConfirmText('');
             setInventoryCityFilter('All');
         } catch (err) {
-            alert('Error deleting data: ' + err.message);
+            showToast('Error deleting data: ' + err.message, 'error');
         } finally {
             setIsLoading(false);
         }
@@ -3659,7 +3681,7 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
             });
         } catch (err) {
             console.error('PPT Generation Failed:', err);
-            alert(`PPT Generation Failed: ${err.message}`);
+            showToast(`PPT Generation Failed: ${err.message}`, 'error');
         } finally {
             setIsPptGenerating(false);
             setPptProgressText('');
@@ -3720,7 +3742,7 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
             });
         } catch (err) {
             console.error('Proposal PPT Generation Failed:', err);
-            alert(`PPT Generation Failed: ${err.message}`);
+            showToast(`PPT Generation Failed: ${err.message}`, 'error');
         } finally {
             setIsPptGenerating(false);
             setPptProgressText('');
@@ -4041,7 +4063,7 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
     const handleStaffReview = (upload, reviewAction) => {
         const siteName = reviewSelections[upload.UploadId] || upload.SuggestedSite || '';
         if ((reviewAction === 'approve' || reviewAction === 'historyOnly') && !siteName) {
-            alert('Please select a site first.');
+            showToast('Please select a site first.', 'warning');
             return;
         }
         const actionLabel = reviewAction === 'approve' ? 'Approve and update' : reviewAction === 'historyOnly' ? 'Save to history' : 'Reject';
@@ -4140,7 +4162,7 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
             setSelectedSheetCell({ row: 0, col: 0 });
             setSheetSelection({ type: 'cell', row: 0, col: 0 });
         } catch (error) {
-            alert(`Sheet load failed: ${error.message}`);
+            showToast(`Sheet load failed: ${error.message}`, 'error');
         } finally {
             setSheetLoading(false);
         }
@@ -4230,7 +4252,7 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
 
     const deleteSheetColumn = (colIndex) => {
         if (sheetHeaders.length <= 1) {
-            alert('At least one column is required.');
+            showToast('At least one column is required.', 'warning');
             return;
         }
         rememberSheetState();
@@ -4485,9 +4507,9 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                 setHoardings(freshData);
                 localStorage.setItem('hoardings_cache', JSON.stringify(freshData));
             }
-            alert('Sheet saved. Website data refreshed.');
+            showToast('Sheet saved. Website data refreshed.', 'success');
         } catch (error) {
-            alert(`Sheet save failed: ${error.message}`);
+            showToast(`Sheet save failed: ${error.message}`, 'error');
         } finally {
             setSheetSaving(false);
         }
@@ -6915,11 +6937,23 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                     <button
                                         type="button"
                                         className="ai-process-btn dump-btn"
-                                        onClick={() => {
-                                            if (window.confirm("Clear all items from Daily Upload?")) {
+                                        onClick={async () => {
+                                            const confirmed = await appConfirm({
+                                                title: "Clear Daily Uploads?",
+                                                message: "Are you sure you want to clear all items from Daily Upload?",
+                                                bullets: [
+                                                    "This will clear the current list from your view.",
+                                                    "Any unsynced uploads will be discarded."
+                                                ],
+                                                confirmText: "Clear All",
+                                                cancelText: "Cancel",
+                                                type: "warning"
+                                            });
+                                            if (confirmed) {
                                                 handleClearAllDailyImages();
                                                 setExpandedDailyCards(new Set());
                                                 localStorage.removeItem('adh_daily_proof_images');
+                                                showToast("Daily upload list cleared", "info");
                                             }
                                         }}
                                         title="Clear all cards from Daily Upload"

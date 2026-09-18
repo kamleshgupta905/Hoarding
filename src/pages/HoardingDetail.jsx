@@ -4,6 +4,7 @@ import { ChevronLeft, MapPin, Maximize2, Layers, Zap, Info, Calendar, Phone, Sha
 import { Helmet } from 'react-helmet-async';
 import { getImageUrl, compressImage, syncToGoogleSheet, downloadHoardingImage, recordSiteBooking, removeSiteBooking, saveSiteBookingSlots, getLocalHistory, removeSiteHistory, parseHistoryString, getDirectDriveLink, getDeletedHistoryUrls, addDeletedHistoryUrl, isHistoryUrlDeleted } from '../services/dataService';
 import ImageLightbox from '../components/ImageLightbox';
+import { appConfirm, appToast } from '../components/ToastContext';
 import './HoardingDetail.css';
 
 const HoardingDetail = ({ hoardings, setHoardings }) => {
@@ -209,7 +210,7 @@ const HoardingDetail = ({ hoardings, setHoardings }) => {
             if (typeof window !== 'undefined') {
                 window.dispatchEvent(new CustomEvent('hoardings:sync-requested'));
             }
-            alert("✅ Asset Updated Successfully!");
+            appToast.success("Asset Updated Successfully!");
             setHoardings(prev => {
                 const targetKey = String(hoarding["Location "] || hoarding.Location || hoarding["Locality Site Location"] || '').trim().toLowerCase();
                 const next = prev.map(h => {
@@ -226,7 +227,7 @@ const HoardingDetail = ({ hoardings, setHoardings }) => {
             setIsEditModalOpen(false);
             setSelectedAssetFile(null);
         } catch (err) {
-            alert("Error updating asset: " + err.message);
+            appToast.error("Error updating asset: " + err.message);
         } finally {
             setIsLoading(false);
         }
@@ -234,7 +235,18 @@ const HoardingDetail = ({ hoardings, setHoardings }) => {
 
     const handleDeleteAsset = async () => {
         const siteName = hoarding["Locality Site Location"] || hoarding["Location "] || hoarding.Location || "this site";
-        if (!confirm(`Are you sure you want to PERMANENTLY delete "${siteName}"? This cannot be undone.`)) return;
+        const confirmed = await appConfirm({
+            title: "Delete Asset Permanently?",
+            message: `Are you sure you want to PERMANENTLY delete "${siteName}"?`,
+            bullets: [
+                "This site will be removed from all inventory listings.",
+                "This action cannot be undone."
+            ],
+            confirmText: "Delete Asset",
+            cancelText: "Cancel",
+            type: "danger"
+        });
+        if (!confirmed) return;
 
         const targetClean = String(siteName).trim().toLowerCase();
         setHoardings(prev => {
@@ -255,7 +267,7 @@ const HoardingDetail = ({ hoardings, setHoardings }) => {
                 action: 'deleteHoarding',
                 siteName: siteName
             });
-            alert("✅ Asset Deleted!");
+            appToast.success("Asset Deleted Successfully!");
             navigate(`/${city}`);
         } catch (err) {
             console.error("Delete sync warning:", err);
@@ -357,7 +369,7 @@ const HoardingDetail = ({ hoardings, setHoardings }) => {
                 mode: mode
             });
 
-            alert(mode === 'archive_existing' ? "✅ Existing Photo Archived & New Photo Updated!" : "✅ Photo Updated Successfully!");
+            appToast.success(mode === 'archive_existing' ? "Existing Photo Archived & New Photo Updated!" : "Photo Updated Successfully!");
             
             // Local state update (with cache sync via wrappedSetHoardings)
             const targetSL = hoarding.SL || hoarding["S. No."] || hoarding["SL NO"] || '';
@@ -383,7 +395,7 @@ const HoardingDetail = ({ hoardings, setHoardings }) => {
                 return next;
             });
         } catch (err) {
-            alert("Error updating photo: " + err.message);
+            appToast.error("Error updating photo: " + err.message);
         } finally {
             setIsLoading(false);
         }
@@ -442,11 +454,11 @@ const HoardingDetail = ({ hoardings, setHoardings }) => {
             }
             
             if (successCount > 0) {
-                alert(`✅ ${successCount} Audit Photo(s) Added Successfully!`);
+                appToast.success(`${successCount} Audit Photo(s) Added Successfully!`);
             }
         } catch (err) {
             console.error("Audit batch upload error:", err);
-            alert("Error adding audit photo: " + err.message);
+            appToast.error("Error adding audit photo: " + err.message);
         } finally {
             setIsLoading(false);
         }
@@ -471,7 +483,18 @@ const HoardingDetail = ({ hoardings, setHoardings }) => {
 
     const handleDeleteHistoryItem = async (imageUrl, rawUrl = null) => {
         if (!isAdmin) return;
-        if (!confirm("Are you sure you want to delete this specific audit photo?")) return;
+        const confirmed = await appConfirm({
+            title: "Delete Audit Photo?",
+            message: "Are you sure you want to delete this specific audit photo?",
+            bullets: [
+                "This photo will be permanently removed from this site's audit history.",
+                "The change will sync immediately to Google Sheets."
+            ],
+            confirmText: "Delete Photo",
+            cancelText: "Cancel",
+            type: "danger"
+        });
+        if (!confirmed) return;
 
         // 1. Immediately persist deletion & remove from UI
         addDeletedHistoryUrl(imageUrl);
@@ -544,7 +567,7 @@ const HoardingDetail = ({ hoardings, setHoardings }) => {
 
         } catch (err) {
             console.error("Error deleting history item:", err);
-            alert("Error deleting history item: " + err.message);
+            appToast.error("Error deleting history item: " + err.message);
         }
     };
 

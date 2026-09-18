@@ -11,6 +11,7 @@ import {
   matchPptSlidesToBookings, 
   commitBulkBookings 
 } from '../core/bulkBookingEngine';
+import { appToast } from './ToastContext';
 import './BulkBookingWizard.css';
 
 const CLIENT_BADGE_COLORS = [
@@ -125,7 +126,7 @@ export default function BulkBookingWizard({
       setStep(2);
     } catch (err) {
       console.error("[Bulk Booking Parse Error]:", err);
-      alert(`Error reading files: ${err.message || 'Please check file format'}`);
+      appToast.error(`Error reading files: ${err.message || 'Please check file format'}`);
     } finally {
       setIsProcessing(false);
       setProcessingMsg('');
@@ -196,7 +197,7 @@ export default function BulkBookingWizard({
       }
     } catch (err) {
       console.error("[Bulk Booking Commit Error]:", err);
-      alert(`Booking failed: ${err.message}`);
+      appToast.error(`Booking failed: ${err.message}`);
     } finally {
       setIsCommitting(false);
     }

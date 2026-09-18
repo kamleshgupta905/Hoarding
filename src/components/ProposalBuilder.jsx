@@ -3,6 +3,7 @@ import readXlsxFile from 'read-excel-file/browser';
 import { Upload, FileSpreadsheet, CheckCircle2, AlertCircle, Link as LinkIcon, ExternalLink, RefreshCw, Presentation, Search, Image as ImageIcon } from 'lucide-react';
 import { getImageUrl } from '../services/dataService';
 import { parsePptx } from '../core/pptxEngine';
+import { appToast } from './ToastContext';
 
 const normalizeStr = (str) => String(str || '').toLowerCase().replace(/[^a-z0-9]/g, '');
 
@@ -90,7 +91,7 @@ const ProposalBuilder = ({ hoardings }) => {
             setParsedRows(matchedRows);
             
         } catch (err) {
-            alert("Error parsing file: " + err.message);
+            appToast.error("Error parsing file: " + err.message);
         } finally {
             setIsProcessing(false);
         }
@@ -98,13 +99,13 @@ const ProposalBuilder = ({ hoardings }) => {
     
     const generateProposalLink = () => {
         if (!clientName.trim()) {
-            alert("Please enter a client name.");
+            appToast.warning("Please enter a client name.");
             return;
         }
         
         const validSiteIds = parsedRows.map(r => r.siteId).filter(Boolean);
         if (validSiteIds.length === 0) {
-            alert("No sites matched! Cannot create an empty proposal.");
+            appToast.warning("No sites matched! Cannot create an empty proposal.");
             return;
         }
         

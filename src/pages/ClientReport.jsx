@@ -7,6 +7,7 @@ import {
 } from 'lucide-react';
 import { getImageUrl } from '../services/dataService';
 import { HIRA_LOGO } from '../assets/hiraLogoData';
+import { appToast } from '../components/ToastContext';
 
 const ClientReport = ({ hoardings }) => {
     const { clientName } = useParams();
@@ -72,7 +73,7 @@ const ClientReport = ({ hoardings }) => {
                         <div className="header-actions">
                             <button className="glass-btn" onClick={() => {
                                 navigator.clipboard.writeText(window.location.href);
-                                alert("🚀 Report Link Copied! You can now share it on WhatsApp.");
+                                appToast.success("🚀 Report Link Copied! You can now share it on WhatsApp.");
                             }}>
                                 <Share2 size={18} /> Share Report
                             </button>

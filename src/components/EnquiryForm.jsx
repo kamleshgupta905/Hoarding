@@ -3,6 +3,7 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
 import { Send, CheckCircle } from 'lucide-react';
+import { appToast } from './ToastContext';
 import './EnquiryForm.css';
 
 const schema = z.object({
@@ -36,7 +37,7 @@ const EnquiryForm = ({ siteName, city }) => {
             setSubmitted(true);
         } catch (error) {
             console.error('Submission error:', error);
-            alert('Something went wrong. Please try again.');
+            appToast.error('Something went wrong. Please try again.');
         } finally {
             setLoading(false);
         }

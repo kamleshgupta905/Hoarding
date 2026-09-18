@@ -6,6 +6,7 @@ import {
     ExternalLink, Share2, Sparkles, MapPin, Copy
 } from 'lucide-react';
 import { HIRA_LOGO } from '../assets/hiraLogoData';
+import { appToast } from '../components/ToastContext';
 import './SystemGuide.css';
 
 const SystemGuide = ({ embedded = false }) => {
@@ -27,7 +28,7 @@ const SystemGuide = ({ embedded = false }) => {
             navigator.clipboard.writeText(
                 `HIRA Advertising OOH Management Platform: Complete Functionality & Operational Solutions Guide.\nURL: ${window.location.origin}/guide\nIncludes Executive Dashboard, 50m GPS Geofenced Field Audits, Live Excel Sync, Daily Claude Vision AI Verification, and Client Proposals.`
             );
-            alert('Guide summary link copied to clipboard!');
+            appToast.success('Guide summary link copied to clipboard!');
         }
     };
 

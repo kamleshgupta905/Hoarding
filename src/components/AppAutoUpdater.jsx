@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Sparkles, RefreshCw, CheckCircle2, ArrowUpCircle, ShieldCheck, Zap } from 'lucide-react';
 import { checkForAppUpdates, performLiveAppUpdate } from '../services/appUpdater';
+import { appToast } from './ToastContext';
 import './AppAutoUpdater.css';
 
 export default function AppAutoUpdater() {
@@ -52,7 +53,7 @@ export default function AppAutoUpdater() {
       });
     } catch (err) {
       setIsUpdating(false);
-      alert('Update failed: ' + (err.message || 'Please check internet connection.'));
+      appToast.error('Update failed: ' + (err.message || 'Please check internet connection.'));
     }
   }, [updateInfo]);
 
