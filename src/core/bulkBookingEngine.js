@@ -530,6 +530,7 @@ export const commitBulkBookings = async ({
   bookingItems = [],
   existingHoardings = [],
   skipConflicted = true,
+  artworkMode = 'history_only',
   onProgress = null
 }) => {
   const eligibleItems = bookingItems.filter(item => {
@@ -632,12 +633,47 @@ export const commitBulkBookings = async ({
         });
 
         if (res && res.success && res.url) {
-          recordSiteHistory(p.site, {
-            url: res.url,
-            preview: res.url,
-            date: new Date().toISOString(),
-            source: `Bulk Campaign Onboarding (${p.client})`
-          });
+          if (artworkMode === 'replace_master') {
+            const oldMaster = p.site.ImageURL || p.site["IMAGE 1"] || p.site["Image URL"] || '';
+            if (oldMaster && !oldMaster.includes('unsplash.com')) {
+              recordSiteHistory(p.site, {
+                url: oldMaster,
+                preview: oldMaster,
+                date: new Date().toISOString(),
+                source: 'Archived Master Banner',
+                uploadMode: 'history_only'
+              });
+            }
+            p.site.ImageURL = res.url;
+            p.site['Image URL'] = res.url;
+            p.site['IMAGE 1'] = res.url;
+
+            const siteKey = p.site._SiteID || p.site.SL || p.site['Location '] || p.site.Location;
+            if (siteKey && updatedHoardingsMap.has(siteKey)) {
+              const currentObj = updatedHoardingsMap.get(siteKey);
+              updatedHoardingsMap.set(siteKey, {
+                ...currentObj,
+                ImageURL: res.url,
+                'Image URL': res.url,
+                'IMAGE 1': res.url
+              });
+            }
+
+            const updateRow = batchUpdates.find(u => (p.site._SiteID && u.siteId === p.site._SiteID) || (p.site.SL && String(u.sl) === String(p.site.SL)));
+            if (updateRow && updateRow.fields) {
+              updateRow.fields.ImageURL = res.url;
+              updateRow.fields['Image URL'] = res.url;
+            }
+          } else {
+            // Save to History Only
+            recordSiteHistory(p.site, {
+              url: res.url,
+              preview: res.url,
+              date: new Date().toISOString(),
+              source: `Bulk Campaign Artwork (${p.client})`,
+              uploadMode: 'history_only'
+            });
+          }
           photosUploaded++;
         }
       } catch (err) {

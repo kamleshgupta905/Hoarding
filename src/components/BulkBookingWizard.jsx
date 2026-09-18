@@ -42,6 +42,7 @@ export default function BulkBookingWizard({
   const [parsedData, setParsedData] = useState(null); // { items, clientGroups, totalSites, conflictsCount }
   const [skipConflicted, setSkipConflicted] = useState(true);
   const [activeClientFilter, setActiveClientFilter] = useState('All');
+  const [artworkMode, setArtworkMode] = useState('history_only'); // 'history_only' | 'replace_master'
 
   // Execution State
   const [isCommitting, setIsCommitting] = useState(false);
@@ -181,6 +182,7 @@ export default function BulkBookingWizard({
         bookingItems: parsedData.items,
         existingHoardings: hoardings,
         skipConflicted,
+        artworkMode,
         onProgress: (percent, message) => {
           setCommitProgress({ percent, message });
         }
@@ -360,6 +362,82 @@ export default function BulkBookingWizard({
               )}
             </div>
 
+            {/* PPT Artwork Target Destination Selector */}
+            {mode === 'combo' && (
+              <div style={{
+                margin: '16px 0 8px 0',
+                padding: '14px 16px',
+                background: '#f8fafc',
+                borderRadius: '12px',
+                border: '1.5px solid #e2e8f0',
+                boxShadow: '0 1px 3px rgba(0,0,0,0.03)'
+              }}>
+                <div style={{ fontSize: '0.86rem', fontWeight: '700', color: '#1e293b', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <span>🎯</span>
+                  <span>PPT Artwork Slides Destination:</span>
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '10px' }}>
+                  <label style={{
+                    display: 'flex',
+                    alignItems: 'flex-start',
+                    gap: '10px',
+                    padding: '10px 12px',
+                    background: artworkMode === 'history_only' ? '#ecfdf5' : '#ffffff',
+                    border: artworkMode === 'history_only' ? '1.5px solid #10b981' : '1px solid #cbd5e1',
+                    borderRadius: '8px',
+                    cursor: 'pointer',
+                    transition: 'all 0.15s ease'
+                  }}>
+                    <input 
+                      type="radio" 
+                      name="bulkArtworkModeStep1" 
+                      value="history_only" 
+                      checked={artworkMode === 'history_only'} 
+                      onChange={() => setArtworkMode('history_only')}
+                      style={{ marginTop: '3px' }}
+                    />
+                    <div>
+                      <div style={{ fontWeight: 700, fontSize: '0.82rem', color: artworkMode === 'history_only' ? '#065f46' : '#1e293b' }}>
+                        📁 Save to History Only (Recommended)
+                      </div>
+                      <div style={{ fontSize: '0.74rem', color: '#64748b', marginTop: '2px', lineHeight: 1.3 }}>
+                        Keep current master site photo intact; save PPT artwork slides as audit proof in site history.
+                      </div>
+                    </div>
+                  </label>
+
+                  <label style={{
+                    display: 'flex',
+                    alignItems: 'flex-start',
+                    gap: '10px',
+                    padding: '10px 12px',
+                    background: artworkMode === 'replace_master' ? '#eef2ff' : '#ffffff',
+                    border: artworkMode === 'replace_master' ? '1.5px solid #6366f1' : '1px solid #cbd5e1',
+                    borderRadius: '8px',
+                    cursor: 'pointer',
+                    transition: 'all 0.15s ease'
+                  }}>
+                    <input 
+                      type="radio" 
+                      name="bulkArtworkModeStep1" 
+                      value="replace_master" 
+                      checked={artworkMode === 'replace_master'} 
+                      onChange={() => setArtworkMode('replace_master')}
+                      style={{ marginTop: '3px' }}
+                    />
+                    <div>
+                      <div style={{ fontWeight: 700, fontSize: '0.82rem', color: artworkMode === 'replace_master' ? '#3730a3' : '#1e293b' }}>
+                        🔄 Replace Main Site Photo
+                      </div>
+                      <div style={{ fontSize: '0.74rem', color: '#64748b', marginTop: '2px', lineHeight: 1.3 }}>
+                        Update the primary site display photo with the PPT artwork slide; previous master photo is archived.
+                      </div>
+                    </div>
+                  </label>
+                </div>
+              </div>
+            )}
+
             {/* Instruction Callout */}
             <div className="bulk-instruction-callout">
               <Sparkles size={16} color="#6366f1" />
@@ -434,6 +512,61 @@ export default function BulkBookingWizard({
                     />
                     <span>Automatically skip clashing sites & book remaining {eligibleCount} clear sites</span>
                   </label>
+                </div>
+              </div>
+            )}
+
+            {/* Step 2: Artwork Destination Confirmation Bar */}
+            {mode === 'combo' && pptFile && (
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                flexWrap: 'wrap',
+                gap: '8px',
+                padding: '8px 14px',
+                background: '#f8fafc',
+                borderRadius: '8px',
+                marginBottom: '12px',
+                fontSize: '0.82rem',
+                border: '1px solid #e2e8f0'
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 600, color: '#334155' }}>
+                  <span>🎯 PPT Artwork Destination:</span>
+                </div>
+                <div style={{ display: 'flex', gap: '8px' }}>
+                  <button
+                    type="button"
+                    onClick={() => setArtworkMode('history_only')}
+                    style={{
+                      padding: '4px 12px',
+                      borderRadius: '6px',
+                      border: artworkMode === 'history_only' ? '1.5px solid #10b981' : '1px solid #cbd5e1',
+                      background: artworkMode === 'history_only' ? '#ecfdf5' : '#ffffff',
+                      color: artworkMode === 'history_only' ? '#065f46' : '#64748b',
+                      fontWeight: 700,
+                      fontSize: '0.78rem',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    📁 Save to History Only
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setArtworkMode('replace_master')}
+                    style={{
+                      padding: '4px 12px',
+                      borderRadius: '6px',
+                      border: artworkMode === 'replace_master' ? '1.5px solid #6366f1' : '1px solid #cbd5e1',
+                      background: artworkMode === 'replace_master' ? '#eef2ff' : '#ffffff',
+                      color: artworkMode === 'replace_master' ? '#3730a3' : '#64748b',
+                      fontWeight: 700,
+                      fontSize: '0.78rem',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    🔄 Replace Master Photo
+                  </button>
                 </div>
               </div>
             )}

@@ -1054,6 +1054,161 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
         });
     };
 
+    const handleRejectDailyImage = async (idOrIdx) => {
+        const itemToRemove = typeof idOrIdx === 'string'
+            ? dailyImages.find(img => img.id === idOrIdx)
+            : dailyImages[idOrIdx];
+
+        if (!itemToRemove) return;
+
+        const confirmMsg = "Are you sure you want to REJECT this upload?\n\n• The photo will be permanently deleted from History and Daily Updates.\n• If it replaced the site's Main Master Photo, the original master photo will be restored immediately.";
+        if (!window.confirm(confirmMsg)) {
+            return;
+        }
+
+        const urlToRemove = itemToRemove.uploadedUrl || itemToRemove.preview || itemToRemove.persistentPreview;
+        const directUrl = urlToRemove ? getDirectDriveLink(urlToRemove) : '';
+        const fileId = extractDriveId(urlToRemove);
+        const slToRemove = itemToRemove.sl ? String(itemToRemove.sl).trim() : '';
+        const siteIdToRemove = itemToRemove.matchedSiteId || '';
+        const effectiveMode = itemToRemove.uploadMode || dailyUploadMode;
+
+        // 1. Mark in dismissed storage to prevent cloud resurrection
+        try {
+            const raw = localStorage.getItem('adh_dismissed_daily_proofs');
+            const list = raw ? JSON.parse(raw) : [];
+            list.push({ 
+                url: urlToRemove || null,
+                directUrl: directUrl || null,
+                fileId: fileId || null,
+                sl: slToRemove || null,
+                siteId: siteIdToRemove || null,
+                id: itemToRemove.id || null,
+                rejected: true,
+                time: Date.now() 
+            });
+            localStorage.setItem('adh_dismissed_daily_proofs', JSON.stringify(list));
+        } catch {}
+
+        if (urlToRemove) addDeletedHistoryUrl(urlToRemove);
+        if (directUrl) addDeletedHistoryUrl(directUrl);
+        if (fileId) addDeletedHistoryUrl(fileId);
+
+        // 2. Find target site object
+        const siteObj = (itemToRemove.matchedIndex != null && hoardings[itemToRemove.matchedIndex]) ||
+                        (slToRemove && hoardings.find(h => String(h.SL || h['S. No.'] || '').trim() === slToRemove)) ||
+                        (siteIdToRemove && hoardings.find(h => (h._SiteID === siteIdToRemove || h.UniqueID === siteIdToRemove)));
+
+        let rollbackRestored = false;
+        let restoredPhotoUrl = '';
+
+        if (siteObj) {
+            const siteLocName = siteObj["Locality Site Location"] || siteObj["Location "] || siteObj.Location || '';
+            const targetSL = siteObj.SL || siteObj['S. No.'] || siteObj['SL NO'] || slToRemove;
+            const siteId = siteObj._SiteID || siteObj.UniqueID || siteIdToRemove;
+
+            // If it replaced master image, rollback to previous master photo!
+            if (effectiveMode === 'replace_master') {
+                const currentMaster = siteObj.ImageURL || siteObj["Image URL"] || siteObj["IMAGE 1"] || '';
+                const isCurrentMasterRejected = currentMaster === urlToRemove || 
+                                                (directUrl && currentMaster === directUrl) ||
+                                                (fileId && extractDriveId(currentMaster) === fileId);
+
+                // Find candidate previous photo from site history that is not the rejected URL
+                const historyList = Array.isArray(siteObj.History) ? siteObj.History : parseHistoryString(siteObj.ExecutionHistory || siteObj.History || '');
+                const validOldPhotos = historyList.filter(item => {
+                    const u = typeof item === 'object' ? (item.url || item.preview || '') : String(item);
+                    if (!u) return false;
+                    if (u === urlToRemove || (directUrl && u === directUrl)) return false;
+                    if (fileId && extractDriveId(u) === fileId) return false;
+                    return true;
+                });
+
+                const previousPhotoCandidate = validOldPhotos.length > 0 
+                    ? (typeof validOldPhotos[0] === 'object' ? (validOldPhotos[0].url || validOldPhotos[0].preview) : validOldPhotos[0])
+                    : (itemToRemove.previousMainImage || '');
+
+                if (isCurrentMasterRejected && previousPhotoCandidate) {
+                    restoredPhotoUrl = previousPhotoCandidate;
+                    rollbackRestored = true;
+                    siteObj.ImageURL = previousPhotoCandidate;
+                    siteObj['Image URL'] = previousPhotoCandidate;
+                    siteObj['IMAGE 1'] = previousPhotoCandidate;
+
+                    // Sync restored master photo back to Google Sheet in background
+                    syncToGoogleSheet({
+                        action: 'updateHoarding',
+                        siteName: siteLocName,
+                        sl: targetSL,
+                        siteId: siteId,
+                        fields: {
+                            ImageURL: previousPhotoCandidate,
+                            'Image URL': previousPhotoCandidate,
+                            'IMAGE 1': previousPhotoCandidate
+                        }
+                    }, 0).catch(err => console.warn('Rollback master sync notice:', err));
+                }
+            }
+
+            // Purge rejected photo from site history (caches & state)
+            if (urlToRemove) removeSiteHistory(siteObj, urlToRemove);
+            if (directUrl) removeSiteHistory(siteObj, directUrl);
+
+            // Sync deletion to Google Sheet in background
+            if (urlToRemove || directUrl) {
+                syncToGoogleSheet({
+                    action: 'deleteHistoryItem',
+                    siteName: siteLocName,
+                    sl: targetSL,
+                    siteId: siteId,
+                    imageUrl: urlToRemove || directUrl
+                }, 0).catch(err => console.warn('Reject remote delete notice:', err));
+            }
+
+            // Update React hoardings state immediately
+            setHoardings(prev => {
+                const next = prev.map(h => {
+                    const isMatch = (targetSL && String(h.SL || h['S. No.'] || '').trim() === String(targetSL).trim()) ||
+                                    (siteId && (h._SiteID === siteId || h.UniqueID === siteId));
+                    if (isMatch) {
+                        return {
+                            ...h,
+                            ImageURL: rollbackRestored ? restoredPhotoUrl : h.ImageURL,
+                            'Image URL': rollbackRestored ? restoredPhotoUrl : h['Image URL'],
+                            'IMAGE 1': rollbackRestored ? restoredPhotoUrl : h['IMAGE 1']
+                        };
+                    }
+                    return h;
+                });
+                try {
+                    localStorage.setItem('hoardings_cache', JSON.stringify(next));
+                } catch {}
+                return next;
+            });
+        }
+
+        // 3. Remove card from Daily Updates list
+        setDailyImages(prev => {
+            const updated = prev.filter((img, idx) => typeof idOrIdx === 'string' ? img.id !== idOrIdx : idx !== idOrIdx);
+            try {
+                localStorage.setItem('adh_daily_proof_images', JSON.stringify(updated));
+            } catch {}
+            return updated;
+        });
+
+        setExpandedDailyCards(prev => {
+            const next = new Set(prev);
+            next.delete(idOrIdx);
+            return next;
+        });
+
+        if (rollbackRestored) {
+            showToast("Upload Rejected! Previous Master Photo restored successfully.", "info");
+        } else {
+            showToast("Upload Rejected & removed from History.", "info");
+        }
+    };
+
     const handleClearAllDailyImages = () => {
         try {
             const dismissed = dailyImages.map(img => {
@@ -2245,7 +2400,8 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                         uploadedUrl: finalProofUrl,
                         persistentPreview: finalProofUrl,
                         preview: finalProofUrl,
-                        driveSaved: !!driveUrl
+                        driveSaved: !!driveUrl,
+                        lastSyncedSl: targetSL
                     };
                 }
                 return img;
@@ -2438,6 +2594,44 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
 
         // Direct call to the unified triggerAutoUpload engine
         await triggerAutoUpload(img.id || itemIdOrIndex, img);
+    };
+
+    const handleConfirmAndSync = async (itemIdOrIndex) => {
+        const img = typeof itemIdOrIndex === 'string'
+            ? dailyImages.find(i => i.id === itemIdOrIndex)
+            : dailyImages[itemIdOrIndex];
+        if (!img) return;
+        if (!img.matchedLocation) return alert("Please select a location first.");
+
+        const targetSL = img.sl ? String(img.sl).trim() : '';
+        const lastSyncedSL = img.lastSyncedSl ? String(img.lastSyncedSl).trim() : '';
+        const finalProofUrl = img.uploadedUrl || img.preview || img.persistentPreview;
+
+        // If previously synced to a different site/SL, cleanly remove from the old site first
+        if (lastSyncedSL && lastSyncedSL !== targetSL && finalProofUrl) {
+            const oldSite = hoardings.find(h => String(h.SL || h['S. No.'] || '').trim() === lastSyncedSL);
+            if (oldSite) {
+                removeSiteHistory(oldSite, finalProofUrl);
+                const oldLocName = oldSite["Locality Site Location"] || oldSite["Location "] || oldSite.Location || '';
+                syncToGoogleSheet({
+                    action: 'deleteHistoryItem',
+                    siteName: oldLocName,
+                    sl: lastSyncedSL,
+                    siteId: oldSite._SiteID || oldSite.UniqueID || '',
+                    imageUrl: finalProofUrl
+                }, 0).catch(err => console.warn('Clean previous site sync notice:', err));
+            }
+        }
+
+        setDailyImages(prev => prev.map(item => item.id === (img.id || itemIdOrIndex) ? { ...item, uploading: true, lastSyncedSl: targetSL } : item));
+        try {
+            await triggerAutoUpload(img.id || itemIdOrIndex, { ...img, lastSyncedSl: targetSL });
+            showToast(`Confirmed & Synced to #${targetSL} (Facing: ${img.facing || 'Site'})!`, "success");
+        } catch (err) {
+            console.error("Confirm sync error:", err);
+            showToast(`Sync error: ${err.message || 'Check connection'}`, "error");
+            setDailyImages(prev => prev.map(item => item.id === (img.id || itemIdOrIndex) ? { ...item, uploading: false } : item));
+        }
     };
 
     // ------------------------------------------------------------------
@@ -6742,13 +6936,47 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                         const isExpanded = expandedDailyCards.has(cardId) || expandedDailyCards.has(idx);
                                         return (
                                         <div key={cardId} className={`daily-card ${img.uploaded ? 'uploaded' : ''} ${img.matchFailed && !img.uploaded ? 'match-failed' : ''}`} style={{ position: 'relative' }}>
+                                            {/* 🚫 Reject Button (Purges from history or restores previous master photo) */}
+                                            <button
+                                                type="button"
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    handleRejectDailyImage(cardId);
+                                                }}
+                                                title="Reject this upload (Purges from history, or restores previous master photo)"
+                                                style={{
+                                                    position: 'absolute',
+                                                    top: '8px',
+                                                    right: '38px',
+                                                    width: '24px',
+                                                    height: '24px',
+                                                    borderRadius: '50%',
+                                                    background: '#fee2e2',
+                                                    border: '1.5px solid #ef4444',
+                                                    color: '#b91c1c',
+                                                    fontSize: '12px',
+                                                    fontWeight: 'bold',
+                                                    display: 'flex',
+                                                    alignItems: 'center',
+                                                    justifyContent: 'center',
+                                                    cursor: 'pointer',
+                                                    zIndex: 25,
+                                                    boxShadow: '0 2px 6px rgba(239, 68, 68, 0.25)',
+                                                    lineHeight: 1,
+                                                    padding: 0
+                                                }}
+                                            >
+                                                🚫
+                                            </button>
+
+                                            {/* ✕ Dismiss Button */}
                                             <button
                                                 type="button"
                                                 onClick={(e) => {
                                                     e.stopPropagation();
                                                     removeDailyImage(cardId);
                                                 }}
-                                                title="Remove this image from Daily Upload"
+                                                title="Dismiss card from Daily Updates view"
                                                 style={{
                                                     position: 'absolute',
                                                     top: '8px',
@@ -6758,7 +6986,7 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                                     borderRadius: '50%',
                                                     background: '#ffffff',
                                                     border: '1px solid #e5e7eb',
-                                                    color: '#ef4444',
+                                                    color: '#64748b',
                                                     fontSize: '13px',
                                                     fontWeight: 'bold',
                                                     display: 'flex',
@@ -6846,6 +7074,145 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                                     ) : null;
                                                 })()}
                                             </div>
+
+                                            {/* 🧭 Interactive Facing & Meter Selector Bar */}
+                                            {(() => {
+                                                let candidateSites = [];
+                                                if (Array.isArray(img.twinCandidates) && img.twinCandidates.length > 1) {
+                                                    candidateSites = img.twinCandidates.map(t => {
+                                                        const h = hoardings[t.index] || hoardings.find(site => String(site.SL || site['S. No.'] || '').trim() === String(t.sl).trim());
+                                                        return {
+                                                            sl: t.sl || h?.SL || h?.['S. No.'] || '',
+                                                            index: t.index != null ? t.index : hoardings.indexOf(h),
+                                                            facing: t.facing || h?.Facing || h?.['Traffic View'] || 'Standard',
+                                                            distanceM: t.distanceM != null ? t.distanceM : (img.distanceM || null),
+                                                            siteName: h ? (h["Locality Site Location"] || h["Location "] || h.Location) : t.siteName,
+                                                            siteId: t.siteId || h?._SiteID || h?.UniqueID || ''
+                                                        };
+                                                    });
+                                                } else {
+                                                    const curSite = (img.sl && hoardings.find(h => String(h.SL || h['S. No.'] || '').trim() === String(img.sl).trim())) ||
+                                                                    (img.matchedIndex != null && hoardings[img.matchedIndex]) ||
+                                                                    (img.matchedLocation && hoardings.find(h => (h["Locality Site Location"] || h["Location "] || h.Location) === img.matchedLocation));
+                                                    if (curSite) {
+                                                        const curLoc = String(curSite["Locality Site Location"] || curSite["Location "] || curSite.Location || '').trim().toLowerCase();
+                                                        if (curLoc) {
+                                                            const siblings = hoardings
+                                                                .map((h, i) => ({ h, i }))
+                                                                .filter(({ h }) => {
+                                                                    const l1 = String(h["Locality Site Location"] || '').trim().toLowerCase();
+                                                                    const l2 = String(h["Location "] || '').trim().toLowerCase();
+                                                                    const l3 = String(h.Location || '').trim().toLowerCase();
+                                                                    return l1 === curLoc || l2 === curLoc || l3 === curLoc;
+                                                                });
+                                                            if (siblings.length > 1) {
+                                                                candidateSites = siblings.map(({ h, i }) => ({
+                                                                    sl: h.SL || h['S. No.'] || h['SL NO'] || '',
+                                                                    index: i,
+                                                                    facing: h.Facing || h['Traffic View'] || 'Standard',
+                                                                    distanceM: img.distanceM || null,
+                                                                    siteName: h["Locality Site Location"] || h["Location "] || h.Location,
+                                                                    siteId: h._SiteID || h.UniqueID || ''
+                                                                }));
+                                                            }
+                                                        }
+                                                    }
+                                                }
+
+                                                if (candidateSites.length <= 1) return null;
+
+                                                const isFacingChanged = img.lastSyncedSl && String(img.lastSyncedSl).trim() !== String(img.sl).trim();
+
+                                                return (
+                                                    <div style={{
+                                                        background: '#f8fafc',
+                                                        borderTop: '1px solid #e2e8f0',
+                                                        borderBottom: '1px solid #e2e8f0'
+                                                    }}>
+                                                        <div style={{
+                                                            display: 'flex',
+                                                            alignItems: 'center',
+                                                            gap: '6px',
+                                                            padding: '7px 12px',
+                                                            overflowX: 'auto',
+                                                            whiteSpace: 'nowrap'
+                                                        }}>
+                                                            <span style={{ fontSize: '0.72rem', fontWeight: 700, color: '#4338ca', flexShrink: 0, display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                                                <span>🧭</span>
+                                                                <span>Facing:</span>
+                                                            </span>
+                                                            {candidateSites.map((cand, cIdx) => {
+                                                                const isCandSelected = (img.sl && cand.sl && String(img.sl).trim() === String(cand.sl).trim()) ||
+                                                                                       (img.matchedIndex != null && img.matchedIndex === cand.index);
+                                                                return (
+                                                                    <button
+                                                                        key={cIdx}
+                                                                        type="button"
+                                                                        onClick={(e) => {
+                                                                            e.stopPropagation();
+                                                                            const targetSite = hoardings[cand.index] || hoardings.find(h => String(h.SL || h['S. No.'] || '').trim() === String(cand.sl).trim());
+                                                                            const updates = {
+                                                                                matchedIndex: cand.index,
+                                                                                sl: cand.sl,
+                                                                                matchedSiteId: cand.siteId,
+                                                                                facing: cand.facing,
+                                                                                matchedLocation: targetSite ? (targetSite["Locality Site Location"] || targetSite["Location "] || targetSite.Location) : cand.siteName,
+                                                                                reasoning: `Selected Facing: #${cand.sl} | ${cand.facing}${cand.distanceM != null ? ` (${cand.distanceM}m away)` : ''}`,
+                                                                                matchFailed: false
+                                                                            };
+                                                                            setDailyImages(prev => prev.map(item => (item.id === cardId || item.id === img.id) ? { ...item, ...updates } : item));
+                                                                        }}
+                                                                        style={{
+                                                                            padding: '4px 10px',
+                                                                            borderRadius: '6px',
+                                                                            fontSize: '0.74rem',
+                                                                            fontWeight: isCandSelected ? 700 : 500,
+                                                                            cursor: 'pointer',
+                                                                            border: isCandSelected ? '1.5px solid #4f46e5' : '1px solid #cbd5e1',
+                                                                            background: isCandSelected ? '#4f46e5' : '#ffffff',
+                                                                            color: isCandSelected ? '#ffffff' : '#475569',
+                                                                            boxShadow: isCandSelected ? '0 1px 4px rgba(79, 70, 229, 0.25)' : 'none',
+                                                                            transition: 'all 0.15s ease',
+                                                                            flexShrink: 0
+                                                                        }}
+                                                                        title={`Switch to Pole #${cand.sl} | Facing: ${cand.facing} (${cand.distanceM != null ? `${cand.distanceM}m away` : 'Site'})`}
+                                                                    >
+                                                                        {isCandSelected ? '✓ ' : ''}#{cand.sl} · {cand.facing} {cand.distanceM != null ? `(${cand.distanceM}m)` : ''}
+                                                                    </button>
+                                                                );
+                                                            })}
+                                                        </div>
+
+                                                        {/* Quick Re-Sync Bar if Facing Changed */}
+                                                        {isFacingChanged && (
+                                                            <button
+                                                                type="button"
+                                                                onClick={(e) => {
+                                                                    e.stopPropagation();
+                                                                    handleConfirmAndSync(cardId, img);
+                                                                }}
+                                                                style={{
+                                                                    width: '100%',
+                                                                    padding: '7px 12px',
+                                                                    background: '#4f46e5',
+                                                                    color: '#ffffff',
+                                                                    fontWeight: 700,
+                                                                    fontSize: '0.78rem',
+                                                                    border: 'none',
+                                                                    borderTop: '1px solid #6366f1',
+                                                                    cursor: 'pointer',
+                                                                    display: 'flex',
+                                                                    alignItems: 'center',
+                                                                    justifyContent: 'center',
+                                                                    gap: '6px'
+                                                                }}
+                                                            >
+                                                                <span>🔄 Facing changed! Click to Confirm & Re-Sync to #{img.sl} ({img.facing})</span>
+                                                            </button>
+                                                        )}
+                                                    </div>
+                                                );
+                                            })()}
 
                                             {/* 🔽 Compact Dropdown Toggle Bar */}
                                             <div 
@@ -7184,30 +7551,66 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                                     })()}
                                                 </div>
 
-                                                {!img.uploaded ? (
-                                                    <button
-                                                        className="upload-single-btn"
-                                                        onClick={() => uploadDailyUpdate(cardId)}
-                                                        disabled={!img.matchedLocation || img.uploading}
-                                                    >
-                                                        {img.uploading ? 'Syncing to History...' : 'Confirm & Sync'}
-                                                    </button>
-                                                ) : (
-                                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '4px' }}>
-                                                        <div style={{ 
-                                                            display: 'flex', 
-                                                            alignItems: 'center', 
-                                                            justifyContent: 'center', 
-                                                            gap: '6px', 
-                                                            padding: '7px 12px', 
-                                                            background: '#dcfce7', 
-                                                            color: '#15803d', 
-                                                            borderRadius: '8px', 
-                                                            fontSize: '0.84rem', 
-                                                            fontWeight: 600 
-                                                        }}>
-                                                            <CheckCircle size={15} color="#15803d" /> Synced to Site History
+                                                {(() => {
+                                                    const isFacingChanged = img.lastSyncedSl && String(img.lastSyncedSl).trim() !== String(img.sl).trim();
+                                                    if (!img.uploaded || isFacingChanged) {
+                                                        return (
+                                                            <button
+                                                                type="button"
+                                                                className="upload-single-btn"
+                                                                onClick={() => handleConfirmAndSync(cardId, img)}
+                                                                disabled={!img.matchedLocation || img.uploading}
+                                                                style={{
+                                                                    background: isFacingChanged ? '#4f46e5' : undefined,
+                                                                    color: '#ffffff'
+                                                                }}
+                                                            >
+                                                                {img.uploading ? (
+                                                                    <span>Syncing to #{img.sl}...</span>
+                                                                ) : isFacingChanged ? (
+                                                                    <span>🔄 Confirm & Re-Sync to #{img.sl} ({img.facing || 'Site'})</span>
+                                                                ) : (
+                                                                    <span>Confirm & Sync to #{img.sl}</span>
+                                                                )}
+                                                            </button>
+                                                        );
+                                                    }
+                                                    return (
+                                                        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '4px' }}>
+                                                            <div style={{ 
+                                                                display: 'flex', 
+                                                                alignItems: 'center', 
+                                                                justifyContent: 'center', 
+                                                                gap: '6px', 
+                                                                padding: '7px 12px', 
+                                                                background: '#dcfce7', 
+                                                                color: '#15803d', 
+                                                                borderRadius: '8px', 
+                                                                fontSize: '0.84rem', 
+                                                                fontWeight: 600 
+                                                            }}>
+                                                                <CheckCircle size={15} color="#15803d" /> Synced to #{img.sl} ({img.facing || 'Site'})
+                                                            </div>
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => handleConfirmAndSync(cardId, img)}
+                                                                disabled={img.uploading}
+                                                                style={{
+                                                                    background: '#f8fafc',
+                                                                    border: '1px solid #cbd5e1',
+                                                                    color: '#475569',
+                                                                    padding: '5px 10px',
+                                                                    borderRadius: '6px',
+                                                                    fontSize: '0.76rem',
+                                                                    fontWeight: 600,
+                                                                    cursor: 'pointer'
+                                                                }}
+                                                            >
+                                                                🔄 Force Re-Sync
+                                                            </button>
                                                         </div>
+                                                    );
+                                                })()}
                                                         {img.matchedLocation && (() => {
                                                             const site = (img.matchedSiteId && hoardings.find(h => (h._SiteID === img.matchedSiteId || h.UniqueID === img.matchedSiteId))) ||
                                                                          (img.sl && hoardings.find(h => String(h.SL || h['S. No.'] || '').trim() === String(img.sl).trim())) ||
@@ -7252,10 +7655,8 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                                     </div>
                                                 )}
                                             </div>
-                                        )}
-                                    </div>
-                                );
-                            })}
+                                        );
+                                    })}
                                 </div>
                             ) : (
                                 <div className="empty-upload-state">
