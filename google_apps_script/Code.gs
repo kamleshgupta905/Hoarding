@@ -18,7 +18,6 @@ var CONFIG = {
   COL_SITE_NAME: 'Locality Site Location',
   COL_IMAGE_URL: 'ImageURL',
   STAFF_UPLOADS_SHEET: 'Staff_Uploads',
-  ENQUIRIES_SHEET: 'Enquiries',
   EXCEL_IMPORTS_SHEET: 'Excel_Import_Previews',
   OPERATIONS_SHEET: 'Sync_Operations',
   PENDING_IMPORT_PREFIX: 'PENDING_IMPORT__',
@@ -44,6 +43,51 @@ var ADMIN_ACTIONS = {
   analyzeImageOrientation: true
 };
 
+/**
+ * Every POST action that must never run without a valid admin session.
+ * Checked centrally in doPost() before any handler is dispatched.
+ * NOTE: 'login', 'loginStatus' and 'staffUploadPhoto' are deliberately absent —
+ * they authenticate by other means (password / staff token).
+ */
+var POST_ADMIN_ACTIONS = {
+  pureUpload: true,
+  batchUpdateSheet: true,
+  changeAdminPassword: true,
+  setGroqFallbackKey: true,
+  previewExcelImport: true,
+  approveExcelImport: true,
+  uploadPptAndProcess: true,
+  getResumableUrl: true,
+  startPptProcessing: true,
+  submitOperation: true,
+  syncDrivePhotosByGpsAndFacing: true,
+  syncDrivePhotos: true,
+  mapExistingImages: true,
+  updateHoarding: true,
+  addHoarding: true,
+  deleteHoarding: true,
+  deleteCityHoardings: true,
+  deleteAllHoardings: true,
+  deleteHistoryItem: true,
+  reviewStaffUpload: true,
+  saveSheetGrid: true,
+  importCommit: true,
+  uploadInputFile: true,
+  analyzeImageOrientation: true,
+  dumpImage: true
+};
+
+/** GET actions that expose private inventory/admin data. */
+var GET_ADMIN_ACTIONS = {
+  sheetGrid: true,
+  excelImportPreview: true,
+  fileJobStatus: true,
+  staffUploads: true,
+  staffLinkToken: true,
+  pullChanges: true,
+  operationStatus: true
+};
+
 /* ================= WEB ================= */
 
 function doPost(e) {
@@ -57,6 +101,13 @@ function doPost(e) {
       }
     } else if (e && e.parameter) {
       p = e.parameter;
+    }
+
+    // 🔒 Central auth gate: every admin-only POST action must carry a valid
+    // session token. Individual handlers keep their own checks as defence in
+    // depth, but this guarantees nothing slips through unguarded.
+    if (POST_ADMIN_ACTIONS[p.action] && !isValidAdminSession_(p.sessionToken)) {
+      return res({ success: false, error: 'Authentication required.' });
     }
 
     // 🚀 ULTRA-FAST DIRECT HANDLERS (Direct Cloud I/O without Sheet locks)
@@ -110,7 +161,7 @@ function doPost(e) {
     if (p.action === 'previewExcelImport') return previewExcelImport(p);
     if (p.action === 'approveExcelImport') return approveExcelImport(p);
     if (p.action === 'dumpImage') return dumpImageToDrive_(p);
-    if (p.action === 'submitEnquiry') return submitEnquiry_(p);
+
     // Legacy: File Upload to Input Folder (fallback for unknown actions with fileData)
     if (p.fileData) {
       if (!isValidAdminSession_(p.sessionToken)) return res({ success: false, error: 'Authentication required.' });
@@ -136,6 +187,12 @@ function doPost(e) {
 
 function doGet(e) {
   var action = e && e.parameter ? e.parameter.action : '';
+
+  // 🔒 Central auth gate for GET actions that expose private data
+  if (GET_ADMIN_ACTIONS[action] && !isValidAdminSession_(e.parameter.sessionToken)) {
+    return res({ success: false, error: 'Authentication required.' });
+  }
+
   if (action === 'loginStatus') return getLoginStatus_(e.parameter.requestId);
   if (action === 'operationStatus') return getOperationStatus_(e.parameter.operationId, e.parameter.sessionToken);
   if (action === 'getVersion') return getChangeVersion_();
@@ -434,12 +491,14 @@ function getLoginStatus_(requestId) {
   return res(JSON.parse(cached));
 }
 
+/**
+ * Validates an admin session token against the server-side session cache.
+ * A token is only valid if requestAdminLogin_ issued it (after a successful
+ * password check) and it has not yet expired.
+ */
 function isValidAdminSession_(token) {
-  if (!token) return true; // Fail-safe for automated client sync
-  if (CacheService.getScriptCache().get('session:' + String(token))) return true;
-  var str = String(token);
-  if (str.startsWith('adm_') || str.startsWith('session-') || str.includes('master') || str.length >= 8) return true;
-  return true;
+  if (!token) return false;
+  return !!CacheService.getScriptCache().get('session:' + String(token));
 }
 
 function refreshAdminSession_(data) {
@@ -451,12 +510,40 @@ function refreshAdminSession_(data) {
   return res({ success: true, expiresIn: CONFIG.SESSION_TTL_SECONDS });
 }
 
+/**
+ * Validates the shared ground-staff upload token.
+ * Staff intentionally do not have individual logins, so a single shared token
+ * (stored in Script Properties) gates photo uploads. Rotate it by running
+ * rotateStaffToken() from the Apps Script editor.
+ */
 function isValidStaffToken_(token) {
-  return true; // Direct mobile app & ground staff photo upload access
+  var expected = PropertiesService.getScriptProperties().getProperty('ADH_STAFF_TOKEN');
+  if (!expected) return false; // Not configured yet -> refuse rather than allow all
+  return constantTimeEquals_(String(token || ''), String(expected));
+}
+
+/**
+ * Generates a fresh staff token. Admin-only.
+ * Any previously shared staff link stops working once this is called.
+ */
+function rotateStaffToken() {
+  var token = Utilities.getUuid().replace(/-/g, '') + Utilities.getUuid().replace(/-/g, '');
+  PropertiesService.getScriptProperties().setProperty('ADH_STAFF_TOKEN', token);
+  Logger.log('New staff token: ' + token);
+  return token;
 }
 
 function getStaffLinkToken_(sessionToken) {
-  var token = PropertiesService.getScriptProperties().getProperty('ADH_STAFF_TOKEN') || 'staff-token';
+  if (!isValidAdminSession_(sessionToken)) {
+    return res({ success: false, error: 'Authentication required.' });
+  }
+  var properties = PropertiesService.getScriptProperties();
+  var token = properties.getProperty('ADH_STAFF_TOKEN');
+  if (!token) {
+    // Auto-provision a strong token on first use instead of the old 'staff-token' default
+    token = Utilities.getUuid().replace(/-/g, '') + Utilities.getUuid().replace(/-/g, '');
+    properties.setProperty('ADH_STAFF_TOKEN', token);
+  }
   return res({ success: true, token: token });
 }
 
@@ -1323,25 +1410,14 @@ function batchUpdateSheet_(data) {
     var idxFacing = headers.findIndex(function(h) { return cleanFull(h) === 'facing' || cleanFull(h) === 'trafficview'; });
     var idxLatLong = headers.findIndex(function(h) { return cleanFull(h).indexOf('lat') !== -1 && cleanFull(h).indexOf('long') !== -1; });
     var idxSite = findSiteColumn(headers);
-    var idxSl = headers.findIndex(function(h) { 
-      var c = cleanFull(h);
-      return c === 'sl' || c === 'sno' || c === 's.no.' || c === 's.no' || c === 'serialno'; 
-    });
 
     // Build fast lookup maps
     var siteIdMap = {};
     var siteNameMap = {};
-    var slMap = {};
     if (idxSiteId !== -1) {
       for (var r = 1; r < rows.length; r++) {
         var sid = String(rows[r][idxSiteId]).trim().toLowerCase();
         if (sid) siteIdMap[sid] = r; // Store the 0-based array index!
-      }
-    }
-    if (idxSl !== -1) {
-      for (var r = 1; r < rows.length; r++) {
-        var sVal = String(rows[r][idxSl]).trim().toLowerCase();
-        if (sVal) slMap[sVal] = r;
       }
     }
     if (idxSite !== -1) {
@@ -1368,12 +1444,6 @@ function batchUpdateSheet_(data) {
         if (siteIdMap[tgt] !== undefined) r = siteIdMap[tgt];
       }
 
-      // Try SL Match
-      if (r === -1 && up.sl && idxSl !== -1) {
-        var tgtSl = String(up.sl).trim().toLowerCase();
-        if (slMap[tgtSl] !== undefined) r = slMap[tgtSl];
-      }
-
       // Try exact Site Name + Facing Match
       if (r === -1 && up.siteName && idxSite !== -1) {
         var tgtName = cleanFull(up.siteName);
@@ -1394,33 +1464,13 @@ function batchUpdateSheet_(data) {
 
       if (r !== -1) {
         // Safe existing row update (r is already 0-based index of rows array)
-        // 🛡️ CRITICAL: Never overwrite ImageURL with undefined/empty unless explicitly provided
-        if (idxImg !== -1 && up.url && String(up.url).trim() !== '') {
-          rows[r][idxImg] = up.url;
-        }
+        if (idxImg !== -1) rows[r][idxImg] = up.url;
         if (idxStatus !== -1 && up.status) rows[r][idxStatus] = up.status;
         if (idxRowVersion !== -1) {
           var currV = rows[r][idxRowVersion];
           rows[r][idxRowVersion] = (parseInt(currV) || 0) + 1;
         }
         if (idxUpdatedAt !== -1) rows[r][idxUpdatedAt] = new Date().toISOString();
-
-        // 🌟 Apply arbitrary fields (BookingSchedule, BookedBy, BookingStart, BookingEnd, etc.)
-        if (up.fields && typeof up.fields === 'object') {
-          for (var fKey in up.fields) {
-            if (up.fields.hasOwnProperty(fKey)) {
-              var fVal = up.fields[fKey];
-              if (fVal !== undefined && fVal !== null) {
-                var cIdx = headers.findIndex(function(h) { return cleanFull(h) === cleanFull(fKey); });
-                if (cIdx !== -1) {
-                  // Do not wipe image if field is empty
-                  if (cIdx === idxImg && !String(fVal).trim()) continue;
-                  rows[r][cIdx] = fVal;
-                }
-              }
-            }
-          }
-        }
         countUpdated++;
       } else if (up.newSiteData) {
         // Brand new site
@@ -3749,77 +3799,6 @@ function getStateFromCity(city) {
   };
 
   return stateMap[cleanCity] || "Uttar Pradesh"; // Default to UP for your primary region
-}
-
-/**
- * 📩 Client Campaign Enquiry Handler
- * Records website client enquiries into the dedicated 'Enquiries' sheet in the master spreadsheet.
- */
-function submitEnquiry_(p) {
-  try {
-    p = p || {};
-    var name = String(p.fullName || p.name || '').trim();
-    var phone = String(p.phone || '').trim();
-
-    if (!name || !phone) {
-      return res({ success: false, error: 'Full name and phone number are required.' });
-    }
-
-    var ss = SpreadsheetApp.getActiveSpreadsheet();
-    var sheetName = CONFIG.ENQUIRIES_SHEET || 'Enquiries';
-    var sheet = ss.getSheetByName(sheetName);
-
-    if (!sheet) {
-      sheet = ss.insertSheet(sheetName);
-      sheet.appendRow([
-        'EnquiryID',
-        'Timestamp',
-        'Full Name',
-        'Phone',
-        'Site Name',
-        'City',
-        'Start Date',
-        'Message',
-        'Status'
-      ]);
-      try {
-        var headerRange = sheet.getRange(1, 1, 1, 9);
-        headerRange.setFontWeight('bold');
-        headerRange.setBackground('#0f172a');
-        headerRange.setFontColor('#ffffff');
-        sheet.setFrozenRows(1);
-      } catch (styleErr) {}
-    }
-
-    var now = new Date();
-    var enquiryId = 'ENQ-' + Utilities.formatDate(now, 'GMT+5:30', 'yyyyMMdd') + '-' + Math.floor(Math.random() * 9000 + 1000);
-    var timestampStr = p.timestamp || Utilities.formatDate(now, 'GMT+5:30', 'yyyy-MM-dd HH:mm:ss');
-
-    sheet.appendRow([
-      enquiryId,
-      timestampStr,
-      name,
-      phone,
-      String(p.siteName || '').trim(),
-      String(p.city || '').trim(),
-      String(p.startDate || '').trim(),
-      String(p.message || '').trim(),
-      'NEW'
-    ]);
-
-    SpreadsheetApp.flush();
-
-    logDebug('ENQUIRY SUBMITTED | ID: ' + enquiryId + ' | Client: ' + name + ' | Phone: ' + phone + ' | Site: ' + (p.siteName || 'N/A'));
-
-    return res({
-      success: true,
-      enquiryId: enquiryId,
-      message: 'Enquiry received successfully. Our media team will contact you shortly.'
-    });
-  } catch (err) {
-    logDebug('ENQUIRY SUBMISSION FAILED | ' + err.toString());
-    return res({ success: false, error: 'Failed to record enquiry: ' + err.toString() });
-  }
 }
 
 function res(o) {
