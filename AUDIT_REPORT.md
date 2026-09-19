@@ -1,83 +1,108 @@
-# ✅ Hoarding Project – Fixes Applied
-**Date:** 19 Sep 2026 · **Commit:** `47d7a20` · **Branch:** `arena/01a0b9bf-hoarding`
-
-Dark mode hata diya aur saare bugs/errors fix kar diye.
+# ✅ Hoarding Project – Security & Cleanup Fixes
+**Date:** 19 Sep 2026 · **Commits:** `47d7a20`, `8404046` · **Branch:** `arena/01a0b9bf-hoarding`
 
 ---
 
-## 🌙 Dark Mode – Hata Diya
+## ⚠️ Sabse Zaroori: Deploy Karna Padega
 
-Ye feature **kaam hi nahi kar raha tha** — sirf dhancha pada tha:
-- `toggle()` ek **khaali function** tha — kuch karta hi nahi
-- `useEffect` hamesha `data-theme="light"` force karta tha
-- `setIsDark` kabhi call hi nahi hota tha
-- `index.css` me koi `.dark` / `[data-theme="dark"]` rule hi nahi tha
-- `DarkModeToggle.jsx` kahin import hi nahi tha
+Backend ke fixes **`GOOGLE_APPS_SCRIPT_FINAL.js`** me hain. Ye file repo me hai par **Google Apps Script pe automatically nahi jaati**. Jab tak aap ise deploy nahi karte, backend purana (asurakshit) hi chalega:
 
-**Hataya:**
-- ❌ `src/components/DarkModeContext.jsx` (deleted)
-- ❌ `src/components/DarkModeToggle.jsx` (deleted)
-- `App.jsx` se `DarkModeProvider` import + wrapper hataya
+```bash
+npm run script:push
+```
+Ya manually: Apps Script editor kholo → file ka content paste karo → **Deploy → Manage deployments → Edit → Deploy**.
+
+**Deploy ke baad ek baar logout/login karna padega** — purane session tokens ab valid nahi hain.
 
 ---
 
-## 🐛 Bugs Fixed
+## 🔴 1. Admin Auth — Backend Bypass (sabse serious)
 
-### 1. `/hira-logo.png` → 404 (3 cheezein tooti hui thi)
-Asli file ka naam `heera-logo.png` hai. Theek kiya:
-- **Favicon** — ab dikhega
-- **`og:image`** — ab WhatsApp/Facebook pe link share karne pe preview image aayegi (absolute URL bhi kiya, relative se preview kaam nahi karta)
-- **`twitter:card` + `og:url` meta** — naye add kiye, large image preview ke liye
-- **Service worker precache** — pehle missing file ki wajah se `cache.addAll()` poora fail ho jaata tha → **offline mode bilkul kaam nahi karta tha**
+**Problem:** `isValidAdminSession_()` ka **har path `true` return karta tha**:
+```js
+function isValidAdminSession_(token) {
+  if (!token) return true;              // khaali token = pass
+  if (cache.get('session:' + token)) return true;
+  if (str.length >= 8) return true;
+  return true;                          // ← aakhri line bhi true
+}
+```
+Matlab 21 jagah likha `if (!isValidAdminSession_(...)) return 'Authentication required'` **kabhi trigger hi nahi hota tha**. Koi bhi bina login kiye `curl` se `deleteAllHoardings`, `changeAdminPassword`, ya `sheetGrid` call kar sakta tha.
 
-### 2. `favicon.ico` missing tha
-`app-icon-512.png` se generate kiya (multi-size: 16/32/48/64/128/256).
-Isse **`package.json` ka `build.win.icon` path** bhi valid ho gaya — ab Windows installer sahi icon ke saath banegi.
+**Fix:** Ab sirf wahi token valid hai jo server ne login ke baad issue kiya ho:
+```js
+function isValidAdminSession_(token) {
+  if (!token) return false;
+  return !!CacheService.getScriptCache().get('session:' + String(token));
+}
+```
 
-### 3. Service worker ka stale cache
-- `CACHE_NAME` hardcoded `v1` tha → naya deploy karne pe purana cache hi chalta rehta
-- Ab `CACHE_VERSION` ko **`scripts/sync-version.js` har build pe auto-stamp** karta hai (`1.7.0-1789824765944`)
-- `cache.addAll()` → `cache.add()` per-URL kiya, taaki ek 404 poora precache na tode
+**Ek aur baat jo audit ke dauraan mili:** kai handlers ka **apna koi auth check tha hi nahi** — `previewExcelImport`, `approveExcelImport`, `dumpImage`, `syncDrivePhotos`, `batchUpdateSheet`, `getSheetGrid`, `getStaffUploads`. Sirf upar wala function theek karne se ye phir bhi khule rehte. Isliye `doPost`/`doGet` me **central gate** add kiya (`POST_ADMIN_ACTIONS` / `GET_ADMIN_ACTIONS`) — ab koi bhi naya admin action galti se bina protection ke nahi reh sakta.
 
-### 4. 404 page nahi tha
-- Naya `src/pages/NotFound.jsx` banaya (lazy-loaded, `noindex` meta ke saath)
-- `<Route path="*">` catch-all add kiya
-- **`CityList` me "city not found" state** — `/:cityName` route har unknown path pakad leta tha, ab agar city inventory me nahi hai to proper message + "Explore All" CTA dikhta hai (pehle khaali "Discovering 0 locations" page aata tha)
+---
 
-### 5. CityList me pagination nahi tha (performance)
-500+ hoardings ek saath DOM me render hote the → mobile freeze.
-- Ab **24 cards per page + "Load More"** button
-- Filter badalne pe page 1 pe reset (React ka recommended *adjust-state-during-render* pattern use kiya, `useEffect`+`setState` cascading render se bachne ke liye)
-- "Showing X of Y sites" counter bhi add kiya
+## 🔴 2. Frontend ka `localStorage` Bypass
 
-### 6. Navbar ka Admin button stale rehta tha
-Render ke andar direct `localStorage.getItem()` call tha → login ke baad button "Admin" hi dikhta tha jab tak page reload na karo.
-- Ab `getAdminSession()` se state derive hoti hai
-- Route change aur `storage` event (dusre tab me login/logout) pe sync hoti hai
-- Search input me `encodeURIComponent` + `trim()` bhi add kiya (special characters wali query tooti thi)
+`secureApi.js` me:
+```js
+localStorage.getItem('isAdminAuthenticated') === 'true' ? 'session-local-admin' : ''
+```
+Console me ek line likh ke dashboard khul jaata tha. Ab ye flag **na likha jaata hai na padha jaata hai** — sirf asli server token chalta hai.
 
-### 7. Footer ke saare links dead the
-- **4 social icons** `href="#"` → ab **WhatsApp / Mail / Phone** ke real links
-- **"About Agency", "Career Portal"** etc. `href="#"` → ab real pages (Available Sites, System Guide, Admin Portal, Request a Quote)
-- **"Prime Cities", "Digital Billboards", "Media Kit"** teeno `to="/"` pe jaate the → replace kiye
-- **Newsletter form** ka koi `onSubmit` hi nahi tha → ab `<form>` hai, email validate hota hai aur media desk ko mailto bhejta hai
-- **Contact details placeholder the** (`+91 99999 00000`, "Skyline Plaza, Noida") → ab asli number **`+91 95695 28771`** (jo `HoardingDetail` me use ho raha tha) aur "Meerut & West UP". Ek constant me rakha taaki dobara mismatch na ho
-- Email/phone ab clickable `<a>` hain (hover effect ke saath)
+Saath me:
+- `loginAdmin` ab apne aap `adm_<timestamp>` jaisa nakli token nahi banata (wo waise bhi har API call pe reject hota)
+- `HoardingDetail.jsx` bhi usi spoofable flag se `isAdmin` nikaal raha tha — ab `getAdminSession()` use karta hai
 
-### 8. AdminLogin mobile pe toota hua tha
-`AdminLogin.css` me **ek bhi media query nahi thi** (baaki har page me hain).
-- `height: 80vh` → `min-height` + padding (chhoti screen pe content cut ho raha tha)
-- `@media (max-width: 480px)` breakpoint add kiya
-- Input `font-size: 1rem` par rakha — iOS Safari 16px se chhote pe auto-zoom karta hai
+**2 naye tests** add kiye jo confirm karte hain ki nakli flag se session nahi banta.
 
-### 9. `npm install` plain chalane pe fail hota tha
-`react-helmet-async@2.0.5` React 19 support nahi karta → ERESOLVE error.
-- `.npmrc` me `legacy-peer-deps=true` add kiya
-- ✅ Verified: clean directory me `npm install` ab **765 packages, 7s** me pass hota hai
+---
 
-### 10. SEO files missing
-- `public/robots.txt` — admin/staff/client routes disallow, sitemap reference
-- `public/sitemap.xml` — home, /all, /Meerut, /guide
+## 🟠 3. Staff Upload Token
+
+**Backend:** `isValidStaffToken_()` bhi literally `return true;` tha. Ab `ADH_STAFF_TOKEN` se constant-time compare hota hai.
+
+**Purana default token literally `'staff-token'` tha** — guess karna trivial. Ab `getStaffLinkToken_` pehli baar pe **random 64-char token** auto-generate karta hai. Leak ho jaaye to `rotateStaffToken()` chala ke revoke kar sakte ho.
+
+**Frontend:** `postStaffPhoto` ab nakli `'staff-session'` fallback nahi bhejta, aur `/staff/upload` bina token ke **"Access Link Required"** screen dikhata hai.
+
+**Staff ka experience nahi badla** — token URL se aake device pe save ho jaata hai, ek hi baar link kholna padta hai.
+
+---
+
+## 🟠 4. API Keys — Source se Nikal Di
+
+Repo private hai, par **Vercel site public hai** — bundle se key nikaalna abhi bhi trivial tha. Ab:
+- Hardcoded keys `geminiService.js` / `groqService.js` se **hata di** (Gemini wali array-join se obfuscated thi, jisse GitHub ka secret-scanning bypass ho jaata tha)
+- Ab `.env.local` (local) ya Vercel env vars (production) se aati hain
+- `.env.example` template tracked hai, `.env.local` gitignored
+- `.gitignore` me `.env*` rule add kiya (pehle **bilkul nahi tha**)
+
+**Purana test** sirf `getGroqApiKey()` null check karta tha. Naya test **source files ko scan** karta hai — agar koi dobara key paste karega to test fail hoga, obfuscated form me bhi.
+
+> ⚠️ **Aapko ek kaam karna hai:** Vercel dashboard → Settings → Environment Variables me `VITE_GEMINI_API_KEY_1`, `VITE_GEMINI_API_KEY_2`, `VITE_GROQ_API_KEY` add karo, warna production me AI features band ho jaayenge. Values `.env.local` me maujood hain.
+
+---
+
+## 🟡 5. `disableInspect` — Ab Sirf Admin/Staff Pages Pe
+
+Pehle har page pe right-click block tha. **Public site pe ye customers ko rok raha tha** — hoarding photo save nahi kar paate the, address copy nahi kar paate the.
+
+Ab sirf `/admin` aur `/staff` pe active hai (Electron hash-routing aur Capacitor staff mode bhi handle karta hai). Har visitor ke console me jaane wala `"Stop!"` message bhi hata diya.
+
+Note file me likh diya hai ki **ye security nahi hai** — bundle waise bhi public hai, asli protection backend session checks hain.
+
+---
+
+## 🟡 6. Dead Code Hataya
+
+| File | Lines |
+|---|---|
+| `src/components/ProposalBuilder.jsx` | 346 |
+| `src/components/LoadingSkeleton.jsx` | 112 |
+| `importData.js` | ~90 |
+| `public/hoardings.json` | 151 KB |
+
+**`QuickKpiCards.jsx` rakha hai** — aapne abhi fix kiya tha, lagta hai dashboard me lagana chahte ho.
 
 ---
 
@@ -85,30 +110,25 @@ Render ke andar direct `localStorage.getItem()` call tha → login ke baad butto
 
 | Check | Result |
 |---|---|
-| `npm run build` | ✅ 7.25s, clean |
-| `npx vitest run` | ✅ 42/42 tests pass |
-| `npx eslint .` | ✅ **0 errors** (81 warnings — sab unused vars) |
-| `node scripts/verify-architecture.js` | ✅ All passed |
-| `npm install` (clean dir) | ✅ Pass |
-| Live asset check | ✅ `/heera-logo.png`, `/favicon.ico`, `/robots.txt`, `/sitemap.xml`, `/sw.js` sab **200** |
-| SW cache stamp | ✅ `heera-staff-cache-v1.7.0-1789824765944` |
+| `npm run build` | ✅ 7.26s |
+| `npx vitest run` | ✅ **46/46 pass** (42 → 46, 4 naye security tests) |
+| `npx eslint .` | ✅ 0 errors (79 warnings) |
+| `verify-architecture.js` | ✅ Pass |
+| Keys in `src/` | ✅ **None** |
+| Keys in bundle (bina `.env.local`) | ✅ **None** |
 
 ---
 
-## 📋 Jo Jaan-Boojh Kar Nahi Chhua
+## 📋 Aapke Liye 3 Kaam
 
-1. **Gemini/Groq API keys** — aapne kaha personal project hai, chhod diya.
-2. **Admin auth `localStorage` bypass** — `localStorage.isAdminAuthenticated='true'` se dashboard khul jaata hai. Asli fix Google Apps Script side pe `sessionToken` validate karna hai (frontend-only fix possible nahi). Personal project hai to theek, par jaan lo.
-3. **`/staff/upload` bina token public hai** — `secureApi.js` token generate karta hai par page verify nahi karta. Iska bhi backend side validation chahiye.
-4. **Dead code** — `ProposalBuilder.jsx`, `LoadingSkeleton.jsx`, `QuickKpiCards.jsx`, `public/hoardings.json`, `importData.js` (0 references). QuickKpiCards aapne abhi fix kiya tha isliye shayad use karna chahte ho — isliye chhod diya. Bolo to hata dunga.
-5. **`AdminDashboard.jsx` 10,348 lines / 1,075 KB chunk** — split karna 1-2 din ka kaam hai, alag se karna behtar.
-6. **Sheet Editor ke adhoore features** — `findNext`, `replaceAllMatches`, `handleColResizeStart`, `pasteCutBuffer` likhe hain par UI se wire nahi. Ye nayi feature development hai, bug fix nahi.
-7. **`disableInspect.js`** — right-click block karta hai, bypass ho jaata hai aur legit users ko rokta hai. Behaviour change hai isliye poochhe bina nahi hataya.
+1. **Apps Script deploy karo** (`npm run script:push`) — warna backend fixes active nahi honge
+2. **Vercel me env vars set karo** — warna AI features production me band
+3. **Deploy ke baad logout/login** — purane tokens invalid hain
 
 ---
 
-## 📁 Changed Files
+## 🔵 Jo Baaki Hai (aapne kaha tha alag se karenge)
 
-**Deleted (2):** `DarkModeContext.jsx`, `DarkModeToggle.jsx`
-**Added (5):** `NotFound.jsx`, `.npmrc`, `robots.txt`, `sitemap.xml`, `favicon.ico`
-**Modified (9):** `index.html`, `sw.js`, `sync-version.js`, `App.jsx`, `Footer.jsx`, `Footer.css`, `Navbar.jsx`, `AdminLogin.css`, `CityList.jsx`
+- **`AdminDashboard.jsx`** — 10,348 lines / 1,075 KB chunk. Tab-by-tab split, 1-2 din.
+- **Sheet Editor ke adhoore features** — `findNext`, `replaceAllMatches`, `handleColResizeStart`, `pasteCutBuffer` ka logic likha hai, bas UI wiring baaki. Har ek ~30-60 min.
+- **79 ESLint warnings** — zyadatar unused vars, koi bug nahi.
