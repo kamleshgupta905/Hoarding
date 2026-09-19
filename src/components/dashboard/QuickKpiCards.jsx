@@ -1,4 +1,4 @@
-﻿import React from 'react';
+import React from 'react';
 import { Package, CheckCircle, Clock3, Percent } from 'lucide-react';
 
 export default function QuickKpiCards({ totalSites = 0, availableSites = 0, occupiedSites = 0, expiringSites = 0 }) {
@@ -21,10 +21,10 @@ export default function QuickKpiCards({ totalSites = 0, availableSites = 0, occu
     },
     {
       title: 'Occupancy Rate',
-      value: ${occupancyRate}%,
+      value: `${occupancyRate}%`,
       icon: Percent,
       color: 'bg-indigo-600',
-      badge: ${occupiedSites} Booked
+      badge: `${occupiedSites} Booked`
     },
     {
       title: '15-Day Renewals',

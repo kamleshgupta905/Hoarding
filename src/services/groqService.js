@@ -10,6 +10,8 @@ const GROQ_MODELS = [
   'llama-3.3-70b-versatile'   // High-accuracy fallback
 ];
 
+const DEFAULT_KEY = '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';
+
 export const getGroqApiKey = () => {
   return (
     (typeof window !== 'undefined' && window.localStorage?.getItem('adh_groq_api_key')) ||

@@ -54,6 +54,7 @@ export const safeJsonParse = (rawText) => {
   try {
     return JSON.parse(jsonMatch[0]);
   } catch {
+    // eslint-disable-next-line no-control-regex
     const sanitized = jsonMatch[0].replace(/[\u0000-\u001F\u007F-\u009F]/g, (c) => {
       if (c === '\n') return '\\n';
       if (c === '\r') return '\\r';

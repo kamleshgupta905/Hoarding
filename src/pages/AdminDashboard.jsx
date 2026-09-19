@@ -1142,9 +1142,6 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                 if (isCurrentMasterRejected && previousPhotoCandidate) {
                     restoredPhotoUrl = previousPhotoCandidate;
                     rollbackRestored = true;
-                    siteObj.ImageURL = previousPhotoCandidate;
-                    siteObj['Image URL'] = previousPhotoCandidate;
-                    siteObj['IMAGE 1'] = previousPhotoCandidate;
 
                     // Sync restored master photo back to Google Sheet in background
                     syncToGoogleSheet({
@@ -2548,11 +2545,9 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
             }
         } catch (error) {
             console.error("Auto-sync failed with error:", error);
-            setDailyImages(prev => {
-                const next = [...prev];
-                if (next[index]) next[index].uploading = false;
-                return next;
-            });
+            setDailyImages(prev => prev.map((img, idx) => 
+                (img.id === itemIdOrIndex || idx === itemIdOrIndex) ? { ...img, uploading: false } : img
+            ));
         }
     };
 
