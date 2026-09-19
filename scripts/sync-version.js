@@ -51,3 +51,20 @@ export const UPDATE_CHECK_URL = "https://hoarding-hd9a.vercel.app/version.json";
 `;
 fs.writeFileSync(srcVersionPath, srcContent, 'utf-8');
 console.log(`[sync-version] Updated src/version.js -> v${version} (${now})`);
+
+// 3. Update service worker cache version so each deploy busts the old cache
+const swPath = path.join(rootDir, 'public', 'sw.js');
+if (fs.existsSync(swPath)) {
+  const swSource = fs.readFileSync(swPath, 'utf-8');
+  const stamped = `${version}-${now}`;
+  const updatedSw = swSource.replace(
+    /const CACHE_VERSION = '[^']*';/,
+    `const CACHE_VERSION = '${stamped}';`
+  );
+  if (updatedSw !== swSource) {
+    fs.writeFileSync(swPath, updatedSw, 'utf-8');
+    console.log(`[sync-version] Updated public/sw.js -> cache v${stamped}`);
+  } else {
+    console.warn('[sync-version] CACHE_VERSION marker not found in public/sw.js');
+  }
+}

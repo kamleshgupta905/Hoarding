@@ -3,7 +3,6 @@ import { BrowserRouter, HashRouter, Routes, Route, useLocation } from 'react-rou
 import { HelmetProvider } from 'react-helmet-async';
 import ErrorBoundary from './components/ErrorBoundary';
 import { ToastProvider } from './components/ToastContext';
-import { DarkModeProvider } from './components/DarkModeContext';
 import CommandPalette from './components/CommandPalette';
 import Navbar from './components/Navbar';
 import Footer from './components/Footer';
@@ -42,6 +41,7 @@ const PublicAudit = lazyWithRetry(() => import('./pages/PublicAudit'));
 const ClientReport = lazyWithRetry(() => import('./pages/ClientReport'));
 const StaffUpload = lazyWithRetry(() => import('./pages/StaffUpload'));
 const SystemGuide = lazyWithRetry(() => import('./pages/SystemGuide'));
+const NotFound = lazyWithRetry(() => import('./pages/NotFound'));
 
 const LIVE_REFRESH_INTERVAL_MS = 15000;
 const LOCAL_SYNC_PRESERVATION_MS = 30000;
@@ -335,6 +335,7 @@ function AppContent({ hoardings, setHoardings }) {
             <Route path="/proposal/:clientName" element={<ClientReport hoardings={hoardings} />} />
             <Route path="/staff" element={<StaffUpload />} />
             <Route path="/staff/upload" element={<StaffUpload />} />
+            <Route path="*" element={<NotFound />} />
           </Routes>
         </Suspense>
       </main>
@@ -642,15 +643,13 @@ function App() {
 
   return (
     <HelmetProvider>
-      <DarkModeProvider>
-        <ToastProvider>
-          <ErrorBoundary>
-            <Router>
-              <AppContent hoardings={hoardings} setHoardings={wrappedSetHoardings} />
-            </Router>
-          </ErrorBoundary>
-        </ToastProvider>
-      </DarkModeProvider>
+      <ToastProvider>
+        <ErrorBoundary>
+          <Router>
+            <AppContent hoardings={hoardings} setHoardings={wrappedSetHoardings} />
+          </Router>
+        </ErrorBoundary>
+      </ToastProvider>
     </HelmetProvider>
   );
 }

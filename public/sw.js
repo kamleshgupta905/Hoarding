@@ -1,24 +1,32 @@
 // 🛡️ Heera Advertising Offline Resilience & Cache Service Worker
-const CACHE_NAME = 'heera-staff-cache-v1';
+// CACHE_VERSION is rewritten automatically by scripts/sync-version.js on every build,
+// so a new deployment always invalidates the previous cache.
+const CACHE_VERSION = '1.7.0-1789824864910';
+const CACHE_NAME = `heera-staff-cache-v${CACHE_VERSION}`;
 
 const PRECACHE_URLS = [
   '/',
   '/?mode=staff',
   '/index.html',
   '/manifest.json',
-  '/hira-logo.png',
-  '/favicon.ico'
+  '/heera-logo.png',
+  '/app-icon-192.png'
 ];
 
-// Install: precache essential shell assets
+// Install: precache essential shell assets.
+// Each URL is cached individually so a single 404 cannot abort the whole precache.
 self.addEventListener('install', (event) => {
   self.skipWaiting();
   event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => {
-      return cache.addAll(PRECACHE_URLS).catch((err) => {
-        console.warn('[SW] Precache notice:', err);
-      });
-    })
+    caches.open(CACHE_NAME).then((cache) =>
+      Promise.all(
+        PRECACHE_URLS.map((url) =>
+          cache.add(url).catch((err) => {
+            console.warn('[SW] Skipped precache for', url, err);
+          })
+        )
+      )
+    )
   );
 });
 

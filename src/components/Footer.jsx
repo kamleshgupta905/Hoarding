@@ -1,10 +1,26 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
-import { Mail, Phone, MapPin, Instagram, Facebook, Twitter, Linkedin, Send, ShieldCheck, Globe, Trophy } from 'lucide-react';
+import { Mail, Phone, MapPin, MessageCircle, Send, ShieldCheck, Globe, Trophy } from 'lucide-react';
 import { HIRA_LOGO } from '../assets/hiraLogoData';
 import './Footer.css';
 
+// 📞 Single source of truth for contact details (matches the CTA on HoardingDetail)
+const CONTACT_PHONE_DIGITS = '919569528771';
+const CONTACT_PHONE_DISPLAY = '+91 95695 28771';
+const CONTACT_EMAIL = 'media@heeraadvertising.com';
+
 const Footer = () => {
+    const handleNewsletterSubmit = (e) => {
+        e.preventDefault();
+        const email = new FormData(e.currentTarget).get('email');
+        if (!email) return;
+        // No newsletter backend yet — hand the lead straight to the media desk.
+        window.location.href =
+            `mailto:${CONTACT_EMAIL}?subject=${encodeURIComponent('Newsletter Subscription')}` +
+            `&body=${encodeURIComponent(`Please add me to the Heera Advertising mailing list.\n\nEmail: ${email}`)}`;
+        e.currentTarget.reset();
+    };
+
     return (
         <footer className="footer">
             <div className="container footer-grid">
@@ -20,10 +36,21 @@ const Footer = () => {
                         across India's most strategic transit corridors.
                     </p>
                     <div className="social-row">
-                        <a href="#" className="social-pill" aria-label="Instagram"><Instagram size={18} /></a>
-                        <a href="#" className="social-pill" aria-label="LinkedIn"><Linkedin size={18} /></a>
-                        <a href="#" className="social-pill" aria-label="Facebook"><Facebook size={18} /></a>
-                        <a href="#" className="social-pill" aria-label="Twitter"><Twitter size={18} /></a>
+                        <a
+                            href={`https://wa.me/${CONTACT_PHONE_DIGITS}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="social-pill"
+                            aria-label="Chat with us on WhatsApp"
+                        >
+                            <MessageCircle size={18} />
+                        </a>
+                        <a href={`mailto:${CONTACT_EMAIL}`} className="social-pill" aria-label="Email our media desk">
+                            <Mail size={18} />
+                        </a>
+                        <a href={`tel:+${CONTACT_PHONE_DIGITS}`} className="social-pill" aria-label="Call our media desk">
+                            <Phone size={18} />
+                        </a>
                     </div>
                 </div>
 
@@ -31,29 +58,39 @@ const Footer = () => {
                     <h4>Platform</h4>
                     <ul>
                         <li><Link to="/all">Explore Inventory</Link></li>
-                        <li><Link to="/">Prime Cities</Link></li>
-                        <li><Link to="/">Digital Billboards</Link></li>
-                        <li><Link to="/">Media Kit 2026</Link></li>
+                        <li><Link to="/all?occupancy=Available">Available Sites</Link></li>
+                        <li><Link to="/guide">System Guide</Link></li>
+                        <li><Link to="/admin/login">Admin Portal</Link></li>
                     </ul>
                 </div>
 
                 <div className="footer-links-group">
-                    <h4>Company</h4>
+                    <h4>Get in Touch</h4>
                     <ul>
-                        <li><a href="#">About Agency</a></li>
-                        <li><a href="#">Our Solutions</a></li>
-                        <li><a href="#">Career Portal</a></li>
-                        <li><a href="#">Support Desk</a></li>
+                        <li>
+                            <a href={`https://wa.me/${CONTACT_PHONE_DIGITS}`} target="_blank" rel="noopener noreferrer">
+                                WhatsApp Enquiry
+                            </a>
+                        </li>
+                        <li><a href={`mailto:${CONTACT_EMAIL}`}>Send us a Brief</a></li>
+                        <li><a href={`tel:+${CONTACT_PHONE_DIGITS}`}>Call Media Desk</a></li>
+                        <li><Link to="/all">Request a Quote</Link></li>
                     </ul>
                 </div>
 
                 <div className="footer-newsletter">
                     <h4>Stay Ahead</h4>
                     <p>Get monthly insights on outdoor media trends and prime site availability.</p>
-                    <div className="newsletter-box">
-                        <input type="email" placeholder="Your work email" aria-label="Subscribe to newsletter" />
-                        <button type="button" aria-label="Subscribe"><Send size={16} /></button>
-                    </div>
+                    <form className="newsletter-box" onSubmit={handleNewsletterSubmit}>
+                        <input
+                            type="email"
+                            name="email"
+                            required
+                            placeholder="Your work email"
+                            aria-label="Subscribe to newsletter"
+                        />
+                        <button type="submit" aria-label="Subscribe"><Send size={16} /></button>
+                    </form>
                     <div className="trust-badges">
                         <div className="t-badge"><ShieldCheck size={14} /> <span>Verified Assets</span></div>
                         <div className="t-badge"><Globe size={14} /> <span>Pan India</span></div>
@@ -64,25 +101,25 @@ const Footer = () => {
 
             <div className="footer-reach-out">
                 <div className="container reach-grid">
-                    <div className="reach-item">
+                    <a className="reach-item" href={`mailto:${CONTACT_EMAIL}`}>
                         <Mail className="reach-icon" />
                         <div>
                             <span>Send us a brief</span>
-                            <strong>media@heeraadvertising.com</strong>
+                            <strong>{CONTACT_EMAIL}</strong>
                         </div>
-                    </div>
-                    <div className="reach-item">
+                    </a>
+                    <a className="reach-item" href={`tel:+${CONTACT_PHONE_DIGITS}`}>
                         <Phone className="reach-icon" />
                         <div>
                             <span>Media Desk (Mon-Sat)</span>
-                            <strong>+91 99999 00000</strong>
+                            <strong>{CONTACT_PHONE_DISPLAY}</strong>
                         </div>
-                    </div>
+                    </a>
                     <div className="reach-item">
                         <MapPin className="reach-icon" />
                         <div>
-                            <span>HQ Location</span>
-                            <strong>Skyline Plaza, Sector 18, Noida</strong>
+                            <span>Primary Network</span>
+                            <strong>Meerut &amp; West Uttar Pradesh</strong>
                         </div>
                     </div>
                 </div>
