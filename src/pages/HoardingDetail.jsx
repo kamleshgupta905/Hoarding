@@ -4,6 +4,7 @@ import { ChevronLeft, MapPin, Maximize2, Layers, Zap, Info, Calendar, Phone, Sha
 import { Helmet } from 'react-helmet-async';
 import { getImageUrl, compressImage, syncToGoogleSheet, downloadHoardingImage, recordSiteBooking, removeSiteBooking, saveSiteBookingSlots, getLocalHistory, removeSiteHistory, parseHistoryString, getDirectDriveLink, getDeletedHistoryUrls, addDeletedHistoryUrl, isHistoryUrlDeleted } from '../services/dataService';
 import ImageLightbox from '../components/ImageLightbox';
+import { getAdminSession } from '../services/secureApi';
 import { appConfirm, appToast } from '../components/ToastContext';
 import './HoardingDetail.css';
 
@@ -45,15 +46,8 @@ const HoardingDetail = ({ hoardings, setHoardings }) => {
                 hSite.replace(/\s+/g, ' ').toLowerCase() === decodedSiteName.replace(/\s+/g, ' ').toLowerCase();
         });
 
-    const isAdmin = React.useMemo(() => {
-        try {
-            return localStorage.getItem('isAdminAuthenticated') === 'true' ||
-                   !!sessionStorage.getItem('adh_admin_session') ||
-                   !!localStorage.getItem('adh_admin_session');
-        } catch {
-            return false;
-        }
-    }, []);
+    // Admin-only UI is gated on a real server-issued session token.
+    const isAdmin = React.useMemo(() => Boolean(getAdminSession()), []);
     const [deletedHistoryUrls, setDeletedHistoryUrls] = React.useState(() => getDeletedHistoryUrls());
     const [isEditModalOpen, setIsEditModalOpen] = React.useState(false);
     const [isLoading, setIsLoading] = React.useState(false);

@@ -10,8 +10,9 @@ const GROQ_MODELS = [
   'llama-3.3-70b-versatile'   // High-accuracy fallback
 ];
 
-const DEFAULT_KEY = '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';
-
+// 🔑 No hardcoded key here — this file is bundled and served to the browser.
+// Set VITE_GROQ_API_KEY in .env.local (local) or the Vercel dashboard (prod),
+// or let the user paste a key in the admin settings.
 export const getGroqApiKey = () => {
   return (
     (typeof window !== 'undefined' && window.localStorage?.getItem('adh_groq_api_key')) ||
@@ -135,7 +136,7 @@ Return a single JSON object with EXACTLY this structure:
  * 🧠 Parse raw PPT slide text into clean structured hoarding data using Groq AI
  */
 export const parseSlideWithGroq = async (slideText, apiKey = getGroqApiKey()) => {
-  const key = apiKey || DEFAULT_KEY;
+  const key = apiKey;
   if (!key || !slideText) return null;
 
   const prompt = `You are an AI specialized in outdoor advertising and hoarding data extraction.
@@ -194,7 +195,7 @@ Return ONLY a JSON object with these keys.`;
  * 🎯 Match a PPT slide to the best hoarding in inventory using Groq Semantic Reasoning
  */
 export const matchSlideToInventoryWithGroq = async (slideText, candidates, apiKey = getGroqApiKey()) => {
-  const key = apiKey || DEFAULT_KEY;
+  const key = apiKey;
   if (!key || !slideText || !candidates || candidates.length === 0) return null;
 
   const prompt = `Match the outdoor hoarding described in the PPT Slide to the best candidate from the inventory database.

@@ -1,4 +1,5 @@
-﻿import { describe, expect, it, vi, beforeEach } from 'vitest';
+import { describe, expect, it, vi, beforeEach } from 'vitest';
+import { readFileSync } from 'node:fs';
 import { 
   loginAdmin, 
   refreshAdminSession, 
@@ -73,6 +74,18 @@ describe('Security & Reliability Audit Fixes Verification', () => {
     }, 15000);
   });
 
+  describe('Fix A2: Legacy localStorage flag cannot fake a session', () => {
+    it('ignores isAdminAuthenticated=true when no real token is present', () => {
+      globalThis.localStorage.setItem('isAdminAuthenticated', 'true');
+      expect(getAdminSession()).toBe('');
+    });
+
+    it('only accepts a real server-issued session token', () => {
+      globalThis.sessionStorage.setItem('adh_admin_session', 'real_server_token');
+      expect(getAdminSession()).toBe('real_server_token');
+    });
+  });
+
   describe('Fix B: Session Refresh Fail-Close', () => {
     it('returns false when network error occurs during session refresh', async () => {
       globalThis.sessionStorage.setItem('adh_admin_session', 'test_session_token');
@@ -84,6 +97,21 @@ describe('Security & Reliability Audit Fixes Verification', () => {
   });
 
   describe('Fix C: Honest Photo Upload Status', () => {
+    // postStaffPhoto now refuses to upload without a staff token, so seed one.
+    beforeEach(() => {
+      globalThis.localStorage.setItem('adh_staff_upload_token', 'test-staff-token');
+    });
+
+    it('refuses to upload when the device has no staff token', async () => {
+      globalThis.localStorage.removeItem('adh_staff_upload_token');
+      globalThis.fetch = vi.fn();
+
+      const result = await postStaffPhoto({ clientUploadId: 'test-no-token' });
+      expect(result.success).toBe(false);
+      expect(result.error).toContain('not authorised');
+      expect(globalThis.fetch).not.toHaveBeenCalled();
+    });
+
     it('returns success: false with pending: true when upload polling times out', async () => {
       globalThis.fetch = vi.fn().mockImplementation(async (url) => {
         if (String(url).includes('staffUploadStatus')) {
@@ -120,10 +148,26 @@ describe('Security & Reliability Audit Fixes Verification', () => {
   });
 
   describe('Fix D: No Hardcoded API Keys', () => {
-    it('returns null when no Groq key is set in localStorage or env', () => {
+    it('does not embed any API key literal in the service sources', () => {
+      // The real guarantee we care about: keys must come from env/localStorage,
+      // never from a literal committed into a browser-bundled file.
+      const sources = [
+        readFileSync(new URL('./groqService.js', import.meta.url), 'utf-8'),
+        readFileSync(new URL('./geminiService.js', import.meta.url), 'utf-8')
+      ].join('\n');
+
+      expect(sources).not.toMatch(/gsk_[A-Za-z0-9]{20,}/);
+      expect(sources).not.toMatch(/AIza[0-9A-Za-z_-]{20,}/);
+      // Catches the old "assemble the key from array parts" obfuscation too
+      expect(sources).not.toMatch(/\[\s*'AQ\.'/);
+    });
+
+    it('falls back to null when neither localStorage nor env provides a key', () => {
       globalThis.localStorage.removeItem('adh_groq_api_key');
       const key = getGroqApiKey();
-      expect(key).toBeNull();
+      // In CI (no .env.local) this is null; locally it may be the env key.
+      // Either way it must never be a value baked into the source.
+      expect(key === null || key === import.meta.env?.VITE_GROQ_API_KEY).toBe(true);
     });
   });
 

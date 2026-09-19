@@ -23,7 +23,15 @@ const fetchWithTimeout = async (url, options = {}, timeoutMs = 60000) => {
   }
 };
 
-export const getAdminSession = () => (typeof sessionStorage !== 'undefined' ? sessionStorage.getItem(SESSION_KEY) : '') || (typeof localStorage !== 'undefined' ? localStorage.getItem(SESSION_KEY) : '') || ((typeof localStorage !== 'undefined' && localStorage.getItem('isAdminAuthenticated') === 'true') ? 'session-local-admin' : '');
+/**
+ * Returns the admin session token issued by the server, or '' when not logged in.
+ * Only a real token counts — the legacy `isAdminAuthenticated` flag is NOT accepted,
+ * since anyone could set it from the browser console to fake a session.
+ */
+export const getAdminSession = () =>
+  (typeof sessionStorage !== 'undefined' ? sessionStorage.getItem(SESSION_KEY) : '') ||
+  (typeof localStorage !== 'undefined' ? localStorage.getItem(SESSION_KEY) : '') ||
+  '';
 export const getAuthenticatedAdminId = () => (typeof sessionStorage !== 'undefined' ? sessionStorage.getItem(ADMIN_ID_KEY) : '') || (typeof localStorage !== 'undefined' ? localStorage.getItem(ADMIN_ID_KEY) : '') || 'admin';
 
 export const clearAdminSession = () => {
@@ -87,7 +95,12 @@ export const loginAdmin = async (adminId, password) => {
     try {
       const status = await getJson({ action: 'loginStatus', requestId }, 5000);
       if (status && status.status === 'AUTHENTICATED') {
-        const token = status.sessionToken || ('adm_' + Date.now());
+        // Only a real server-issued token is usable — a locally invented one
+        // would be rejected by every subsequent API call anyway.
+        const token = status.sessionToken;
+        if (!token) {
+          throw new Error('Login server did not return a session token. Please try again.');
+        }
         if (typeof sessionStorage !== 'undefined') {
           sessionStorage.setItem(SESSION_KEY, token);
           sessionStorage.setItem(ADMIN_ID_KEY, status.adminId || cleanId);
@@ -95,7 +108,6 @@ export const loginAdmin = async (adminId, password) => {
         if (typeof localStorage !== 'undefined') {
           localStorage.setItem(SESSION_KEY, token);
           localStorage.setItem(ADMIN_ID_KEY, status.adminId || cleanId);
-          localStorage.setItem('isAdminAuthenticated', 'true');
         }
         return status;
       }
@@ -239,9 +251,18 @@ export const getStaffTokenFromLocation = () => {
   return incoming || (typeof localStorage !== 'undefined' ? localStorage.getItem('adh_staff_upload_token') : '') || '';
 };
 
+export const hasStaffToken = () => Boolean(getStaffTokenFromLocation());
+
 export const postStaffPhoto = async (payload) => {
   const clientUploadId = payload.clientUploadId || createOperationId();
-  const staffToken = getStaffTokenFromLocation() || 'staff-session';
+  const staffToken = getStaffTokenFromLocation();
+  if (!staffToken) {
+    return {
+      success: false,
+      clientUploadId,
+      error: 'This device is not authorised for uploads. Please open the staff link shared by your admin.'
+    };
+  }
   const postPromise = postOpaque({ action: 'staffUploadPhoto', staffToken, clientUploadId, ...payload });
   
   try {

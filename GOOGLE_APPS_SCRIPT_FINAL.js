@@ -43,6 +43,51 @@ var ADMIN_ACTIONS = {
   analyzeImageOrientation: true
 };
 
+/**
+ * Every POST action that must never run without a valid admin session.
+ * Checked centrally in doPost() before any handler is dispatched.
+ * NOTE: 'login', 'loginStatus' and 'staffUploadPhoto' are deliberately absent —
+ * they authenticate by other means (password / staff token).
+ */
+var POST_ADMIN_ACTIONS = {
+  pureUpload: true,
+  batchUpdateSheet: true,
+  changeAdminPassword: true,
+  setGroqFallbackKey: true,
+  previewExcelImport: true,
+  approveExcelImport: true,
+  uploadPptAndProcess: true,
+  getResumableUrl: true,
+  startPptProcessing: true,
+  submitOperation: true,
+  syncDrivePhotosByGpsAndFacing: true,
+  syncDrivePhotos: true,
+  mapExistingImages: true,
+  updateHoarding: true,
+  addHoarding: true,
+  deleteHoarding: true,
+  deleteCityHoardings: true,
+  deleteAllHoardings: true,
+  deleteHistoryItem: true,
+  reviewStaffUpload: true,
+  saveSheetGrid: true,
+  importCommit: true,
+  uploadInputFile: true,
+  analyzeImageOrientation: true,
+  dumpImage: true
+};
+
+/** GET actions that expose private inventory/admin data. */
+var GET_ADMIN_ACTIONS = {
+  sheetGrid: true,
+  excelImportPreview: true,
+  fileJobStatus: true,
+  staffUploads: true,
+  staffLinkToken: true,
+  pullChanges: true,
+  operationStatus: true
+};
+
 /* ================= WEB ================= */
 
 function doPost(e) {
@@ -56,6 +101,13 @@ function doPost(e) {
       }
     } else if (e && e.parameter) {
       p = e.parameter;
+    }
+
+    // 🔒 Central auth gate: every admin-only POST action must carry a valid
+    // session token. Individual handlers keep their own checks as defence in
+    // depth, but this guarantees nothing slips through unguarded.
+    if (POST_ADMIN_ACTIONS[p.action] && !isValidAdminSession_(p.sessionToken)) {
+      return res({ success: false, error: 'Authentication required.' });
     }
 
     // 🚀 ULTRA-FAST DIRECT HANDLERS (Direct Cloud I/O without Sheet locks)
@@ -135,6 +187,12 @@ function doPost(e) {
 
 function doGet(e) {
   var action = e && e.parameter ? e.parameter.action : '';
+
+  // 🔒 Central auth gate for GET actions that expose private data
+  if (GET_ADMIN_ACTIONS[action] && !isValidAdminSession_(e.parameter.sessionToken)) {
+    return res({ success: false, error: 'Authentication required.' });
+  }
+
   if (action === 'loginStatus') return getLoginStatus_(e.parameter.requestId);
   if (action === 'operationStatus') return getOperationStatus_(e.parameter.operationId, e.parameter.sessionToken);
   if (action === 'getVersion') return getChangeVersion_();
@@ -433,12 +491,14 @@ function getLoginStatus_(requestId) {
   return res(JSON.parse(cached));
 }
 
+/**
+ * Validates an admin session token against the server-side session cache.
+ * A token is only valid if requestAdminLogin_ issued it (after a successful
+ * password check) and it has not yet expired.
+ */
 function isValidAdminSession_(token) {
-  if (!token) return true; // Fail-safe for automated client sync
-  if (CacheService.getScriptCache().get('session:' + String(token))) return true;
-  var str = String(token);
-  if (str.startsWith('adm_') || str.startsWith('session-') || str.includes('master') || str.length >= 8) return true;
-  return true;
+  if (!token) return false;
+  return !!CacheService.getScriptCache().get('session:' + String(token));
 }
 
 function refreshAdminSession_(data) {
@@ -450,12 +510,40 @@ function refreshAdminSession_(data) {
   return res({ success: true, expiresIn: CONFIG.SESSION_TTL_SECONDS });
 }
 
+/**
+ * Validates the shared ground-staff upload token.
+ * Staff intentionally do not have individual logins, so a single shared token
+ * (stored in Script Properties) gates photo uploads. Rotate it by running
+ * rotateStaffToken() from the Apps Script editor.
+ */
 function isValidStaffToken_(token) {
-  return true; // Direct mobile app & ground staff photo upload access
+  var expected = PropertiesService.getScriptProperties().getProperty('ADH_STAFF_TOKEN');
+  if (!expected) return false; // Not configured yet -> refuse rather than allow all
+  return constantTimeEquals_(String(token || ''), String(expected));
+}
+
+/**
+ * Generates a fresh staff token. Admin-only.
+ * Any previously shared staff link stops working once this is called.
+ */
+function rotateStaffToken() {
+  var token = Utilities.getUuid().replace(/-/g, '') + Utilities.getUuid().replace(/-/g, '');
+  PropertiesService.getScriptProperties().setProperty('ADH_STAFF_TOKEN', token);
+  Logger.log('New staff token: ' + token);
+  return token;
 }
 
 function getStaffLinkToken_(sessionToken) {
-  var token = PropertiesService.getScriptProperties().getProperty('ADH_STAFF_TOKEN') || 'staff-token';
+  if (!isValidAdminSession_(sessionToken)) {
+    return res({ success: false, error: 'Authentication required.' });
+  }
+  var properties = PropertiesService.getScriptProperties();
+  var token = properties.getProperty('ADH_STAFF_TOKEN');
+  if (!token) {
+    // Auto-provision a strong token on first use instead of the old 'staff-token' default
+    token = Utilities.getUuid().replace(/-/g, '') + Utilities.getUuid().replace(/-/g, '');
+    properties.setProperty('ADH_STAFF_TOKEN', token);
+  }
   return res({ success: true, token: token });
 }
 

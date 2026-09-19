@@ -21,6 +21,11 @@ output/
 *.local
 credentials.json
 token.json
+
+# Environment / API keys (keep .env.example tracked as the template)
+.env
+.env.*
+!.env.example
 .apps-script-id
 
 # Editor directories and files
