@@ -65,7 +65,22 @@ const HoardingDetail = ({ hoardings, setHoardings }) => {
         const fromHoarding = Array.isArray(hoarding.History) && hoarding.History.length > 0 
             ? hoarding.History 
             : parseHistoryString(hoarding.ExecutionHistory || hoarding.History || '');
-        const fromLocal = getLocalHistory(hoarding);
+        // Local history is only a bridge for a capture that has not reached the
+        // sheet yet. Once the sheet has any history for this site, it is the
+        // source of truth: a stale localStorage entry (a photo later deleted, or
+        // one saved against the wrong site) must not resurrect itself on a page
+        // that is otherwise correct. Keep local entries only while they are
+        // recent enough to still be in flight.
+        const PENDING_WINDOW_MS = 10 * 60 * 1000;
+        const rawLocal = getLocalHistory(hoarding);
+        const sheetHasHistory = Array.isArray(fromHoarding) && fromHoarding.length > 0;
+        const fromLocal = !sheetHasHistory
+            ? rawLocal
+            : rawLocal.filter(item => {
+                if (typeof item !== 'object' || !item) return false;
+                const t = Number(item.timestamp) || Date.parse(item.date || '') || 0;
+                return t > 0 && (Date.now() - t) < PENDING_WINDOW_MS;
+            });
 
         // Dedupe by the photo itself (Drive file id where available), NOT by
         // url+timestamp: the same photo often arrives from local cache with a
