@@ -4,10 +4,5 @@
       "source": "/((?!.*\\..*).*)",
       "destination": "/index.html"
     }
-  ],
-  "env": {
-    "VITE_GROQ_API_KEY": "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",
-    "VITE_GEMINI_API_KEY_1": "AQ.Ab8RN6IR8j97v_TwvrhH8cB-HXI2y6-XDmPD6fjpsPHFUI1v-g",
-    "VITE_GEMINI_API_KEY_2": "AQ.Ab8RN6KKCBjZXkMCVP50IXHFI_oeqS88iQoSJ7wHw_fAtCc1JQ"
-  }
+  ]
 }
