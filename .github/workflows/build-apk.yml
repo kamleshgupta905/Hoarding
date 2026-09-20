@@ -85,10 +85,14 @@ jobs:
 
       - name: 📦 Upload APK as GitHub Actions Artifact
         uses: actions/upload-artifact@v4
+        continue-on-error: true
         with:
           name: heera-staff-camera-apk
           path: ./heera-staff-camera.apk
-          retention-days: 30
+          # The APK is ~211 MB and is also published to the staff-apk-latest
+          # release, which is where staff actually download it. A long
+          # retention here just consumed the shared Actions storage quota.
+          retention-days: 3
 
       - name: 🚀 Publish APK to GitHub Releases (staff-apk-latest)
         env:
