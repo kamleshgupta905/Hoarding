@@ -1,116 +1,90 @@
-# Prompt for Antigravity — GitHub + Vercel storage cleanup
+# Prompt for Antigravity — Vercel deployment backlog cleanup
 
 Copy everything inside the box below and paste it as your prompt.
 
 ---
 
 ```
-Repo: kamleshgupta905/Hoarding (private)
-Second repo: kamleshgupta905/hoarding-desktop-releases (public, holds the desktop installers)
-Vercel project: the one deploying https://hoarding-hd9a.vercel.app
+Vercel team: kamlesh-guptas-projects-6fbfd271
+Vercel project: hoarding-hd9a  (live site: https://hoarding-hd9a.vercel.app)
 
-I need two storage problems fixed permanently. Do the one-time cleanup AND set up
-automation so it never fills up again.
+Deployment Storage is at 58.22 GB against the Hobby plan's 10 GB limit and has
+not come down. Please clear the historical backlog.
 
-=== BACKGROUND ===
+=== WHY IT IS 58 GB ===
 
-This project builds a ~680 MB Windows desktop app (Electron) and a ~211 MB Android
-APK on every push to main, via two workflows:
-  .github/workflows/build-desktop.yml
-  .github/workflows/build-apk.yml
+Until now every build was 211 MB, of which 208 MB was public/images/hoardings —
+306 photos that nothing in the codebase referenced. Site photos are served from
+Google Drive, so those files were dead weight bundled into every deployment.
+With roughly 280 historical deployments at 211 MB each, that is the 58 GB.
 
-Nothing was ever cleaned up, so right now there are:
-  - 223 GitHub Actions artifacts totalling ~120 GB (free tier is 500 MB)
-  - 99 releases on kamleshgupta905/Hoarding
-  - 37 releases on kamleshgupta905/hoarding-desktop-releases
-  - a large pile of old Vercel deployments
+This is already fixed in code, on branch arena/01a0b9bf-hoarding, commit 171daec:
+the images were removed, taking a deployment from 211 MB to 3.4 MB (about 62x
+smaller). So new deployments are tiny. Your job is only the historical backlog.
 
-The desktop build already FAILS on its last step with:
-  "Artifact storage quota has been hit. Unable to upload any new artifacts."
+Do NOT re-add the images and do not revert that commit.
 
-Note the build itself and the release publishing both SUCCEED — only the artifact
-upload step fails. So the app is fine, the storage is not.
+=== WHAT TO DO ===
 
-=== TASK 1: GitHub one-time cleanup ===
+Delete the old deployments for hoarding-hd9a using the safe flag, which skips
+anything currently aliased or serving production:
 
-Delete ALL Actions artifacts except the single newest one per artifact name.
-The artifact names in use are "Heera-Advertising-Admin-Desktop-Windows",
-"heera-staff-camera-apk" and "Heera-Staff-Camera-APK".
+  vercel rm hoarding-hd9a --safe --yes
 
-Then delete old releases on BOTH repos, keeping only the newest 3 on each, and
-delete their git tags too.
+Then verify what remains and, if the figure is still high, delete remaining
+unprotected old deployments individually via the API — but always keep:
 
-CRITICAL CONSTRAINT: do not delete whatever GitHub marks as the "latest" release on
-kamleshgupta905/hoarding-desktop-releases. The desktop app's auto-updater
-(electron-updater) resolves updates by reading latest.yml from that release. Deleting
-it would strand every installed copy of the app with no way to update. Currently that
-is v1.7.30. Also never delete the release tagged "staff-apk-latest" on the main repo —
-field staff download the Android APK from it directly.
+  - the current production deployment (never delete it)
+  - the 3 most recent production deployments, for rollback
+  - anything with an alias or custom domain attached
 
-=== TASK 2: GitHub automation ===
+IMPORTANT: do not delete the hoarding-hd9a PROJECT itself. It holds 19
+environment variables and the production domain, and recreating it would mean
+reconfiguring all of them. Only delete deployments.
 
-There is already a prune step called "🧹 Prune Old Releases and Artifacts" at the end
-of build-desktop.yml. Verify it is correct and actually works, fix it if not. It should
-keep the newest 3 releases per repo plus all superseded artifacts deleted, run with
-"if: always()" so a build that failed because storage was full still drains storage,
-and never touch the latest release.
+Also check Settings → Security → Recently Deleted and permanently purge anything
+sitting there — soft-deleted deployments can still count against the storage
+quota for up to 30 days, which is likely why earlier deletions did not move the
+number.
 
-Additionally create a scheduled workflow (weekly) that performs the same prune, so
-storage stays bounded even during periods when no build runs. It should also be
-runnable manually via workflow_dispatch.
+=== ALSO ===
 
-=== TASK 3: Vercel ===
+There was a second project, hoarding-app-2026, deploying the same repo from the
+arena branch. The user already deleted it. If any trace of it remains, purge it.
 
-Old deployments are filling the Hobby plan's 10 GB Deployment Storage.
-
-First set the retention policy in the dashboard under
-Project Settings → Security → Deployment Retention Policy:
+While in the dashboard, set Project Settings → Security → Deployment Retention
+Policy for hoarding-hd9a:
   Canceled:   7 days
   Errored:    7 days
   Preview:    7 days
   Production: 30 days   (Hobby cannot select longer)
 
-Then delete the existing backlog of old deployments. Never delete the current
-production deployment, and keep enough recent production deployments to roll back to
-(at least 3).
-
-Note: Vercel changed Hobby retention on 16 Sep 2026 — each Hobby project now
-automatically keeps only its 3 most recent production deployments plus 3 most recent of
-any type, and deletes unprotected ones immediately when over 10 GB. So CHECK CURRENT
-USAGE FIRST: the backlog may already have shrunk on its own, and there may be little
-left to do beyond setting the policy.
-
-If the dashboard retention policy is not sufficient on its own, add a scheduled GitHub
-Actions workflow that prunes Vercel deployments via the Vercel API, reading a
-VERCEL_TOKEN from GitHub repository secrets. Do not hardcode any token.
-
 === RULES ===
 
-- Never commit or print any token, API key or credential.
-- Do not change any application code — this is purely CI/CD and infrastructure.
-- Do not modify the actual build or packaging steps; only retention/cleanup.
-- Work on a branch and open a PR rather than committing straight to main.
-- Report back: how much storage was freed on each of GitHub and Vercel, and confirm
-  that the desktop auto-updater still resolves v1.7.30 (or newer) correctly afterwards.
+- Never print or commit any token, API key, or environment variable value.
+- Do not change any application code — this is infrastructure cleanup only.
+- Do not delete the project, its environment variables, or its domains.
+- Report the Deployment Storage figure before and after, the number of
+  deployments deleted, and confirm https://hoarding-hd9a.vercel.app still loads.
 ```
 
 ---
 
-## Why this is needed
+## Why `--safe` rather than deleting the project
 
-My sandbox can reach `api.github.com`, but the GitHub token I run under is a bot
-account (`arena-ai-coding-agent[bot]`) with repo-contents permission only — deleting
-artifacts and releases returns `403 Resource not accessible by integration`. Vercel and
-Google are blocked at the network level entirely, so no credential would help there.
+Deleting and recreating the project would also clear the storage, but it would
+destroy 19 environment variables and release the `hoarding-hd9a` domain name,
+which is not guaranteed to be immediately reclaimable. `vercel rm --safe` frees
+the same storage while leaving the project, its variables and its domain intact.
 
-## What I already did (don't let Antigravity redo it)
+## What I already fixed (don't let Antigravity redo it)
 
-On branch `arena/01a0b9bf-hoarding`, commit `065bddc`:
+Branch `arena/01a0b9bf-hoarding`, commit `171daec`: removed
+`public/images/hoardings/` (306 unused photos, 208 MB) and added it to
+`.gitignore`. Verified with a grep across the whole repo that nothing referenced
+those paths, then rebuilt: output went from 211 MB to 3.4 MB. Tests still pass
+(116/116), ESLint reports 0 errors.
 
-- Artifact retention cut from 30 days to 3 days in both workflows
-- `continue-on-error: true` on both upload steps, so a full quota can no longer make an
-  otherwise good build report as failed
-- Added the `🧹 Prune Old Releases and Artifacts` step to `build-desktop.yml`
-
-That commit is **not on `main` yet** — it is in PR #1. If that PR gets merged first,
-Antigravity only needs the one-time cleanup, the weekly scheduled workflow, and Vercel.
+That commit is in PR #1 and **is not on `main` yet**. Until it merges, a fresh
+deployment of `main` will still be 211 MB — so merging matters as much as the
+cleanup does.
