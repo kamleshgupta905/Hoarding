@@ -160,9 +160,14 @@ export const parseHistoryString = (rawHistory) => {
   }
 
   if (typeof rawHistory === 'string' && rawHistory.trim()) {
-    const rawEntries = rawHistory.includes('http') 
-      ? rawHistory.split(/,(?=\s*https?:\/\/)/i) 
-      : rawHistory.split(',');
+    // Reject values that lost their urls entirely — older writes could store the
+    // literal text "[object Object]" when an array was stringified into the cell.
+    if (!rawHistory.includes('http')) return [];
+
+    // Splitting only before an http(s) boundary keeps a legacy "lat,lng" gps
+    // together with its own entry, instead of letting the longitude become a
+    // separate url-less record that renders as a broken photo card.
+    const rawEntries = rawHistory.split(/,(?=\s*https?:\/\/)/i);
     return rawEntries.map(entry => {
       const parts = entry.split('|');
       const raw = parts[0]?.trim() || '';

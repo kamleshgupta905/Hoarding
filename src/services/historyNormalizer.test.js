@@ -14,7 +14,22 @@ const normalizeHistoryString = (historyString, fallbackTs) => {
 
   const stamp = fallbackTs || new Date().getTime();
 
-  return raw.split(',').map((entry) => {
+  const rejoined = [];
+  raw.split(',').forEach((piece) => {
+    const chunk = String(piece).trim();
+    if (!chunk) return;
+    if (chunk.indexOf('http') !== -1 || rejoined.length === 0) {
+      rejoined.push(chunk);
+      return;
+    }
+    const prev = rejoined[rejoined.length - 1];
+    const prevParts = prev.split('|');
+    if (/^-?\d+(\.\d+)?$/.test(chunk) && prevParts.length === 3 && prevParts[2].indexOf(' ') === -1) {
+      rejoined[rejoined.length - 1] = `${prev} ${chunk}`;
+    }
+  });
+
+  return rejoined.map((entry) => {
     const item = String(entry).trim();
     if (!item) return '';
 
@@ -79,12 +94,11 @@ describe('ExecutionHistory timestamp normalization (backend contract)', () => {
   });
 
   it('salvages history already corrupted by a raw comma in gps', () => {
-    // Legacy rows wrote "lat,lng" unescaped, so the lng fragment became its own
-    // bogus entry. It has no url, so it must be dropped rather than rendered as
-    // a broken photo card. (Writers now space-separate gps to prevent this.)
+    // Legacy rows wrote "lat,lng" unescaped, so the lng broke off into its own
+    // url-less fragment. Stitch it back rather than losing half the coordinate.
     const corrupted = `${URL_A}|${REAL_TS}|28.6,77.2`;
     const out = normalizeHistoryString(corrupted, FALLBACK);
-    expect(out).toBe(`${URL_A}|${REAL_TS}|28.6`);
+    expect(out).toBe(`${URL_A}|${REAL_TS}|28.6 77.2`);
     expect(parseHistoryString(out)).toHaveLength(1);
   });
 
@@ -128,5 +142,55 @@ describe('frontend parser agrees with normalized backend output', () => {
     const parsed = parseHistoryString(normalized);
     expect(parsed).toHaveLength(1);
     expect(parsed[0].gps).toBe('28.6 77.2');
+  });
+});
+
+/**
+ * Regressions found by inspecting the live Hoardings_Master sheet.
+ * The ExecutionHistory column contained two kinds of damage:
+ *   1. cells holding the literal text "[object Object]"
+ *   2. entries whose gps was written as a raw "lat,lng", so the longitude
+ *      broke off into its own url-less fragment, often repeated many times
+ */
+describe('repairs damage observed in the live sheet', () => {
+  it('treats an "[object Object]" cell as empty instead of a photo', () => {
+    expect(parseHistoryString('[object Object]')).toEqual([]);
+    expect(parseHistoryString('[object Object][object Object]')).toEqual([]);
+  });
+
+  it('does not turn a split-off longitude into a phantom entry', () => {
+    // Exactly the shape seen in the sheet: one photo, gps split by its comma.
+    const fromSheet = `${URL_A}|1789619980787|28.956048, 77.734999`;
+    const parsed = parseHistoryString(fromSheet);
+    expect(parsed).toHaveLength(1);
+    expect(parsed[0].timestamp).toBe(1789619980787);
+  });
+
+  it('ignores the repeated orphan longitudes that follow real entries', () => {
+    // The sheet had runs like ", 77.734999, 77.734999, 77.734999" between photos.
+    const fromSheet = [
+      `${URL_A}|1789619980787|28.956048, 77.734999`,
+      ' 77.734999',
+      ' 77.734999',
+      `${URL_B}|1789730569271|28.956048, 77.734999`
+    ].join(',');
+    const parsed = parseHistoryString(fromSheet);
+    expect(parsed).toHaveLength(2);
+    expect(parsed.map((p) => p.timestamp)).toEqual([1789619980787, 1789730569271]);
+  });
+
+  it('normalizer stitches an orphan fragment back onto its entry', () => {
+    const out = normalizeHistoryString(`${URL_A}|${REAL_TS}|28.956048, 77.734999`, FALLBACK);
+    expect(out.split(',')).toHaveLength(1);
+    expect(out).toContain('28.956048 77.734999');
+  });
+
+  it('normalizer drops repeated orphan longitudes rather than keeping junk', () => {
+    const out = normalizeHistoryString(
+      `${URL_A}|${REAL_TS}|28.956048, 77.734999, 77.734999, 77.734999`,
+      FALLBACK
+    );
+    expect(parseHistoryString(out)).toHaveLength(1);
+    expect(out.match(/77\.734999/g)).toHaveLength(1);
   });
 });

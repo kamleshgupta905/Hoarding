@@ -1824,7 +1824,39 @@ function updateHoardingDetails(data) {
         
         // Safely handle ExecutionHistory from fields (guarding against raw base64 data to stay within 50k char limit)
         if (fieldKey === 'history' || fieldKey === 'executionhistory') {
-          var incomingHist = String(data.fields[fKey] || '').trim();
+          // A client that sends the History array (or objects) instead of the
+          // joined string used to be stringified straight into the cell, which
+          // wrote the literal text "[object Object]" and destroyed the row's
+          // real history. Rebuild the "url|timestamp|gps" form from structured
+          // input instead, and never write a value that has no url in it.
+          var histField = data.fields[fKey];
+          var incomingHist = '';
+
+          if (Array.isArray(histField)) {
+            incomingHist = histField.map(function (entry) {
+              if (entry && typeof entry === 'object') {
+                var u = String(entry.url || entry.preview || entry.ImageURL || '').trim();
+                if (!u) return '';
+                var t = Number(entry.timestamp) || Date.parse(entry.date || '') || 0;
+                var g = String(entry.gps || '').trim().replace(/,/g, ' ');
+                return u + '|' + (t || new Date().getTime()) + (g ? '|' + g : '');
+              }
+              return String(entry == null ? '' : entry).trim();
+            }).filter(function (e) { return e !== ''; }).join(',');
+          } else if (histField && typeof histField === 'object') {
+            var ou = String(histField.url || histField.preview || '').trim();
+            if (ou) {
+              var ot = Number(histField.timestamp) || Date.parse(histField.date || '') || new Date().getTime();
+              incomingHist = ou + '|' + ot;
+            }
+          } else {
+            incomingHist = String(histField == null ? '' : histField).trim();
+          }
+
+          // Reject anything that lost its urls (e.g. "[object Object]") rather
+          // than overwriting good data in the sheet with junk.
+          if (incomingHist.indexOf('http') === -1) incomingHist = '';
+
           if (incomingHist && incomingHist.indexOf('data:image') === -1) {
             if (idxHistory === -1) {
               var newHistCol = sheet.getLastColumn() + 1;
@@ -3753,13 +3785,100 @@ function findSiteColumn(headers) {
  * the ordering stays sensible even for older rows being rewritten. Entries that
  * already have a valid timestamp are left exactly as they are.
  */
+/**
+ * 🔧 One-off repair for ExecutionHistory damage already stored in the sheet.
+ *
+ * Run this manually from the Apps Script editor (select repairExecutionHistory
+ * and press Run). It fixes two problems found in Hoardings_Master:
+ *
+ *   1. cells containing the literal text "[object Object]" — an array was
+ *      stringified into the cell, destroying that row's history
+ *   2. gps written as a raw "lat,lng", which split one record into several,
+ *      leaving repeated url-less fragments like ", 77.734999, 77.734999"
+ *
+ * Rows that are already clean are left untouched, and a summary is logged.
+ * Safe to run more than once: normalizeHistoryString_ is idempotent.
+ */
+function repairExecutionHistory() {
+  var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(CONFIG.SHEET_NAME);
+  if (!sheet) throw new Error(CONFIG.SHEET_NAME + ' sheet not found');
+
+  var headers = getAllHeaders(sheet);
+  var idxHistory = findHistoryColumn(headers);
+  if (idxHistory === -1) throw new Error('ExecutionHistory column not found');
+
+  var lastRow = sheet.getLastRow();
+  if (lastRow < 2) return;
+
+  var range = sheet.getRange(2, idxHistory + 1, lastRow - 1, 1);
+  var values = range.getValues();
+
+  var clearedObjectRows = 0;
+  var repairedRows = 0;
+  var unchangedRows = 0;
+
+  for (var i = 0; i < values.length; i++) {
+    var original = String(values[i][0] == null ? '' : values[i][0]);
+    if (!original.trim()) { unchangedRows++; continue; }
+
+    var repaired;
+    if (original.indexOf('http') === -1) {
+      // No urls at all (e.g. "[object Object]") — there is nothing to recover.
+      repaired = '';
+      if (original.trim()) clearedObjectRows++;
+    } else {
+      repaired = normalizeHistoryString_(original);
+    }
+
+    if (repaired !== original) {
+      values[i][0] = repaired;
+      if (repaired !== '') repairedRows++;
+    } else {
+      unchangedRows++;
+    }
+  }
+
+  range.setValues(values);
+  SpreadsheetApp.flush();
+
+  var summary = 'ExecutionHistory repair complete — ' +
+    repairedRows + ' row(s) rewritten, ' +
+    clearedObjectRows + ' unrecoverable "[object Object]" cell(s) cleared, ' +
+    unchangedRows + ' already clean.';
+  Logger.log(summary);
+  try { SpreadsheetApp.getActiveSpreadsheet().toast(summary, 'Repair Complete', 10); } catch (e) {}
+  return summary;
+}
+
 function normalizeHistoryString_(historyString, fallbackTs) {
   var raw = String(historyString == null ? '' : historyString).trim();
   if (!raw) return '';
 
   var stamp = fallbackTs || new Date().getTime();
 
-  return raw.split(',').map(function (entry) {
+  // Legacy rows stored gps as a raw "lat,lng", but commas separate entries, so
+  // the longitude broke off into its own url-less fragment (sometimes repeated
+  // many times). Stitch each orphan back onto the entry it came from before
+  // parsing, so real history is preserved instead of silently dropped.
+  var rejoined = [];
+  raw.split(',').forEach(function (piece) {
+    var chunk = String(piece).trim();
+    if (!chunk) return;
+    if (chunk.indexOf('http') !== -1 || rejoined.length === 0) {
+      rejoined.push(chunk);
+      return;
+    }
+    // Only a bare number can be a split-off longitude. Anything else is junk and
+    // must not be glued onto a good entry. Attach at most one, and only when the
+    // previous entry has a gps segment that is still missing its second half.
+    var prev = rejoined[rejoined.length - 1];
+    var prevParts = prev.split('|');
+    if (/^-?\d+(\.\d+)?$/.test(chunk) && prevParts.length === 3 && prevParts[2].indexOf(' ') === -1) {
+      rejoined[rejoined.length - 1] = prev + ' ' + chunk;
+    }
+  });
+
+  return rejoined.map(function (entry) {
     var item = String(entry).trim();
     if (!item) return '';
 
