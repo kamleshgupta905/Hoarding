@@ -40,21 +40,20 @@ npx vercel --prod
 ## 2️⃣ Google Apps Script Deploy
 
 ### File kahan hai
-Do jagah same code hai (dono ab identical hain):
-- **`GOOGLE_APPS_SCRIPT_FINAL.js`** — repo root me (main reference)
-- **`google_apps_script/Code.gs`** — ye wala push script actually deploy karta hai
+**`google_apps_script/Code.gs`** — bas yahi ek file hai. Yahi single source of truth hai
+aur yahi `npm run script:push` deploy karta hai.
 
-> ⚠️ **Ek baat jo maine pakdi:** `Code.gs` purana version tha jisme security bug abhi bhi tha,
-> aur `scripts/appscript-sync.js` **usi ko prefer karta hai**. Agar aap bina dhyan diye
-> `npm run script:push` chalate, to purana asurakshit backend dobara deploy ho jaata aur
-> saare auth fixes chup-chaap chale jaate. Maine dono files sync kar di hain.
+> ℹ️ **Pehle ye do jagah thi** (`GOOGLE_APPS_SCRIPT_FINAL.js` repo root me bhi). Dono chupchaap
+> alag ho gayi thi — `Code.gs` purana tha jisme security bug abhi bhi tha, aur push script
+> *usi* ko prefer karta tha. Root wali duplicate ab **delete** kar di hai aur push script ka
+> fallback bhi hata diya, taaki ye dobara na ho.
 
 ### Option A — Manual (sabse aasaan, recommend karta hoon)
 
 1. Apna Apps Script project kholo: https://script.google.com → apna project
 2. Left sidebar me **`Code.gs`** pe click karo
 3. Editor me **saara purana code select karo** (Ctrl+A) aur delete karo
-4. Repo se `GOOGLE_APPS_SCRIPT_FINAL.js` ka **pura content copy** karke paste karo
+4. Repo se `google_apps_script/Code.gs` ka **pura content copy** karke paste karo
 5. **Save** (Ctrl+S)
 6. Upar right me **Deploy** → **Manage deployments**
 7. Existing deployment ke saamne **pencil (Edit)** icon pe click karo

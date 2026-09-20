@@ -5,7 +5,7 @@
 
 ## ⚠️ Sabse Zaroori: Deploy Karna Padega
 
-Backend ke fixes **`GOOGLE_APPS_SCRIPT_FINAL.js`** me hain. Ye file repo me hai par **Google Apps Script pe automatically nahi jaati**. Jab tak aap ise deploy nahi karte, backend purana (asurakshit) hi chalega:
+Backend ke fixes **`google_apps_script/Code.gs`** me hain. Ye file repo me hai par **Google Apps Script pe automatically nahi jaati**. Jab tak aap ise deploy nahi karte, backend purana (asurakshit) hi chalega:
 
 ```bash
 npm run script:push

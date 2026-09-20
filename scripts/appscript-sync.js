@@ -94,14 +94,15 @@ export async function pushAppsScript(scriptId) {
     source: JSON.stringify(manifest, null, 2)
   });
 
-  // 2. Code.gs / GOOGLE_APPS_SCRIPT_FINAL.js
+  // 2. Code.gs — the single source of truth for the Apps Script backend.
+  // There is deliberately no fallback to another path: a second copy of this
+  // file used to exist in the repo root, and the two drifted apart silently,
+  // which meant a push could deploy stale backend code.
   let codeSource = '';
   if (fs.existsSync('./google_apps_script/Code.gs')) {
     codeSource = fs.readFileSync('./google_apps_script/Code.gs', 'utf8');
-  } else if (fs.existsSync('./GOOGLE_APPS_SCRIPT_FINAL.js')) {
-    codeSource = fs.readFileSync('./GOOGLE_APPS_SCRIPT_FINAL.js', 'utf8');
   } else {
-    console.error('❌ No code file found to push!');
+    console.error('❌ google_apps_script/Code.gs not found — nothing to push!');
     return;
   }
 
