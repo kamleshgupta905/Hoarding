@@ -1203,7 +1203,8 @@ function updateSitePhotoFromStaff(siteName, imageUrl, historyOnly, siteStatus) {
       var currentHistory = historyCell.getValue();
       var historyItem = (historyOnly ? imageUrl : previousImage) + '|' + new Date().getTime();
       if ((historyOnly && imageUrl) || (!historyOnly && previousImage)) {
-        historyCell.setValue(currentHistory ? currentHistory + ',' + historyItem : historyItem);
+        var healedPrior = normalizeHistoryString_(currentHistory);
+        historyCell.setValue(healedPrior ? healedPrior + ',' + historyItem : historyItem);
       }
     }
     if (!historyOnly) sheet.getRange(rowIndex, idxImg + 1).setValue(imageUrl);
@@ -1831,7 +1832,10 @@ function updateHoardingDetails(data) {
               headers = getAllHeaders(sheet);
               idxHistory = newHistCol - 1;
             }
-            sheet.getRange(rowIndex, idxHistory + 1).setValue(incomingHist);
+            // Stamp any entry the client sent without a timestamp, otherwise the
+            // detail page shows "Verified Date Unknown" and cannot sort history.
+            var normalizedHist = normalizeHistoryString_(incomingHist);
+            sheet.getRange(rowIndex, idxHistory + 1).setValue(normalizedHist);
             logDebug("UPDATE | Safely wrote ExecutionHistory from fields to Row " + rowIndex);
           }
           continue;
@@ -1920,7 +1924,7 @@ function updateHoardingDetails(data) {
               logDebug("UPDATE | Archiving EXISTING master to history before update: " + itemToArchive);
             }
           } else if (data.mode === 'archive' || data.mode === 'both' || data.isDailyProof) {
-            var gpsSuffix = data.gps ? ("|" + String(data.gps).trim()) : "";
+            var gpsSuffix = data.gps ? ("|" + String(data.gps).trim().replace(/,/g, ' ')) : "";
             itemToArchive = fileUrl + "|" + new Date().getTime() + gpsSuffix; 
             logDebug("UPDATE | Archiving NEW upload to history: " + itemToArchive);
           }
@@ -1932,7 +1936,11 @@ function updateHoardingDetails(data) {
                 return hp.indexOf('data:image/') === -1 && hp.indexOf('base64') === -1 && hp.length < 3000;
               }).join(',');
             }
-            var updatedHistory = currentHistory ? (currentHistory + "," + itemToArchive) : itemToArchive;
+            // Backfill timestamps on any pre-existing undated entries in this row
+            // while we are already rewriting the cell. Existing valid timestamps
+            // are preserved; only the undated ones are stamped.
+            var healedHistory = normalizeHistoryString_(currentHistory);
+            var updatedHistory = healedHistory ? (healedHistory + "," + itemToArchive) : itemToArchive;
             sheet.getRange(rowIndex, idxHistory + 1).setValue(updatedHistory);
             SpreadsheetApp.flush();
             historyUpdated = true;
@@ -2054,7 +2062,7 @@ function deleteHistoryItem(data) {
       return item.indexOf(data.imageUrl) === -1;
     });
 
-    sheet.getRange(rowIndex, idxHistory + 1).setValue(filteredItems.join(','));
+    sheet.getRange(rowIndex, idxHistory + 1).setValue(normalizeHistoryString_(filteredItems.join(',')));
     SpreadsheetApp.flush();
     return res({ success: true, message: 'History item removed' });
   } catch (err) {
@@ -3733,6 +3741,53 @@ function findSiteColumn(headers) {
 /**
  * 🖼 Helper to find the Image column index reliably
  */
+/**
+ * Guarantees every ExecutionHistory entry carries a timestamp.
+ *
+ * History is stored as "url|timestamp|gps" entries joined by commas. Some write
+ * paths (notably a client sending a pre-built ExecutionHistory string) could
+ * store a bare "url" with no timestamp, which makes the site detail page render
+ * "Verified Date Unknown" and prevents correct newest-first sorting.
+ *
+ * Any entry missing a usable timestamp gets `fallbackTs` (the current time), so
+ * the ordering stays sensible even for older rows being rewritten. Entries that
+ * already have a valid timestamp are left exactly as they are.
+ */
+function normalizeHistoryString_(historyString, fallbackTs) {
+  var raw = String(historyString == null ? '' : historyString).trim();
+  if (!raw) return '';
+
+  var stamp = fallbackTs || new Date().getTime();
+
+  return raw.split(',').map(function (entry) {
+    var item = String(entry).trim();
+    if (!item) return '';
+
+    var parts = item.split('|');
+    var url = String(parts[0] || '').trim();
+    if (!url || url.indexOf('http') === -1) return '';
+
+    var tsRaw = String(parts[1] || '').trim();
+    var tsNum = Number(tsRaw);
+    var valid = tsRaw && !isNaN(tsNum) && tsNum > 1000000000;
+
+    if (!valid && tsRaw) {
+      // Tolerate a date string that was written instead of epoch millis.
+      var parsed = new Date(tsRaw).getTime();
+      if (!isNaN(parsed) && parsed > 1000000000) {
+        tsNum = parsed;
+        valid = true;
+      }
+    }
+
+    var ts = valid ? tsNum : stamp;
+    // GPS arrives as "lat,lng" but commas separate entries in this format, so a
+    // raw comma would split one record into two and corrupt the history cell.
+    var gps = String(parts.slice(2).join('|') || '').trim().replace(/,/g, ' ');
+    return url + '|' + ts + (gps ? '|' + gps : '');
+  }).filter(function (e) { return e !== ''; }).join(',');
+}
+
 function findHistoryColumn(headers) {
   var idx = headers.findIndex(function(h) {
     var c = cleanFull(h);

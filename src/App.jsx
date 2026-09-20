@@ -431,7 +431,19 @@ function App() {
             mergedList[i] = {
               ...mergedList[i],
               History: combined,
-              ExecutionHistory: combined.map(h => `${typeof h === 'object' ? (h.url || h.preview || '') : h}|${typeof h === 'object' ? (h.timestamp || Date.now()) : Date.now()}${typeof h === 'object' && h.gps ? '|' + h.gps : ''}`).join(',')
+              ExecutionHistory: combined.map(h => {
+                const url = typeof h === 'object' ? (h.url || h.preview || '') : h;
+                // Prefer a real recorded time; fall back to the `date` field before
+                // stamping "now", so an existing capture time is never discarded.
+                const known = typeof h === 'object'
+                  ? (Number(h.timestamp) || Date.parse(h.date || '') || 0)
+                  : 0;
+                const ts = known > 0 ? known : Date.now();
+                // Commas separate history entries, so a raw "lat,lng" would split
+                // one record into two. Store it space-separated instead.
+                const gps = typeof h === 'object' && h.gps ? `|${String(h.gps).replace(/,/g, ' ')}` : '';
+                return `${url}|${ts}${gps}`;
+              }).join(',')
             };
             break;
           }

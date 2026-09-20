@@ -391,7 +391,7 @@ export const normalizeHoarding = (item) => {
     'History': combinedHistory,
     'ExecutionHistory': (typeof item['ExecutionHistory'] === 'string' && item['ExecutionHistory'].includes('data:image/'))
       ? item['ExecutionHistory'].split(',').filter(p => !p.includes('data:image/')).join(',')
-      : (item['ExecutionHistory'] || (combinedHistory.length > 0 ? combinedHistory.map(h => `${typeof h === 'object' ? (h.url || h.preview || '') : h}|${typeof h === 'object' ? (h.timestamp || Date.now()) : Date.now()}${typeof h === 'object' && h.gps ? '|' + h.gps : ''}`).join(',') : '')),
+      : (item['ExecutionHistory'] || (combinedHistory.length > 0 ? combinedHistory.map(h => `${typeof h === 'object' ? (h.url || h.preview || '') : h}|${typeof h === 'object' ? (h.timestamp || Date.now()) : Date.now()}${typeof h === 'object' && h.gps ? '|' + String(h.gps).replace(/,/g, ' ') : ''}`).join(',') : '')),
     'Site Category': siteCategory,
     'STATUS': status,
     'BookedBy': bookedBy,
