@@ -8,7 +8,10 @@ on:
 jobs:
   prune:
     name: Prune Old Releases and Artifacts
-    runs-on: windows-latest
+    # Ubuntu rather than windows-latest: nothing here needs Windows, and on a
+    # private repo Windows minutes bill at 2x. pwsh is preinstalled on Ubuntu
+    # runners, so the script below is unchanged.
+    runs-on: ubuntu-latest
     permissions:
       contents: write
 
