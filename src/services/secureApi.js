@@ -188,11 +188,31 @@ export const submitAdminOperation = async ({ type, payload = {}, siteId = '', ba
     ...payload
   };
 
+  // Deletes must be confirmed, not fired blindly. These actions are gated behind
+  // an admin session on the backend, and a no-cors post cannot read the response
+  // — so an "Authentication required" rejection used to look like success while
+  // the row stayed in the sheet and reappeared on the next refresh.
   const asyncFastActions = ['deleteHoarding', 'deleteHistoryItem', 'deleteAllHoardings', 'deleteCityHoardings', 'dumpImage'];
-  if (options.async || asyncFastActions.includes(type) || (payload && asyncFastActions.includes(payload.action))) {
-    // Fire-and-forget with warning — caller should not treat QUEUED as COMPLETED
-    postOpaque(combinedPayload).catch(err => console.warn('Delete operation post warning:', err));
-    console.warn(`⚠️ [Delete] Operation ${operationId} queued but unconfirmed. Track via operationId.`);
+  const isDeleteAction = asyncFastActions.includes(type) || (payload && asyncFastActions.includes(payload.action));
+
+  if (isDeleteAction) {
+    try {
+      const result = await postDirect(combinedPayload, 30000);
+      if (result && result.success === false) {
+        throw new Error(result.error || 'Delete was rejected by the server.');
+      }
+      return { status: 'COMPLETED', operationId, confirmed: true, ...result };
+    } catch (err) {
+      // Fall back to the opaque post so the delete still reaches the backend when
+      // CORS blocks the readable request, but report it as unconfirmed.
+      console.warn('Delete could not be confirmed directly:', err.message);
+      await postOpaque(combinedPayload).catch(e => console.warn('Delete post warning:', e));
+      return { status: 'QUEUED', operationId, confirmed: false, error: err.message };
+    }
+  }
+
+  if (options.async) {
+    postOpaque(combinedPayload).catch(err => console.warn('Async operation post warning:', err));
     return { status: 'QUEUED', operationId, confirmed: false };
   }
 

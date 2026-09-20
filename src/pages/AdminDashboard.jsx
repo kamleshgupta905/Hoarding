@@ -8887,9 +8887,30 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
 
                                                         {/* SITE LOCATION, CITY & LAT-LONG */}
                                                         <td style={{ padding: '16px' }}>
-                                                            <div style={{ fontSize: '0.9rem', color: '#111827', fontWeight: 700, marginBottom: '4px' }}>
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => navigate(`/${encodeURIComponent(b.city || b.site?.City || 'city')}/${encodeURIComponent(b.location || '')}`)}
+                                                                title="Open the public site page a client would see"
+                                                                style={{
+                                                                    display: 'inline-flex',
+                                                                    alignItems: 'center',
+                                                                    gap: '5px',
+                                                                    background: 'none',
+                                                                    border: 'none',
+                                                                    padding: 0,
+                                                                    marginBottom: '4px',
+                                                                    fontSize: '0.9rem',
+                                                                    color: '#111827',
+                                                                    fontWeight: 700,
+                                                                    cursor: 'pointer',
+                                                                    textAlign: 'left'
+                                                                }}
+                                                                onMouseEnter={e => { e.currentTarget.style.color = '#4338ca'; e.currentTarget.style.textDecoration = 'underline'; }}
+                                                                onMouseLeave={e => { e.currentTarget.style.color = '#111827'; e.currentTarget.style.textDecoration = 'none'; }}
+                                                            >
                                                                 {b.location}
-                                                            </div>
+                                                                <ExternalLink size={12} style={{ flexShrink: 0, opacity: 0.55 }} />
+                                                            </button>
                                                             
                                                             <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '6px', marginBottom: '6px' }}>
                                                                 {b.city && (
