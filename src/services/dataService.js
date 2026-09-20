@@ -665,6 +665,65 @@ export const getLocalHistory = (site = null) => {
   }
 };
 
+/**
+ * 🧹 Drops local history entries that have outlived their purpose.
+ *
+ * adh_local_history is a hand-off buffer: a capture is written there so it shows
+ * instantly, and the sheet becomes the real record once the upload lands. If an
+ * entry is never cleaned up it keeps being overlaid onto the site forever — that
+ * is how a photo picked by mistake during bulk booking kept appearing on a page
+ * whose sheet row was perfectly clean.
+ *
+ * An entry is dropped when it is older than `maxAgeMs` (default 24h), by which
+ * point it has either reached the sheet or failed for good. Returns how many
+ * entries were removed.
+ */
+export const pruneLocalHistory = (maxAgeMs = 24 * 60 * 60 * 1000) => {
+  if (typeof window === 'undefined') return 0;
+  let removed = 0;
+  const cutoff = Date.now() - maxAgeMs;
+
+  const pruneStore = (storage, key) => {
+    try {
+      const raw = storage.getItem(key);
+      if (!raw) return;
+      const data = JSON.parse(raw);
+      if (!data || typeof data !== 'object') return;
+
+      let changed = false;
+      Object.keys(data).forEach(siteKey => {
+        if (!Array.isArray(data[siteKey])) return;
+        const kept = data[siteKey].filter(item => {
+          // A bare string carries no timestamp, so it can never be aged out.
+          // It is also the legacy shape, so treat it as expired.
+          if (typeof item !== 'object' || !item) return false;
+          const t = Number(item.timestamp) || Date.parse(item.date || '') || 0;
+          return t > cutoff;
+        });
+        if (kept.length !== data[siteKey].length) {
+          removed += data[siteKey].length - kept.length;
+          changed = true;
+          if (kept.length === 0) delete data[siteKey];
+          else data[siteKey] = kept;
+        }
+      });
+
+      if (changed) storage.setItem(key, JSON.stringify(data));
+    } catch {
+      // A corrupt buffer is worse than no buffer — reset it.
+      try { storage.removeItem(key); } catch { /* storage unavailable */ }
+    }
+  };
+
+  pruneStore(localStorage, 'adh_local_history');
+  pruneStore(sessionStorage, 'adh_session_recent_history');
+
+  if (removed > 0) {
+    console.log(`🧹 [Local History] Pruned ${removed} stale entr${removed === 1 ? 'y' : 'ies'}; the sheet is the record.`);
+  }
+  return removed;
+};
+
 export const recordSiteHistory = (site, historyItem) => {
   if (!site || !historyItem || typeof window === 'undefined') return;
   try {

@@ -7,7 +7,7 @@ import CommandPalette from './components/CommandPalette';
 import Navbar from './components/Navbar';
 import Footer from './components/Footer';
 import AdminLogin from './pages/AdminLogin';
-import { fetchHoardings, getLocalBookings, getSiteBookingKeys, getLocalHistory, resolveSiteLiveStatus } from './services/dataService';
+import { fetchHoardings, getLocalBookings, getSiteBookingKeys, getLocalHistory, resolveSiteLiveStatus, pruneLocalHistory } from './services/dataService';
 
 // Helper to auto-recover dynamic imports when a new build is deployed on Vercel
 const lazyWithRetry = (componentImport) =>
@@ -411,14 +411,24 @@ function App() {
         const item = mergedList[i];
         const keys = getSiteBookingKeys(item);
         
-        // Overlay local verification history if present (filter out any raw base64 blobs)
+        // Overlay local verification history only while it is still in flight.
+        // These entries exist to bridge the gap between a capture and the sheet
+        // catching up; once the sheet has history for a site it is authoritative,
+        // and an old local entry must not keep resurrecting itself there.
+        const PENDING_WINDOW_MS = 10 * 60 * 1000;
         for (const k of keys) {
           if (Array.isArray(localHistory[k]) && localHistory[k].length > 0) {
             const currentHist = Array.isArray(mergedList[i].History) ? mergedList[i].History : [];
+            const sheetHasHistory = currentHist.length > 0;
             const cleanLocal = localHistory[k].filter(h => {
               const u = typeof h === 'object' ? (h.url || h.preview || '') : h;
-              return u && typeof u === 'string' && !u.startsWith('data:image/');
+              if (!u || typeof u !== 'string' || u.startsWith('data:image/')) return false;
+              if (!sheetHasHistory) return true;
+              if (typeof h !== 'object') return false;
+              const t = Number(h.timestamp) || Date.parse(h.date || '') || 0;
+              return t > 0 && (Date.now() - t) < PENDING_WINDOW_MS;
             });
+            if (cleanLocal.length === 0) break;
             const seenUrls = new Set(cleanLocal.map(h => (typeof h === 'object' ? (h.url || h.preview || '') : h)));
             const combined = [...cleanLocal];
             currentHist.forEach(h => {
@@ -563,6 +573,12 @@ function App() {
       window.removeEventListener('focus', scheduleRefresh);
     };
   }, [refreshHoardings]);
+
+  // Clear out local capture entries that the sheet has long since taken over,
+  // so nothing lingers in the browser pretending to be site data.
+  useEffect(() => {
+    pruneLocalHistory();
+  }, []);
 
   useEffect(() => {
     const loadData = async () => {
