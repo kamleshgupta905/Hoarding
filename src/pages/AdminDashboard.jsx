@@ -1610,11 +1610,17 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
         throw new Error('PPT processing is taking longer than expected. It is still safe in Drive; please check Logs shortly.');
     };
 
+    // State updates are async, so a queued batch could start two uploads before
+    // `fileProcessing` re-rendered. This ref flips synchronously and is the real
+    // in-flight lock; fileProcessing stays purely for rendering progress.
+    const uploadInFlightRef = React.useRef(false);
+
     const updateFileProcessing = (updates) => {
         setFileProcessing(current => current ? { ...current, ...updates } : current);
     };
 
     const completeBackgroundUpload = (status, message) => {
+        uploadInFlightRef.current = false;
         setFileProcessing(null);
         setUploadNotice(current => current ? { ...current, status, message } : current);
     };
@@ -1767,17 +1773,97 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
         }
     };
 
-    const handleFileUpload = (e, type) => {
-        const file = e.target.files[0];
+    /**
+     * Accepts an Excel sheet, a PPT deck, or both in a single pick.
+     *
+     * Excel always runs first: it syncs the master inventory, and the PPT stage
+     * matches its slides against those sites. Running them the other way round
+     * would match against stale inventory. Only one upload is processed at a
+     * time because each holds the whole file in memory.
+     */
+    const handleMixedUpload = async (e) => {
+        const picked = Array.from(e?.target?.files || []);
+        if (picked.length === 0) return;
+        if (e?.target) e.target.value = null;
+
+        const classify = (f) => (/\.(xlsx|xls|csv)$/i.test(f.name) ? 'excel' : (/\.(pptx?|ppt)$/i.test(f.name) ? 'ppt' : null));
+
+        const excelFiles = picked.filter(f => classify(f) === 'excel');
+        const pptFiles = picked.filter(f => classify(f) === 'ppt');
+        const unknown = picked.filter(f => classify(f) === null);
+
+        if (unknown.length > 0) {
+            showToast(`Skipped ${unknown.length} unsupported file(s). Use .xlsx, .xls, .csv, .ppt or .pptx.`, 'error');
+        }
+        if (excelFiles.length === 0 && pptFiles.length === 0) return;
+
+        // Excel before PPT, so slide matching sees the freshly synced inventory.
+        const queue = [
+            ...excelFiles.map(f => ({ file: f, type: 'excel' })),
+            ...pptFiles.map(f => ({ file: f, type: 'ppt' }))
+        ];
+
+        for (const job of queue) {
+            // eslint-disable-next-line no-await-in-loop
+            await handleFileUpload(null, job.type, job.file);
+        }
+    };
+
+    const handleFileUpload = async (e, type, providedFile = null) => {
+        const file = providedFile || e?.target?.files?.[0];
         if (!file) return;
-        if (fileProcessing) {
+        if (uploadInFlightRef.current || fileProcessing) {
             setUploadNotice({ status: 'error', message: 'One upload is already processing. Please wait for it to finish.', fileName: file.name });
-            e.target.value = null;
+            if (e?.target) e.target.value = null;
             return;
         }
 
         const fileSizeMB = file.size / (1024 * 1024);
 
+        // Parsing happens entirely in the browser: the whole file is read into an
+        // ArrayBuffer, JSZip expands it in memory, and every extracted photo is
+        // held as a blob plus a base64 copy. Peak usage runs several times the
+        // file size, so a very large deck will crash the tab with an out-of-memory
+        // error that looks like a random freeze. Warn before starting instead.
+        const isDesktopApp = Boolean(window.electronAPI && window.electronAPI.isElectron);
+        const HARD_LIMIT_MB = isDesktopApp ? 500 : 150;
+        const WARN_LIMIT_MB = isDesktopApp ? 250 : 60;
+
+        if (fileSizeMB > HARD_LIMIT_MB) {
+            appToast.error(
+                `This file is ${fileSizeMB.toFixed(0)} MB. The browser can reliably handle up to about ` +
+                `${HARD_LIMIT_MB} MB — larger decks run out of memory mid-way. ` +
+                (isDesktopApp
+                    ? 'Try splitting the presentation into smaller parts.'
+                    : 'Use the desktop app, or split the presentation into smaller parts.'),
+                { duration: 12000 }
+            );
+            if (e?.target) e.target.value = null;
+            return;
+        }
+
+        if (fileSizeMB > WARN_LIMIT_MB) {
+            const proceed = await appConfirm({
+                title: `Large file — ${fileSizeMB.toFixed(0)} MB`,
+                message: 'This may take several minutes and could run out of memory before it finishes.',
+                bullets: [
+                    'Keep this tab open and in the foreground while it processes.',
+                    'Close other heavy tabs to free up memory.',
+                    isDesktopApp
+                        ? 'If it fails, split the deck into smaller files.'
+                        : 'The desktop app handles large decks far better than the browser.'
+                ],
+                confirmText: 'Upload anyway',
+                cancelText: 'Cancel',
+                type: 'warning'
+            });
+            if (!proceed) {
+                if (e?.target) e.target.value = null;
+                return;
+            }
+        }
+
+        uploadInFlightRef.current = true;
         const estimate = estimateUploadDuration(file, type);
         setFileProcessing({
             type,
@@ -1793,9 +1879,11 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
             estimate,
             message: `Estimated time: ${estimate}. You can continue using the dashboard while processing runs in the background.`
         });
-        e.target.value = null;
+        if (e?.target) e.target.value = null;
 
-        void (async () => {
+        // Awaited so a queued batch (Excel + PPT together) runs one at a time
+        // rather than racing — only one upload may be in flight at once.
+        await (async () => {
             try {
                 if (type === 'excel') {
                     // Excel files are usually small, we can keep the base64 approach
@@ -5318,15 +5406,17 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                     </button>
                                 )}
 
-                                <label className="qm-btn-primary qm-btn-sm" style={{ cursor: 'pointer' }} title="Sync master hoardings from Excel spreadsheet">
-                                    <Download size={14} />
-                                    <span>Excel Sync</span>
-                                    <input type="file" style={{ display: 'none' }} accept=".xlsx,.xls,.csv" disabled={Boolean(fileProcessing)} onChange={(e) => handleFileUpload(e, 'excel')} />
-                                </label>
-                                <label className="qm-btn-primary qm-btn-sm" style={{ cursor: 'pointer' }} title="Upload PPT presentation file">
-                                    <Plus size={14} />
-                                    <span>PPT Upload</span>
-                                    <input type="file" style={{ display: 'none' }} accept=".ppt,.pptx" disabled={Boolean(fileProcessing)} onChange={(e) => handleFileUpload(e, 'ppt')} />
+                                <label className="qm-btn-primary qm-btn-sm" style={{ cursor: 'pointer' }} title="Select an Excel sheet, a PPT deck, or both at once">
+                                    <UploadCloud size={14} />
+                                    <span>Upload Excel / PPT</span>
+                                    <input
+                                        type="file"
+                                        style={{ display: 'none' }}
+                                        multiple
+                                        accept=".xlsx,.xls,.csv,.ppt,.pptx"
+                                        disabled={Boolean(fileProcessing)}
+                                        onChange={handleMixedUpload}
+                                    />
                                 </label>
                             </div>
                         )}
