@@ -105,23 +105,20 @@ export default function RenewalAlertRadar({
 
   return (
     <div className="renewal-radar-panel animate-fade-in">
-      {/* Header with Live Beacon */}
       <div className="radar-header">
         <div className="radar-header-left">
           <div className="radar-live-beacon">
-            <span className="beacon-ping"></span>
-            <span className="beacon-core"></span>
             <Bell size={18} />
           </div>
           <div>
             <div className="radar-title-row">
-              <h3>15-Days Renewal Predictor</h3>
+              <h3>Expiring Bookings</h3>
               <span className="radar-pulse-badge">
-                {stats.total} Sites Expiring Soon
+                {stats.total} in the next 15 days
               </span>
             </div>
             <p className="radar-subtitle">
-              These hoarding bookings will conclude within the next 15 days. Initiate timely renewals to maintain continuous occupancy.
+              Renew or release these sites before they go vacant.
             </p>
           </div>
         </div>

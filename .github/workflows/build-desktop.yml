@@ -75,12 +75,62 @@ jobs:
           Get-ChildItem dist_electron -Filter latest.yml | ForEach-Object { try { gh release upload $tag $_.FullName --clobber 2>$null } catch {} }
           Get-ChildItem dist_electron -Filter *.blockmap | ForEach-Object { try { gh release upload $tag $_.FullName --clobber 2>$null } catch {} }
 
+      # The installer is ~680 MB. Kept for 30 days this filled the Actions
+      # storage quota, which then failed the upload step on every later build.
+      # The release assets are the real distribution channel and the updater
+      # reads those, so this copy only needs to outlive a manual download.
       - name: 🚀 Upload Windows Setup & Portable .exe Artifacts
         uses: actions/upload-artifact@v4
+        continue-on-error: true
         with:
           name: Heera-Advertising-Admin-Desktop-Windows
           path: |
             dist_electron/*.exe
             dist_electron/*.blockmap
             dist_electron/latest.yml
-          retention-days: 30
+          retention-days: 3
+
+      # Each build publishes a full installer to two repos. Without pruning,
+      # every version ever built is retained forever and the quota fills again.
+      # Only the newest few releases are useful: electron-updater reads
+      # latest.yml from the most recent one, and older installers are dead
+      # weight. Runs even if earlier steps failed, so a full disk still drains.
+      - name: 🧹 Prune Old Releases and Artifacts
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_TOKEN || secrets.GITHUB_TOKEN }}
+          KEEP_RELEASES: '3'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Continue'
+
+          function Prune-Releases($repo) {
+            Write-Host "Pruning releases on $repo, keeping newest $env:KEEP_RELEASES..."
+            $json = gh release list --repo $repo --limit 200 --json tagName,createdAt,isLatest 2>$null
+            if (-not $json) { Write-Host "  (no releases readable)"; return }
+            $releases = $json | ConvertFrom-Json | Sort-Object createdAt -Descending
+            $keep = [int]$env:KEEP_RELEASES
+            if ($releases.Count -le $keep) { Write-Host "  $($releases.Count) release(s), nothing to prune."; return }
+            $stale = $releases | Select-Object -Skip $keep
+            foreach ($r in $stale) {
+              # Never delete whatever GitHub still marks as latest; the updater
+              # resolves against it and removing it would strand installed apps.
+              if ($r.isLatest) { continue }
+              if ($r.tagName -eq "staff-apk-latest") { continue }
+              Write-Host "  deleting $($r.tagName)"
+              gh release delete $r.tagName --repo $repo --yes --cleanup-tag 2>$null
+            }
+          }
+
+          Prune-Releases "kamleshgupta905/hoarding-desktop-releases"
+          Prune-Releases "$env:GITHUB_REPOSITORY"
+
+          Write-Host "Pruning old workflow artifacts..."
+          $arts = gh api "repos/$env:GITHUB_REPOSITORY/actions/artifacts?per_page=100" --paginate 2>$null | ConvertFrom-Json
+          $all = @(); foreach ($page in $arts) { $all += $page.artifacts }
+          $seen = @{}
+          foreach ($a in ($all | Where-Object { -not $_.expired } | Sort-Object created_at -Descending)) {
+            if (-not $seen.ContainsKey($a.name)) { $seen[$a.name] = $true; continue }
+            gh api -X DELETE "repos/$env:GITHUB_REPOSITORY/actions/artifacts/$($a.id)" 2>$null | Out-Null
+          }
+          Write-Host "Artifact pruning complete."

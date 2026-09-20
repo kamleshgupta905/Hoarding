@@ -5,6 +5,7 @@ import { matchGeofencedHoardingWithGemini } from '../services/aiService';
 import { ensureUprightBlob } from '../core/imageOrientation';
 import { HIRA_LOGO } from '../assets/hiraLogoData';
 import AppAutoUpdater from '../components/AppAutoUpdater';
+import { hasStaffToken } from '../services/secureApi';
 import {
     blobToDataUrl,
     countPendingStaffPhotos,
@@ -520,6 +521,8 @@ const StaffUpload = () => {
 
     const [isDesktop, setIsDesktop] = React.useState(checkIsDesktop);
     const [overrideDesktop, setOverrideDesktop] = React.useState(false);
+    // Captures ?token= into localStorage on first visit, then reuses it.
+    const [isStaffAuthorised] = React.useState(hasStaffToken);
     const [copiedLink, setCopiedLink] = React.useState(false);
 
     const [pendingCount, setPendingCount] = React.useState(0);
@@ -1205,6 +1208,43 @@ const StaffUpload = () => {
     const gpsLabel = lastGps?.latitude
         ? `GPS ready${lastGps.accuracy ? ` (${Math.round(lastGps.accuracy)}m)` : ''}`
         : (gpsError || 'GPS dhoondh raha hai...');
+
+    // 🔐 Staff Access Guard — the camera only opens via the tokenised link an
+    // admin shares. The token is captured from ?token= and cached on the device,
+    // so staff only need the link once.
+    if (!isStaffAuthorised) {
+        return (
+            <main className="staff-desktop-guard-page">
+                <div className="staff-desktop-guard-card">
+                    <div className="guard-brand-badge">
+                        <img src={HIRA_LOGO} alt="HIRA Advertising" style={{ height: '24px', width: 'auto', display: 'block' }} />
+                    </div>
+
+                    <div className="guard-phone-icon-wrap">
+                        <div className="guard-pulse-ring"></div>
+                        <ShieldCheck size={38} className="guard-phone-icon" />
+                    </div>
+
+                    <div className="guard-tag">
+                        <span>🔐 AUTHORISED STAFF ONLY</span>
+                    </div>
+
+                    <h2>Access Link Required</h2>
+                    <p className="guard-desc">
+                        Yeh camera sirf <strong>authorised field staff</strong> ke liye hai. Apne admin se
+                        bheja gaya <strong>staff upload link</strong> kholein — ek baar kholne ke baad yeh
+                        device yaad rakh lega aur aapko dobara link ki zaroorat nahi padegi.
+                    </p>
+
+                    <div className="guard-actions">
+                        <a href="/admin" className="guard-admin-btn">
+                            <span>Open Admin Dashboard</span>
+                        </a>
+                    </div>
+                </div>
+            </main>
+        );
+    }
 
     // 🖥️ Desktop / Laptop Guard Screen (App is restricted to Mobile Phones)
     if (isDesktop && !overrideDesktop) {

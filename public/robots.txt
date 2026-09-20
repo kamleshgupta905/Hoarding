@@ -1,0 +1,13 @@
+User-agent: *
+Allow: /
+
+# Private / non-indexable areas
+Disallow: /admin
+Disallow: /admin/
+Disallow: /staff
+Disallow: /staff/
+Disallow: /client/
+Disallow: /proposal/
+Disallow: /audit/
+
+Sitemap: https://hoarding-hd9a.vercel.app/sitemap.xml

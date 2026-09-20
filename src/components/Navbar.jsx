@@ -1,17 +1,29 @@
-import React, { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
-import { MapPin, Search, Menu, X } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Link, useNavigate, useLocation } from 'react-router-dom';
+import { Search, Menu, X } from 'lucide-react';
 import { HIRA_LOGO } from '../assets/hiraLogoData';
+import { getAdminSession } from '../services/secureApi';
 import './Navbar.css';
 
 const Navbar = () => {
     const [search, setSearch] = useState('');
     const [isMenuOpen, setIsMenuOpen] = useState(false);
+    const [isAdmin, setIsAdmin] = useState(() => Boolean(getAdminSession()));
     const navigate = useNavigate();
+    const location = useLocation();
+
+    // Re-check the admin session on navigation and when another tab logs in/out,
+    // so the button label never goes stale without a manual page reload.
+    useEffect(() => {
+        const syncAuthState = () => setIsAdmin(Boolean(getAdminSession()));
+        syncAuthState();
+        window.addEventListener('storage', syncAuthState);
+        return () => window.removeEventListener('storage', syncAuthState);
+    }, [location.pathname]);
 
     const handleSearch = (e) => {
-        if (e.key === 'Enter' && search) {
-            navigate(`/all?search=${search}`);
+        if (e.key === 'Enter' && search.trim()) {
+            navigate(`/all?search=${encodeURIComponent(search.trim())}`);
             setIsMenuOpen(false);
         }
     };
@@ -44,11 +56,11 @@ const Navbar = () => {
                             />
                         </div>
                         <Link
-                            to={localStorage.getItem('isAdminAuthenticated') === 'true' ? "/admin/dashboard" : "/admin/login"}
+                            to={isAdmin ? "/admin/dashboard" : "/admin/login"}
                             className="contact-btn"
                             onClick={closeMenu}
                         >
-                            {localStorage.getItem('isAdminAuthenticated') === 'true' ? "Dashboard" : "Admin"}
+                            {isAdmin ? "Dashboard" : "Admin"}
                         </Link>
                     </div>
                 </div>

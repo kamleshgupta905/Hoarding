@@ -18,7 +18,6 @@ var CONFIG = {
   COL_SITE_NAME: 'Locality Site Location',
   COL_IMAGE_URL: 'ImageURL',
   STAFF_UPLOADS_SHEET: 'Staff_Uploads',
-  ENQUIRIES_SHEET: 'Enquiries',
   EXCEL_IMPORTS_SHEET: 'Excel_Import_Previews',
   OPERATIONS_SHEET: 'Sync_Operations',
   PENDING_IMPORT_PREFIX: 'PENDING_IMPORT__',
@@ -44,6 +43,51 @@ var ADMIN_ACTIONS = {
   analyzeImageOrientation: true
 };
 
+/**
+ * Every POST action that must never run without a valid admin session.
+ * Checked centrally in doPost() before any handler is dispatched.
+ * NOTE: 'login', 'loginStatus' and 'staffUploadPhoto' are deliberately absent —
+ * they authenticate by other means (password / staff token).
+ */
+var POST_ADMIN_ACTIONS = {
+  pureUpload: true,
+  batchUpdateSheet: true,
+  changeAdminPassword: true,
+  setGroqFallbackKey: true,
+  previewExcelImport: true,
+  approveExcelImport: true,
+  uploadPptAndProcess: true,
+  getResumableUrl: true,
+  startPptProcessing: true,
+  submitOperation: true,
+  syncDrivePhotosByGpsAndFacing: true,
+  syncDrivePhotos: true,
+  mapExistingImages: true,
+  updateHoarding: true,
+  addHoarding: true,
+  deleteHoarding: true,
+  deleteCityHoardings: true,
+  deleteAllHoardings: true,
+  deleteHistoryItem: true,
+  reviewStaffUpload: true,
+  saveSheetGrid: true,
+  importCommit: true,
+  uploadInputFile: true,
+  analyzeImageOrientation: true,
+  dumpImage: true
+};
+
+/** GET actions that expose private inventory/admin data. */
+var GET_ADMIN_ACTIONS = {
+  sheetGrid: true,
+  excelImportPreview: true,
+  fileJobStatus: true,
+  staffUploads: true,
+  staffLinkToken: true,
+  pullChanges: true,
+  operationStatus: true
+};
+
 /* ================= WEB ================= */
 
 function doPost(e) {
@@ -57,6 +101,13 @@ function doPost(e) {
       }
     } else if (e && e.parameter) {
       p = e.parameter;
+    }
+
+    // 🔒 Central auth gate: every admin-only POST action must carry a valid
+    // session token. Individual handlers keep their own checks as defence in
+    // depth, but this guarantees nothing slips through unguarded.
+    if (POST_ADMIN_ACTIONS[p.action] && !isValidAdminSession_(p.sessionToken)) {
+      return res({ success: false, error: 'Authentication required.' });
     }
 
     // 🚀 ULTRA-FAST DIRECT HANDLERS (Direct Cloud I/O without Sheet locks)
@@ -110,7 +161,7 @@ function doPost(e) {
     if (p.action === 'previewExcelImport') return previewExcelImport(p);
     if (p.action === 'approveExcelImport') return approveExcelImport(p);
     if (p.action === 'dumpImage') return dumpImageToDrive_(p);
-    if (p.action === 'submitEnquiry') return submitEnquiry_(p);
+
     // Legacy: File Upload to Input Folder (fallback for unknown actions with fileData)
     if (p.fileData) {
       if (!isValidAdminSession_(p.sessionToken)) return res({ success: false, error: 'Authentication required.' });
@@ -136,6 +187,12 @@ function doPost(e) {
 
 function doGet(e) {
   var action = e && e.parameter ? e.parameter.action : '';
+
+  // 🔒 Central auth gate for GET actions that expose private data
+  if (GET_ADMIN_ACTIONS[action] && !isValidAdminSession_(e.parameter.sessionToken)) {
+    return res({ success: false, error: 'Authentication required.' });
+  }
+
   if (action === 'loginStatus') return getLoginStatus_(e.parameter.requestId);
   if (action === 'operationStatus') return getOperationStatus_(e.parameter.operationId, e.parameter.sessionToken);
   if (action === 'getVersion') return getChangeVersion_();
@@ -434,12 +491,14 @@ function getLoginStatus_(requestId) {
   return res(JSON.parse(cached));
 }
 
+/**
+ * Validates an admin session token against the server-side session cache.
+ * A token is only valid if requestAdminLogin_ issued it (after a successful
+ * password check) and it has not yet expired.
+ */
 function isValidAdminSession_(token) {
-  if (!token) return true; // Fail-safe for automated client sync
-  if (CacheService.getScriptCache().get('session:' + String(token))) return true;
-  var str = String(token);
-  if (str.startsWith('adm_') || str.startsWith('session-') || str.includes('master') || str.length >= 8) return true;
-  return true;
+  if (!token) return false;
+  return !!CacheService.getScriptCache().get('session:' + String(token));
 }
 
 function refreshAdminSession_(data) {
@@ -451,12 +510,40 @@ function refreshAdminSession_(data) {
   return res({ success: true, expiresIn: CONFIG.SESSION_TTL_SECONDS });
 }
 
+/**
+ * Validates the shared ground-staff upload token.
+ * Staff intentionally do not have individual logins, so a single shared token
+ * (stored in Script Properties) gates photo uploads. Rotate it by running
+ * rotateStaffToken() from the Apps Script editor.
+ */
 function isValidStaffToken_(token) {
-  return true; // Direct mobile app & ground staff photo upload access
+  var expected = PropertiesService.getScriptProperties().getProperty('ADH_STAFF_TOKEN');
+  if (!expected) return false; // Not configured yet -> refuse rather than allow all
+  return constantTimeEquals_(String(token || ''), String(expected));
+}
+
+/**
+ * Generates a fresh staff token. Admin-only.
+ * Any previously shared staff link stops working once this is called.
+ */
+function rotateStaffToken() {
+  var token = Utilities.getUuid().replace(/-/g, '') + Utilities.getUuid().replace(/-/g, '');
+  PropertiesService.getScriptProperties().setProperty('ADH_STAFF_TOKEN', token);
+  Logger.log('New staff token: ' + token);
+  return token;
 }
 
 function getStaffLinkToken_(sessionToken) {
-  var token = PropertiesService.getScriptProperties().getProperty('ADH_STAFF_TOKEN') || 'staff-token';
+  if (!isValidAdminSession_(sessionToken)) {
+    return res({ success: false, error: 'Authentication required.' });
+  }
+  var properties = PropertiesService.getScriptProperties();
+  var token = properties.getProperty('ADH_STAFF_TOKEN');
+  if (!token) {
+    // Auto-provision a strong token on first use instead of the old 'staff-token' default
+    token = Utilities.getUuid().replace(/-/g, '') + Utilities.getUuid().replace(/-/g, '');
+    properties.setProperty('ADH_STAFF_TOKEN', token);
+  }
   return res({ success: true, token: token });
 }
 
@@ -1116,7 +1203,8 @@ function updateSitePhotoFromStaff(siteName, imageUrl, historyOnly, siteStatus) {
       var currentHistory = historyCell.getValue();
       var historyItem = (historyOnly ? imageUrl : previousImage) + '|' + new Date().getTime();
       if ((historyOnly && imageUrl) || (!historyOnly && previousImage)) {
-        historyCell.setValue(currentHistory ? currentHistory + ',' + historyItem : historyItem);
+        var healedPrior = normalizeHistoryString_(currentHistory);
+        historyCell.setValue(healedPrior ? healedPrior + ',' + historyItem : historyItem);
       }
     }
     if (!historyOnly) sheet.getRange(rowIndex, idxImg + 1).setValue(imageUrl);
@@ -1323,25 +1411,14 @@ function batchUpdateSheet_(data) {
     var idxFacing = headers.findIndex(function(h) { return cleanFull(h) === 'facing' || cleanFull(h) === 'trafficview'; });
     var idxLatLong = headers.findIndex(function(h) { return cleanFull(h).indexOf('lat') !== -1 && cleanFull(h).indexOf('long') !== -1; });
     var idxSite = findSiteColumn(headers);
-    var idxSl = headers.findIndex(function(h) { 
-      var c = cleanFull(h);
-      return c === 'sl' || c === 'sno' || c === 's.no.' || c === 's.no' || c === 'serialno'; 
-    });
 
     // Build fast lookup maps
     var siteIdMap = {};
     var siteNameMap = {};
-    var slMap = {};
     if (idxSiteId !== -1) {
       for (var r = 1; r < rows.length; r++) {
         var sid = String(rows[r][idxSiteId]).trim().toLowerCase();
         if (sid) siteIdMap[sid] = r; // Store the 0-based array index!
-      }
-    }
-    if (idxSl !== -1) {
-      for (var r = 1; r < rows.length; r++) {
-        var sVal = String(rows[r][idxSl]).trim().toLowerCase();
-        if (sVal) slMap[sVal] = r;
       }
     }
     if (idxSite !== -1) {
@@ -1368,12 +1445,6 @@ function batchUpdateSheet_(data) {
         if (siteIdMap[tgt] !== undefined) r = siteIdMap[tgt];
       }
 
-      // Try SL Match
-      if (r === -1 && up.sl && idxSl !== -1) {
-        var tgtSl = String(up.sl).trim().toLowerCase();
-        if (slMap[tgtSl] !== undefined) r = slMap[tgtSl];
-      }
-
       // Try exact Site Name + Facing Match
       if (r === -1 && up.siteName && idxSite !== -1) {
         var tgtName = cleanFull(up.siteName);
@@ -1394,33 +1465,60 @@ function batchUpdateSheet_(data) {
 
       if (r !== -1) {
         // Safe existing row update (r is already 0-based index of rows array)
-        // 🛡️ CRITICAL: Never overwrite ImageURL with undefined/empty unless explicitly provided
-        if (idxImg !== -1 && up.url && String(up.url).trim() !== '') {
-          rows[r][idxImg] = up.url;
-        }
+        // Only overwrite the master image when a url was actually supplied —
+        // bulk booking sends booking fields with no url, and blanking the
+        // column here used to wipe the site photo.
+        if (idxImg !== -1 && up.url) rows[r][idxImg] = up.url;
         if (idxStatus !== -1 && up.status) rows[r][idxStatus] = up.status;
+
+        // Apply the fields map (BookedBy, BookingStart/End, BookingSchedule,
+        // ExecutionHistory, ...). This was previously ignored entirely, so bulk
+        // bookings only ever wrote STATUS and never reached the sheet's booking
+        // or history columns.
+        if (up.fields && typeof up.fields === 'object') {
+          for (var fKey in up.fields) {
+            if (!Object.prototype.hasOwnProperty.call(up.fields, fKey)) continue;
+            var fVal = up.fields[fKey];
+            if (fVal === undefined || fVal === null) continue;
+
+            var cleanKey = cleanFull(fKey);
+
+            // History needs merge semantics, never a blind overwrite.
+            if (cleanKey === 'executionhistory' || cleanKey === 'history') {
+              var idxHist = findHistoryColumn(headers);
+              if (idxHist === -1) continue;
+              var incoming = normalizeHistoryString_(String(fVal));
+              if (!incoming) continue;
+              var existingHist = normalizeHistoryString_(String(rows[r][idxHist] || ''));
+
+              // Skip entries whose photo is already recorded for this row.
+              var haveIds = {};
+              existingHist.split(',').forEach(function (e) {
+                var m = String(e).match(/\/d\/([^/?#\s|]+)/) || String(e).match(/[?&]id=([^&#/\s|]+)/);
+                if (m && m[1]) haveIds[m[1]] = true;
+              });
+              var toAdd = incoming.split(',').filter(function (e) {
+                var m = String(e).match(/\/d\/([^/?#\s|]+)/) || String(e).match(/[?&]id=([^&#/\s|]+)/);
+                if (m && m[1] && haveIds[m[1]]) return false;
+                return String(e).indexOf('http') !== -1;
+              });
+              if (toAdd.length === 0) continue;
+              rows[r][idxHist] = existingHist
+                ? existingHist + ',' + toAdd.join(',')
+                : toAdd.join(',');
+              continue;
+            }
+
+            var idxField = headers.findIndex(function (h) { return cleanFull(h) === cleanKey; });
+            if (idxField !== -1) rows[r][idxField] = fVal;
+          }
+        }
+
         if (idxRowVersion !== -1) {
           var currV = rows[r][idxRowVersion];
           rows[r][idxRowVersion] = (parseInt(currV) || 0) + 1;
         }
         if (idxUpdatedAt !== -1) rows[r][idxUpdatedAt] = new Date().toISOString();
-
-        // 🌟 Apply arbitrary fields (BookingSchedule, BookedBy, BookingStart, BookingEnd, etc.)
-        if (up.fields && typeof up.fields === 'object') {
-          for (var fKey in up.fields) {
-            if (up.fields.hasOwnProperty(fKey)) {
-              var fVal = up.fields[fKey];
-              if (fVal !== undefined && fVal !== null) {
-                var cIdx = headers.findIndex(function(h) { return cleanFull(h) === cleanFull(fKey); });
-                if (cIdx !== -1) {
-                  // Do not wipe image if field is empty
-                  if (cIdx === idxImg && !String(fVal).trim()) continue;
-                  rows[r][cIdx] = fVal;
-                }
-              }
-            }
-          }
-        }
         countUpdated++;
       } else if (up.newSiteData) {
         // Brand new site
@@ -1773,7 +1871,39 @@ function updateHoardingDetails(data) {
         
         // Safely handle ExecutionHistory from fields (guarding against raw base64 data to stay within 50k char limit)
         if (fieldKey === 'history' || fieldKey === 'executionhistory') {
-          var incomingHist = String(data.fields[fKey] || '').trim();
+          // A client that sends the History array (or objects) instead of the
+          // joined string used to be stringified straight into the cell, which
+          // wrote the literal text "[object Object]" and destroyed the row's
+          // real history. Rebuild the "url|timestamp|gps" form from structured
+          // input instead, and never write a value that has no url in it.
+          var histField = data.fields[fKey];
+          var incomingHist = '';
+
+          if (Array.isArray(histField)) {
+            incomingHist = histField.map(function (entry) {
+              if (entry && typeof entry === 'object') {
+                var u = String(entry.url || entry.preview || entry.ImageURL || '').trim();
+                if (!u) return '';
+                var t = Number(entry.timestamp) || Date.parse(entry.date || '') || 0;
+                var g = String(entry.gps || '').trim().replace(/,/g, ' ');
+                return u + '|' + (t || new Date().getTime()) + (g ? '|' + g : '');
+              }
+              return String(entry == null ? '' : entry).trim();
+            }).filter(function (e) { return e !== ''; }).join(',');
+          } else if (histField && typeof histField === 'object') {
+            var ou = String(histField.url || histField.preview || '').trim();
+            if (ou) {
+              var ot = Number(histField.timestamp) || Date.parse(histField.date || '') || new Date().getTime();
+              incomingHist = ou + '|' + ot;
+            }
+          } else {
+            incomingHist = String(histField == null ? '' : histField).trim();
+          }
+
+          // Reject anything that lost its urls (e.g. "[object Object]") rather
+          // than overwriting good data in the sheet with junk.
+          if (incomingHist.indexOf('http') === -1) incomingHist = '';
+
           if (incomingHist && incomingHist.indexOf('data:image') === -1) {
             if (idxHistory === -1) {
               var newHistCol = sheet.getLastColumn() + 1;
@@ -1781,7 +1911,10 @@ function updateHoardingDetails(data) {
               headers = getAllHeaders(sheet);
               idxHistory = newHistCol - 1;
             }
-            sheet.getRange(rowIndex, idxHistory + 1).setValue(incomingHist);
+            // Stamp any entry the client sent without a timestamp, otherwise the
+            // detail page shows "Verified Date Unknown" and cannot sort history.
+            var normalizedHist = normalizeHistoryString_(incomingHist);
+            sheet.getRange(rowIndex, idxHistory + 1).setValue(normalizedHist);
             logDebug("UPDATE | Safely wrote ExecutionHistory from fields to Row " + rowIndex);
           }
           continue;
@@ -1870,7 +2003,7 @@ function updateHoardingDetails(data) {
               logDebug("UPDATE | Archiving EXISTING master to history before update: " + itemToArchive);
             }
           } else if (data.mode === 'archive' || data.mode === 'both' || data.isDailyProof) {
-            var gpsSuffix = data.gps ? ("|" + String(data.gps).trim()) : "";
+            var gpsSuffix = data.gps ? ("|" + String(data.gps).trim().replace(/,/g, ' ')) : "";
             itemToArchive = fileUrl + "|" + new Date().getTime() + gpsSuffix; 
             logDebug("UPDATE | Archiving NEW upload to history: " + itemToArchive);
           }
@@ -1882,7 +2015,11 @@ function updateHoardingDetails(data) {
                 return hp.indexOf('data:image/') === -1 && hp.indexOf('base64') === -1 && hp.length < 3000;
               }).join(',');
             }
-            var updatedHistory = currentHistory ? (currentHistory + "," + itemToArchive) : itemToArchive;
+            // Backfill timestamps on any pre-existing undated entries in this row
+            // while we are already rewriting the cell. Existing valid timestamps
+            // are preserved; only the undated ones are stamped.
+            var healedHistory = normalizeHistoryString_(currentHistory);
+            var updatedHistory = healedHistory ? (healedHistory + "," + itemToArchive) : itemToArchive;
             sheet.getRange(rowIndex, idxHistory + 1).setValue(updatedHistory);
             SpreadsheetApp.flush();
             historyUpdated = true;
@@ -2004,7 +2141,7 @@ function deleteHistoryItem(data) {
       return item.indexOf(data.imageUrl) === -1;
     });
 
-    sheet.getRange(rowIndex, idxHistory + 1).setValue(filteredItems.join(','));
+    sheet.getRange(rowIndex, idxHistory + 1).setValue(normalizeHistoryString_(filteredItems.join(',')));
     SpreadsheetApp.flush();
     return res({ success: true, message: 'History item removed' });
   } catch (err) {
@@ -3683,6 +3820,140 @@ function findSiteColumn(headers) {
 /**
  * 🖼 Helper to find the Image column index reliably
  */
+/**
+ * Guarantees every ExecutionHistory entry carries a timestamp.
+ *
+ * History is stored as "url|timestamp|gps" entries joined by commas. Some write
+ * paths (notably a client sending a pre-built ExecutionHistory string) could
+ * store a bare "url" with no timestamp, which makes the site detail page render
+ * "Verified Date Unknown" and prevents correct newest-first sorting.
+ *
+ * Any entry missing a usable timestamp gets `fallbackTs` (the current time), so
+ * the ordering stays sensible even for older rows being rewritten. Entries that
+ * already have a valid timestamp are left exactly as they are.
+ */
+/**
+ * 🔧 One-off repair for ExecutionHistory damage already stored in the sheet.
+ *
+ * Run this manually from the Apps Script editor (select repairExecutionHistory
+ * and press Run). It fixes two problems found in Hoardings_Master:
+ *
+ *   1. cells containing the literal text "[object Object]" — an array was
+ *      stringified into the cell, destroying that row's history
+ *   2. gps written as a raw "lat,lng", which split one record into several,
+ *      leaving repeated url-less fragments like ", 77.734999, 77.734999"
+ *
+ * Rows that are already clean are left untouched, and a summary is logged.
+ * Safe to run more than once: normalizeHistoryString_ is idempotent.
+ */
+function repairExecutionHistory() {
+  var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(CONFIG.SHEET_NAME);
+  if (!sheet) throw new Error(CONFIG.SHEET_NAME + ' sheet not found');
+
+  var headers = getAllHeaders(sheet);
+  var idxHistory = findHistoryColumn(headers);
+  if (idxHistory === -1) throw new Error('ExecutionHistory column not found');
+
+  var lastRow = sheet.getLastRow();
+  if (lastRow < 2) return;
+
+  var range = sheet.getRange(2, idxHistory + 1, lastRow - 1, 1);
+  var values = range.getValues();
+
+  var clearedObjectRows = 0;
+  var repairedRows = 0;
+  var unchangedRows = 0;
+
+  for (var i = 0; i < values.length; i++) {
+    var original = String(values[i][0] == null ? '' : values[i][0]);
+    if (!original.trim()) { unchangedRows++; continue; }
+
+    var repaired;
+    if (original.indexOf('http') === -1) {
+      // No urls at all (e.g. "[object Object]") — there is nothing to recover.
+      repaired = '';
+      if (original.trim()) clearedObjectRows++;
+    } else {
+      repaired = normalizeHistoryString_(original);
+    }
+
+    if (repaired !== original) {
+      values[i][0] = repaired;
+      if (repaired !== '') repairedRows++;
+    } else {
+      unchangedRows++;
+    }
+  }
+
+  range.setValues(values);
+  SpreadsheetApp.flush();
+
+  var summary = 'ExecutionHistory repair complete — ' +
+    repairedRows + ' row(s) rewritten, ' +
+    clearedObjectRows + ' unrecoverable "[object Object]" cell(s) cleared, ' +
+    unchangedRows + ' already clean.';
+  Logger.log(summary);
+  try { SpreadsheetApp.getActiveSpreadsheet().toast(summary, 'Repair Complete', 10); } catch (e) {}
+  return summary;
+}
+
+function normalizeHistoryString_(historyString, fallbackTs) {
+  var raw = String(historyString == null ? '' : historyString).trim();
+  if (!raw) return '';
+
+  var stamp = fallbackTs || new Date().getTime();
+
+  // Legacy rows stored gps as a raw "lat,lng", but commas separate entries, so
+  // the longitude broke off into its own url-less fragment (sometimes repeated
+  // many times). Stitch each orphan back onto the entry it came from before
+  // parsing, so real history is preserved instead of silently dropped.
+  var rejoined = [];
+  raw.split(',').forEach(function (piece) {
+    var chunk = String(piece).trim();
+    if (!chunk) return;
+    if (chunk.indexOf('http') !== -1 || rejoined.length === 0) {
+      rejoined.push(chunk);
+      return;
+    }
+    // Only a bare number can be a split-off longitude. Anything else is junk and
+    // must not be glued onto a good entry. Attach at most one, and only when the
+    // previous entry has a gps segment that is still missing its second half.
+    var prev = rejoined[rejoined.length - 1];
+    var prevParts = prev.split('|');
+    if (/^-?\d+(\.\d+)?$/.test(chunk) && prevParts.length === 3 && prevParts[2].indexOf(' ') === -1) {
+      rejoined[rejoined.length - 1] = prev + ' ' + chunk;
+    }
+  });
+
+  return rejoined.map(function (entry) {
+    var item = String(entry).trim();
+    if (!item) return '';
+
+    var parts = item.split('|');
+    var url = String(parts[0] || '').trim();
+    if (!url || url.indexOf('http') === -1) return '';
+
+    var tsRaw = String(parts[1] || '').trim();
+    var tsNum = Number(tsRaw);
+    var valid = tsRaw && !isNaN(tsNum) && tsNum > 1000000000;
+
+    if (!valid && tsRaw) {
+      // Tolerate a date string that was written instead of epoch millis.
+      var parsed = new Date(tsRaw).getTime();
+      if (!isNaN(parsed) && parsed > 1000000000) {
+        tsNum = parsed;
+        valid = true;
+      }
+    }
+
+    var ts = valid ? tsNum : stamp;
+    // GPS arrives as "lat,lng" but commas separate entries in this format, so a
+    // raw comma would split one record into two and corrupt the history cell.
+    var gps = String(parts.slice(2).join('|') || '').trim().replace(/,/g, ' ');
+    return url + '|' + ts + (gps ? '|' + gps : '');
+  }).filter(function (e) { return e !== ''; }).join(',');
+}
+
 function findHistoryColumn(headers) {
   var idx = headers.findIndex(function(h) {
     var c = cleanFull(h);
@@ -3749,77 +4020,6 @@ function getStateFromCity(city) {
   };
 
   return stateMap[cleanCity] || "Uttar Pradesh"; // Default to UP for your primary region
-}
-
-/**
- * 📩 Client Campaign Enquiry Handler
- * Records website client enquiries into the dedicated 'Enquiries' sheet in the master spreadsheet.
- */
-function submitEnquiry_(p) {
-  try {
-    p = p || {};
-    var name = String(p.fullName || p.name || '').trim();
-    var phone = String(p.phone || '').trim();
-
-    if (!name || !phone) {
-      return res({ success: false, error: 'Full name and phone number are required.' });
-    }
-
-    var ss = SpreadsheetApp.getActiveSpreadsheet();
-    var sheetName = CONFIG.ENQUIRIES_SHEET || 'Enquiries';
-    var sheet = ss.getSheetByName(sheetName);
-
-    if (!sheet) {
-      sheet = ss.insertSheet(sheetName);
-      sheet.appendRow([
-        'EnquiryID',
-        'Timestamp',
-        'Full Name',
-        'Phone',
-        'Site Name',
-        'City',
-        'Start Date',
-        'Message',
-        'Status'
-      ]);
-      try {
-        var headerRange = sheet.getRange(1, 1, 1, 9);
-        headerRange.setFontWeight('bold');
-        headerRange.setBackground('#0f172a');
-        headerRange.setFontColor('#ffffff');
-        sheet.setFrozenRows(1);
-      } catch (styleErr) {}
-    }
-
-    var now = new Date();
-    var enquiryId = 'ENQ-' + Utilities.formatDate(now, 'GMT+5:30', 'yyyyMMdd') + '-' + Math.floor(Math.random() * 9000 + 1000);
-    var timestampStr = p.timestamp || Utilities.formatDate(now, 'GMT+5:30', 'yyyy-MM-dd HH:mm:ss');
-
-    sheet.appendRow([
-      enquiryId,
-      timestampStr,
-      name,
-      phone,
-      String(p.siteName || '').trim(),
-      String(p.city || '').trim(),
-      String(p.startDate || '').trim(),
-      String(p.message || '').trim(),
-      'NEW'
-    ]);
-
-    SpreadsheetApp.flush();
-
-    logDebug('ENQUIRY SUBMITTED | ID: ' + enquiryId + ' | Client: ' + name + ' | Phone: ' + phone + ' | Site: ' + (p.siteName || 'N/A'));
-
-    return res({
-      success: true,
-      enquiryId: enquiryId,
-      message: 'Enquiry received successfully. Our media team will contact you shortly.'
-    });
-  } catch (err) {
-    logDebug('ENQUIRY SUBMISSION FAILED | ' + err.toString());
-    return res({ success: false, error: 'Failed to record enquiry: ' + err.toString() });
-  }
 }
 
 function res(o) {

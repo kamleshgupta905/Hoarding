@@ -5,6 +5,7 @@ import { MapContainer, TileLayer, Marker, Popup } from 'react-leaflet';
 import L from 'leaflet';
 import { Helmet } from 'react-helmet-async';
 import HoardingCard from '../components/HoardingCard';
+import DriveImage from '../components/DriveImage';
 import { getImageUrl, getSiteOccupancyStatus, generateWhatsAppRenewalMessage } from '../services/dataService';
 import './CityList.css';
 
@@ -18,6 +19,9 @@ let DefaultIcon = L.icon({
     iconAnchor: [12, 41]
 });
 L.Marker.prototype.options.icon = DefaultIcon;
+
+// How many cards to render per page — keeps the DOM light on large inventories
+const CARDS_PER_PAGE = 24;
 
 // Helper to safely parse different date formats
 const parseDate = (dateStr) => {
@@ -242,6 +246,28 @@ const CityList = ({ hoardings }) => {
         return filtered;
     }, [cityHoardings, filterCity, filterLocality, priceRange, searchQuery, sortBy, campaignStart, campaignEnd, occupancyFilter]);
 
+    // 📄 Progressive rendering — only mount a slice of the cards at a time
+    const [visibleCount, setVisibleCount] = useState(CARDS_PER_PAGE);
+
+    // Reset paging during render whenever the filter set changes, so filtering always
+    // starts at page 1 (React's recommended "adjust state during render" pattern —
+    // avoids the extra commit that a useEffect + setState would cause).
+    const filterSignature = [
+        cityName, filterCity, filterLocality, priceRange,
+        searchQuery, sortBy, campaignStart, campaignEnd, occupancyFilter
+    ].join('|');
+    const [lastFilterSignature, setLastFilterSignature] = useState(filterSignature);
+    if (filterSignature !== lastFilterSignature) {
+        setLastFilterSignature(filterSignature);
+        setVisibleCount(CARDS_PER_PAGE);
+    }
+
+    const visibleHoardings = useMemo(
+        () => filteredHoardings.slice(0, visibleCount),
+        [filteredHoardings, visibleCount]
+    );
+    const hasMoreToShow = visibleCount < filteredHoardings.length;
+
     // Filter valid coordinates for map markers to prevent Leaflet NaN crashes
     const validMapHoardings = useMemo(() => {
         return filteredHoardings.filter(h => {
@@ -260,6 +286,54 @@ const CityList = ({ hoardings }) => {
     const mapCenter = firstValidSiteWithCoords
         ? [parseFloat(firstValidSiteWithCoords.Latitude || firstValidSiteWithCoords.Lat || firstValidSiteWithCoords['Lat.']), parseFloat(firstValidSiteWithCoords.Longitude || firstValidSiteWithCoords.Long || firstValidSiteWithCoords['Long.'])]
         : [28.6139, 77.2090]; // Delhi fallback
+
+    // 🧭 Unknown city in the URL (e.g. /random-text) — show a real "not found" state
+    // instead of an empty listing page, once inventory has actually loaded.
+    const knownCities = useMemo(
+        () => new Set(hoardings.map(h => (h.City || '').trim().toLowerCase()).filter(Boolean)),
+        [hoardings]
+    );
+    const isUnknownCity =
+        !isAllCities &&
+        hoardings.length > 0 &&
+        !knownCities.has((cityName || '').trim().toLowerCase());
+
+    if (isUnknownCity) {
+        return (
+            <div className="city-list-page container">
+                <Helmet>
+                    <title>City Not Found | Heera Advertising</title>
+                    <meta name="robots" content="noindex" />
+                </Helmet>
+                <div className="no-results" style={{ margin: '48px auto', textAlign: 'center', maxWidth: '520px' }}>
+                    <h3>We don&apos;t have inventory in &ldquo;{cityName}&rdquo; yet.</h3>
+                    <p style={{ color: '#64748b', marginBottom: '20px' }}>
+                        This city isn&apos;t part of our network right now. Browse our available cities instead.
+                    </p>
+                    <div style={{ display: 'flex', gap: '10px', justifyContent: 'center', flexWrap: 'wrap' }}>
+                        <Link
+                            to="/all"
+                            style={{
+                                padding: '11px 20px', borderRadius: '10px', fontWeight: 700, fontSize: '0.88rem',
+                                background: 'linear-gradient(135deg, #6366f1, #4f46e5)', color: '#fff', textDecoration: 'none'
+                            }}
+                        >
+                            Explore All Hoardings
+                        </Link>
+                        <Link
+                            to="/"
+                            style={{
+                                padding: '11px 20px', borderRadius: '10px', fontWeight: 700, fontSize: '0.88rem',
+                                background: '#fff', color: '#4338ca', textDecoration: 'none', border: '1.5px solid #c7d2fe'
+                            }}
+                        >
+                            Back to Home
+                        </Link>
+                    </div>
+                </div>
+            </div>
+        );
+    }
 
     return (
         <div className="city-list-page container">
@@ -444,10 +518,11 @@ const CityList = ({ hoardings }) => {
                                             <Popup>
                                                 <div className="map-popup custom-occupancy-popup">
                                                     <div className="map-popup-thumb-wrap">
-                                                        <img 
-                                                            src={getImageUrl(h)} 
+                                                        <DriveImage
+                                                            src={getImageUrl(h)}
                                                             alt={locName}
-                                                            onError={(e) => { e.target.src = 'https://placehold.co/220x130?text=Hoarding'; }} 
+                                                            thumbnailSize="w400"
+                                                            placeholder="https://placehold.co/220x130?text=Hoarding"
                                                         />
                                                         <span 
                                                             className="popup-status-badge"
@@ -517,11 +592,36 @@ const CityList = ({ hoardings }) => {
                             </MapContainer>
                         </div>
                     ) : filteredHoardings.length > 0 ? (
-                        <div className="cards-wrapper">
-                            {filteredHoardings.map((h, i) => (
-                                <HoardingCard key={h._SiteID || h.UniqueID || h.SL || i} hoarding={h} />
-                            ))}
-                        </div>
+                        <>
+                            <div className="cards-wrapper">
+                                {visibleHoardings.map((h, i) => (
+                                    <HoardingCard key={h._SiteID || h.UniqueID || h.SL || i} hoarding={h} />
+                                ))}
+                            </div>
+                            {hasMoreToShow && (
+                                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '10px', margin: '28px 0 8px' }}>
+                                    <p style={{ color: '#64748b', fontSize: '0.85rem', margin: 0 }}>
+                                        Showing {visibleHoardings.length} of {filteredHoardings.length} sites
+                                    </p>
+                                    <button
+                                        type="button"
+                                        onClick={() => setVisibleCount(prev => prev + CARDS_PER_PAGE)}
+                                        style={{
+                                            padding: '12px 26px',
+                                            borderRadius: '10px',
+                                            border: '1.5px solid #c7d2fe',
+                                            background: '#fff',
+                                            color: '#4338ca',
+                                            fontWeight: 700,
+                                            fontSize: '0.9rem',
+                                            cursor: 'pointer'
+                                        }}
+                                    >
+                                        Load More Hoardings
+                                    </button>
+                                </div>
+                            )}
+                        </>
                     ) : (
                         <div className="no-results">
                             <h3>No hoardings match your filters.</h3>

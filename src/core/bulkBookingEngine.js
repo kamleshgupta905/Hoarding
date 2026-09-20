@@ -641,6 +641,23 @@ export const commitBulkBookings = async ({
         }, 14000); // 14s timeout per image to guarantee no freezing
 
         if (res && res.success && res.url) {
+          // Queue the history entry onto this site's sheet update. recordSiteHistory
+          // only writes to localStorage, so on its own the artwork would never
+          // reach the ExecutionHistory column — it would look saved until the
+          // browser cache was cleared.
+          const queueHistoryToSheet = (entryUrl, gps) => {
+            if (!entryUrl) return;
+            const row = batchUpdates.find(u =>
+              (p.site._SiteID && u.siteId === p.site._SiteID) ||
+              (p.site.SL && String(u.sl) === String(p.site.SL))
+            );
+            if (!row || !row.fields) return;
+            const stamped = `${entryUrl}|${Date.now()}${gps ? `|${String(gps).replace(/,/g, ' ')}` : ''}`;
+            row.fields.ExecutionHistory = row.fields.ExecutionHistory
+              ? `${row.fields.ExecutionHistory},${stamped}`
+              : stamped;
+          };
+
           if (artworkMode === 'replace_master') {
             const oldMaster = p.site.ImageURL || p.site["IMAGE 1"] || p.site["Image URL"] || '';
             if (oldMaster && !oldMaster.includes('unsplash.com')) {
@@ -651,6 +668,9 @@ export const commitBulkBookings = async ({
                 source: 'Archived Master Banner',
                 uploadMode: 'history_only'
               });
+              // The outgoing master must land in history on the sheet too,
+              // otherwise swapping the banner silently destroys the old photo.
+              queueHistoryToSheet(oldMaster);
             }
             p.site.ImageURL = res.url;
             p.site['Image URL'] = res.url;
@@ -668,9 +688,14 @@ export const commitBulkBookings = async ({
             }
 
             const updateRow = batchUpdates.find(u => (p.site._SiteID && u.siteId === p.site._SiteID) || (p.site.SL && String(u.sl) === String(p.site.SL)));
-            if (updateRow && updateRow.fields) {
-              updateRow.fields.ImageURL = res.url;
-              updateRow.fields['Image URL'] = res.url;
+            if (updateRow) {
+              // Carried as `url` as well, because batchUpdateSheet_ writes the
+              // image column from that and only merges `fields` alongside it.
+              updateRow.url = res.url;
+              if (updateRow.fields) {
+                updateRow.fields.ImageURL = res.url;
+                updateRow.fields['Image URL'] = res.url;
+              }
             }
           } else {
             // Save to History Only
@@ -681,6 +706,7 @@ export const commitBulkBookings = async ({
               source: `Bulk Campaign Artwork (${p.client})`,
               uploadMode: 'history_only'
             });
+            queueHistoryToSheet(res.url);
           }
         }
       } catch (err) {

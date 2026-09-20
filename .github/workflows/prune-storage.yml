@@ -1,0 +1,54 @@
+name: Prune Storage
+
+on:
+  schedule:
+    - cron: '0 0 * * 0' # Weekly on Sunday at midnight
+  workflow_dispatch:
+
+jobs:
+  prune:
+    name: Prune Old Releases and Artifacts
+    # Ubuntu rather than windows-latest: nothing here needs Windows, and on a
+    # private repo Windows minutes bill at 2x. pwsh is preinstalled on Ubuntu
+    # runners, so the script below is unchanged.
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Prune Old Releases and Artifacts
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_TOKEN || secrets.GITHUB_TOKEN }}
+          KEEP_RELEASES: '3'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Continue'
+
+          function Prune-Releases($repo) {
+            Write-Host "Pruning releases on $repo, keeping newest $env:KEEP_RELEASES..."
+            $json = gh release list --repo $repo --limit 200 --json tagName,createdAt,isLatest 2>$null
+            if (-not $json) { Write-Host "  (no releases readable)"; return }
+            $releases = $json | ConvertFrom-Json | Sort-Object createdAt -Descending
+            $keep = [int]$env:KEEP_RELEASES
+            if ($releases.Count -le $keep) { Write-Host "  $($releases.Count) release(s), nothing to prune."; return }
+            $stale = $releases | Select-Object -Skip $keep
+            foreach ($r in $stale) {
+              if ($r.isLatest) { continue }
+              if ($r.tagName -eq "staff-apk-latest") { continue }
+              Write-Host "  deleting $($r.tagName)"
+              gh release delete $r.tagName --repo $repo --yes --cleanup-tag 2>$null
+            }
+          }
+
+          Prune-Releases "kamleshgupta905/hoarding-desktop-releases"
+          Prune-Releases "$env:GITHUB_REPOSITORY"
+
+          Write-Host "Pruning old workflow artifacts..."
+          $arts = gh api "repos/$env:GITHUB_REPOSITORY/actions/artifacts?per_page=100" --paginate 2>$null | ConvertFrom-Json
+          $all = @(); foreach ($page in $arts) { $all += $page.artifacts }
+          $seen = @{}
+          foreach ($a in ($all | Where-Object { -not $_.expired } | Sort-Object created_at -Descending)) {
+            if (-not $seen.ContainsKey($a.name)) { $seen[$a.name] = $true; continue }
+            gh api -X DELETE "repos/$env:GITHUB_REPOSITORY/actions/artifacts/$($a.id)" 2>$null | Out-Null
+          }
+          Write-Host "Artifact pruning complete."

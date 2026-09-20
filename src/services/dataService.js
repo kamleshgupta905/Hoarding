@@ -160,9 +160,14 @@ export const parseHistoryString = (rawHistory) => {
   }
 
   if (typeof rawHistory === 'string' && rawHistory.trim()) {
-    const rawEntries = rawHistory.includes('http') 
-      ? rawHistory.split(/,(?=\s*https?:\/\/)/i) 
-      : rawHistory.split(',');
+    // Reject values that lost their urls entirely — older writes could store the
+    // literal text "[object Object]" when an array was stringified into the cell.
+    if (!rawHistory.includes('http')) return [];
+
+    // Splitting only before an http(s) boundary keeps a legacy "lat,lng" gps
+    // together with its own entry, instead of letting the longitude become a
+    // separate url-less record that renders as a broken photo card.
+    const rawEntries = rawHistory.split(/,(?=\s*https?:\/\/)/i);
     return rawEntries.map(entry => {
       const parts = entry.split('|');
       const raw = parts[0]?.trim() || '';
@@ -391,7 +396,7 @@ export const normalizeHoarding = (item) => {
     'History': combinedHistory,
     'ExecutionHistory': (typeof item['ExecutionHistory'] === 'string' && item['ExecutionHistory'].includes('data:image/'))
       ? item['ExecutionHistory'].split(',').filter(p => !p.includes('data:image/')).join(',')
-      : (item['ExecutionHistory'] || (combinedHistory.length > 0 ? combinedHistory.map(h => `${typeof h === 'object' ? (h.url || h.preview || '') : h}|${typeof h === 'object' ? (h.timestamp || Date.now()) : Date.now()}${typeof h === 'object' && h.gps ? '|' + h.gps : ''}`).join(',') : '')),
+      : (item['ExecutionHistory'] || (combinedHistory.length > 0 ? combinedHistory.map(h => `${typeof h === 'object' ? (h.url || h.preview || '') : h}|${typeof h === 'object' ? (h.timestamp || Date.now()) : Date.now()}${typeof h === 'object' && h.gps ? '|' + String(h.gps).replace(/,/g, ' ') : ''}`).join(',') : '')),
     'Site Category': siteCategory,
     'STATUS': status,
     'BookedBy': bookedBy,
@@ -658,6 +663,65 @@ export const getLocalHistory = (site = null) => {
   } catch {
     return site ? [] : {};
   }
+};
+
+/**
+ * 🧹 Drops local history entries that have outlived their purpose.
+ *
+ * adh_local_history is a hand-off buffer: a capture is written there so it shows
+ * instantly, and the sheet becomes the real record once the upload lands. If an
+ * entry is never cleaned up it keeps being overlaid onto the site forever — that
+ * is how a photo picked by mistake during bulk booking kept appearing on a page
+ * whose sheet row was perfectly clean.
+ *
+ * An entry is dropped when it is older than `maxAgeMs` (default 24h), by which
+ * point it has either reached the sheet or failed for good. Returns how many
+ * entries were removed.
+ */
+export const pruneLocalHistory = (maxAgeMs = 24 * 60 * 60 * 1000) => {
+  if (typeof window === 'undefined') return 0;
+  let removed = 0;
+  const cutoff = Date.now() - maxAgeMs;
+
+  const pruneStore = (storage, key) => {
+    try {
+      const raw = storage.getItem(key);
+      if (!raw) return;
+      const data = JSON.parse(raw);
+      if (!data || typeof data !== 'object') return;
+
+      let changed = false;
+      Object.keys(data).forEach(siteKey => {
+        if (!Array.isArray(data[siteKey])) return;
+        const kept = data[siteKey].filter(item => {
+          // A bare string carries no timestamp, so it can never be aged out.
+          // It is also the legacy shape, so treat it as expired.
+          if (typeof item !== 'object' || !item) return false;
+          const t = Number(item.timestamp) || Date.parse(item.date || '') || 0;
+          return t > cutoff;
+        });
+        if (kept.length !== data[siteKey].length) {
+          removed += data[siteKey].length - kept.length;
+          changed = true;
+          if (kept.length === 0) delete data[siteKey];
+          else data[siteKey] = kept;
+        }
+      });
+
+      if (changed) storage.setItem(key, JSON.stringify(data));
+    } catch {
+      // A corrupt buffer is worse than no buffer — reset it.
+      try { storage.removeItem(key); } catch { /* storage unavailable */ }
+    }
+  };
+
+  pruneStore(localStorage, 'adh_local_history');
+  pruneStore(sessionStorage, 'adh_session_recent_history');
+
+  if (removed > 0) {
+    console.log(`🧹 [Local History] Pruned ${removed} stale entr${removed === 1 ? 'y' : 'ies'}; the sheet is the record.`);
+  }
+  return removed;
 };
 
 export const recordSiteHistory = (site, historyItem) => {
@@ -1080,6 +1144,83 @@ export const getDeletedSites = () => {
     return raw ? new Set(JSON.parse(raw)) : new Set();
   } catch {
     return new Set();
+  }
+};
+
+/**
+ * 🧹 Drops tombstones whose site is already gone from the sheet.
+ *
+ * deleted_sites_cache hides a row locally between pressing delete and the sheet
+ * catching up. Once the sheet no longer returns that site the tombstone has done
+ * its job — keeping it means the browser goes on suppressing a key forever, so a
+ * site legitimately re-added later under the same id/name would be invisible on
+ * this machine and nowhere else. Call with the keys the sheet actually returned.
+ */
+export const reconcileDeletedSites = (sheetKeys = []) => {
+  if (typeof window === 'undefined') return 0;
+  try {
+    const raw = localStorage.getItem('deleted_sites_cache');
+    if (!raw) return 0;
+    const list = JSON.parse(raw);
+    if (!Array.isArray(list) || list.length === 0) return 0;
+
+    const live = new Set(
+      sheetKeys
+        .filter(Boolean)
+        .map(k => String(k).trim().toLowerCase())
+    );
+
+    // Keep a tombstone only while the sheet still serves that site.
+    const kept = list.filter(key => live.has(String(key).trim().toLowerCase()));
+    const removed = list.length - kept.length;
+
+    if (removed > 0) {
+      if (kept.length === 0) localStorage.removeItem('deleted_sites_cache');
+      else localStorage.setItem('deleted_sites_cache', JSON.stringify(kept));
+      console.log(`🧹 [Deleted Sites] Released ${removed} stale tombstone(s); the sheet no longer lists them.`);
+    }
+    return removed;
+  } catch {
+    try { localStorage.removeItem('deleted_sites_cache'); } catch { /* storage unavailable */ }
+    return 0;
+  }
+};
+
+/**
+ * 🧹 Expires locally-added sites that never made it to the sheet.
+ *
+ * A new site is cached here so it appears immediately while the write lands.
+ * Entries are removed once the sheet returns them, but a write that silently
+ * failed left one behind permanently — the site then existed only in this
+ * browser, which is exactly the split-record problem the sheet is meant to end.
+ */
+export const pruneLocalAddedSites = (maxAgeMs = 24 * 60 * 60 * 1000) => {
+  if (typeof window === 'undefined') return 0;
+  try {
+    const raw = localStorage.getItem('local_added_sites_cache');
+    if (!raw) return 0;
+    const list = JSON.parse(raw);
+    if (!Array.isArray(list) || list.length === 0) return 0;
+
+    const cutoff = Date.now() - maxAgeMs;
+    const kept = list.filter(item => {
+      if (!item || typeof item !== 'object') return false;
+      // Entries written before this field existed carry no age and cannot be
+      // reasoned about, so they are treated as expired.
+      const added = Number(item._LocalAddedAt) || Date.parse(item._LocalAddedAt || '') || 0;
+      return added > cutoff;
+    });
+
+    const removed = list.length - kept.length;
+    if (removed > 0) {
+      if (kept.length === 0) localStorage.removeItem('local_added_sites_cache');
+      else localStorage.setItem('local_added_sites_cache', JSON.stringify(kept));
+      console.warn(`🧹 [Local Sites] Dropped ${removed} site(s) that never reached the sheet. Re-add them if they are still needed.`);
+    }
+    return removed;
+  } catch {
+    try { localStorage.removeItem('local_added_sites_cache'); } catch { /* storage unavailable */ }
+    return 0;
   }
 };
 

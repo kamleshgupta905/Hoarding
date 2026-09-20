@@ -1,13 +1,15 @@
 {
   "features": [
-    "Occupancy Heatmap & 15-Days Renewal Predictor with visual radar alerts",
-    "Bulk Multi-Client Campaign Onboarding Wizard (Excel & PPT Auto-Matcher)",
-    "Automated Inventory Conflict Radar & Overlap Prevention Engine",
+    "Site photos load reliably from Google Drive, with automatic fallbacks",
+    "Google Sheet is the single record — stale browser copies no longer reappear",
+    "Bulk campaign artwork and booking details now save to the sheet correctly",
+    "Upload an Excel sheet and a PPT deck together in one step",
+    "Large presentations parse without exhausting memory",
     "Over-the-air automatic updates for Desktop, Web, and Mobile apps"
   ],
-  "version": "1.7.0",
-  "buildTimestamp": 1789818225944,
-  "buildDate": "2026-09-19T11:43:45.944Z",
-  "releaseTag": "v1.7.0",
+  "version": "1.8.0",
+  "buildTimestamp": 1789910544937,
+  "buildDate": "2026-09-20T13:22:24.937Z",
+  "releaseTag": "v1.8.0",
   "apkUrl": "https://github.com/kamleshgupta905/Hoarding/releases/download/staff-apk-latest/heera-staff-camera.apk"
 }

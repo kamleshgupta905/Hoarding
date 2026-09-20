@@ -32,7 +32,7 @@ AdHoardings ek premium outdoor advertising discovery platform hai jo live data s
 *   **State Management:** React hooks (`useState`, `useEffect`, `useMemo`) ka upyog real-time data filtering aur admin workflow ke liye kiya gaya hai.
 
 ### **Backend & Automation (Google Apps Script)**
-*   **`GOOGLE_APPS_SCRIPT_FINAL.js`:** Yeh main automation engine hai.
+*   **`google_apps_script/Code.gs`:** Yeh main automation engine hai (single source of truth).
     *   **File Processing:** Drive folder mein aayi Excel/PPT files ko detect karke data sheet mein map karta hai.
     *   **Image Mapping:** Image filename ko site name se match karke automatically correct row mein link karta hai.
     *   **API Endpoint:** React Dashboard se aane wali requests (AI updates) ko handle karne ke liye `doPost` function ka upyog kiya gaya hai.

@@ -3,10 +3,9 @@
  * Powered by Google Gemini 3.7 Flash with multi-key auto-failover.
  */
 
-// Keys assembled dynamically from runtime environment or secure components
-const K1 = ['AQ.', 'Ab8RN6IR8j97v_', 'TwvrhH8cB-HXI2y6-', 'XDmPD6fjpsPHFUI1v-g'].join('');
-const K2 = ['AQ.', 'Ab8RN6KKCBjZXk', 'MCVP50IXHFI_oeqS', '88iQoSJ7wHw_fAtCc1JQ'].join('');
-
+// 🔑 Keys come from the environment (.env.local locally, Vercel env vars in
+// production) or from a key the user pastes into the admin settings.
+// Never hardcode a key here — this file is bundled and served to the browser.
 export const getGeminiApiKeys = () => {
   const customKey = (typeof window !== 'undefined' && (
     window.localStorage?.getItem('adh_gemini_api_key') ||
@@ -16,8 +15,8 @@ export const getGeminiApiKeys = () => {
   return [
     customKey,
     import.meta.env?.VITE_GEMINI_API_KEY,
-    import.meta.env?.VITE_GEMINI_API_KEY_1 || K1,
-    import.meta.env?.VITE_GEMINI_API_KEY_2 || K2
+    import.meta.env?.VITE_GEMINI_API_KEY_1,
+    import.meta.env?.VITE_GEMINI_API_KEY_2
   ].filter(Boolean);
 };
 

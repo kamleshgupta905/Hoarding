@@ -4,6 +4,8 @@ import { ChevronLeft, MapPin, Maximize2, Layers, Zap, Info, Calendar, Phone, Sha
 import { Helmet } from 'react-helmet-async';
 import { getImageUrl, compressImage, syncToGoogleSheet, downloadHoardingImage, recordSiteBooking, removeSiteBooking, saveSiteBookingSlots, getLocalHistory, removeSiteHistory, parseHistoryString, getDirectDriveLink, getDeletedHistoryUrls, addDeletedHistoryUrl, isHistoryUrlDeleted } from '../services/dataService';
 import ImageLightbox from '../components/ImageLightbox';
+import DriveImage from '../components/DriveImage';
+import { getAdminSession } from '../services/secureApi';
 import { appConfirm, appToast } from '../components/ToastContext';
 import './HoardingDetail.css';
 
@@ -45,15 +47,8 @@ const HoardingDetail = ({ hoardings, setHoardings }) => {
                 hSite.replace(/\s+/g, ' ').toLowerCase() === decodedSiteName.replace(/\s+/g, ' ').toLowerCase();
         });
 
-    const isAdmin = React.useMemo(() => {
-        try {
-            return localStorage.getItem('isAdminAuthenticated') === 'true' ||
-                   !!sessionStorage.getItem('adh_admin_session') ||
-                   !!localStorage.getItem('adh_admin_session');
-        } catch {
-            return false;
-        }
-    }, []);
+    // Admin-only UI is gated on a real server-issued session token.
+    const isAdmin = React.useMemo(() => Boolean(getAdminSession()), []);
     const [deletedHistoryUrls, setDeletedHistoryUrls] = React.useState(() => getDeletedHistoryUrls());
     const [isEditModalOpen, setIsEditModalOpen] = React.useState(false);
     const [isLoading, setIsLoading] = React.useState(false);
@@ -70,22 +65,70 @@ const HoardingDetail = ({ hoardings, setHoardings }) => {
         const fromHoarding = Array.isArray(hoarding.History) && hoarding.History.length > 0 
             ? hoarding.History 
             : parseHistoryString(hoarding.ExecutionHistory || hoarding.History || '');
-        const fromLocal = getLocalHistory(hoarding);
+        // Local history is only a bridge for a capture that has not reached the
+        // sheet yet. Once the sheet has any history for this site, it is the
+        // source of truth: a stale localStorage entry (a photo later deleted, or
+        // one saved against the wrong site) must not resurrect itself on a page
+        // that is otherwise correct. Keep local entries only while they are
+        // recent enough to still be in flight.
+        const PENDING_WINDOW_MS = 10 * 60 * 1000;
+        const rawLocal = getLocalHistory(hoarding);
+        const sheetHasHistory = Array.isArray(fromHoarding) && fromHoarding.length > 0;
+        const fromLocal = !sheetHasHistory
+            ? rawLocal
+            : rawLocal.filter(item => {
+                if (typeof item !== 'object' || !item) return false;
+                const t = Number(item.timestamp) || Date.parse(item.date || '') || 0;
+                return t > 0 && (Date.now() - t) < PENDING_WINDOW_MS;
+            });
 
-        const seen = new Set();
-        const merged = [];
+        // Dedupe by the photo itself (Drive file id where available), NOT by
+        // url+timestamp: the same photo often arrives from local cache with a
+        // timestamp and from the sheet without one, which would otherwise show
+        // the same audit twice — once dated, once as "Date Unknown".
+        const identityOf = (url) => {
+            const idMatch = String(url).match(/\/d\/([^/?#\s]+)/) || String(url).match(/[?&]id=([^&#/\s]+)/);
+            return idMatch && idMatch[1] ? idMatch[1] : String(url);
+        };
+
+        const byIdentity = new Map();
         [...fromLocal, ...fromHoarding].forEach(item => {
             const rawUrl = typeof item === 'object' ? (item.url || item.preview || '') : item;
             const directUrl = getDirectDriveLink(rawUrl) || rawUrl;
+            if (!directUrl) return;
             if (isHistoryUrlDeleted(directUrl, deletedHistoryUrls) || isHistoryUrlDeleted(rawUrl, deletedHistoryUrls)) return;
-            const time = typeof item === 'object' ? (item.timestamp || item.date || '') : '';
-            const key = `${directUrl}_${time}`;
-            if (directUrl && !seen.has(key)) {
-                seen.add(key);
-                merged.push(typeof item === 'object' ? { ...item, url: directUrl } : { url: directUrl, timestamp: time });
+
+            const key = identityOf(directUrl);
+            const normalised = typeof item === 'object'
+                ? { ...item, url: directUrl }
+                : { url: directUrl, timestamp: 0 };
+
+            const existing = byIdentity.get(key);
+            if (!existing) {
+                byIdentity.set(key, normalised);
+                return;
             }
+            // Same photo seen twice — keep whichever copy actually has a date,
+            // and prefer any other metadata (gps, source) that is present.
+            const existingTime = Number(existing.timestamp) || Date.parse(existing.date || '') || 0;
+            const incomingTime = Number(normalised.timestamp) || Date.parse(normalised.date || '') || 0;
+            byIdentity.set(key, {
+                ...existing,
+                ...normalised,
+                timestamp: incomingTime > existingTime ? normalised.timestamp : existing.timestamp,
+                date: incomingTime > existingTime ? normalised.date : existing.date,
+                gps: existing.gps || normalised.gps || '',
+                source: existing.source || normalised.source || 'Verified Capture'
+            });
         });
-        return merged;
+
+        // Newest first, so the "LATEST AUDIT" badge on index 0 is truthful.
+        // Undated entries sink to the bottom instead of hijacking the badge.
+        return [...byIdentity.values()].sort((a, b) => {
+            const ta = Number(a.timestamp) || Date.parse(a.date || '') || 0;
+            const tb = Number(b.timestamp) || Date.parse(b.date || '') || 0;
+            return tb - ta;
+        });
     }, [hoarding, deletedHistoryUrls]);
 
     React.useEffect(() => {
@@ -678,11 +721,13 @@ const HoardingDetail = ({ hoardings, setHoardings }) => {
                 <div className="detail-layout" role="main">
                     <div className="detail-main">
                         <article className="hero-visual-wrapper photo-editable-wrapper" onDoubleClick={() => setPreviewImage(imageUrl)}>
-                            <img
+                            <DriveImage
                                 src={imageUrl}
                                 alt={`Advertising site at ${hoarding["Location "]}`}
                                 className="hero-media"
-                                onError={(e) => { e.target.src = 'https://placehold.co/1200x800?text=Premium+Media+Asset'; }}
+                                loading="eager"
+                                thumbnailSize="w1200"
+                                placeholder="https://placehold.co/1200x800?text=Premium+Media+Asset"
                             />
                             <label className="photo-edit-overlay">
                                 <Camera size={32} />
@@ -808,7 +853,11 @@ const HoardingDetail = ({ hoardings, setHoardings }) => {
                                     {(activeHistory || []).map((item, idx) => {
                                         const rawUrl = typeof item === 'object' ? item.url : item;
                                         const finalUrl = getDirectDriveLink(rawUrl) || rawUrl;
-                                        const finalTime = typeof item === 'object' ? item.timestamp : null;
+                                        // Accept either a numeric timestamp or an ISO date string,
+                                        // so entries that only carry `date` still render a real date.
+                                        const rawTime = typeof item === 'object' ? (item.timestamp || item.date) : null;
+                                        const parsedTime = Number(rawTime) || Date.parse(rawTime || '') || 0;
+                                        const finalTime = parsedTime > 0 ? parsedTime : null;
                                         
                                         return (
                                             <div key={idx} className="audit-card">
@@ -818,7 +867,7 @@ const HoardingDetail = ({ hoardings, setHoardings }) => {
                                                     style={{ cursor: 'pointer' }}
                                                     title="Click to view full photo preview"
                                                 >
-                                                    <img src={finalUrl} alt={`Audit Update ${idx + 1}`} loading="lazy" />
+                                                    <DriveImage src={finalUrl} alt={`Audit Update ${idx + 1}`} />
                                                     <div className="audit-card-hover-overlay">
                                                         <Maximize2 size={22} color="#ffffff" />
                                                         <span>View Photo</span>
@@ -835,7 +884,7 @@ const HoardingDetail = ({ hoardings, setHoardings }) => {
                                                             <Trash2 size={14} />
                                                         </button>
                                                     )}
-                                                    {idx === 0 ? (
+                                                    {idx === 0 && finalTime ? (
                                                         <span className="audit-badge latest">LATEST AUDIT</span>
                                                     ) : (
                                                         <span className="audit-badge past">PAST UPDATE</span>

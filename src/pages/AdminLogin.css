@@ -1,9 +1,10 @@
 .admin-login-page {
-    height: 80vh;
+    min-height: 80vh;
     display: flex;
     align-items: center;
     justify-content: center;
     background: var(--surface);
+    padding: 24px 16px;
 }
 
 .login-card {
@@ -67,7 +68,10 @@
     border: none;
     outline: none;
     width: 100%;
+    /* Keep at >=16px so iOS Safari does not auto-zoom the viewport on focus */
     font-size: 1rem;
+    background: transparent;
+    min-width: 0;
 }
 
 .login-btn {
@@ -104,4 +108,40 @@
     margin-top: 24px;
     font-size: 0.75rem;
     color: var(--text-muted);
+}
+/* 📱 Small screens — tighten spacing so the card never overflows */
+@media (max-width: 480px) {
+    .admin-login-page {
+        min-height: calc(100vh - 80px);
+        padding: 16px 12px;
+        align-items: flex-start;
+        padding-top: 32px;
+    }
+
+    .login-card {
+        padding: 26px 20px;
+        border-radius: 14px;
+    }
+
+    .login-header {
+        margin-bottom: 24px;
+    }
+
+    .login-header h2 {
+        font-size: 1.4rem;
+    }
+
+    .login-header p {
+        font-size: 0.82rem;
+    }
+
+    .input-with-icon {
+        padding: 11px 13px;
+        gap: 10px;
+    }
+
+    .login-btn {
+        margin-top: 24px;
+        padding: 13px;
+    }
 }

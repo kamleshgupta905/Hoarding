@@ -21,6 +21,11 @@ output/
 *.local
 credentials.json
 token.json
+
+# Environment / API keys (keep .env.example tracked as the template)
+.env
+.env.*
+!.env.example
 .apps-script-id
 
 # Editor directories and files
@@ -37,3 +42,8 @@ token.json
 # Scratch & local assets
 scratch/
 *.traineddata
+
+# 306 unused hoarding photos (208 MB). Site images load from Google Drive, and
+# nothing in src/ referenced these — they were bundled into every Vercel
+# deployment, consuming 208 MB of the 211 MB each build stored.
+public/images/

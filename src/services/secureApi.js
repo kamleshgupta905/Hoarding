@@ -23,7 +23,15 @@ const fetchWithTimeout = async (url, options = {}, timeoutMs = 60000) => {
   }
 };
 
-export const getAdminSession = () => (typeof sessionStorage !== 'undefined' ? sessionStorage.getItem(SESSION_KEY) : '') || (typeof localStorage !== 'undefined' ? localStorage.getItem(SESSION_KEY) : '') || ((typeof localStorage !== 'undefined' && localStorage.getItem('isAdminAuthenticated') === 'true') ? 'session-local-admin' : '');
+/**
+ * Returns the admin session token issued by the server, or '' when not logged in.
+ * Only a real token counts — the legacy `isAdminAuthenticated` flag is NOT accepted,
+ * since anyone could set it from the browser console to fake a session.
+ */
+export const getAdminSession = () =>
+  (typeof sessionStorage !== 'undefined' ? sessionStorage.getItem(SESSION_KEY) : '') ||
+  (typeof localStorage !== 'undefined' ? localStorage.getItem(SESSION_KEY) : '') ||
+  '';
 export const getAuthenticatedAdminId = () => (typeof sessionStorage !== 'undefined' ? sessionStorage.getItem(ADMIN_ID_KEY) : '') || (typeof localStorage !== 'undefined' ? localStorage.getItem(ADMIN_ID_KEY) : '') || 'admin';
 
 export const clearAdminSession = () => {
@@ -87,7 +95,12 @@ export const loginAdmin = async (adminId, password) => {
     try {
       const status = await getJson({ action: 'loginStatus', requestId }, 5000);
       if (status && status.status === 'AUTHENTICATED') {
-        const token = status.sessionToken || ('adm_' + Date.now());
+        // Only a real server-issued token is usable — a locally invented one
+        // would be rejected by every subsequent API call anyway.
+        const token = status.sessionToken;
+        if (!token) {
+          throw new Error('Login server did not return a session token. Please try again.');
+        }
         if (typeof sessionStorage !== 'undefined') {
           sessionStorage.setItem(SESSION_KEY, token);
           sessionStorage.setItem(ADMIN_ID_KEY, status.adminId || cleanId);
@@ -95,7 +108,6 @@ export const loginAdmin = async (adminId, password) => {
         if (typeof localStorage !== 'undefined') {
           localStorage.setItem(SESSION_KEY, token);
           localStorage.setItem(ADMIN_ID_KEY, status.adminId || cleanId);
-          localStorage.setItem('isAdminAuthenticated', 'true');
         }
         return status;
       }
@@ -176,11 +188,31 @@ export const submitAdminOperation = async ({ type, payload = {}, siteId = '', ba
     ...payload
   };
 
+  // Deletes must be confirmed, not fired blindly. These actions are gated behind
+  // an admin session on the backend, and a no-cors post cannot read the response
+  // — so an "Authentication required" rejection used to look like success while
+  // the row stayed in the sheet and reappeared on the next refresh.
   const asyncFastActions = ['deleteHoarding', 'deleteHistoryItem', 'deleteAllHoardings', 'deleteCityHoardings', 'dumpImage'];
-  if (options.async || asyncFastActions.includes(type) || (payload && asyncFastActions.includes(payload.action))) {
-    // Fire-and-forget with warning — caller should not treat QUEUED as COMPLETED
-    postOpaque(combinedPayload).catch(err => console.warn('Delete operation post warning:', err));
-    console.warn(`⚠️ [Delete] Operation ${operationId} queued but unconfirmed. Track via operationId.`);
+  const isDeleteAction = asyncFastActions.includes(type) || (payload && asyncFastActions.includes(payload.action));
+
+  if (isDeleteAction) {
+    try {
+      const result = await postDirect(combinedPayload, 30000);
+      if (result && result.success === false) {
+        throw new Error(result.error || 'Delete was rejected by the server.');
+      }
+      return { status: 'COMPLETED', operationId, confirmed: true, ...result };
+    } catch (err) {
+      // Fall back to the opaque post so the delete still reaches the backend when
+      // CORS blocks the readable request, but report it as unconfirmed.
+      console.warn('Delete could not be confirmed directly:', err.message);
+      await postOpaque(combinedPayload).catch(e => console.warn('Delete post warning:', e));
+      return { status: 'QUEUED', operationId, confirmed: false, error: err.message };
+    }
+  }
+
+  if (options.async) {
+    postOpaque(combinedPayload).catch(err => console.warn('Async operation post warning:', err));
     return { status: 'QUEUED', operationId, confirmed: false };
   }
 
@@ -239,9 +271,18 @@ export const getStaffTokenFromLocation = () => {
   return incoming || (typeof localStorage !== 'undefined' ? localStorage.getItem('adh_staff_upload_token') : '') || '';
 };
 
+export const hasStaffToken = () => Boolean(getStaffTokenFromLocation());
+
 export const postStaffPhoto = async (payload) => {
   const clientUploadId = payload.clientUploadId || createOperationId();
-  const staffToken = getStaffTokenFromLocation() || 'staff-session';
+  const staffToken = getStaffTokenFromLocation();
+  if (!staffToken) {
+    return {
+      success: false,
+      clientUploadId,
+      error: 'This device is not authorised for uploads. Please open the staff link shared by your admin.'
+    };
+  }
   const postPromise = postOpaque({ action: 'staffUploadPhoto', staffToken, clientUploadId, ...payload });
   
   try {
