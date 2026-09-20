@@ -16,6 +16,7 @@ import { analyzeHoardingImage, extractSiteCoordinates } from '../services/aiServ
 import { fetchHoardings, compressImage, syncToGoogleSheet, exportProposalExcel, PROPOSAL_COLUMNS, getImageUrl, downloadHoardingImage, fetchStaffUploads, reviewStaffPhoto, detectStaffPhotoOrientation, fetchSheetGrid, saveSheetGrid, addDeletedSite, parseHistoryString, saveLocalBooking, clearLocalBooking, recordSiteBooking, removeSiteBooking, getSiteBookingSlots, checkBookingConflict, calculateProRataRental, resolveSiteLiveStatus, saveSiteBookingSlots, recordSiteHistory, getLocalHistory, getDirectDriveLink, parseCellImageUrls, addDeletedHistoryUrl, isHistoryUrlDeleted, removeSiteHistory, getExpiringSites } from '../services/dataService';
 import { generateMasterMediaPlanPptx } from '../services/presentationService';
 import ImageLightbox from '../components/ImageLightbox';
+import DriveImage from '../components/DriveImage';
 import RenewalAlertRadar from '../components/RenewalAlertRadar';
 import BulkBookingWizard from '../components/BulkBookingWizard';
 import { appConfirm, appToast } from '../components/ToastContext';
@@ -6132,7 +6133,7 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                                     >
                                                         {/* Image Thumbnail Container */}
                                                         <div style={{ position: 'relative', height: '140px', background: '#0f172a', overflow: 'hidden' }}>
-                                                            <img 
+                                                            <DriveImage
                                                                 src={upload.ImageURL} 
                                                                 alt={upload.ApprovedSite || 'Staff capture'} 
                                                                 onClick={() => setPreviewHoarding({ ImageURL: upload.ImageURL, City: 'Staff', "Location ": upload.ApprovedSite || 'Staff upload' })} 
@@ -6361,7 +6362,7 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                                 >
                                                     {/* Image Thumbnail Container */}
                                                     <div style={{ position: 'relative', height: '140px', background: '#0f172a', overflow: 'hidden' }}>
-                                                        <img 
+                                                        <DriveImage
                                                             src={upload.ImageURL} 
                                                             alt={upload.SuggestedSite || 'Unmatched photo'} 
                                                             onClick={() => setPreviewHoarding({ ImageURL: upload.ImageURL, City: 'Staff', "Location ": upload.SuggestedSite || 'Unmatched' })} 
@@ -7727,7 +7728,7 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                     return (
                                         <article className="staff-review-card" key={upload.UploadId}>
                                             <button className="staff-review-image" onClick={() => setPreviewHoarding({ ImageURL: reviewImageUrl, City: 'Staff', "Location ": selectedSite || 'Review photo' })}>
-                                                <img src={reviewImageUrl} alt="Staff capture" />
+                                                <DriveImage src={reviewImageUrl} alt="Staff capture" />
                                             </button>
                                             <div className="staff-review-body">
                                                 <div className="staff-review-meta">
@@ -9626,7 +9627,7 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
 
                                 <div style={{ padding: '18px 24px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: '#ffffff', gap: '12px' }}>
                                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                        <img 
+                                        <DriveImage
                                             src={selectedPinpointUpload.ImageURL} 
                                             alt="Captured thumbnail" 
                                             style={{ width: '48px', height: '48px', borderRadius: '8px', objectFit: 'cover', border: '1px solid #cbd5e1' }} 

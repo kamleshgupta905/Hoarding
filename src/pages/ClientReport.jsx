@@ -6,6 +6,7 @@ import {
     Share2, Download, CheckCircle2 
 } from 'lucide-react';
 import { getImageUrl } from '../services/dataService';
+import DriveImage from '../components/DriveImage';
 import { HIRA_LOGO } from '../assets/hiraLogoData';
 import { appToast } from '../components/ToastContext';
 
@@ -137,7 +138,7 @@ const ClientReport = ({ hoardings }) => {
                         return (
                             <div key={index} className="asset-report-card animate-in" style={{ animationDelay: `${index * 0.1}s` }}>
                                 <div className="card-media">
-                                    <img src={getImageUrl(site)} alt={site["Location "]} />
+                                    <DriveImage src={getImageUrl(site)} alt={site["Location "]} />
                                     <div className="city-pill">{site.City}</div>
                                     <button 
                                         className="map-float-btn"

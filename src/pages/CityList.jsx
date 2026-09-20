@@ -5,6 +5,7 @@ import { MapContainer, TileLayer, Marker, Popup } from 'react-leaflet';
 import L from 'leaflet';
 import { Helmet } from 'react-helmet-async';
 import HoardingCard from '../components/HoardingCard';
+import DriveImage from '../components/DriveImage';
 import { getImageUrl, getSiteOccupancyStatus, generateWhatsAppRenewalMessage } from '../services/dataService';
 import './CityList.css';
 
@@ -517,10 +518,11 @@ const CityList = ({ hoardings }) => {
                                             <Popup>
                                                 <div className="map-popup custom-occupancy-popup">
                                                     <div className="map-popup-thumb-wrap">
-                                                        <img 
-                                                            src={getImageUrl(h)} 
+                                                        <DriveImage
+                                                            src={getImageUrl(h)}
                                                             alt={locName}
-                                                            onError={(e) => { e.target.src = 'https://placehold.co/220x130?text=Hoarding'; }} 
+                                                            thumbnailSize="w400"
+                                                            placeholder="https://placehold.co/220x130?text=Hoarding"
                                                         />
                                                         <span 
                                                             className="popup-status-badge"
