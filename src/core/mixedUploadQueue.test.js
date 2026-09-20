@@ -82,12 +82,13 @@ describe('queue ordering', () => {
   });
 });
 
-describe('browser memory guard', () => {
-  // Parsing is client side: the file is read into an ArrayBuffer, JSZip expands
-  // it, and each extracted photo is held as a blob plus a base64 copy.
+describe('upload size guard', () => {
+  // The parser keeps only the one photo per slide that gets uploaded, so peak
+  // memory tracks the file size rather than a multiple of it. A deck still has
+  // to fit in the heap, hence a ceiling.
   const limitsFor = (isDesktopApp) => ({
-    hard: isDesktopApp ? 500 : 150,
-    warn: isDesktopApp ? 250 : 60
+    hard: isDesktopApp ? 2048 : 600,
+    warn: isDesktopApp ? 1024 : 250
   });
 
   const verdict = (sizeMB, isDesktopApp) => {
@@ -97,12 +98,12 @@ describe('browser memory guard', () => {
     return 'allowed';
   };
 
-  it('blocks a 380 MB deck in the browser, where it would exhaust memory', () => {
-    expect(verdict(380, false)).toBe('blocked');
+  it('accepts a 380 MB deck in the browser now that blobs are released', () => {
+    expect(verdict(380, false)).toBe('confirm');
   });
 
-  it('allows the same 380 MB deck in the desktop app with a warning', () => {
-    expect(verdict(380, true)).toBe('confirm');
+  it('accepts the same 380 MB deck in the desktop app without a prompt', () => {
+    expect(verdict(380, true)).toBe('allowed');
   });
 
   it('lets an ordinary deck through with no prompt', () => {
@@ -110,12 +111,13 @@ describe('browser memory guard', () => {
     expect(verdict(25, true)).toBe('allowed');
   });
 
-  it('warns in the band where it usually works but may not', () => {
-    expect(verdict(90, false)).toBe('confirm');
-    expect(verdict(300, true)).toBe('confirm');
+  it('warns near the browser ceiling', () => {
+    expect(verdict(300, false)).toBe('confirm');
+    expect(verdict(1500, true)).toBe('confirm');
   });
 
-  it('blocks beyond the desktop ceiling too', () => {
-    expect(verdict(600, true)).toBe('blocked');
+  it('still blocks decks past each ceiling', () => {
+    expect(verdict(700, false)).toBe('blocked');
+    expect(verdict(2500, true)).toBe('blocked');
   });
 });

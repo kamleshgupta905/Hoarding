@@ -1147,6 +1147,83 @@ export const getDeletedSites = () => {
   }
 };
 
+/**
+ * 🧹 Drops tombstones whose site is already gone from the sheet.
+ *
+ * deleted_sites_cache hides a row locally between pressing delete and the sheet
+ * catching up. Once the sheet no longer returns that site the tombstone has done
+ * its job — keeping it means the browser goes on suppressing a key forever, so a
+ * site legitimately re-added later under the same id/name would be invisible on
+ * this machine and nowhere else. Call with the keys the sheet actually returned.
+ */
+export const reconcileDeletedSites = (sheetKeys = []) => {
+  if (typeof window === 'undefined') return 0;
+  try {
+    const raw = localStorage.getItem('deleted_sites_cache');
+    if (!raw) return 0;
+    const list = JSON.parse(raw);
+    if (!Array.isArray(list) || list.length === 0) return 0;
+
+    const live = new Set(
+      sheetKeys
+        .filter(Boolean)
+        .map(k => String(k).trim().toLowerCase())
+    );
+
+    // Keep a tombstone only while the sheet still serves that site.
+    const kept = list.filter(key => live.has(String(key).trim().toLowerCase()));
+    const removed = list.length - kept.length;
+
+    if (removed > 0) {
+      if (kept.length === 0) localStorage.removeItem('deleted_sites_cache');
+      else localStorage.setItem('deleted_sites_cache', JSON.stringify(kept));
+      console.log(`🧹 [Deleted Sites] Released ${removed} stale tombstone(s); the sheet no longer lists them.`);
+    }
+    return removed;
+  } catch {
+    try { localStorage.removeItem('deleted_sites_cache'); } catch { /* storage unavailable */ }
+    return 0;
+  }
+};
+
+/**
+ * 🧹 Expires locally-added sites that never made it to the sheet.
+ *
+ * A new site is cached here so it appears immediately while the write lands.
+ * Entries are removed once the sheet returns them, but a write that silently
+ * failed left one behind permanently — the site then existed only in this
+ * browser, which is exactly the split-record problem the sheet is meant to end.
+ */
+export const pruneLocalAddedSites = (maxAgeMs = 24 * 60 * 60 * 1000) => {
+  if (typeof window === 'undefined') return 0;
+  try {
+    const raw = localStorage.getItem('local_added_sites_cache');
+    if (!raw) return 0;
+    const list = JSON.parse(raw);
+    if (!Array.isArray(list) || list.length === 0) return 0;
+
+    const cutoff = Date.now() - maxAgeMs;
+    const kept = list.filter(item => {
+      if (!item || typeof item !== 'object') return false;
+      // Entries written before this field existed carry no age and cannot be
+      // reasoned about, so they are treated as expired.
+      const added = Number(item._LocalAddedAt) || Date.parse(item._LocalAddedAt || '') || 0;
+      return added > cutoff;
+    });
+
+    const removed = list.length - kept.length;
+    if (removed > 0) {
+      if (kept.length === 0) localStorage.removeItem('local_added_sites_cache');
+      else localStorage.setItem('local_added_sites_cache', JSON.stringify(kept));
+      console.warn(`🧹 [Local Sites] Dropped ${removed} site(s) that never reached the sheet. Re-add them if they are still needed.`);
+    }
+    return removed;
+  } catch {
+    try { localStorage.removeItem('local_added_sites_cache'); } catch { /* storage unavailable */ }
+    return 0;
+  }
+};
+
 export const fetchHoardings = async () => {
   let parsedData = [];
   let isLoaded = false;

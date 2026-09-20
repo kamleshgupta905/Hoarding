@@ -1820,22 +1820,22 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
 
         const fileSizeMB = file.size / (1024 * 1024);
 
-        // Parsing happens entirely in the browser: the whole file is read into an
-        // ArrayBuffer, JSZip expands it in memory, and every extracted photo is
-        // held as a blob plus a base64 copy. Peak usage runs several times the
-        // file size, so a very large deck will crash the tab with an out-of-memory
-        // error that looks like a random freeze. Warn before starting instead.
+        // Parsing happens in the browser: the file is read into an ArrayBuffer and
+        // JSZip expands it. The parser now discards every decoded image except the
+        // one photo each slide actually uploads, so peak memory is roughly the
+        // file itself rather than a multiple of it — but a deck still has to fit
+        // in the tab's heap, so keep a ceiling and warn before the risky sizes.
         const isDesktopApp = Boolean(window.electronAPI && window.electronAPI.isElectron);
-        const HARD_LIMIT_MB = isDesktopApp ? 500 : 150;
-        const WARN_LIMIT_MB = isDesktopApp ? 250 : 60;
+        const HARD_LIMIT_MB = isDesktopApp ? 2048 : 600;
+        const WARN_LIMIT_MB = isDesktopApp ? 1024 : 250;
 
         if (fileSizeMB > HARD_LIMIT_MB) {
             appToast.error(
-                `This file is ${fileSizeMB.toFixed(0)} MB. The browser can reliably handle up to about ` +
-                `${HARD_LIMIT_MB} MB — larger decks run out of memory mid-way. ` +
+                `This file is ${fileSizeMB.toFixed(0)} MB, past the ${HARD_LIMIT_MB} MB limit ` +
+                `${isDesktopApp ? 'for the desktop app' : 'the browser can hold'}. ` +
                 (isDesktopApp
-                    ? 'Try splitting the presentation into smaller parts.'
-                    : 'Use the desktop app, or split the presentation into smaller parts.'),
+                    ? 'Split the presentation into smaller parts.'
+                    : 'Use the desktop app, which handles much larger decks, or split the file.'),
                 { duration: 12000 }
             );
             if (e?.target) e.target.value = null;
@@ -3154,7 +3154,9 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                     
                     const localRaw = localStorage.getItem('local_added_sites_cache');
                     const localList = localRaw ? JSON.parse(localRaw) : [];
-                    localList.push(fullCleanFields);
+                    // Stamped so the entry can expire if the write to the sheet
+                    // never lands, instead of living in this browser forever.
+                    localList.push({ ...fullCleanFields, _LocalAddedAt: Date.now() });
                     localStorage.setItem('local_added_sites_cache', JSON.stringify(localList));
                 } catch {}
                 return next;

@@ -7,7 +7,7 @@ import CommandPalette from './components/CommandPalette';
 import Navbar from './components/Navbar';
 import Footer from './components/Footer';
 import AdminLogin from './pages/AdminLogin';
-import { fetchHoardings, getLocalBookings, getSiteBookingKeys, getLocalHistory, resolveSiteLiveStatus, pruneLocalHistory } from './services/dataService';
+import { fetchHoardings, getLocalBookings, getSiteBookingKeys, getLocalHistory, resolveSiteLiveStatus, pruneLocalHistory, reconcileDeletedSites, pruneLocalAddedSites } from './services/dataService';
 
 // Helper to auto-recover dynamic imports when a new build is deployed on Vercel
 const lazyWithRetry = (componentImport) =>
@@ -375,6 +375,17 @@ function App() {
       return;
     }
 
+    // Release tombstones for sites the sheet has already stopped returning, so a
+    // key deleted once is not suppressed in this browser forever.
+    try {
+      const sheetKeys = [];
+      cleanData.forEach(item => {
+        sheetKeys.push(item.UniqueID, item['Unique ID'], item.ID, item._SiteID);
+        sheetKeys.push(item['Location '], item.Location, item['Locality Site Location']);
+      });
+      reconcileDeletedSites(sheetKeys);
+    } catch { /* reconciliation is best effort */ }
+
     let localAdded = [];
     try {
       const raw = localStorage.getItem('local_added_sites_cache');
@@ -578,6 +589,7 @@ function App() {
   // so nothing lingers in the browser pretending to be site data.
   useEffect(() => {
     pruneLocalHistory();
+    pruneLocalAddedSites();
   }, []);
 
   useEffect(() => {

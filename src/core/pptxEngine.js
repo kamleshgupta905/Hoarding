@@ -419,8 +419,17 @@ export const parsePptx = async (arrayBuffer, sites = [], onProgress = null) => {
   const hashUsage = new Map();
   const assignedMediaPaths = new Set();
   
-  // Cache to avoid extracting and hashing the same image multiple times (fixes hanging on large PPTs)
-  const mediaCache = new Map(); 
+  // Caches hashing/dimension work so the same media is not decoded twice.
+  // Holds metadata only — retaining every blob here kept the entire deck's
+  // images alive in memory at once, which is what made large files crash.
+  const mediaCache = new Map();
+
+  // Frees the decoded images once the deck has been parsed, so the memory is
+  // reclaimed instead of being pinned for the lifetime of the page.
+  const releaseMediaCache = () => {
+    mediaCache.forEach((entry) => { if (entry) entry.blob = null; });
+    mediaCache.clear();
+  };
 
   for (let i = 0; i < slidePaths.length; i++) {
     const slidePath = slidePaths[i];
@@ -601,6 +610,16 @@ export const parsePptx = async (arrayBuffer, sites = [], onProgress = null) => {
       slide.photoCandidates = [];
     }
 
+    // Only the chosen photo is ever uploaded, but every decoded image on the
+    // slide was being retained — logos, backgrounds, icons and all. On a large
+    // deck that is hundreds of megabytes of blobs held for no reason, which is
+    // what pushed the tab into an out-of-memory crash. Drop the blob from the
+    // images we are not going to use, keeping their metadata for the UI.
+    const keptId = slide.photoCandidates[0]?.id;
+    slide.images = slide.images.map((image) =>
+      image.id === keptId ? image : { ...image, blob: null }
+    );
+
     slide.suggestedSiteId = slide.candidates[0]?.site?._SiteID || '';
     slide.confidence = slide.candidates[0]?.score >= 4000 ? 'HIGH' : slide.candidates[0]?.score >= 900 ? 'MEDIUM' : 'LOW';
     slide.status = slide.suggestedSiteId && slide.photoCandidates.length ? (slide.confidence === 'HIGH' ? 'MATCHED' : 'REVIEW') : (slide.photoCandidates.length ? 'REVIEW' : 'SKIPPED');
@@ -696,6 +715,10 @@ export const parsePptx = async (arrayBuffer, sites = [], onProgress = null) => {
       }
     }));
   }
+
+  // The slides now hold their own references to the photos being uploaded, so
+  // the parser's working copies can go.
+  releaseMediaCache();
 
   return slides;
 };
