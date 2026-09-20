@@ -1465,8 +1465,55 @@ function batchUpdateSheet_(data) {
 
       if (r !== -1) {
         // Safe existing row update (r is already 0-based index of rows array)
-        if (idxImg !== -1) rows[r][idxImg] = up.url;
+        // Only overwrite the master image when a url was actually supplied —
+        // bulk booking sends booking fields with no url, and blanking the
+        // column here used to wipe the site photo.
+        if (idxImg !== -1 && up.url) rows[r][idxImg] = up.url;
         if (idxStatus !== -1 && up.status) rows[r][idxStatus] = up.status;
+
+        // Apply the fields map (BookedBy, BookingStart/End, BookingSchedule,
+        // ExecutionHistory, ...). This was previously ignored entirely, so bulk
+        // bookings only ever wrote STATUS and never reached the sheet's booking
+        // or history columns.
+        if (up.fields && typeof up.fields === 'object') {
+          for (var fKey in up.fields) {
+            if (!Object.prototype.hasOwnProperty.call(up.fields, fKey)) continue;
+            var fVal = up.fields[fKey];
+            if (fVal === undefined || fVal === null) continue;
+
+            var cleanKey = cleanFull(fKey);
+
+            // History needs merge semantics, never a blind overwrite.
+            if (cleanKey === 'executionhistory' || cleanKey === 'history') {
+              var idxHist = findHistoryColumn(headers);
+              if (idxHist === -1) continue;
+              var incoming = normalizeHistoryString_(String(fVal));
+              if (!incoming) continue;
+              var existingHist = normalizeHistoryString_(String(rows[r][idxHist] || ''));
+
+              // Skip entries whose photo is already recorded for this row.
+              var haveIds = {};
+              existingHist.split(',').forEach(function (e) {
+                var m = String(e).match(/\/d\/([^/?#\s|]+)/) || String(e).match(/[?&]id=([^&#/\s|]+)/);
+                if (m && m[1]) haveIds[m[1]] = true;
+              });
+              var toAdd = incoming.split(',').filter(function (e) {
+                var m = String(e).match(/\/d\/([^/?#\s|]+)/) || String(e).match(/[?&]id=([^&#/\s|]+)/);
+                if (m && m[1] && haveIds[m[1]]) return false;
+                return String(e).indexOf('http') !== -1;
+              });
+              if (toAdd.length === 0) continue;
+              rows[r][idxHist] = existingHist
+                ? existingHist + ',' + toAdd.join(',')
+                : toAdd.join(',');
+              continue;
+            }
+
+            var idxField = headers.findIndex(function (h) { return cleanFull(h) === cleanKey; });
+            if (idxField !== -1) rows[r][idxField] = fVal;
+          }
+        }
+
         if (idxRowVersion !== -1) {
           var currV = rows[r][idxRowVersion];
           rows[r][idxRowVersion] = (parseInt(currV) || 0) + 1;
