@@ -403,12 +403,9 @@ export const matchHoardingByGps = async (coord, locationList, rawImageBase64 = n
     const closest = candidates[0];
 
     // 🎯 CORRIDOR & TWIN-SITE CLUSTER DETECTION (Consecutive road structures / opposite facings)
-    // Group candidate hoardings along the same road corridor or junction.
-    // If closest hoarding is within 350m, cluster all candidates within 120m of closest site (capped at 400m).
-    const clusterMaxDist = closest.distanceM <= 350
-        ? Math.min(400, Math.max(100, closest.distanceM + 120))
-        : Math.min(800, closest.distanceM + 150);
-
+    // Only sites within 200m of the closest GPS point are considered a corridor cluster.
+    // This prevents grouping unrelated distant hoardings as "twins".
+    const clusterMaxDist = Math.min(200, Math.max(80, closest.distanceM + 80));
     const corridorCluster = candidates.filter(c => c.distanceM <= clusterMaxDist);
 
     const twinCandidatesList = corridorCluster.length > 1 ? corridorCluster.map(c => ({
@@ -584,8 +581,8 @@ export const matchHoardingByGps = async (coord, locationList, rawImageBase64 = n
         };
     }
 
-    // 🎯 Threshold 5: <= 2500m (2.5 km) is an Area Proximity Match (70% confidence)
-    if (closest.distanceM <= 2500) {
+    // 🎯 Threshold 5: <= 500m is an Area Match (70% confidence) — beyond 500m is too far for GPS-based matching
+    if (closest.distanceM <= 500) {
         return {
             index: closest.index,
             sl: closestSL,
@@ -727,27 +724,35 @@ export const analyzeHoardingImage = async (base64Image, locationList, rawFile = 
             if (exifCoord && isValidLatLng(exifCoord.lat, exifCoord.lng)) {
                 const gpsMatch = await matchHoardingByGps(exifCoord, locationList, base64Image);
                 if (gpsMatch) {
-                    return {
-                        matchedIndex: gpsMatch.index,
-                        sl: gpsMatch.sl || gpsMatch.site?.SL || gpsMatch.site?.['S. No.'] || '',
-                        site: gpsMatch.site,
-                        matchedLocation: gpsMatch.siteName,
-                        matchedSiteId: gpsMatch.site._SiteID || gpsMatch.site.UniqueID || gpsMatch.site['Unique ID'] || '',
-                        facing: gpsMatch.facing || gpsMatch.site.Facing || '',
-                        twinCandidates: gpsMatch.twinCandidates || null,
-                        status: gpsMatch.site?.STATUS || gpsMatch.status || 'Available',
-                        confidence: gpsMatch.confidence,
-                        reasoning: `🛰️ Camera EXIF GPS: ${gpsMatch.reasoning}`,
-                        analysis: `EXIF Lat: ${exifCoord.lat.toFixed(6)}, Long: ${exifCoord.lng.toFixed(6)}`,
-                        gpsCoord: { lat: exifCoord.lat, lng: exifCoord.lng },
-                        distanceM: gpsMatch.distanceM
-                    };
+                    // ✅ High-precision GPS match (<=200m): Return immediately — camera EXIF is authoritative
+                    // ⚠️ Lower-precision GPS match (>200m): Continue to OCR+AI for visual confirmation
+                    // This prevents incorrect far-away site matches when GPS coordinates are imprecise
+                    if (gpsMatch.distanceM <= 200) {
+                        return {
+                            matchedIndex: gpsMatch.index,
+                            sl: gpsMatch.sl || gpsMatch.site?.SL || gpsMatch.site?.['S. No.'] || '',
+                            site: gpsMatch.site,
+                            matchedLocation: gpsMatch.siteName,
+                            matchedSiteId: gpsMatch.site._SiteID || gpsMatch.site.UniqueID || gpsMatch.site['Unique ID'] || '',
+                            facing: gpsMatch.facing || gpsMatch.site.Facing || '',
+                            twinCandidates: gpsMatch.twinCandidates || null,
+                            status: gpsMatch.site?.STATUS || gpsMatch.status || 'Available',
+                            confidence: gpsMatch.confidence,
+                            reasoning: `🛰️ Camera EXIF GPS: ${gpsMatch.reasoning}`,
+                            analysis: `EXIF Lat: ${exifCoord.lat.toFixed(6)}, Long: ${exifCoord.lng.toFixed(6)}`,
+                            gpsCoord: { lat: exifCoord.lat, lng: exifCoord.lng },
+                            distanceM: gpsMatch.distanceM
+                        };
+                    }
+                    // For weak GPS match, store as fallback and continue to OCR+AI
+                    console.log(`[EXIF GPS] Weak match (${gpsMatch.distanceM}m, ${gpsMatch.confidence}% confidence) — continuing to OCR+AI for visual confirmation`);
                 }
             }
         } catch (exifErr) {
             console.warn('EXIF GPS check skipped:', exifErr);
         }
     }
+
 
     // ─── STAGE 2: OCR GPS Stamp Extraction (Bottom-Right Pinpoint & Bottom Banners) ───────────
     let detectedOcrText = '';
@@ -950,11 +955,11 @@ export const analyzeHoardingImage = async (base64Image, locationList, rawFile = 
                 siteName: location["Locality Site Location"] || location["Location "] || location.Location || '',
                 score: scoreLocationByText(detectedOcrText, location)
             }))
-            .filter(c => c.score >= 40)
+            .filter(c => c.score >= 25)
             .sort((a, b) => b.score - a.score);
 
         const best = candidates[0];
-        if (best && best.score >= 45) {
+        if (best && best.score >= 30) {
             const normalized = normalizeText(detectedOcrText);
             const status = normalized.includes('occupied') || normalized.includes('booked') ? 'Occupied' : 'Available';
             const bestSL = best.location?.SL || best.location?.['S. No.'] || best.location?.['SL NO'] || (best.index + 1);
@@ -962,7 +967,7 @@ export const analyzeHoardingImage = async (base64Image, locationList, rawFile = 
             // Cluster top candidate sites with matching road/locality for 1-click twin switching
             const clusterCandidates = candidates
                 .slice(0, 6)
-                .filter(c => c.score >= Math.max(45, best.score - 20))
+                .filter(c => c.score >= Math.max(30, best.score - 20))
                 .map(c => ({
                     index: c.index,
                     sl: c.location?.SL || c.location?.['S. No.'] || c.location?.['SL NO'] || (c.index + 1),

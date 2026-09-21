@@ -369,38 +369,31 @@ CRITICAL RULES FOR ACCURATE MATCHING:
 1. 🎯 HIGHEST PRIORITY: PRIMARY FOREGROUND BILLBOARD (CLOSEST TO CAMERA):
    - In live field audit photos, the photographer captures ONE specific primary billboard that dominates the center foreground.
    - You MUST match this prominent FOREGROUND billboard, NOT secondary or background structures!
-   - ⚠️ NEVER select a candidate just because a distant background building, pedestrian gantry, or small roadside sign (such as "GD GOENKA Toddler House", coaching sign, or shop banner) is visible in the background!
+   - ⚠️ NEVER select a candidate just because a distant background building, pedestrian gantry, or small roadside sign is visible in the background!
    - A distant background sign does NOT determine the site. The massive billboard right in the center foreground determines the site!
+   - The foreground billboard is typically: largest in frame, centered or near-center, closest to camera, sharpest/most in focus.
 
 2. 🏗️ BILLBOARD MOUNTING STRUCTURE & CORRIDOR MATCHING:
    - Carefully identify the physical structure type of the FOREGROUND billboard:
-     * UNIPOLE IN MEDIAN: A massive horizontal billboard mounted atop a single tall steel/concrete pillar in the road median, often directly underneath or parallel to the elevated metro/RRTS track pillars.
-     * OVERHEAD GANTRY: A steel truss bridge spanning horizontally across traffic lanes.
-     * SIDEWALK / CORNER POST: Supported on curbside posts.
-   - The correct candidate MUST match the physical structure in the foreground!
+     * UNIPOLE IN MEDIAN: A massive horizontal billboard mounted atop a single tall steel/concrete pillar in the road median, often directly underneath or parallel to an elevated metro/flyover track.
+     * OVERHEAD GANTRY: A steel truss bridge spanning horizontally across traffic lanes from curb to curb.
+     * SIDEWALK / CORNER POST: Supported on curbside posts or corner structures on the footpath.
+   - The correct candidate MUST match the physical structure visible in the foreground!
 
-3. 📍 SPECIFIC CORRIDOR LOCATIONS & CANDIDATE RESOLUTION:
-   * Modipuram Chauraha:
-     - The massive central UNIPOLE standing in the road median directly under/beside the elevated metro/RRTS viaduct track is:
-       * SL #210 (Facing Pallavpuram, seen by traffic heading towards Begum Bridge)
-       * SL #209 (Facing Begum Bridge, seen by traffic heading towards Pallavpuram)
-     - SL #211 / #212 is the roadside / bus-stand gantry structure on the curb.
-     - ⚠️ If the live audit photo shows the elevated metro pillars with the large central UNIPOLE billboard in the foreground, you MUST MATCH SL #210 (if facing Pallavpuram) or SL #209 (if facing Begum Bridge) — NEVER match SL #211 or #212!
-   * Company Garden Flyover:
-     - SL #198 is located directly along the elevated flyover ramp retaining wall with razor-wire fencing on top and sidewalk on the left.
-     - SL #196 is located further along Company Garden park trees without the concrete ramp wall beside it.
+3. 📍 HOW TO SELECT THE RIGHT CANDIDATE:
+   - GPS distance numbers are only ESTIMATES (±50m variance due to coordinate inaccuracies and camera position).
+   - DO NOT automatically pick the candidate with smallest GPS distance if the visual structure clearly matches another candidate.
+   - PRIMARY RULE: Visual foreground structure match > GPS distance.
+   - SECONDARY RULE: Facing direction match (which direction does the billboard face/look toward?).
+   - TERTIARY RULE: Closest GPS distance as tiebreaker only.
 
-4. 📏 GPS DISTANCE IS ONLY AN ESTIMATE (±50m variance):
-   - Calculated GPS distance numbers (e.g. 45m vs 70m) reflect where the vehicle/camera stopped or small coordinate inaccuracies in the master database.
-   - NEVER let a 20-30 meter GPS difference override the visual structure! The primary foreground billboard's visual structure and facing always takes precedence over slight GPS distance differences.
+4. 🧭 BILLBOARD FACING & TRAFFIC DIRECTION:
+   - "Facing [X]" means the billboard face points TOWARD direction X, visible to traffic coming FROM that direction.
+   - Check which direction the camera/vehicle is heading. The billboard face is on the side visible to the camera.
+   - Example: Camera heading towards Begum Bridge → billboard facing the camera = "Facing [away from Begum Bridge]" = "Facing Pallavpuram" or similar.
+   - ⚠️ IGNORE advertiser shop addresses or phone numbers printed on the flex banner — those are NOT the billboard's location or facing!
 
-5. 🧭 BILLBOARD FACING & TRAFFIC DIRECTION:
-   - "Facing [X]" means the billboard face points towards direction X and is directly visible to traffic coming FROM direction X heading towards the opposite direction.
-   - In outdoor advertising (OOH), multiple hoardings exist with identical or nearby coordinates (e.g. opposite faces on a median unipole like Begum Bridge vs Pallavpuram).
-   - In the audit photo, check which direction the vehicle/camera is looking. If looking towards Begum Bridge from Pallavpuram, the face is pointing towards Pallavpuram (Facing Pallavpuram).
-   - ⚠️ DO NOT be deceived by advertiser store addresses or phone numbers printed on the flex ad banner! That is just the advertiser's showroom address, NOT the billboard's facing direction!
-
-6. Status detection: "Occupied" (active commercial brand ad mounted) or "Available" (blank, white, torn, or To-Let).
+5. Status detection: "Occupied" (active commercial brand ad mounted) or "Available" (blank, white, torn, To-Let sign).
 
 Return ONLY a single valid JSON object (no markdown, no backticks):
 {
@@ -409,7 +402,7 @@ Return ONLY a single valid JSON object (no markdown, no backticks):
   "facing": "exact facing from selected candidate",
   "status": "Occupied",
   "confidence": 0.98,
-  "reasoning": "Detailed visual explanation of physical structure (unipole/gantry/etc), elevated metro alignment, why this candidate was chosen over other nearby poles"
+  "reasoning": "Detailed visual explanation: identified physical structure type (unipole/gantry/curb-post), visual foreground evidence, facing direction analysis, why this candidate was chosen over others"
 }`;
 
   const parts = [
@@ -528,6 +521,12 @@ Carefully examine this photograph of an outdoor billboard / hoarding.
 
 LOOK CLOSELY FOR CAMERA WATERMARKS & GPS OVERLAYS:
 Most inspection photos contain an on-screen camera stamp or watermark (such as "GPS Camera - PinPoint", "GPS Map Camera", "NoteCam", "Timestamp Camera") in the corners or bottom.
+
+IMPORTANT LOCATION RULES:
+- The PRIMARY SUBJECT is the FOREGROUND billboard (the large hoarding the photographer is standing directly in front of).
+- If there are smaller signs, shop boards, or distant hoardings in the background, IGNORE them for location purposes.
+- The GPS watermark shows the camera location, which is ~5-100m from the primary hoarding.
+- "facing" should be the DIRECTION THE HOARDING FACE LOOKS TOWARD (e.g., if camera is heading towards Begum Bridge to photograph this billboard, the hoarding is "Facing Pallavpuram").
 
 CRITICAL LOCATION EXTRACTION RULES:
 1. ⚠️ DO NOT use the advertiser's store/showroom address printed on the flex ad itself (e.g. "205, Begum Bridge Road"). That is just the advertiser's shop address!
