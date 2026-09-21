@@ -143,23 +143,39 @@ export async function pushAppsScript(scriptId) {
         headers: { Authorization: 'Bearer ' + token }
       });
       const depData = await depRes.json();
-      const webAppDep = (depData.deployments || []).find(d => 
-        (d.entryPoints || []).some(ep => ep.entryPointType === 'WEB_APP')
+      const TARGET_DEPLOYMENT_ID = 'AKfycbwmtW7Y71md_XoIk8A0JWrsWKSN-YuFgCcdahe5R56mADlGtH-t9Pj98YhPt3-Z1DoI5g';
+      const webAppDeps = (depData.deployments || []).filter(d => 
+        d.deploymentId === TARGET_DEPLOYMENT_ID || 
+        ((d.entryPoints || []).some(ep => ep.entryPointType === 'WEB_APP') && d.deploymentConfig?.versionNumber)
       );
-      if (webAppDep) {
-        await fetch(`https://script.googleapis.com/v1/projects/${scriptId}/deployments/${webAppDep.deploymentId}`, {
-          method: 'PUT',
-          headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            deploymentConfig: {
-              scriptId,
-              versionNumber: vData.versionNumber,
-              manifestFileName: 'appsscript',
-              description: `Live deployment v${vData.versionNumber}`
-            }
-          })
-        });
-        console.log(`🚀 Live Web App deployment updated to version ${vData.versionNumber}!`);
+
+      // If target deployment is not in the list for any reason, add it manually
+      const depIdsToUpdate = new Set(webAppDeps.map(d => d.deploymentId));
+      depIdsToUpdate.add(TARGET_DEPLOYMENT_ID);
+
+      for (const depId of depIdsToUpdate) {
+        try {
+          const updateRes = await fetch(`https://script.googleapis.com/v1/projects/${scriptId}/deployments/${depId}`, {
+            method: 'PUT',
+            headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              deploymentConfig: {
+                scriptId,
+                versionNumber: vData.versionNumber,
+                manifestFileName: 'appsscript',
+                description: `Live deployment v${vData.versionNumber}`
+              }
+            })
+          });
+          const updateData = await updateRes.json();
+          if (updateData.error) {
+            console.warn(`⚠️ Failed updating deployment ${depId}:`, updateData.error.message);
+          } else {
+            console.log(`🚀 Live Web App deployment (${depId}) updated to version ${vData.versionNumber}!`);
+          }
+        } catch (updateErr) {
+          console.warn(`⚠️ Error updating deployment ${depId}:`, updateErr.message);
+        }
       }
     }
   } catch (depErr) {
