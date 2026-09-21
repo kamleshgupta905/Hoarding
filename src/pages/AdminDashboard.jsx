@@ -1335,6 +1335,7 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
     const [showOnlyStarred, setShowOnlyStarred] = useState(false);
     const [isPptGenerating, setIsPptGenerating] = useState(false);
     const [pptProgressText, setPptProgressText] = useState('');
+    const isDesktopApp = Boolean(typeof window !== 'undefined' && window.electronAPI?.isElectron);
 
     useEffect(() => {
         try {
@@ -5033,33 +5034,35 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                 </span>
                             </div>
 
-                            {/* Download Official Apps Quick Link */}
-                            <div style={{ paddingTop: '8px', borderTop: '1px solid #f1f5f9', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.78rem', color: '#475569', fontWeight: 600 }}>
-                                    <Smartphone size={14} color="#10b981" />
-                                    <span>Official Heera Mobile & PC Apps</span>
+                            {/* Download Official Apps Quick Link (Desktop App Only) */}
+                            {isDesktopApp && (
+                                <div style={{ paddingTop: '8px', borderTop: '1px solid #f1f5f9', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.78rem', color: '#475569', fontWeight: 600 }}>
+                                        <Smartphone size={14} color="#10b981" />
+                                        <span>Official Heera Mobile & PC Apps</span>
+                                    </div>
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            setIsSettingsOpen(false);
+                                            setIsAppDownloadModalOpen(true);
+                                        }}
+                                        style={{
+                                            background: 'transparent',
+                                            border: 'none',
+                                            color: '#6366f1',
+                                            fontSize: '0.78rem',
+                                            fontWeight: 700,
+                                            cursor: 'pointer',
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            gap: '4px'
+                                        }}
+                                    >
+                                        Download Apps <ArrowUpRight size={13} />
+                                    </button>
                                 </div>
-                                <button
-                                    type="button"
-                                    onClick={() => {
-                                        setIsSettingsOpen(false);
-                                        setIsAppDownloadModalOpen(true);
-                                    }}
-                                    style={{
-                                        background: 'transparent',
-                                        border: 'none',
-                                        color: '#6366f1',
-                                        fontSize: '0.78rem',
-                                        fontWeight: 700,
-                                        cursor: 'pointer',
-                                        display: 'flex',
-                                        alignItems: 'center',
-                                        gap: '4px'
-                                    }}
-                                >
-                                    Download Apps <ArrowUpRight size={13} />
-                                </button>
-                            </div>
+                            )}
                         </div>
                         <div className="modal-footer" style={{ padding: '12px 24px', borderTop: '1px solid #f1f5f9', display: 'flex', justifyContent: 'flex-end' }}>
                             <button className="btn-primary-admin" onClick={() => setIsSettingsOpen(false)}>Close</button>
@@ -5646,10 +5649,12 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                         <span>Daily Updates</span>
                     </button>
 
-                    <button className="nav-item" onClick={() => setIsAppDownloadModalOpen(true)} title="Download Android APK & Desktop App">
-                        <Smartphone size={18} />
-                        <span>Download Apps</span>
-                    </button>
+                    {isDesktopApp && (
+                        <button className="nav-item" onClick={() => setIsAppDownloadModalOpen(true)} title="Download Android APK & Desktop App">
+                            <Smartphone size={18} />
+                            <span>Download Apps</span>
+                        </button>
+                    )}
 
                     <button className="nav-item" onClick={() => setIsSettingsOpen(true)}>
                         <Settings size={18} />
@@ -5730,16 +5735,18 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                             </div>
                         )}
 
-                        {/* 📱 Download Apps Quick Button */}
-                        <button 
-                            className="topbar-icon-btn" 
-                            onClick={() => setIsAppDownloadModalOpen(true)}
-                            title="Download Heera Staff Camera (APK) & Desktop PC App"
-                            style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '0 10px', width: 'auto', borderRadius: '10px' }}
-                        >
-                            <Smartphone size={16} color="#10b981" />
-                            <span style={{ fontSize: '0.78rem', fontWeight: 700, color: '#1e293b' }}>Download App</span>
-                        </button>
+                        {/* 📱 Download Apps Quick Button (Desktop App Only) */}
+                        {isDesktopApp && (
+                            <button 
+                                className="topbar-icon-btn" 
+                                onClick={() => setIsAppDownloadModalOpen(true)}
+                                title="Download Heera Staff Camera (APK) & Desktop PC App"
+                                style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '0 10px', width: 'auto', borderRadius: '10px' }}
+                            >
+                                <Smartphone size={16} color="#10b981" />
+                                <span style={{ fontSize: '0.78rem', fontWeight: 700, color: '#1e293b' }}>Download App</span>
+                            </button>
+                        )}
 
                         {/* 🔔 Notification Bell */}
                         <button className="topbar-icon-btn" title="Notifications">
