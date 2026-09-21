@@ -1202,6 +1202,28 @@ export const addDeletedSite = (siteKey) => {
   } catch {}
 };
 
+export const addDeletedSites = (siteKeys = []) => {
+  if (!Array.isArray(siteKeys) || siteKeys.length === 0) return;
+  try {
+    const raw = localStorage.getItem('deleted_sites_cache');
+    const list = raw ? JSON.parse(raw) : [];
+    const set = new Set(list);
+    let changed = false;
+    siteKeys.forEach(k => {
+      if (!k) return;
+      const clean = String(k).trim().toLowerCase();
+      if (!set.has(clean)) {
+        set.add(clean);
+        list.push(clean);
+        changed = true;
+      }
+    });
+    if (changed) {
+      localStorage.setItem('deleted_sites_cache', JSON.stringify(list));
+    }
+  } catch {}
+};
+
 export const getDeletedSites = () => {
   try {
     const raw = localStorage.getItem('deleted_sites_cache');
@@ -1343,6 +1365,24 @@ export const fetchHoardings = async () => {
   // If live network succeeded, filter, normalize, cache and return
   if (isLoaded && parsedData.length > 0) {
     try {
+      // 🛡️ Reconcile tombstones against the RAW live sheet rows before filtering
+      const rawSheetKeys = [];
+      parsedData.forEach(item => {
+        if (!item) return;
+        rawSheetKeys.push(item.UniqueID, item['Unique ID'], item.ID, item._SiteID);
+        rawSheetKeys.push(item['Location '], item.Location, item['Locality Site Location']);
+        const sl = String(item.SL || item['S. No.'] || item['SL NO'] || item.sl || '').trim();
+        if (sl) rawSheetKeys.push(`sl_${sl.toLowerCase()}`);
+        const c = String(item.City || item.city || '').trim().toLowerCase();
+        const l = String(item['Location '] || item.Location || item['Locality Site Location'] || '').trim().toLowerCase();
+        const f = String(item.Facing || item['Traffic View'] || item.facing || '').trim().toLowerCase();
+        if (c && l && f) rawSheetKeys.push(`${c}_${l}_${f}`);
+        if (l && f) rawSheetKeys.push(`${l}_${f}`);
+        if (l && l !== 'hoarding site') rawSheetKeys.push(l);
+      });
+      reconcileDeletedSites(rawSheetKeys);
+      const activeDeletedSet = getDeletedSites();
+
       const normalized = parsedData
         .filter(item => {
           if (!item || item._DeletedAt) return false;
@@ -1360,11 +1400,11 @@ export const fetchHoardings = async () => {
           if (img.includes('1gxuIMFvFbop-0usp0vf41QbwRgoOKJFr')) return false;
           if (!loc && (!locality || locality === 't' || locality.length <= 1)) return false;
           
-          if (id && deletedSet.has(id)) return false;
-          if (sl && deletedSet.has(`sl_${sl}`)) return false;
-          if (cCity && loc && facing && deletedSet.has(`${cCity}_${loc.toLowerCase()}_${facing}`)) return false;
-          if (loc && facing && deletedSet.has(`${loc.toLowerCase()}_${facing}`)) return false;
-          if (loc && deletedSet.has(loc.toLowerCase()) && loc.toLowerCase() !== 'hoarding site') return false;
+          if (id && activeDeletedSet.has(id)) return false;
+          if (sl && activeDeletedSet.has(`sl_${sl}`)) return false;
+          if (cCity && loc && facing && activeDeletedSet.has(`${cCity}_${loc.toLowerCase()}_${facing}`)) return false;
+          if (loc && facing && activeDeletedSet.has(`${loc.toLowerCase()}_${facing}`)) return false;
+          if (loc && activeDeletedSet.has(loc.toLowerCase()) && loc.toLowerCase() !== 'hoarding site') return false;
           
           return true;
         })

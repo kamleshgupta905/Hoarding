@@ -7,7 +7,7 @@ import CommandPalette from './components/CommandPalette';
 import Navbar from './components/Navbar';
 import Footer from './components/Footer';
 import AdminLogin from './pages/AdminLogin';
-import { fetchHoardings, getLocalBookings, getSiteBookingKeys, getLocalHistory, resolveSiteLiveStatus, pruneLocalHistory, reconcileDeletedSites, pruneLocalAddedSites } from './services/dataService';
+import { fetchHoardings, getLocalBookings, getSiteBookingKeys, getLocalHistory, resolveSiteLiveStatus, pruneLocalHistory, pruneLocalAddedSites } from './services/dataService';
 
 // Helper to auto-recover dynamic imports when a new build is deployed on Vercel
 const lazyWithRetry = (componentImport) =>
@@ -378,23 +378,6 @@ function App() {
       setHoardings([]);
       return;
     }
-
-    // Release tombstones for sites the sheet has already stopped returning, so a
-    // key deleted once is not suppressed in this browser forever.
-    try {
-      const sheetKeys = [];
-      cleanData.forEach(item => {
-        sheetKeys.push(item.UniqueID, item['Unique ID'], item.ID, item._SiteID);
-        sheetKeys.push(item['Location '], item.Location, item['Locality Site Location']);
-        if (item.SL) sheetKeys.push(`sl_${String(item.SL).trim().toLowerCase()}`);
-        const c = String(item.City || item.city || '').trim().toLowerCase();
-        const l = String(item['Location '] || item.Location || item['Locality Site Location'] || '').trim().toLowerCase();
-        const f = String(item.Facing || item['Traffic View'] || '').trim().toLowerCase();
-        if (c && l && f) sheetKeys.push(`${c}_${l}_${f}`);
-        if (l && f) sheetKeys.push(`${l}_${f}`);
-      });
-      reconcileDeletedSites(sheetKeys);
-    } catch { /* reconciliation is best effort */ }
 
     let localAdded = [];
     try {

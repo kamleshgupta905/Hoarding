@@ -4,6 +4,7 @@ import {
   getSiteBookingSlots,
   checkBookingConflict,
   addDeletedSite,
+  addDeletedSites,
   getDeletedSites,
   reconcileDeletedSites
 } from './dataService';
@@ -164,6 +165,30 @@ describe('Inventory Delete and Filter Comprehensive Test Suite', () => {
 
       expect(afterDelete.length).toBe(1);
       expect(afterDelete[0].City).toBe('Noida');
+    });
+
+    it('addDeletedSites batch tombstones multiple sites and prevents resurrection', () => {
+      addDeletedSites(['site-a', 'site-b', 'sl_10', 'meerut_clock tower_city']);
+      const set = getDeletedSites();
+      expect(set.has('site-a')).toBe(true);
+      expect(set.has('site-b')).toBe(true);
+      expect(set.has('sl_10')).toBe(true);
+      expect(set.has('meerut_clock tower_city')).toBe(true);
+      expect(set.has('site-c')).toBe(false);
+    });
+
+    it('reconciling with raw sheet data keeps tombstones when sheet still returns them and drops only when sheet omits them', () => {
+      addDeletedSites(['site-pending', 'site-deleted']);
+      
+      // Sheet still returns site-pending, but no longer returns site-deleted
+      const rawSheetKeys = ['site-pending', 'site-other-1', 'site-other-2'];
+      reconcileDeletedSites(rawSheetKeys);
+
+      const after = getDeletedSites();
+      // site-pending must stay tombstoned so it does not resurrect!
+      expect(after.has('site-pending')).toBe(true);
+      // site-deleted is confirmed gone from sheet so tombstone is safely released
+      expect(after.has('site-deleted')).toBe(false);
     });
   });
 

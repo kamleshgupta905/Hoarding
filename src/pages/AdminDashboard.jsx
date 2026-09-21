@@ -13,7 +13,7 @@ import {
     Star, FileSpreadsheet, Presentation, Loader2
 } from 'lucide-react';
 import { analyzeHoardingImage, extractSiteCoordinates, generateVisualLandmarksWithGemini } from '../services/aiService';
-import { fetchHoardings, compressImage, syncToGoogleSheet, exportProposalExcel, PROPOSAL_COLUMNS, getImageUrl, downloadHoardingImage, fetchStaffUploads, reviewStaffPhoto, detectStaffPhotoOrientation, fetchSheetGrid, saveSheetGrid, addDeletedSite, parseHistoryString, saveLocalBooking, clearLocalBooking, recordSiteBooking, removeSiteBooking, getSiteBookingSlots, checkBookingConflict, calculateProRataRental, resolveSiteLiveStatus, saveSiteBookingSlots, recordSiteHistory, getLocalHistory, getDirectDriveLink, parseCellImageUrls, addDeletedHistoryUrl, isHistoryUrlDeleted, removeSiteHistory, getExpiringSites } from '../services/dataService';
+import { fetchHoardings, compressImage, syncToGoogleSheet, exportProposalExcel, PROPOSAL_COLUMNS, getImageUrl, downloadHoardingImage, fetchStaffUploads, reviewStaffPhoto, detectStaffPhotoOrientation, fetchSheetGrid, saveSheetGrid, addDeletedSite, addDeletedSites, parseHistoryString, saveLocalBooking, clearLocalBooking, recordSiteBooking, removeSiteBooking, getSiteBookingSlots, checkBookingConflict, calculateProRataRental, resolveSiteLiveStatus, saveSiteBookingSlots, recordSiteHistory, getLocalHistory, getDirectDriveLink, parseCellImageUrls, addDeletedHistoryUrl, isHistoryUrlDeleted, removeSiteHistory, getExpiringSites } from '../services/dataService';
 import { generateMasterMediaPlanPptx } from '../services/presentationService';
 import ImageLightbox from '../components/ImageLightbox';
 import DriveImage from '../components/DriveImage';
@@ -3637,6 +3637,22 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
         setIsLoading(true);
         try {
             if (isDeleteAll) {
+                // Tombstone all currently loaded sites so immediate background polls won't restore them
+                const allKeys = [];
+                hoardings.forEach(h => {
+                    const hId = String(h.UniqueID || h["Unique ID"] || h.ID || h._SiteID || '').trim().toLowerCase();
+                    const hSL = String(h.SL || h['S. No.'] || h['SL NO'] || h.sl || '').trim();
+                    const hCity = String(h.City || h.city || '').trim().toLowerCase();
+                    const hName = String(h["Locality Site Location"] || h["Location "] || h.Location || '').trim().toLowerCase();
+                    const hFacing = String(h.Facing || h["Traffic View"] || h.facing || '').trim().toLowerCase();
+                    if (hId) allKeys.push(hId);
+                    if (hSL) allKeys.push(`sl_${hSL.toLowerCase()}`);
+                    if (hCity && hName && hFacing) allKeys.push(`${hCity}_${hName}_${hFacing}`);
+                    if (hName && hFacing) allKeys.push(`${hName}_${hFacing}`);
+                    if (hName && hName !== 'hoarding site') allKeys.push(hName);
+                });
+                addDeletedSites(allKeys);
+
                 await syncToGoogleSheet({ action: 'deleteAllHoardings', confirmation: 'DELETE ALL' });
                 setHoardings([]);
                 try {
@@ -3644,10 +3660,27 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                     localStorage.removeItem('local_added_sites_cache');
                 } catch {}
             } else {
+                const citySet = new Set(citiesToDelete.map(c => String(c).trim().toLowerCase()));
+                const cityKeys = [];
+                hoardings.forEach(h => {
+                    const hCity = String(h.City || h.city || '').trim().toLowerCase();
+                    if (citySet.has(hCity)) {
+                        const hId = String(h.UniqueID || h["Unique ID"] || h.ID || h._SiteID || '').trim().toLowerCase();
+                        const hSL = String(h.SL || h['S. No.'] || h['SL NO'] || h.sl || '').trim();
+                        const hName = String(h["Locality Site Location"] || h["Location "] || h.Location || '').trim().toLowerCase();
+                        const hFacing = String(h.Facing || h["Traffic View"] || h.facing || '').trim().toLowerCase();
+                        if (hId) cityKeys.push(hId);
+                        if (hSL) cityKeys.push(`sl_${hSL.toLowerCase()}`);
+                        if (hCity && hName && hFacing) cityKeys.push(`${hCity}_${hName}_${hFacing}`);
+                        if (hName && hFacing) cityKeys.push(`${hName}_${hFacing}`);
+                        if (hName && hName !== 'hoarding site') cityKeys.push(hName);
+                    }
+                });
+                addDeletedSites(cityKeys);
+
                 for (const c of citiesToDelete) {
                     await syncToGoogleSheet({ action: 'deleteCityHoardings', city: c });
                 }
-                const citySet = new Set(citiesToDelete.map(c => String(c).trim().toLowerCase()));
                 setHoardings(prev => {
                     const next = prev.filter(h => !citySet.has(String(h.City || h.city || '').trim().toLowerCase()));
                     try {

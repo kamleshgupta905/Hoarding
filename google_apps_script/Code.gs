@@ -915,6 +915,9 @@ function checkVersionConflict_(siteId, baseVersion) {
 }
 
 function touchOperationMetadata_(operation, payload, operationId) {
+  if (operation.type === 'deleteHoarding' || operation.type === 'deleteCityHoardings' || operation.type === 'deleteAllHoardings') {
+    return;
+  }
   ensureSiteMetadata_();
   var found = findSiteRowById_(operation.siteId || payload.siteId);
   if (!found && payload.siteName) {
@@ -991,7 +994,13 @@ function pullChanges_(since, sessionToken) {
   });
   
   var values = sheet.getDataRange().getValues();
-  return res({ success: true, version: version, unchanged: false, headers: values[0] || [], rows: values.slice(1) });
+  var headers = values[0] || [];
+  var idxDeleted = headers.indexOf('_DeletedAt');
+  var dataRows = values.slice(1);
+  if (idxDeleted !== -1) {
+    dataRows = dataRows.filter(function(r) { return !r[idxDeleted]; });
+  }
+  return res({ success: true, version: version, unchanged: false, headers: headers, rows: dataRows });
 }
 
 function syncHealth_() {
@@ -2212,6 +2221,7 @@ function deleteHistoryItem(data) {
 
     sheet.getRange(rowIndex, idxHistory + 1).setValue(normalizeHistoryString_(filteredItems.join(',')));
     SpreadsheetApp.flush();
+    bumpChangeVersion_('deleteHistoryItem', data.operationId || '');
     return res({ success: true, message: 'History item removed' });
   } catch (err) {
     return res({ success: false, error: err.toString() });
@@ -2335,9 +2345,56 @@ function addHoardingDetails(data) {
   }
 }
 
+function archiveDeletedRow_(sourceSheet, rowIndex, rowValues) {
+  try {
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var archiveSheet = ss.getSheetByName('Deleted_Archive');
+    if (!archiveSheet) {
+      archiveSheet = ss.insertSheet('Deleted_Archive');
+      archiveSheet.hideSheet();
+      var headers = sourceSheet.getRange(1, 1, 1, Math.max(1, sourceSheet.getLastColumn())).getValues()[0];
+      var copyHeaders = headers.slice();
+      copyHeaders.push('DeletedTimestamp');
+      archiveSheet.appendRow(copyHeaders);
+    }
+    var copyValues = (rowValues || []).slice();
+    copyValues.push(new Date().toISOString());
+    archiveSheet.appendRow(copyValues);
+  } catch (archiveErr) {
+    logDebug('ARCHIVE DELETED ROW NOTICE: ' + archiveErr.toString());
+  }
+}
+
+function purgeOldTombstonedRows_() {
+  try {
+    var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(CONFIG.SHEET_NAME);
+    if (!sheet) return;
+    var rows = sheet.getDataRange().getValues();
+    if (rows.length <= 1) return;
+    var idxDeleted = rows[0].indexOf('_DeletedAt');
+    if (idxDeleted === -1) return;
+    var purged = 0;
+    for (var i = rows.length - 1; i >= 1; i--) {
+      if (rows[i][idxDeleted]) {
+        archiveDeletedRow_(sheet, i + 1, rows[i]);
+        sheet.deleteRow(i + 1);
+        purged++;
+      }
+    }
+    if (purged > 0) {
+      SpreadsheetApp.flush();
+      bumpChangeVersion_('purgeTombstones', '');
+      logDebug('PURGE | Removed ' + purged + ' legacy tombstoned rows from sheet');
+    }
+  } catch (purgeErr) {
+    logDebug('PURGE TOMBSTONES NOTICE: ' + purgeErr.toString());
+  }
+}
+
 function deleteHoardingDetails(data) {
   if (!data) return res({ success: false, error: 'Payload is required' });
   ensureSiteMetadata_();
+  purgeOldTombstonedRows_();
 
   var lock = LockService.getScriptLock();
   var hasLock = false;
@@ -2352,26 +2409,28 @@ function deleteHoardingDetails(data) {
 
     var headers = getAllHeaders(sheet);
     var idxSite = findSiteColumn(headers);
-    var idxDeleted = headers.indexOf('_DeletedAt');
-    if (idxDeleted === -1) {
-      sheet.getRange(1, sheet.getLastColumn() + 1).setValue('_DeletedAt');
-      SpreadsheetApp.flush();
-      headers = getAllHeaders(sheet);
-      idxDeleted = headers.indexOf('_DeletedAt');
-    }
-
     var rows = sheet.getDataRange().getValues();
     var rowIndex = -1;
 
-    // 1. Match by _SiteID / siteId / UniqueID
+    // 1. Match by _SiteID / siteId / UniqueID across all possible ID column headers
     var targetSiteId = String(data.siteId || data.UniqueID || data['Unique ID'] || data._SiteID || (data.fields && (data.fields.UniqueID || data.fields['Unique ID'] || data.fields._SiteID)) || '').trim().toLowerCase();
-    var idxSiteId = headers.indexOf('_SiteID');
-    if (targetSiteId && idxSiteId !== -1) {
+    var idCols = [];
+    headers.forEach(function(h, idx) {
+      var c = cleanFull(h);
+      if (c === '_siteid' || c === 'uniqueid' || c === 'unique id' || c === 'id' || c === 'siteid') {
+        idCols.push(idx);
+      }
+    });
+    if (targetSiteId && idCols.length > 0) {
       for (var i = 1; i < rows.length; i++) {
-        if (!rows[i][idxDeleted] && String(rows[i][idxSiteId]).trim().toLowerCase() === targetSiteId) {
-          rowIndex = i + 1;
-          break;
+        for (var cIdx = 0; cIdx < idCols.length; cIdx++) {
+          var val = String(rows[i][idCols[cIdx]]).trim().toLowerCase();
+          if (val && val === targetSiteId) {
+            rowIndex = i + 1;
+            break;
+          }
         }
+        if (rowIndex !== -1) break;
       }
     }
 
@@ -2383,51 +2442,58 @@ function deleteHoardingDetails(data) {
     });
     if (rowIndex === -1 && targetSL && idxSL !== -1) {
       for (var i = 1; i < rows.length; i++) {
-        if (!rows[i][idxDeleted]) {
-          var cellVal = String(rows[i][idxSL]).trim();
-          if (cellVal === targetSL || (parseInt(cellVal, 10) === parseInt(targetSL, 10) && !isNaN(parseInt(targetSL, 10)))) {
-            rowIndex = i + 1;
-            break;
-          }
+        var cellVal = String(rows[i][idxSL]).trim();
+        if (cellVal === targetSL || (parseInt(cellVal, 10) === parseInt(targetSL, 10) && !isNaN(parseInt(targetSL, 10)) && parseInt(targetSL, 10) > 0)) {
+          rowIndex = i + 1;
+          break;
         }
       }
     }
 
-    // 3. Match by Location + Facing
+    // 3. Match by Location + Facing + City
     var targetFacing = cleanFull(data.facing || (data.fields && data.fields.Facing) || '');
+    var targetCity = cleanFull(data.city || (data.fields && data.fields.City) || '');
     var idxFacing = headers.findIndex(function(h) { return cleanFull(h) === 'facing' || cleanFull(h) === 'trafficview'; });
-    var searchName = cleanFull(data.siteName || (data.fields && (data.fields['Locality Site Location'] || data.fields['Location '] || data.fields.Location)) || '');
+    var idxCity = headers.findIndex(function(h) { return cleanFull(h) === 'city'; });
+    var searchName = cleanFull(data.siteName || (data.fields && (data.fields['Locality Site Location'] || data.fields['Location '] || data.fields.Location)) || data.location || '');
 
+    if (rowIndex === -1 && searchName && idxSite !== -1 && targetFacing && idxFacing !== -1 && targetCity && idxCity !== -1) {
+      for (var i = 1; i < rows.length; i++) {
+        var rowFacing = cleanFull(rows[i][idxFacing]);
+        var rowCity = cleanFull(rows[i][idxCity]);
+        if (cleanFull(rows[i][idxSite]) === searchName && rowCity === targetCity &&
+            (rowFacing === targetFacing || rowFacing.indexOf(targetFacing) !== -1 || targetFacing.indexOf(rowFacing) !== -1)) {
+          rowIndex = i + 1;
+          break;
+        }
+      }
+    }
+
+    // 4. Match by Location + Facing
     if (rowIndex === -1 && targetFacing && idxFacing !== -1 && searchName && idxSite !== -1) {
       for (var i = 1; i < rows.length; i++) {
-        if (!rows[i][idxDeleted]) {
-          var rowFacing = cleanFull(rows[i][idxFacing]);
-          if (cleanFull(rows[i][idxSite]) === searchName && (rowFacing === targetFacing || rowFacing.indexOf(targetFacing) !== -1 || targetFacing.indexOf(rowFacing) !== -1)) {
-            rowIndex = i + 1;
-            break;
-          }
+        var rowFacing = cleanFull(rows[i][idxFacing]);
+        if (cleanFull(rows[i][idxSite]) === searchName && (rowFacing === targetFacing || rowFacing.indexOf(targetFacing) !== -1 || targetFacing.indexOf(rowFacing) !== -1)) {
+          rowIndex = i + 1;
+          break;
         }
       }
     }
 
-    // 4. Match by Location + City
-    var targetCity = cleanFull(data.city || (data.fields && data.fields.City) || '');
-    var idxCity = headers.findIndex(function(h) { return cleanFull(h) === 'city'; });
+    // 5. Match by Location + City
     if (rowIndex === -1 && targetCity && idxCity !== -1 && searchName && idxSite !== -1) {
       for (var i = 1; i < rows.length; i++) {
-        if (!rows[i][idxDeleted]) {
-          if (cleanFull(rows[i][idxSite]) === searchName && cleanFull(rows[i][idxCity]) === targetCity) {
-            rowIndex = i + 1;
-            break;
-          }
+        if (cleanFull(rows[i][idxSite]) === searchName && cleanFull(rows[i][idxCity]) === targetCity) {
+          rowIndex = i + 1;
+          break;
         }
       }
     }
 
-    // 5. Match by Location
-    if (rowIndex === -1 && searchName && idxSite !== -1) {
+    // 6. Match by Location
+    if (rowIndex === -1 && searchName && idxSite !== -1 && searchName !== 'hoarding site') {
       for (var i = 1; i < rows.length; i++) {
-        if (!rows[i][idxDeleted] && cleanFull(rows[i][idxSite]) === searchName) {
+        if (cleanFull(rows[i][idxSite]) === searchName) {
           rowIndex = i + 1;
           break;
         }
@@ -2435,13 +2501,19 @@ function deleteHoardingDetails(data) {
     }
 
     if (rowIndex === -1) {
-      return res({ success: false, error: 'Site not found' });
+      logDebug("DELETE SITE NOT FOUND: " + JSON.stringify({ siteName: data.siteName, sl: targetSL, siteId: targetSiteId }));
+      return res({ success: false, error: 'Site not found in sheet' });
     }
 
-    sheet.getRange(rowIndex, idxDeleted + 1).setValue(new Date().toISOString());
+    // Safe Archive before hard delete
+    archiveDeletedRow_(sheet, rowIndex, rows[rowIndex - 1]);
+
+    // Physically delete the row from the active sheet
+    sheet.deleteRow(rowIndex);
     SpreadsheetApp.flush();
-    logDebug("DELETE SITE | Row " + rowIndex + " (" + (data.siteName || targetSL || targetSiteId) + ") marked deleted");
-    return res({ success: true, message: 'Moved to deleted records' });
+    bumpChangeVersion_('deleteHoarding', data.operationId || '');
+    logDebug("DELETE SITE | Row " + rowIndex + " (" + (data.siteName || targetSL || targetSiteId) + ") physically deleted from sheet");
+    return res({ success: true, deleted: true, message: 'Row permanently deleted from sheet' });
   } catch (err) {
     logDebug("DELETE SITE ERROR: " + err.toString());
     return res({ success: false, error: err.toString() });
@@ -2463,34 +2535,33 @@ function deleteCityHoardings(data) {
     if (!cityName) return res({ success: false, error: 'City is required' });
 
     ensureSiteMetadata_();
+    purgeOldTombstonedRows_();
     var ss = SpreadsheetApp.getActiveSpreadsheet();
     var sheet = ss.getSheetByName(CONFIG.SHEET_NAME);
+    if (!sheet) return res({ success: false, error: 'Sheet "' + CONFIG.SHEET_NAME + '" not found' });
     var rows = sheet.getDataRange().getValues();
     if (rows.length <= 1) return res({ success: true, deletedCount: 0, message: 'No sites to delete' });
 
     var idxCity = rows[0].findIndex(function(h) { return cleanFull(h) === 'city'; });
     if (idxCity === -1) return res({ success: false, error: 'City column not found' });
-    var idxDeleted = rows[0].indexOf('_DeletedAt');
-    if (idxDeleted === -1) {
-      sheet.getRange(1, sheet.getLastColumn() + 1).setValue('_DeletedAt');
-      SpreadsheetApp.flush();
-      rows = sheet.getDataRange().getValues();
-      idxDeleted = rows[0].indexOf('_DeletedAt');
-    }
+
     createMasterBackup_('city-' + cityName);
 
     var targetCity = cleanFull(cityName);
     var deletedCount = 0;
-    var deletedAt = new Date().toISOString();
-    for (var i = 1; i < rows.length; i++) {
-      if (cleanFull(rows[i][idxCity]) === targetCity && !rows[i][idxDeleted]) {
-        sheet.getRange(i + 1, idxDeleted + 1).setValue(deletedAt);
+
+    // Delete rows in reverse order so row indices remain valid
+    for (var i = rows.length - 1; i >= 1; i--) {
+      if (cleanFull(rows[i][idxCity]) === targetCity) {
+        archiveDeletedRow_(sheet, i + 1, rows[i]);
+        sheet.deleteRow(i + 1);
         deletedCount++;
       }
     }
     SpreadsheetApp.flush();
-    logDebug("BULK DELETE | City: " + cityName + " | Rows: " + deletedCount);
-    return res({ success: true, deletedCount: deletedCount, message: 'City data deleted' });
+    bumpChangeVersion_('deleteCityHoardings', data.operationId || '');
+    logDebug("BULK DELETE | City: " + cityName + " | Rows deleted: " + deletedCount);
+    return res({ success: true, deletedCount: deletedCount, message: 'City data permanently deleted from sheet' });
   } catch (err) {
     logDebug("BULK DELETE CITY ERROR: " + err.toString());
     return res({ success: false, error: err.toString() });
@@ -2514,26 +2585,22 @@ function deleteAllHoardings(data) {
     ensureSiteMetadata_();
     var ss = SpreadsheetApp.getActiveSpreadsheet();
     var sheet = ss.getSheetByName(CONFIG.SHEET_NAME);
+    if (!sheet) return res({ success: false, error: 'Sheet "' + CONFIG.SHEET_NAME + '" not found' });
     var lastRow = sheet.getLastRow();
     var deletedCount = Math.max(0, lastRow - 1);
     if (deletedCount > 0) {
       createMasterBackup_('delete-all');
-      var headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
-      var idxDeleted = headers.indexOf('_DeletedAt');
-      if (idxDeleted === -1) {
-        sheet.getRange(1, sheet.getLastColumn() + 1).setValue('_DeletedAt');
-        SpreadsheetApp.flush();
-        headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
-        idxDeleted = headers.indexOf('_DeletedAt');
+      var rows = sheet.getDataRange().getValues();
+      for (var i = 1; i < rows.length; i++) {
+        archiveDeletedRow_(sheet, i + 1, rows[i]);
       }
-      var deletedValues = [];
-      var deletedAt = new Date().toISOString();
-      for (var i = 0; i < deletedCount; i++) deletedValues.push([deletedAt]);
-      sheet.getRange(2, idxDeleted + 1, deletedCount, 1).setValues(deletedValues);
+      // Delete all data rows in a single atomic call (from row 2 through lastRow)
+      sheet.deleteRows(2, deletedCount);
       SpreadsheetApp.flush();
     }
-    logDebug("BULK DELETE | All sites | Rows: " + deletedCount);
-    return res({ success: true, deletedCount: deletedCount, message: 'All site data deleted' });
+    bumpChangeVersion_('deleteAllHoardings', data.operationId || '');
+    logDebug("BULK DELETE | All sites | Rows deleted: " + deletedCount);
+    return res({ success: true, deletedCount: deletedCount, message: 'All site data permanently deleted from sheet' });
   } catch (err) {
     logDebug("BULK DELETE ALL ERROR: " + err.toString());
     return res({ success: false, error: err.toString() });
