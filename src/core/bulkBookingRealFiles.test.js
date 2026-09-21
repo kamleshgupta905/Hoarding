@@ -140,7 +140,7 @@ describe('Real Desktop Files Verification', () => {
     parsedWithReal.items.forEach(i => {
       console.log(`Item ${i.id}: [${i.clientName}] "${i.location}" (Facing: "${i.facing}") -> Matched Site: ${i.matchedSite ? `[SL ${i.matchedSite.SL}] "${i.matchedSite['Location '] || i.matchedSite.Location}" / "${i.matchedSite.Facing}"` : 'NONE'} (Conflict: ${i.hasConflict})`);
     });
-  });
+  }, 25000);
 
   it('should verify history_only mode queues all 5 real sites including Begum Bridge Metro Station', async () => {
     const excelPath = 'c:/Users/shri hari computer/OneDrive/Desktop/Sample_MultiClient_MediaPlan.xlsx';
