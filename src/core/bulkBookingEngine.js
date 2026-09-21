@@ -656,6 +656,17 @@ export const commitBulkBookings = async ({
             row.fields.ExecutionHistory = row.fields.ExecutionHistory
               ? `${row.fields.ExecutionHistory},${stamped}`
               : stamped;
+              
+            // 🛡️ Also update the local state immediately so the frontend UI shows the synced image!
+            const siteKey = p.site._SiteID || p.site.SL || p.site['Location '] || p.site.Location;
+            if (siteKey && updatedHoardingsMap.has(siteKey)) {
+              const currentObj = updatedHoardingsMap.get(siteKey);
+              const existingHist = currentObj.ExecutionHistory || currentObj.History || '';
+              updatedHoardingsMap.set(siteKey, {
+                ...currentObj,
+                ExecutionHistory: existingHist ? `${existingHist},${stamped}` : stamped
+              });
+            }
           };
 
           if (artworkMode === 'replace_master') {
@@ -753,7 +764,7 @@ export const commitBulkBookings = async ({
         sl: b.sl,
         siteName: b.siteName,
         facing: b.facing,
-        updatedFields: b.fields
+        fields: b.fields
       }).catch(err => console.warn(`[Redundancy sync notice for site ${b.siteName}]:`, err));
     });
   } catch {}

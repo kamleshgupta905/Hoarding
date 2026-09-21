@@ -1486,7 +1486,17 @@ function batchUpdateSheet_(data) {
             // History needs merge semantics, never a blind overwrite.
             if (cleanKey === 'executionhistory' || cleanKey === 'history') {
               var idxHist = findHistoryColumn(headers);
-              if (idxHist === -1) continue;
+              if (idxHist === -1) {
+                var newHistCol = sheet.getLastColumn() + 1;
+                sheet.getRange(1, newHistCol).setValue('ExecutionHistory');
+                headers.push('ExecutionHistory');
+                idxHist = headers.length - 1;
+                for (var i = 0; i < rows.length; i++) {
+                  while (rows[i].length < headers.length) {
+                    rows[i].push('');
+                  }
+                }
+              }
               var incoming = normalizeHistoryString_(String(fVal));
               if (!incoming) continue;
               var existingHist = normalizeHistoryString_(String(rows[r][idxHist] || ''));
@@ -1914,8 +1924,24 @@ function updateHoardingDetails(data) {
             // Stamp any entry the client sent without a timestamp, otherwise the
             // detail page shows "Verified Date Unknown" and cannot sort history.
             var normalizedHist = normalizeHistoryString_(incomingHist);
-            sheet.getRange(rowIndex, idxHistory + 1).setValue(normalizedHist);
-            logDebug("UPDATE | Safely wrote ExecutionHistory from fields to Row " + rowIndex);
+            
+            var existingHistStr = normalizeHistoryString_(String(sheet.getRange(rowIndex, idxHistory + 1).getValue() || ''));
+            var haveIds = {};
+            existingHistStr.split(',').forEach(function(e) {
+              var m = String(e).match(/\/d\/([^/?#\s|]+)/) || String(e).match(/[?&]id=([^&#/\s|]+)/);
+              if (m && m[1]) haveIds[m[1]] = true;
+            });
+            var toAdd = normalizedHist.split(',').filter(function(e) {
+              var m = String(e).match(/\/d\/([^/?#\s|]+)/) || String(e).match(/[?&]id=([^&#/\s|]+)/);
+              if (m && m[1] && haveIds[m[1]]) return false;
+              return String(e).indexOf('http') !== -1;
+            });
+            
+            if (toAdd.length > 0) {
+              var finalHist = existingHistStr ? existingHistStr + ',' + toAdd.join(',') : toAdd.join(',');
+              sheet.getRange(rowIndex, idxHistory + 1).setValue(finalHist);
+              logDebug("UPDATE | Safely merged ExecutionHistory from fields to Row " + rowIndex);
+            }
           }
           continue;
         }
