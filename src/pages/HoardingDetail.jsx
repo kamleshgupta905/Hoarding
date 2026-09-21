@@ -62,9 +62,9 @@ const HoardingDetail = ({ hoardings, setHoardings }) => {
     // 📜 Active History: Merges remote Google Sheets history with local verified uploads
     const activeHistory = React.useMemo(() => {
         if (!hoarding) return [];
-        const fromHoarding = Array.isArray(hoarding.History) && hoarding.History.length > 0 
-            ? hoarding.History 
-            : parseHistoryString(hoarding.ExecutionHistory || hoarding.History || '');
+        const fromHistoryArray = Array.isArray(hoarding.History) ? hoarding.History : [];
+        const fromExecutionString = parseHistoryString(hoarding.ExecutionHistory || '');
+        const fromHoarding = [...fromHistoryArray, ...fromExecutionString];
         // Local history is only a bridge for a capture that has not reached the
         // sheet yet. Once the sheet has any history for this site, it is the
         // source of truth: a stale localStorage entry (a photo later deleted, or

@@ -124,9 +124,46 @@ export async function pushAppsScript(scriptId) {
   const data = await res.json();
   if (data.error) {
     console.error('❌ Push failed:', data.error.message);
-  } else {
-    console.log('🎉 PUSH SUCCESSFUL! Code updated live on Google Apps Script cloud!');
-    console.log('Updated files:', data.files ? data.files.map(f => f.name) : []);
+    return;
+  }
+  console.log('🎉 PUSH SUCCESSFUL! Code updated live on Google Apps Script cloud!');
+  console.log('Updated files:', data.files ? data.files.map(f => f.name) : []);
+
+  // Auto-create new version & update live deployment so /exec reflects changes immediately
+  try {
+    const vRes = await fetch(`https://script.googleapis.com/v1/projects/${scriptId}/versions`, {
+      method: 'POST',
+      headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ description: `Auto deploy ${new Date().toISOString()}` })
+    });
+    const vData = await vRes.json();
+    if (vData.versionNumber) {
+      console.log(`📌 Created version ${vData.versionNumber}`);
+      const depRes = await fetch(`https://script.googleapis.com/v1/projects/${scriptId}/deployments`, {
+        headers: { Authorization: 'Bearer ' + token }
+      });
+      const depData = await depRes.json();
+      const webAppDep = (depData.deployments || []).find(d => 
+        (d.entryPoints || []).some(ep => ep.entryPointType === 'WEB_APP')
+      );
+      if (webAppDep) {
+        await fetch(`https://script.googleapis.com/v1/projects/${scriptId}/deployments/${webAppDep.deploymentId}`, {
+          method: 'PUT',
+          headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            deploymentConfig: {
+              scriptId,
+              versionNumber: vData.versionNumber,
+              manifestFileName: 'appsscript',
+              description: `Live deployment v${vData.versionNumber}`
+            }
+          })
+        });
+        console.log(`🚀 Live Web App deployment updated to version ${vData.versionNumber}!`);
+      }
+    }
+  } catch (depErr) {
+    console.warn('⚠️ Auto-deploy notice:', depErr.message);
   }
 }
 

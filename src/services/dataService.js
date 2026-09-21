@@ -431,6 +431,11 @@ export const getSiteBookingKeys = (site = {}) => {
     if (city) {
       keys.add(`${city}_${loc}_${facing}`);
     }
+  } else if (loc) {
+    keys.add(loc);
+    if (city) {
+      keys.add(`${city}_${loc}`);
+    }
   }
 
   return Array.from(keys);

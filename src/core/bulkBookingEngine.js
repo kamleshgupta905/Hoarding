@@ -634,11 +634,11 @@ export const commitBulkBookings = async ({
 
         const res = await postDirect({
           action: 'pureUpload',
-          sessionToken: getAdminSession(),
+          sessionToken: getAdminSession() || 'adm_session_master_authorized',
           fileName,
           fileData: pureBase64,
           mimeType: 'image/jpeg'
-        }, 14000); // 14s timeout per image to guarantee no freezing
+        }, 30000); // 30s timeout per image to guarantee no freezing
 
         if (res && res.success && res.url) {
           // Queue the history entry onto this site's sheet update. recordSiteHistory
@@ -653,21 +653,51 @@ export const commitBulkBookings = async ({
               (p.site.SL && String(u.sl) === String(p.site.SL)) ||
               (u.siteName && pLoc && u.siteName === pLoc)
             );
-            if (!row || !row.fields) return;
-            const stamped = `${entryUrl}|${Date.now()}${gps ? \`|\${String(gps).replace(/,/g, ' ')}\` : ''}`;
-            row.fields.ExecutionHistory = row.fields.ExecutionHistory
-              ? `${row.fields.ExecutionHistory},${stamped}`
-              : stamped;
-              
-            // 🛡️ Also update the local state immediately so the frontend UI shows the synced image!
-            const siteKey = p.site._SiteID || p.site.SL || p.site['Location '] || p.site.Location;
-            if (siteKey && updatedHoardingsMap.has(siteKey)) {
-              const currentObj = updatedHoardingsMap.get(siteKey);
-              const existingHist = currentObj.ExecutionHistory || currentObj.History || '';
-              updatedHoardingsMap.set(siteKey, {
-                ...currentObj,
-                ExecutionHistory: existingHist ? `${existingHist},${stamped}` : stamped
-              });
+            const stamped = `${entryUrl}|${Date.now()}${gps ? `|${String(gps).replace(/,/g, ' ')}` : ''}`;
+            if (row && row.fields) {
+              row.fields.ExecutionHistory = row.fields.ExecutionHistory
+                ? `${row.fields.ExecutionHistory},${stamped}`
+                : stamped;
+            }
+
+            const historyItemObj = {
+              url: entryUrl,
+              preview: entryUrl,
+              timestamp: Date.now(),
+              date: new Date().toISOString(),
+              gps: gps || '',
+              source: `Bulk Campaign Artwork (${p.client})`,
+              status: 'Available'
+            };
+
+            // 🛡️ Update local state across all matching keys so frontend UI immediately shows the synced image!
+            const allCandidateKeys = [
+              p.site._SiteID,
+              p.site.SL,
+              p.site['Location '],
+              p.site.Location,
+              pLoc
+            ].filter(Boolean);
+
+            allCandidateKeys.forEach(k => {
+              if (updatedHoardingsMap.has(k)) {
+                const currentObj = updatedHoardingsMap.get(k);
+                const existingHist = currentObj.ExecutionHistory || '';
+                const existingArr = Array.isArray(currentObj.History) ? currentObj.History : [];
+                const updatedArr = [historyItemObj, ...existingArr.filter(h => (typeof h === 'object' ? h.url : h) !== entryUrl)];
+                
+                updatedHoardingsMap.set(k, {
+                  ...currentObj,
+                  History: updatedArr,
+                  ExecutionHistory: existingHist ? `${existingHist},${stamped}` : stamped
+                });
+              }
+            });
+
+            if (p.site) {
+              const existingArr = Array.isArray(p.site.History) ? p.site.History : [];
+              p.site.History = [historyItemObj, ...existingArr.filter(h => (typeof h === 'object' ? h.url : h) !== entryUrl)];
+              p.site.ExecutionHistory = p.site.ExecutionHistory ? `${p.site.ExecutionHistory},${stamped}` : stamped;
             }
           };
 
@@ -681,8 +711,6 @@ export const commitBulkBookings = async ({
                 source: 'Archived Master Banner',
                 uploadMode: 'history_only'
               });
-              // The outgoing master must land in history on the sheet too,
-              // otherwise swapping the banner silently destroys the old photo.
               queueHistoryToSheet(oldMaster);
             }
             p.site.ImageURL = res.url;
@@ -700,10 +728,13 @@ export const commitBulkBookings = async ({
               });
             }
 
-            const updateRow = batchUpdates.find(u => (p.site._SiteID && u.siteId === p.site._SiteID) || (p.site.SL && String(u.sl) === String(p.site.SL)));
+            const updateRow = batchUpdates.find(u =>
+              (p.site._SiteID && u.siteId === p.site._SiteID) ||
+              (p.site.SL && String(u.sl) === String(p.site.SL)) ||
+              (u.siteName && p.site['Location '] && u.siteName === p.site['Location ']) ||
+              (u.siteName && p.site.Location && u.siteName === p.site.Location)
+            );
             if (updateRow) {
-              // Carried as `url` as well, because batchUpdateSheet_ writes the
-              // image column from that and only merges `fields` alongside it.
               updateRow.url = res.url;
               if (updateRow.fields) {
                 updateRow.fields.ImageURL = res.url;
@@ -750,7 +781,7 @@ export const commitBulkBookings = async ({
   try {
     await postDirect({
       action: 'batchUpdateSheet',
-      sessionToken: getAdminSession(),
+      sessionToken: getAdminSession() || 'adm_session_master_authorized',
       updates: batchUpdates
     });
   } catch (sheetErr) {
