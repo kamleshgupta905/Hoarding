@@ -516,43 +516,47 @@ export const matchDailyExecutionProofWithAI = async (imageBase64, inventoryList)
   const parsed = parseBase64(imageBase64);
   if (!parsed) throw new Error('Invalid image data.');
 
-  const prompt = `You are an expert Billboard & Hoarding Proof of Execution Analyzer.
-Carefully examine this photograph of an outdoor billboard / hoarding.
+  const prompt = `You are a GPS Data Extractor for billboard inspection photos.
+Your ONLY job: Extract the GPS coordinates from the CAMERA WATERMARK STAMP in this photo.
 
-LOOK CLOSELY FOR CAMERA WATERMARKS & GPS OVERLAYS:
-Most inspection photos contain an on-screen camera stamp or watermark (such as "GPS Camera - PinPoint", "GPS Map Camera", "NoteCam", "Timestamp Camera") in the corners or bottom.
+THE CAMERA WATERMARK (look for it at bottom or bottom-right):
+- App name: "GPS Camera - PinPoint", "GPS Map Camera", "NoteCam", "Timestamp Camera", or similar
+- Shows: Lat/Long numbers like "Lat 28.9912734  Long 77.7162097"
+- Shows: A street address from Google Maps (camera location)
+- Has a Google Maps mini-map inset (red pin marker)
 
-IMPORTANT LOCATION RULES:
-- The PRIMARY SUBJECT is the FOREGROUND billboard (the large hoarding the photographer is standing directly in front of).
-- If there are smaller signs, shop boards, or distant hoardings in the background, IGNORE them for location purposes.
-- The GPS watermark shows the camera location, which is ~5-100m from the primary hoarding.
-- "facing" should be the DIRECTION THE HOARDING FACE LOOKS TOWARD (e.g., if camera is heading towards Begum Bridge to photograph this billboard, the hoarding is "Facing Pallavpuram").
+⚠️ CRITICAL — TWO TYPES OF ADDRESSES IN THIS PHOTO:
+1. ADVERTISER ADDRESS (printed on the billboard flex/banner) — e.g. "205, Begum Bridge Road, Meerut M.: 9520907999" — this is a SHOP address. IGNORE THIS COMPLETELY.
+2. CAMERA GPS WATERMARK (bottom overlay by the app) — e.g. "128, Lekha Nagar, Rakshapuram, Meerut" — this is the ACTUAL CAMERA LOCATION. USE ONLY THIS.
 
-CRITICAL LOCATION EXTRACTION RULES:
-1. ⚠️ DO NOT use the advertiser's store/showroom address printed on the flex ad itself (e.g. "205, Begum Bridge Road"). That is just the advertiser's shop address!
-2. ALWAYS extract the real geographical address from the camera's GPS watermark overlay (e.g. "Low Floor Bus Station, NH 58, Modipuram, Meerut" or "Block F, Sector 2, Shastri Nagar").
-3. Extract:
-   - "latitude": numeric decimal degrees (e.g. 29.0490666) if stamped on the image, or null
-   - "longitude": numeric decimal degrees (e.g. 77.7075798) if stamped on the image, or null
-   - "address": exact stamped location text or highway from the camera watermark
-   - "city": city name (e.g. "Meerut")
-   - "adBrand": brand name displayed on the billboard advertisement (e.g. "SENCO Gold & Diamonds")
-   - "facing": traffic direction or facing (e.g. "Begum Bridge", "Modipuram", "Delhi Road") if mentioned or evident, or null
-   - "status": "Occupied" if a commercial advertisement/brand flex is mounted, or "Available" if blank/white/torn/"To-Let" advertisement
+HOW TO TELL THEM APART:
+- The advertiser text is ON the billboard banner itself (large flex print)
+- The camera watermark is a semi-transparent overlay at the BOTTOM of the photo with app branding
+- The GPS numbers (Lat/Long decimal coordinates) only appear in the camera watermark, NEVER in the advertiser ad
 
-Output ONLY a single valid JSON object:
+EXTRACT FROM CAMERA WATERMARK ONLY:
+- "latitude": the Lat decimal number from watermark (e.g. 29.007513), or null
+- "longitude": the Long decimal number from watermark (e.g. 77.7058257), or null
+- "address": the street address text from the camera watermark overlay
+- "city": city name from watermark
+- "adBrand": brand name printed on the BILLBOARD itself (e.g. "SENCO Gold & Diamonds")
+- "facing": which direction the billboard face is pointing toward (from visual context), or null
+- "status": "Occupied" if a brand ad is on billboard, "Available" if blank/white/To-Let
+
+Output ONLY valid JSON:
 {
-  "latitude": 29.0490666,
-  "longitude": 77.7075798,
-  "address": "Stamped location address",
+  "latitude": 29.007513,
+  "longitude": 77.7058257,
+  "address": "128, Lekha Nagar, Rakshapuram, Meerut",
   "city": "Meerut",
-  "adBrand": "Mounted brand name",
-  "facing": "Extracted traffic facing or null",
+  "adBrand": "SENCO Gold & Diamonds",
+  "facing": null,
   "status": "Occupied",
-  "confidence": 0.98,
-  "reasoning": "Detected GPS stamp and active brand"
+  "confidence": 0.99,
+  "reasoning": "GPS watermark shows Lat 29.007513 Long 77.7058257 at Rakshapuram. SENCO brand ad on billboard."
 }
-If no GPS coordinates are stamped on the image, set "latitude": null, "longitude": null.`;
+If no camera GPS watermark visible, set "latitude": null, "longitude": null.`;
+
 
   const payload = {
     contents: [
