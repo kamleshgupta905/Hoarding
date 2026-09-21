@@ -25,14 +25,16 @@ export const getGeminiApiKeys = () => {
 };
 
 export const GEMINI_MODELS = [
+  'gemini-3.6-flash',
+  'gemini-3.1-flash-lite',
+  'gemini-3.5-flash-lite',
+  'gemini-flash-latest',
+  'gemini-flash-lite-latest',
   'gemini-3.8-flash',
   'gemini-3.7-flash',
-  'gemini-3.6-flash',
-  'gemini-2.5-flash',
+  'gemini-3-flash-preview',
   'gemini-3.5-flash',
-  'gemini-flash-latest',
-  'gemini-2.5-pro',
-  'gemini-pro-latest'
+  'gemini-3.1-pro-preview'
 ];
 
 /**
@@ -375,42 +377,28 @@ CANDIDATE HOARDINGS AT / NEAR THIS CORRIDOR:
 ${candidateDescriptions}
 
 CRITICAL RULES FOR ACCURATE MATCHING:
-1. 🧭 TOP PRIORITY: BILLBOARD FACING & TRAFFIC LINE-OF-SIGHT:
-   - In outdoor advertising (OOH), "Facing [X]" means the billboard face is oriented towards direction X and is visible to traffic approaching FROM X heading towards the opposite direction.
-   - Look at the vehicles, lane flow, and camera line of sight:
-     * If the camera is facing/moving towards destination Y, the billboard facing the camera is visible to traffic coming FROM origin direction X.
-     * Always choose the candidate whose Facing aligns with the camera's line of sight over opposite-facing candidates.
-   - ⚠️ DO NOT be deceived by advertiser store addresses or phone numbers printed on the flex ad banner! That is just the advertiser's showroom address, NOT the billboard's facing direction.
+1. 🖼️ VISUAL REFERENCE PHOTO MATCHING & PHYSICAL LANDMARKS (TOP PRIORITY):
+   - Compare the live audit photo against the attached REFERENCE PHOTOS for each candidate:
+     * ELEVATED METRO TRACKS & PILLARS: Is the billboard a UNIPOLE mounted in the central median directly between and below elevated metro pillars? (e.g. SL #210). Or is it an OVERHEAD ROAD GANTRY spanning across the roadway lanes? (e.g. SL #211). You MUST match the exact structural type!
+     * FLYOVER RAMPS & RETAINING WALLS: Is there an elevated flyover ramp concrete retaining wall with wire mesh fencing and a pedestrian staircase alongside the road? (e.g. SL #198). Match the candidate whose reference photo is situated at that exact ramp segment, rather than a different site along the same road (e.g. SL #196).
+     * PAVEMENT, DIVIDERS & ROAD CURVATURE: Match the sidewalk tiles, yellow-and-black chevron curb blocks, railings, street furniture, and road angle.
+   - ⚠️ Calculated GPS distances have ±50m–100m variance depending on vehicle position. NEVER let GPS distance numbers override clear visual landmarks from the reference photos!
 
-2. 🎯 HIGH PRIORITY: PRIMARY FOREGROUND BILLBOARD (CLOSEST TO CAMERA):
-   - In live field audit photos, the photographer captures the ONE specific primary billboard that dominates the center foreground.
-   - You MUST match this prominent FOREGROUND billboard, NOT secondary or background structures visible down the road!
-   - If two candidate hoardings share the same road and same facing (e.g. consecutive hoardings along the road):
-     * The candidate closer in distance or first along the vehicle's approach corresponds to the prominent FOREGROUND billboard.
-     * Do NOT select a candidate representing a subsequent hoarding further down the road.
-   - A distant background sign, small shop banner, or distant billboard visible in the background does NOT determine the site. The primary billboard right in the foreground determines the site!
+2. 🧭 BILLBOARD FACING & TRAFFIC LINE-OF-SIGHT:
+   - "Facing [X]" means the billboard face points towards X and is directly visible to traffic traveling from X.
+   - Always choose the candidate whose Facing aligns with the camera's line of sight over opposite-facing candidates.
+   - ⚠️ DO NOT be confused by showroom addresses or phone numbers printed on flex banners.
 
-3. 🏗️ BILLBOARD MOUNTING STRUCTURE & CORRIDOR MATCHING:
-   - Carefully identify the physical structure type of the FOREGROUND billboard:
-     * UNIPOLE IN MEDIAN: A massive horizontal billboard mounted atop a single tall steel/concrete pillar in the central road divider / median, often directly underneath or beside elevated metro/flyover tracks.
-     * OVERHEAD GANTRY: A steel truss bridge spanning horizontally across traffic lanes.
-     * ROADSIDE / SIDEWALK POST / WALL MOUNT: Mounted on curbside posts, footpath railing, or building/compound wall.
-   - The correct candidate MUST match the physical mounting structure in the foreground!
-
-4. 📏 GPS DISTANCE IS AN ESTIMATE (±50m variance):
-   - Calculated GPS distance numbers reflect where the vehicle/camera stopped or small coordinate inaccuracies.
-   - Never let a minor GPS distance difference override the visual structure and facing direction.
-
-5. Status detection: "Occupied" (active commercial brand ad mounted) or "Available" (blank, white, torn, or To-Let).
+3. Status detection: "Occupied" (active commercial brand ad mounted) or "Available" (blank, white, torn, or To-Let).
 
 Return ONLY a single valid JSON object (no markdown, no backticks):
 {
   "matchedIndex": 0,
-  "sl": 196,
+  "sl": 198,
   "facing": "exact facing from selected candidate",
   "status": "Occupied",
   "confidence": 0.98,
-  "reasoning": "Clear explanation of road direction, foreground structure, and why this candidate was chosen"
+  "reasoning": "Clear explanation of matched physical structure, reference photo comparison, and road landmarks"
 }`;
 
   const parts = [
@@ -459,8 +447,9 @@ Return ONLY a single valid JSON object (no markdown, no backticks):
     let idx = parseInt(result.matchedIndex, 10);
     
     // 1. Match by exact SL if returned by Gemini
-    if (result.sl) {
-      const targetSlDigits = String(result.sl).replace(/\D/g, '');
+    const returnedSL = result.sl || result.matchedSL || result.targetSL || result.matched_sl;
+    if (returnedSL) {
+      const targetSlDigits = String(returnedSL).replace(/\D/g, '');
       const bySl = candidates.find(c => {
         const rawSite = c.site || c;
         const sl = rawSite.SL || rawSite['S. No.'] || rawSite['SL NO'];

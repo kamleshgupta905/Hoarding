@@ -483,8 +483,9 @@ export const matchHoardingByGps = async (coord, locationList, rawImageBase64 = n
                 }
 
                 // 2. Match by SL if resolved
-                if (!targetCandidate && resolved.sl) {
-                    const targetSlDigits = String(resolved.sl).replace(/\D/g, '');
+                const targetSLVal = resolved.sl || resolved.matchedSL || resolved.targetSL || (resolved.matchedSite?.SL);
+                if (!targetCandidate && targetSLVal) {
+                    const targetSlDigits = String(targetSLVal).replace(/\D/g, '');
                     targetCandidate = prioritizedCluster.find(c => {
                         const sl = c.site?.SL || c.site?.['S. No.'] || c.site?.['SL NO'];
                         if (!sl) return false;
