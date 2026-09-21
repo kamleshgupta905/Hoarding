@@ -647,12 +647,14 @@ export const commitBulkBookings = async ({
           // browser cache was cleared.
           const queueHistoryToSheet = (entryUrl, gps) => {
             if (!entryUrl) return;
+            const pLoc = p.site['Location '] || p.site.Location || '';
             const row = batchUpdates.find(u =>
               (p.site._SiteID && u.siteId === p.site._SiteID) ||
-              (p.site.SL && String(u.sl) === String(p.site.SL))
+              (p.site.SL && String(u.sl) === String(p.site.SL)) ||
+              (u.siteName && pLoc && u.siteName === pLoc)
             );
             if (!row || !row.fields) return;
-            const stamped = `${entryUrl}|${Date.now()}${gps ? `|${String(gps).replace(/,/g, ' ')}` : ''}`;
+            const stamped = `${entryUrl}|${Date.now()}${gps ? \`|\${String(gps).replace(/,/g, ' ')}\` : ''}`;
             row.fields.ExecutionHistory = row.fields.ExecutionHistory
               ? `${row.fields.ExecutionHistory},${stamped}`
               : stamped;
