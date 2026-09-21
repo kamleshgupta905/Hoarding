@@ -15,12 +15,12 @@ class ErrorBoundary extends React.Component {
     this.setState({ errorInfo });
 
     const msg = error?.message || error?.toString() || '';
-    const isChunkLoadError = /dynamically imported module|ChunkLoadError|Loading chunk|Failed to fetch dynamically imported/i.test(msg);
+    const isChunkLoadError = /dynamically imported module|ChunkLoadError|Loading chunk|Failed to fetch|reading 'default'|reading "default"|Unexpected token/i.test(msg);
 
     if (isChunkLoadError) {
       const lastReload = parseInt(sessionStorage.getItem('last_chunk_reload') || '0', 10);
       const now = Date.now();
-      if (now - lastReload > 8000) {
+      if (now - lastReload > 5000) {
         sessionStorage.setItem('last_chunk_reload', String(now));
         window.location.reload();
       }
@@ -75,7 +75,7 @@ class ErrorBoundary extends React.Component {
     if (this.state.hasError) {
       const errorMessage = this.state.error?.message || this.state.error?.toString() || 'Unknown error occurred';
       const isElectron = Boolean(typeof window !== 'undefined' && window.electronAPI?.isElectron);
-      const isChunkLoadError = /dynamically imported module|ChunkLoadError|Loading chunk|Failed to fetch dynamically imported/i.test(errorMessage);
+      const isChunkLoadError = /dynamically imported module|ChunkLoadError|Loading chunk|Failed to fetch|reading 'default'|reading "default"|Unexpected token/i.test(errorMessage);
 
       return (
         <div style={{

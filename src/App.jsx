@@ -13,17 +13,21 @@ import { fetchHoardings, getLocalBookings, getSiteBookingKeys, getLocalHistory, 
 const lazyWithRetry = (componentImport) =>
   lazy(async () => {
     try {
-      return await componentImport();
+      const module = await componentImport();
+      if (!module || (!module.default && typeof module !== 'function')) {
+        throw new Error('ChunkLoadError: Dynamic module loaded without default export');
+      }
+      return module;
     } catch (error) {
+      const msg = error?.message || error?.toString() || '';
       const isChunkError =
         error?.name === 'ChunkLoadError' ||
-        /Failed to fetch dynamically imported module/i.test(error?.message || '') ||
-        /Loading chunk [\d]+ failed/i.test(error?.message || '');
+        /Failed to fetch dynamically imported module|Loading chunk|ChunkLoadError|reading 'default'|Unexpected token/i.test(msg);
 
       const lastReload = parseInt(sessionStorage.getItem('last_chunk_reload') || '0', 10);
       const now = Date.now();
 
-      if (isChunkError && now - lastReload > 8000) {
+      if (isChunkError && now - lastReload > 5000) {
         sessionStorage.setItem('last_chunk_reload', String(now));
         window.location.reload();
         return new Promise(() => {}); // hold until reload
