@@ -288,7 +288,10 @@ export const extractCoordinatesFromText = (text) => {
         .replace(/(\d)[Oo](\d)/g, '$10$2')
         .replace(/([LlIi])(?=\.\d{3})/g, '1')
         // Fix comma used as decimal point between digits (e.g. 28,955047 -> 28.955047)
-        .replace(/(\d{1,3}),(\d{3,9})/g, '$1.$2');
+        .replace(/(\d{1,3}),(\d{3,9})/g, '$1.$2')
+        // Fix missing decimal point in Indian coordinates from OCR (e.g. Long 777162097 -> 77.7162097)
+        .replace(/(?<!\.)\b([6-9]\d)(\d{5,8})\b(?!\.)/g, '$1.$2')
+        .replace(/(?<!\.)\b([1-3]\d)(\d{5,8})\b(?!\.)/g, '$1.$2');
 
     // 1. Labeled Lat/Long (e.g., "Lat: 28.998107, Long: 77.705821" or "Lat 28.955047 Long 77.734039")
     // Highly tolerant to OCR misreadings of "lat" (lal, lot, 1at, tat, la) and "long" (lang, lona, 1ong, lon)
@@ -403,9 +406,12 @@ export const matchHoardingByGps = async (coord, locationList, rawImageBase64 = n
     const closest = candidates[0];
 
     // 🎯 CORRIDOR & TWIN-SITE CLUSTER DETECTION (Consecutive road structures / opposite facings)
-    // Only sites within 200m of the closest GPS point are considered a corridor cluster.
-    // This prevents grouping unrelated distant hoardings as "twins".
-    const clusterMaxDist = Math.min(200, Math.max(80, closest.distanceM + 80));
+    // Group candidate hoardings along the same road corridor or junction.
+    // If closest hoarding is within 350m, cluster all candidates within 120m of closest site (capped at 400m).
+    const clusterMaxDist = closest.distanceM <= 350
+        ? Math.min(400, Math.max(100, closest.distanceM + 120))
+        : Math.min(800, closest.distanceM + 150);
+
     const corridorCluster = candidates.filter(c => c.distanceM <= clusterMaxDist);
 
     const twinCandidatesList = corridorCluster.length > 1 ? corridorCluster.map(c => ({
@@ -581,8 +587,8 @@ export const matchHoardingByGps = async (coord, locationList, rawImageBase64 = n
         };
     }
 
-    // 🎯 Threshold 5: <= 500m is an Area Match (70% confidence) — beyond 500m is too far for GPS-based matching
-    if (closest.distanceM <= 500) {
+    // 🎯 Threshold 5: <= 2500m (2.5 km) is an Area Proximity Match (70% confidence)
+    if (closest.distanceM <= 2500) {
         return {
             index: closest.index,
             sl: closestSL,
@@ -724,35 +730,27 @@ export const analyzeHoardingImage = async (base64Image, locationList, rawFile = 
             if (exifCoord && isValidLatLng(exifCoord.lat, exifCoord.lng)) {
                 const gpsMatch = await matchHoardingByGps(exifCoord, locationList, base64Image);
                 if (gpsMatch) {
-                    // ✅ High-precision GPS match (<=200m): Return immediately — camera EXIF is authoritative
-                    // ⚠️ Lower-precision GPS match (>200m): Continue to OCR+AI for visual confirmation
-                    // This prevents incorrect far-away site matches when GPS coordinates are imprecise
-                    if (gpsMatch.distanceM <= 200) {
-                        return {
-                            matchedIndex: gpsMatch.index,
-                            sl: gpsMatch.sl || gpsMatch.site?.SL || gpsMatch.site?.['S. No.'] || '',
-                            site: gpsMatch.site,
-                            matchedLocation: gpsMatch.siteName,
-                            matchedSiteId: gpsMatch.site._SiteID || gpsMatch.site.UniqueID || gpsMatch.site['Unique ID'] || '',
-                            facing: gpsMatch.facing || gpsMatch.site.Facing || '',
-                            twinCandidates: gpsMatch.twinCandidates || null,
-                            status: gpsMatch.site?.STATUS || gpsMatch.status || 'Available',
-                            confidence: gpsMatch.confidence,
-                            reasoning: `🛰️ Camera EXIF GPS: ${gpsMatch.reasoning}`,
-                            analysis: `EXIF Lat: ${exifCoord.lat.toFixed(6)}, Long: ${exifCoord.lng.toFixed(6)}`,
-                            gpsCoord: { lat: exifCoord.lat, lng: exifCoord.lng },
-                            distanceM: gpsMatch.distanceM
-                        };
-                    }
-                    // For weak GPS match, store as fallback and continue to OCR+AI
-                    console.log(`[EXIF GPS] Weak match (${gpsMatch.distanceM}m, ${gpsMatch.confidence}% confidence) — continuing to OCR+AI for visual confirmation`);
+                    return {
+                        matchedIndex: gpsMatch.index,
+                        sl: gpsMatch.sl || gpsMatch.site?.SL || gpsMatch.site?.['S. No.'] || '',
+                        site: gpsMatch.site,
+                        matchedLocation: gpsMatch.siteName,
+                        matchedSiteId: gpsMatch.site._SiteID || gpsMatch.site.UniqueID || gpsMatch.site['Unique ID'] || '',
+                        facing: gpsMatch.facing || gpsMatch.site.Facing || '',
+                        twinCandidates: gpsMatch.twinCandidates || null,
+                        status: gpsMatch.site?.STATUS || gpsMatch.status || 'Available',
+                        confidence: gpsMatch.confidence,
+                        reasoning: `🛰️ Camera EXIF GPS: ${gpsMatch.reasoning}`,
+                        analysis: `EXIF Lat: ${exifCoord.lat.toFixed(6)}, Long: ${exifCoord.lng.toFixed(6)}`,
+                        gpsCoord: { lat: exifCoord.lat, lng: exifCoord.lng },
+                        distanceM: gpsMatch.distanceM
+                    };
                 }
             }
         } catch (exifErr) {
             console.warn('EXIF GPS check skipped:', exifErr);
         }
     }
-
 
     // ─── STAGE 2: OCR GPS Stamp Extraction (Bottom-Right Pinpoint & Bottom Banners) ───────────
     let detectedOcrText = '';
@@ -955,11 +953,11 @@ export const analyzeHoardingImage = async (base64Image, locationList, rawFile = 
                 siteName: location["Locality Site Location"] || location["Location "] || location.Location || '',
                 score: scoreLocationByText(detectedOcrText, location)
             }))
-            .filter(c => c.score >= 25)
+            .filter(c => c.score >= 40)
             .sort((a, b) => b.score - a.score);
 
         const best = candidates[0];
-        if (best && best.score >= 30) {
+        if (best && best.score >= 45) {
             const normalized = normalizeText(detectedOcrText);
             const status = normalized.includes('occupied') || normalized.includes('booked') ? 'Occupied' : 'Available';
             const bestSL = best.location?.SL || best.location?.['S. No.'] || best.location?.['SL NO'] || (best.index + 1);
@@ -967,7 +965,7 @@ export const analyzeHoardingImage = async (base64Image, locationList, rawFile = 
             // Cluster top candidate sites with matching road/locality for 1-click twin switching
             const clusterCandidates = candidates
                 .slice(0, 6)
-                .filter(c => c.score >= Math.max(30, best.score - 20))
+                .filter(c => c.score >= Math.max(45, best.score - 20))
                 .map(c => ({
                     index: c.index,
                     sl: c.location?.SL || c.location?.['S. No.'] || c.location?.['SL NO'] || (c.index + 1),
@@ -998,69 +996,6 @@ export const analyzeHoardingImage = async (base64Image, locationList, rawFile = 
         }
     }
 
-    // ─── STAGE 5: GPS Fallback — If EXIF or OCR GPS was found but was >200m (weak match),
-    // still return it as last resort rather than "Site Not Matched". This covers cases where:
-    // - GPS watermark address text doesn't match inventory location name (e.g. "Lalkurti Bazaar" vs "CCS Park")
-    // - Text score is too low but GPS coordinates clearly identify a nearby site ≤500m
-    if (rawFile) {
-        try {
-            const exifCoordFallback = await extractGpsFromExif(rawFile);
-            if (exifCoordFallback && isValidLatLng(exifCoordFallback.lat, exifCoordFallback.lng)) {
-                const gpsFallback = await matchHoardingByGps(exifCoordFallback, locationList, base64Image);
-                if (gpsFallback && gpsFallback.distanceM <= 500) {
-                    const fallbackSL = gpsFallback.site?.SL || gpsFallback.site?.['S. No.'] || gpsFallback.site?.['SL NO'] || '';
-                    return {
-                        matchedIndex: gpsFallback.index,
-                        sl: fallbackSL,
-                        site: gpsFallback.site,
-                        matchedLocation: gpsFallback.siteName,
-                        matchedSiteId: gpsFallback.site._SiteID || gpsFallback.site.UniqueID || gpsFallback.site['Unique ID'] || '',
-                        facing: gpsFallback.facing || gpsFallback.site.Facing || '',
-                        twinCandidates: gpsFallback.twinCandidates || null,
-                        status: gpsFallback.site?.STATUS || 'Available',
-                        confidence: gpsFallback.confidence,
-                        reasoning: `📍 GPS Fallback Match: ${gpsFallback.reasoning}`,
-                        analysis: `EXIF GPS Lat: ${exifCoordFallback.lat.toFixed(6)}, Long: ${exifCoordFallback.lng.toFixed(6)}`,
-                        gpsCoord: { lat: exifCoordFallback.lat, lng: exifCoordFallback.lng },
-                        distanceM: gpsFallback.distanceM
-                    };
-                }
-            }
-        } catch (exifFallbackErr) {
-            console.warn('GPS fallback check skipped:', exifFallbackErr);
-        }
-    }
-
-    // Also try to match using GPS from OCR text if available
-    if (detectedOcrText && detectedOcrText.length >= 4) {
-        try {
-            const ocrGpsFallback = extractCoordinatesFromText(detectedOcrText);
-            if (ocrGpsFallback && isValidLatLng(ocrGpsFallback.lat, ocrGpsFallback.lng)) {
-                const gpsOcrFallback = await matchHoardingByGps(ocrGpsFallback, locationList, base64Image);
-                if (gpsOcrFallback && gpsOcrFallback.distanceM <= 500) {
-                    const fbSL = gpsOcrFallback.site?.SL || gpsOcrFallback.site?.['S. No.'] || '';
-                    return {
-                        matchedIndex: gpsOcrFallback.index,
-                        sl: fbSL,
-                        site: gpsOcrFallback.site,
-                        matchedLocation: gpsOcrFallback.siteName,
-                        matchedSiteId: gpsOcrFallback.site._SiteID || gpsOcrFallback.site.UniqueID || gpsOcrFallback.site['Unique ID'] || '',
-                        facing: gpsOcrFallback.facing || gpsOcrFallback.site.Facing || '',
-                        twinCandidates: gpsOcrFallback.twinCandidates || null,
-                        status: gpsOcrFallback.site?.STATUS || 'Available',
-                        confidence: gpsOcrFallback.confidence,
-                        reasoning: `📍 OCR GPS Fallback Match: ${gpsOcrFallback.reasoning}`,
-                        analysis: `OCR GPS Lat: ${ocrGpsFallback.lat.toFixed(6)}, Long: ${ocrGpsFallback.lng.toFixed(6)}`,
-                        gpsCoord: { lat: ocrGpsFallback.lat, lng: ocrGpsFallback.lng },
-                        distanceM: gpsOcrFallback.distanceM
-                    };
-                }
-            }
-        } catch (ocrFallbackErr) {
-            console.warn('OCR GPS fallback check skipped:', ocrFallbackErr);
-        }
-    }
-
     return {
         matchedIndex: -1,
         matchedLocation: null,
@@ -1070,4 +1005,3 @@ export const analyzeHoardingImage = async (base64Image, locationList, rawFile = 
         matchFailed: true
     };
 };
-

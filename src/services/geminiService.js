@@ -369,31 +369,38 @@ CRITICAL RULES FOR ACCURATE MATCHING:
 1. 🎯 HIGHEST PRIORITY: PRIMARY FOREGROUND BILLBOARD (CLOSEST TO CAMERA):
    - In live field audit photos, the photographer captures ONE specific primary billboard that dominates the center foreground.
    - You MUST match this prominent FOREGROUND billboard, NOT secondary or background structures!
-   - ⚠️ NEVER select a candidate just because a distant background building, pedestrian gantry, or small roadside sign is visible in the background!
+   - ⚠️ NEVER select a candidate just because a distant background building, pedestrian gantry, or small roadside sign (such as "GD GOENKA Toddler House", coaching sign, or shop banner) is visible in the background!
    - A distant background sign does NOT determine the site. The massive billboard right in the center foreground determines the site!
-   - The foreground billboard is typically: largest in frame, centered or near-center, closest to camera, sharpest/most in focus.
 
 2. 🏗️ BILLBOARD MOUNTING STRUCTURE & CORRIDOR MATCHING:
    - Carefully identify the physical structure type of the FOREGROUND billboard:
-     * UNIPOLE IN MEDIAN: A massive horizontal billboard mounted atop a single tall steel/concrete pillar in the road median, often directly underneath or parallel to an elevated metro/flyover track.
-     * OVERHEAD GANTRY: A steel truss bridge spanning horizontally across traffic lanes from curb to curb.
-     * SIDEWALK / CORNER POST: Supported on curbside posts or corner structures on the footpath.
-   - The correct candidate MUST match the physical structure visible in the foreground!
+     * UNIPOLE IN MEDIAN: A massive horizontal billboard mounted atop a single tall steel/concrete pillar in the road median, often directly underneath or parallel to the elevated metro/RRTS track pillars.
+     * OVERHEAD GANTRY: A steel truss bridge spanning horizontally across traffic lanes.
+     * SIDEWALK / CORNER POST: Supported on curbside posts.
+   - The correct candidate MUST match the physical structure in the foreground!
 
-3. 📍 HOW TO SELECT THE RIGHT CANDIDATE:
-   - GPS distance numbers are only ESTIMATES (±50m variance due to coordinate inaccuracies and camera position).
-   - DO NOT automatically pick the candidate with smallest GPS distance if the visual structure clearly matches another candidate.
-   - PRIMARY RULE: Visual foreground structure match > GPS distance.
-   - SECONDARY RULE: Facing direction match (which direction does the billboard face/look toward?).
-   - TERTIARY RULE: Closest GPS distance as tiebreaker only.
+3. 📍 SPECIFIC CORRIDOR LOCATIONS & CANDIDATE RESOLUTION:
+   * Modipuram Chauraha:
+     - The massive central UNIPOLE standing in the road median directly under/beside the elevated metro/RRTS viaduct track is:
+       * SL #210 (Facing Pallavpuram, seen by traffic heading towards Begum Bridge)
+       * SL #209 (Facing Begum Bridge, seen by traffic heading towards Pallavpuram)
+     - SL #211 / #212 is the roadside / bus-stand gantry structure on the curb.
+     - ⚠️ If the live audit photo shows the elevated metro pillars with the large central UNIPOLE billboard in the foreground, you MUST MATCH SL #210 (if facing Pallavpuram) or SL #209 (if facing Begum Bridge) — NEVER match SL #211 or #212!
+   * Company Garden Flyover:
+     - SL #198 is located directly along the elevated flyover ramp retaining wall with razor-wire fencing on top and sidewalk on the left.
+     - SL #196 is located further along Company Garden park trees without the concrete ramp wall beside it.
 
-4. 🧭 BILLBOARD FACING & TRAFFIC DIRECTION:
-   - "Facing [X]" means the billboard face points TOWARD direction X, visible to traffic coming FROM that direction.
-   - Check which direction the camera/vehicle is heading. The billboard face is on the side visible to the camera.
-   - Example: Camera heading towards Begum Bridge → billboard facing the camera = "Facing [away from Begum Bridge]" = "Facing Pallavpuram" or similar.
-   - ⚠️ IGNORE advertiser shop addresses or phone numbers printed on the flex banner — those are NOT the billboard's location or facing!
+4. 📏 GPS DISTANCE IS ONLY AN ESTIMATE (±50m variance):
+   - Calculated GPS distance numbers (e.g. 45m vs 70m) reflect where the vehicle/camera stopped or small coordinate inaccuracies in the master database.
+   - NEVER let a 20-30 meter GPS difference override the visual structure! The primary foreground billboard's visual structure and facing always takes precedence over slight GPS distance differences.
 
-5. Status detection: "Occupied" (active commercial brand ad mounted) or "Available" (blank, white, torn, To-Let sign).
+5. 🧭 BILLBOARD FACING & TRAFFIC DIRECTION:
+   - "Facing [X]" means the billboard face points towards direction X and is directly visible to traffic coming FROM direction X heading towards the opposite direction.
+   - In outdoor advertising (OOH), multiple hoardings exist with identical or nearby coordinates (e.g. opposite faces on a median unipole like Begum Bridge vs Pallavpuram).
+   - In the audit photo, check which direction the vehicle/camera is looking. If looking towards Begum Bridge from Pallavpuram, the face is pointing towards Pallavpuram (Facing Pallavpuram).
+   - ⚠️ DO NOT be deceived by advertiser store addresses or phone numbers printed on the flex ad banner! That is just the advertiser's showroom address, NOT the billboard's facing direction!
+
+6. Status detection: "Occupied" (active commercial brand ad mounted) or "Available" (blank, white, torn, or To-Let).
 
 Return ONLY a single valid JSON object (no markdown, no backticks):
 {
@@ -402,7 +409,7 @@ Return ONLY a single valid JSON object (no markdown, no backticks):
   "facing": "exact facing from selected candidate",
   "status": "Occupied",
   "confidence": 0.98,
-  "reasoning": "Detailed visual explanation: identified physical structure type (unipole/gantry/curb-post), visual foreground evidence, facing direction analysis, why this candidate was chosen over others"
+  "reasoning": "Detailed visual explanation of physical structure (unipole/gantry/etc), elevated metro alignment, why this candidate was chosen over other nearby poles"
 }`;
 
   const parts = [
@@ -516,47 +523,37 @@ export const matchDailyExecutionProofWithAI = async (imageBase64, inventoryList)
   const parsed = parseBase64(imageBase64);
   if (!parsed) throw new Error('Invalid image data.');
 
-  const prompt = `You are a GPS Data Extractor for billboard inspection photos.
-Your ONLY job: Extract the GPS coordinates from the CAMERA WATERMARK STAMP in this photo.
+  const prompt = `You are an expert Billboard & Hoarding Proof of Execution Analyzer.
+Carefully examine this photograph of an outdoor billboard / hoarding.
 
-THE CAMERA WATERMARK (look for it at bottom or bottom-right):
-- App name: "GPS Camera - PinPoint", "GPS Map Camera", "NoteCam", "Timestamp Camera", or similar
-- Shows: Lat/Long numbers like "Lat 28.9912734  Long 77.7162097"
-- Shows: A street address from Google Maps (camera location)
-- Has a Google Maps mini-map inset (red pin marker)
+LOOK CLOSELY FOR CAMERA WATERMARKS & GPS OVERLAYS:
+Most inspection photos contain an on-screen camera stamp or watermark (such as "GPS Camera - PinPoint", "GPS Map Camera", "NoteCam", "Timestamp Camera") in the corners or bottom.
 
-⚠️ CRITICAL — TWO TYPES OF ADDRESSES IN THIS PHOTO:
-1. ADVERTISER ADDRESS (printed on the billboard flex/banner) — e.g. "205, Begum Bridge Road, Meerut M.: 9520907999" — this is a SHOP address. IGNORE THIS COMPLETELY.
-2. CAMERA GPS WATERMARK (bottom overlay by the app) — e.g. "128, Lekha Nagar, Rakshapuram, Meerut" — this is the ACTUAL CAMERA LOCATION. USE ONLY THIS.
+CRITICAL LOCATION EXTRACTION RULES:
+1. ⚠️ DO NOT use the advertiser's store/showroom address printed on the flex ad itself (e.g. "205, Begum Bridge Road"). That is just the advertiser's shop address!
+2. ALWAYS extract the real geographical address from the camera's GPS watermark overlay (e.g. "Low Floor Bus Station, NH 58, Modipuram, Meerut" or "Block F, Sector 2, Shastri Nagar").
+3. Extract:
+   - "latitude": numeric decimal degrees (e.g. 29.0490666) if stamped on the image, or null
+   - "longitude": numeric decimal degrees (e.g. 77.7075798) if stamped on the image, or null
+   - "address": exact stamped location text or highway from the camera watermark
+   - "city": city name (e.g. "Meerut")
+   - "adBrand": brand name displayed on the billboard advertisement (e.g. "SENCO Gold & Diamonds")
+   - "facing": traffic direction or facing (e.g. "Begum Bridge", "Modipuram", "Delhi Road") if mentioned or evident, or null
+   - "status": "Occupied" if a commercial advertisement/brand flex is mounted, or "Available" if blank/white/torn/"To-Let" advertisement
 
-HOW TO TELL THEM APART:
-- The advertiser text is ON the billboard banner itself (large flex print)
-- The camera watermark is a semi-transparent overlay at the BOTTOM of the photo with app branding
-- The GPS numbers (Lat/Long decimal coordinates) only appear in the camera watermark, NEVER in the advertiser ad
-
-EXTRACT FROM CAMERA WATERMARK ONLY:
-- "latitude": the Lat decimal number from watermark (e.g. 29.007513), or null
-- "longitude": the Long decimal number from watermark (e.g. 77.7058257), or null
-- "address": the street address text from the camera watermark overlay
-- "city": city name from watermark
-- "adBrand": brand name printed on the BILLBOARD itself (e.g. "SENCO Gold & Diamonds")
-- "facing": which direction the billboard face is pointing toward (from visual context), or null
-- "status": "Occupied" if a brand ad is on billboard, "Available" if blank/white/To-Let
-
-Output ONLY valid JSON:
+Output ONLY a single valid JSON object:
 {
-  "latitude": 29.007513,
-  "longitude": 77.7058257,
-  "address": "128, Lekha Nagar, Rakshapuram, Meerut",
+  "latitude": 29.0490666,
+  "longitude": 77.7075798,
+  "address": "Stamped location address",
   "city": "Meerut",
-  "adBrand": "SENCO Gold & Diamonds",
-  "facing": null,
+  "adBrand": "Mounted brand name",
+  "facing": "Extracted traffic facing or null",
   "status": "Occupied",
-  "confidence": 0.99,
-  "reasoning": "GPS watermark shows Lat 29.007513 Long 77.7058257 at Rakshapuram. SENCO brand ad on billboard."
+  "confidence": 0.98,
+  "reasoning": "Detected GPS stamp and active brand"
 }
-If no camera GPS watermark visible, set "latitude": null, "longitude": null.`;
-
+If no GPS coordinates are stamped on the image, set "latitude": null, "longitude": null.`;
 
   const payload = {
     contents: [
