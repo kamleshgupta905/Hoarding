@@ -387,13 +387,16 @@ CANDIDATE HOARDINGS AT / NEAR THIS CORRIDOR:
 ${candidateDescriptions}
 
 CRITICAL RULES FOR ACCURATE MATCHING:
-1. 🖼️ VISUAL REFERENCE PHOTO MATCHING & PHYSICAL LANDMARKS (TOP PRIORITY):
-   - Check if any candidate has recorded "Physical Structure & Visual Landmarks" (e.g. median unipole under metro track pillars vs overhead gantry, flyover ramp retaining wall with pedestrian staircase, curbside pole). Match the candidate with matching physical structure!
-   - Compare the live audit photo against the attached REFERENCE PHOTOS for each candidate:
-     * ELEVATED METRO TRACKS & PILLARS: Is the billboard a UNIPOLE mounted in the central median directly between and below elevated metro pillars? (e.g. SL #210). Or is it an OVERHEAD ROAD GANTRY spanning across the roadway lanes? (e.g. SL #211). You MUST match the exact structural type!
-     * FLYOVER RAMPS & RETAINING WALLS: Is there an elevated flyover ramp concrete retaining wall with wire mesh fencing and a pedestrian staircase alongside the road? (e.g. SL #198). Match the candidate whose reference photo is situated at that exact ramp segment, rather than a different site along the same road (e.g. SL #196).
+1. 🏗️ STRUCTURE TYPE & PHYSICAL CIVIL LANDMARKS (HIGHEST PRIORITY - ABSOLUTE RULE):
+   - Check the physical mounting structure in the live audit photo:
+     * UNIPOLE vs OVERHEAD GANTRY:
+       A "Unipole" is mounted on a SINGLE central vertical steel pillar/column (typically in the central road median or sidewalk).
+       An "Overhead Gantry" is an overhead steel bridge/truss structure spanning ACROSS multiple traffic lanes of the roadway with pillars on both sides.
+       ⚠️ STRICT RULE: If the live photo shows a Unipole, you MUST select a candidate with Structure Type "Unipole". You MUST NEVER select an "Overhead Gantry" (or "Gantry")! If the photo shows an Overhead Gantry spanning across the road, you MUST select a Gantry candidate, NEVER a Unipole!
+     * ELEVATED METRO VIADUCT TRACKS & PILLARS: Is the billboard a UNIPOLE mounted in the central median directly between and below elevated metro viaduct track pillars? (e.g. SL #210). If elevated metro viaduct pillars or tracks run overhead, you MUST match the candidate whose Physical Structure & Visual Landmarks explicitly mentions metro viaduct pillars (e.g. SL #210), NOT an overhead road gantry (e.g. SL #211)!
+     * FLYOVER RAMPS & RETAINING WALLS: Is there an elevated flyover ramp concrete retaining wall with wire mesh fencing and a pedestrian staircase alongside the road? (e.g. SL #198). Match the candidate whose visual landmarks or reference photo is situated at that exact ramp segment, rather than an open sidewalk site (e.g. SL #196).
      * PAVEMENT, DIVIDERS & ROAD CURVATURE: Match the sidewalk tiles, yellow-and-black chevron curb blocks, railings, street furniture, and road angle.
-   - ⚠️ Calculated GPS distances have ±50m–100m variance depending on vehicle position. NEVER let GPS distance numbers override clear visual landmarks from the reference photos!
+   - ⚠️ Calculated GPS distances have ±50m–100m variance depending on vehicle position. NEVER let GPS distance numbers override clear physical structure types or visual landmarks!
 
 2. 🧭 BILLBOARD FACING & TRAFFIC LINE-OF-SIGHT:
    - "Facing [X]" means the billboard face points towards X and is directly visible to traffic traveling from X.
@@ -405,7 +408,7 @@ CRITICAL RULES FOR ACCURATE MATCHING:
 Return ONLY a single valid JSON object (no markdown, no backticks):
 {
   "matchedIndex": 0,
-  "sl": 198,
+  "sl": 210,
   "facing": "exact facing from selected candidate",
   "status": "Occupied",
   "confidence": 0.98,
@@ -619,6 +622,8 @@ CRITICAL LOCATION EXTRACTION RULES:
    - "city": city name (e.g. "Meerut")
    - "adBrand": brand name displayed on the billboard advertisement (e.g. "SENCO Gold & Diamonds")
    - "facing": traffic direction or facing (e.g. "Begum Bridge", "Modipuram", "CCS Park", "Tej Garhi") if evident, or null
+   - "structureType": physical mounting structure: "Unipole" (single central pillar in median/sidewalk) | "Gantry" (overhead steel bridge spanning across road lanes) | "Curbside" | "Cantilever"
+   - "visualLandmarks": key civil infrastructure visible in photo (e.g. "Unipole under elevated metro viaduct pillars", "curbside pole next to flyover ramp and staircase", "overhead road gantry spanning roadway")
    - "status": "Occupied" if a commercial advertisement/brand flex is mounted, or "Available" if blank/white/torn/"To-Let" advertisement
 
 Output ONLY a single valid JSON object:
@@ -629,9 +634,11 @@ Output ONLY a single valid JSON object:
   "city": "Meerut",
   "adBrand": "Mounted brand name",
   "facing": "Extracted traffic facing or null",
+  "structureType": "Unipole",
+  "visualLandmarks": "Central median unipole situated directly beneath elevated metro viaduct track pillars",
   "status": "Occupied",
   "confidence": 0.98,
-  "reasoning": "Detected GPS stamp and active brand"
+  "reasoning": "Detected GPS stamp, Unipole under metro track pillars, and active brand"
 }
 If no GPS coordinates are stamped on the image, set "latitude": null, "longitude": null.`;
 
@@ -683,7 +690,8 @@ If no GPS coordinates are stamped on the image, set "latitude": null, "longitude
       facing,
       city: result.city || result.gps_watermark?.city || '',
       adBrand: result.adBrand || result.brand || '',
-      structureType: result.structure_type || result.structure || '',
+      structureType: result.structureType || result.structure_type || result.structure || '',
+      visualLandmarks: result.visualLandmarks || result.visual_landmarks || result.landmarks || '',
       status: result.status === 'Occupied' ? 'Occupied' : 'Available',
       confidence: typeof result.confidence === 'number' ? result.confidence : 0.95,
       reasoning: result.reasoning || (gpsCoord ? `GPS detected: ${gpsCoord.lat}, ${gpsCoord.lng}` : (address ? `Address detected: ${address}` : 'Landmarks detected')),

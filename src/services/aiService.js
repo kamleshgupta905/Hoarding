@@ -375,7 +375,7 @@ export const calculateDistanceMeters = (lat1, lon1, lat2, lon2) => {
  * 🎯 Match GPS Coordinates against the entire Master Inventory
  * Computes distances to all known hoardings and chooses the closest candidate with tiered confidence.
  */
-export const matchHoardingByGps = async (coord, locationList, rawImageBase64 = null, initialFacing = null) => {
+export const matchHoardingByGps = async (coord, locationList, rawImageBase64 = null, initialFacing = null, initialStructureType = null, initialVisualLandmarks = null) => {
     if (!coord || !Array.isArray(locationList) || !locationList.length) return null;
 
     const candidates = [];
@@ -388,6 +388,8 @@ export const matchHoardingByGps = async (coord, locationList, rawImageBase64 = n
             const siteName = site["Locality Site Location"] || site["Location "] || site.Location || site["Site Name"] || `Site #${i + 1}`;
             const facing = site.Facing || site['Traffic View'] || site.facing || '';
             const siteId = site._SiteID || site.UniqueID || site['Unique ID'] || site.ID || `site_${i}`;
+            const mediaType = site['Type of Site (Unipole/Billboard)'] || site['Type of Site (Unipole/ Billboard)'] || site['Type of Site'] || site['Media'] || site.Type || 'Unipole';
+            const visualLandmarks = site.Visual_Landmarks || site['Visual Landmarks'] || site.Structure_Notes || site['Structure Notes'] || '';
             candidates.push({
                 index: i,
                 site,
@@ -395,6 +397,8 @@ export const matchHoardingByGps = async (coord, locationList, rawImageBase64 = n
                 siteCoord,
                 facing,
                 siteId,
+                mediaType,
+                visualLandmarks,
                 distanceM: Math.round(dist)
             });
         }
@@ -432,17 +436,63 @@ export const matchHoardingByGps = async (coord, locationList, rawImageBase64 = n
         siteId: c.siteId,
         siteName: c.siteName,
         facing: c.facing || 'N/A',
+        mediaType: c.mediaType || 'Unipole',
         distanceM: c.distanceM,
         trafficFrom: c.site['Traffic From'] || '',
         trafficTo: c.site['Traffic To'] || '',
         imageUrl: c.site.ImageURL || '',
-        visualLandmarks: c.site?.Visual_Landmarks || c.site?.['Visual Landmarks'] || c.site?.Structure_Notes || ''
+        visualLandmarks: c.visualLandmarks || ''
     })) : null;
 
+    const normType = String(initialStructureType || '').toLowerCase();
+    const isPhotoUnipole = normType.includes('unipole') || normType.includes('pole') || normType.includes('single');
+    const isPhotoGantry = normType.includes('gantry') || normType.includes('bridge') || normType.includes('overhead');
+    const normLandmarks = String(initialVisualLandmarks || '').toLowerCase();
+    const isPhotoMetro = normLandmarks.includes('metro') || normLandmarks.includes('viaduct') || normLandmarks.includes('rail');
+
+    // Helper to sort candidate clusters by structural compatibility & visual landmarks first, distance second
+    const sortCluster = (clusterList) => {
+        clusterList.sort((a, b) => {
+            const aType = String(a.mediaType || a.site?.Media || '').toLowerCase();
+            const bType = String(b.mediaType || b.site?.Media || '').toLowerCase();
+            const aIsG = aType.includes('gantry') || aType.includes('bridge') || aType.includes('overhead');
+            const bIsG = bType.includes('gantry') || bType.includes('bridge') || bType.includes('overhead');
+            if (isPhotoUnipole && aIsG !== bIsG) return aIsG ? 1 : -1;
+            if (isPhotoGantry && aIsG !== bIsG) return aIsG ? -1 : 1;
+
+            const aLandmarks = String(a.visualLandmarks || a.site?.Visual_Landmarks || '').toLowerCase();
+            const bLandmarks = String(b.visualLandmarks || b.site?.Visual_Landmarks || '').toLowerCase();
+            const aIsMetro = aLandmarks.includes('metro') || aLandmarks.includes('viaduct');
+            const bIsMetro = bLandmarks.includes('metro') || bLandmarks.includes('viaduct');
+            if (isPhotoMetro && aIsMetro !== bIsMetro) return aIsMetro ? -1 : 1;
+
+            return a.distanceM - b.distanceM;
+        });
+    };
+
     let prioritizedCluster = corridorCluster;
-    if (initialFacing && corridorCluster.length > 1) {
+
+    // 🏗️ Structural Filtering: If the photo is a Unipole, filter out Overhead Gantries from the cluster!
+    if (corridorCluster.length > 1 && (isPhotoUnipole || isPhotoGantry || isPhotoMetro)) {
+        const structuralCompatible = corridorCluster.filter(c => {
+            const cType = String(c.mediaType || c.site?.Media || '').toLowerCase();
+            const cLandmarks = String(c.visualLandmarks || '').toLowerCase();
+            const cIsGantry = cType.includes('gantry') || cType.includes('bridge') || cType.includes('overhead') || cLandmarks.includes('gantry');
+            const cIsUnipole = cType.includes('unipole') || cType.includes('pole');
+
+            if (isPhotoUnipole && cIsGantry) return false;
+            if (isPhotoGantry && cIsUnipole && !cIsGantry) return false;
+            return true;
+        });
+
+        if (structuralCompatible.length > 0) {
+            prioritizedCluster = structuralCompatible;
+        }
+    }
+
+    if (initialFacing && prioritizedCluster.length > 1) {
         const normFacing = normalizeText(initialFacing);
-        const facingMatches = corridorCluster.filter(c => {
+        const facingMatches = prioritizedCluster.filter(c => {
             const cFacing = normalizeText(c.facing);
             const cFrom = normalizeText(c.site?.['Traffic From'] || '');
             const cTo = normalizeText(c.site?.['Traffic To'] || '');
@@ -503,18 +553,18 @@ export const matchHoardingByGps = async (coord, locationList, rawImageBase64 = n
                     targetCandidate = prioritizedCluster.find(c => c.index === resolvedIndex) || prioritizedCluster[resolvedIndex];
                 }
 
-                // 4. Fallback match by facing (with foreground distance sort)
+                // 4. Fallback match by facing (with structural distance sort)
                 if (!targetCandidate && resolved.facing) {
                     const targetFacingNorm = normalizeText(resolved.facing);
                     const matchingCandidates = prioritizedCluster.filter(c => normalizeText(c.facing) === targetFacingNorm);
                     if (matchingCandidates.length > 0) {
-                        matchingCandidates.sort((a, b) => a.distanceM - b.distanceM);
+                        sortCluster(matchingCandidates);
                         targetCandidate = matchingCandidates[0];
                     }
                 }
 
                 if (!targetCandidate) {
-                    prioritizedCluster.sort((a, b) => a.distanceM - b.distanceM);
+                    sortCluster(prioritizedCluster);
                     targetCandidate = prioritizedCluster[0];
                 }
 
@@ -539,9 +589,9 @@ export const matchHoardingByGps = async (coord, locationList, rawImageBase64 = n
         }
     }
 
-    // 🧭 Fallback: if twin/corridor resolution was inconclusive or bypassed, select the closest foreground site
-    if (prioritizedCluster.length > 1) {
-        prioritizedCluster.sort((a, b) => a.distanceM - b.distanceM);
+    // 🧭 Fallback: if twin/corridor resolution narrowed to 1 site or was inconclusive/bypassed, select the best compatible site
+    if (prioritizedCluster.length >= 1 && corridorCluster.length > 1) {
+        sortCluster(prioritizedCluster);
         const bestForeground = prioritizedCluster[0];
         const matchSL = bestForeground.site?.SL || bestForeground.site?.['S. No.'] || (bestForeground.index + 1);
         return {
@@ -553,9 +603,9 @@ export const matchHoardingByGps = async (coord, locationList, rawImageBase64 = n
             distanceM: bestForeground.distanceM,
             facing: bestForeground.facing,
             status: bestForeground.site?.STATUS || 'Available',
-            confidence: 94,
+            confidence: 95,
             twinCandidates: twinCandidatesList,
-            reasoning: `🧭 Foreground Priority Match: SL #${matchSL} [Facing: ${bestForeground.facing}] closest to camera (${bestForeground.distanceM}m)`
+            reasoning: `🧭 Structure & Visual Landmark Match: SL #${matchSL} [Facing: ${bestForeground.facing}] (${bestForeground.distanceM}m)`
         };
     }
 
@@ -827,7 +877,9 @@ export const analyzeHoardingImage = async (base64Image, locationList, rawFile = 
         }
 
         if (ocrCoord && isValidLatLng(ocrCoord.lat, ocrCoord.lng)) {
-            const gpsMatch = await matchHoardingByGps(ocrCoord, locationList, base64Image, ocrFacing);
+            const ocrStructureType = /gantry|bridge/i.test(detectedOcrText) ? 'Gantry' : (/unipole|pole/i.test(detectedOcrText) ? 'Unipole' : null);
+            const ocrLandmarks = /metro|viaduct/i.test(detectedOcrText) ? 'metro viaduct' : null;
+            const gpsMatch = await matchHoardingByGps(ocrCoord, locationList, base64Image, ocrFacing, ocrStructureType, ocrLandmarks);
             if (gpsMatch) {
                 const lowerOcr = detectedOcrText.toLowerCase();
                 const ocrIndicatesOccupied = lowerOcr.includes('occupied') || lowerOcr.includes('booked');
@@ -896,7 +948,14 @@ export const analyzeHoardingImage = async (base64Image, locationList, rawFile = 
 
             // 🎯 PRIORITY 1: If Vision AI found GPS, do full mathematical inventory search across ALL sites!
             if (extractedGps && isValidLatLng(extractedGps.lat, extractedGps.lng)) {
-                const gpsMatch = await matchHoardingByGps(extractedGps, locationList, base64Image, aiResult.facing);
+                const gpsMatch = await matchHoardingByGps(
+                    extractedGps,
+                    locationList,
+                    base64Image,
+                    aiResult.facing,
+                    aiResult.structureType,
+                    aiResult.visualLandmarks
+                );
                 if (gpsMatch) {
                     return {
                         matchedIndex: gpsMatch.index,
