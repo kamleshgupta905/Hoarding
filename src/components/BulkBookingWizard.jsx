@@ -780,24 +780,34 @@ export default function BulkBookingWizard({
                 <RotateCcw size={15} /> Back
               </button>
               
-              <button 
-                type="button" 
-                className="btn-wizard-commit"
-                disabled={eligibleCount === 0 || isCommitting}
-                onClick={handleCommit}
-              >
-                {isCommitting ? (
-                  <>
-                    <Loader2 size={16} className="spin-icon" />
-                    <span>{commitProgress.message || `Booking ${eligibleCount} sites...`}</span>
-                  </>
-                ) : (
-                  <>
-                    <Check size={16} />
-                    <span>Confirm & Book {eligibleCount} Sites</span>
-                  </>
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '4px' }}>
+                <button 
+                  type="button" 
+                  className="btn-wizard-commit"
+                  disabled={eligibleCount === 0 || isCommitting}
+                  onClick={handleCommit}
+                  style={{ width: '100%' }}
+                >
+                  {isCommitting ? (
+                    <>
+                      <Loader2 size={16} className="spin-icon" />
+                      <span>{commitProgress.message || `Executing ${eligibleCount} sites...`}</span>
+                    </>
+                  ) : (
+                    <>
+                      <Check size={16} />
+                      <span>Confirm & Execute {eligibleCount} Sites</span>
+                    </>
+                  )}
+                </button>
+                {eligibleCount > 0 && !isCommitting && (
+                  <span style={{ fontSize: '11px', color: '#64748b', textAlign: 'right' }}>
+                    {artworkMode === 'history_only' 
+                      ? 'Only uploads photos; no calendar bookings made.' 
+                      : (skipConflicted ? 'Conflicted sites will be skipped.' : 'Only valid non-conflicted sites will be processed.')}
+                  </span>
                 )}
-              </button>
+              </div>
             </div>
           </div>
         )}

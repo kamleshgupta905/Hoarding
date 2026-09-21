@@ -1516,9 +1516,9 @@ function batchUpdateSheet_(data) {
                 sheet.getRange(1, newHistCol).setValue('ExecutionHistory');
                 headers.push('ExecutionHistory');
                 idxHist = headers.length - 1;
-                for (var i = 0; i < rows.length; i++) {
-                  while (rows[i].length < headers.length) {
-                    rows[i].push('');
+                for (var innerRowIdx = 0; innerRowIdx < rows.length; innerRowIdx++) {
+                  while (rows[innerRowIdx].length < headers.length) {
+                    rows[innerRowIdx].push('');
                   }
                 }
               }

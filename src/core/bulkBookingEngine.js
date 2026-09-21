@@ -808,6 +808,7 @@ export const commitBulkBookings = async ({
 
   // 3. Commit Google Cloud Batch Updates
   if (onProgress) onProgress(80, `Saving ${batchUpdates.length} bookings to Google Cloud...`);
+  let sheetSyncFailed = false;
   try {
     await postDirect({
       action: 'batchUpdateSheet',
@@ -815,24 +816,14 @@ export const commitBulkBookings = async ({
       updates: batchUpdates
     });
   } catch (sheetErr) {
+    sheetSyncFailed = true;
     console.warn("[Bulk Booking Sheet Sync Warning]:", sheetErr);
+    if (onProgress) onProgress(80, `Warning: Failed to sync to Google Sheet. Details: ${sheetErr.message}`);
   }
 
-  // Secondary cloud redundancy guarantee: trigger background updates for all booked sites
-  try {
-    batchUpdates.forEach(b => {
-      syncToGoogleSheet({
-        action: 'updateHoarding',
-        siteId: b.siteId,
-        sl: b.sl,
-        siteName: b.siteName,
-        facing: b.facing,
-        fields: b.fields
-      }).catch(err => console.warn(`[Redundancy sync notice for site ${b.siteName}]:`, err));
-    });
-  } catch {}
-
-  if (onProgress) onProgress(100, "Bulk onboarding completed successfully!");
+  if (onProgress) {
+    onProgress(100, sheetSyncFailed ? "Bulk onboarding completed with sheet sync errors." : "Bulk onboarding completed successfully!");
+  }
 
   const finalHoardingsList = Array.from(updatedHoardingsMap.values());
   try {
@@ -842,6 +833,7 @@ export const commitBulkBookings = async ({
 
   return {
     success: true,
+    sheetSyncFailed,
     bookedCount: eligibleItems.length,
     skippedCount: bookingItems.length - eligibleItems.length,
     finalHoardings: finalHoardingsList
