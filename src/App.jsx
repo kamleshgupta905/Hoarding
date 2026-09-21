@@ -386,6 +386,12 @@ function App() {
       cleanData.forEach(item => {
         sheetKeys.push(item.UniqueID, item['Unique ID'], item.ID, item._SiteID);
         sheetKeys.push(item['Location '], item.Location, item['Locality Site Location']);
+        if (item.SL) sheetKeys.push(`sl_${String(item.SL).trim().toLowerCase()}`);
+        const c = String(item.City || item.city || '').trim().toLowerCase();
+        const l = String(item['Location '] || item.Location || item['Locality Site Location'] || '').trim().toLowerCase();
+        const f = String(item.Facing || item['Traffic View'] || '').trim().toLowerCase();
+        if (c && l && f) sheetKeys.push(`${c}_${l}_${f}`);
+        if (l && f) sheetKeys.push(`${l}_${f}`);
       });
       reconcileDeletedSites(sheetKeys);
     } catch { /* reconciliation is best effort */ }

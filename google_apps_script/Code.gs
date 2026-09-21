@@ -2336,21 +2336,120 @@ function addHoardingDetails(data) {
 }
 
 function deleteHoardingDetails(data) {
+  if (!data) return res({ success: false, error: 'Payload is required' });
   ensureSiteMetadata_();
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
-  var sheet = ss.getSheetByName(CONFIG.SHEET_NAME);
-  var rows = sheet.getDataRange().getValues();
-  var idxSite = findSiteColumn(rows[0]);
-  var idxDeleted = rows[0].indexOf('_DeletedAt');
 
-  var searchName = cleanFull(data.siteName);
-  for (var i = 1; i < rows.length; i++) {
-    if (cleanFull(rows[i][idxSite]) === searchName) {
-      sheet.getRange(i + 1, idxDeleted + 1).setValue(new Date().toISOString());
-      return res({ success: true, message: 'Moved to deleted records' });
+  var lock = LockService.getScriptLock();
+  var hasLock = false;
+  try {
+    if (lock.tryLock(15000)) hasLock = true;
+  } catch (e) {}
+
+  try {
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var sheet = ss.getSheetByName(CONFIG.SHEET_NAME);
+    if (!sheet) return res({ success: false, error: 'Sheet "' + CONFIG.SHEET_NAME + '" not found' });
+
+    var headers = getAllHeaders(sheet);
+    var idxSite = findSiteColumn(headers);
+    var idxDeleted = headers.indexOf('_DeletedAt');
+    if (idxDeleted === -1) {
+      sheet.getRange(1, sheet.getLastColumn() + 1).setValue('_DeletedAt');
+      SpreadsheetApp.flush();
+      headers = getAllHeaders(sheet);
+      idxDeleted = headers.indexOf('_DeletedAt');
+    }
+
+    var rows = sheet.getDataRange().getValues();
+    var rowIndex = -1;
+
+    // 1. Match by _SiteID / siteId / UniqueID
+    var targetSiteId = String(data.siteId || data.UniqueID || data['Unique ID'] || data._SiteID || (data.fields && (data.fields.UniqueID || data.fields['Unique ID'] || data.fields._SiteID)) || '').trim().toLowerCase();
+    var idxSiteId = headers.indexOf('_SiteID');
+    if (targetSiteId && idxSiteId !== -1) {
+      for (var i = 1; i < rows.length; i++) {
+        if (!rows[i][idxDeleted] && String(rows[i][idxSiteId]).trim().toLowerCase() === targetSiteId) {
+          rowIndex = i + 1;
+          break;
+        }
+      }
+    }
+
+    // 2. Match by SL
+    var targetSL = String((data.fields && (data.fields.SL || data.fields['S. No.'] || data.fields['SL NO'])) || data.sl || data.SL || '').trim();
+    var idxSL = headers.findIndex(function(h) { 
+      var c = cleanFull(h);
+      return c === 'sl' || c === 'sno' || c === 'slno' || c === 'srno'; 
+    });
+    if (rowIndex === -1 && targetSL && idxSL !== -1) {
+      for (var i = 1; i < rows.length; i++) {
+        if (!rows[i][idxDeleted]) {
+          var cellVal = String(rows[i][idxSL]).trim();
+          if (cellVal === targetSL || (parseInt(cellVal, 10) === parseInt(targetSL, 10) && !isNaN(parseInt(targetSL, 10)))) {
+            rowIndex = i + 1;
+            break;
+          }
+        }
+      }
+    }
+
+    // 3. Match by Location + Facing
+    var targetFacing = cleanFull(data.facing || (data.fields && data.fields.Facing) || '');
+    var idxFacing = headers.findIndex(function(h) { return cleanFull(h) === 'facing' || cleanFull(h) === 'trafficview'; });
+    var searchName = cleanFull(data.siteName || (data.fields && (data.fields['Locality Site Location'] || data.fields['Location '] || data.fields.Location)) || '');
+
+    if (rowIndex === -1 && targetFacing && idxFacing !== -1 && searchName && idxSite !== -1) {
+      for (var i = 1; i < rows.length; i++) {
+        if (!rows[i][idxDeleted]) {
+          var rowFacing = cleanFull(rows[i][idxFacing]);
+          if (cleanFull(rows[i][idxSite]) === searchName && (rowFacing === targetFacing || rowFacing.indexOf(targetFacing) !== -1 || targetFacing.indexOf(rowFacing) !== -1)) {
+            rowIndex = i + 1;
+            break;
+          }
+        }
+      }
+    }
+
+    // 4. Match by Location + City
+    var targetCity = cleanFull(data.city || (data.fields && data.fields.City) || '');
+    var idxCity = headers.findIndex(function(h) { return cleanFull(h) === 'city'; });
+    if (rowIndex === -1 && targetCity && idxCity !== -1 && searchName && idxSite !== -1) {
+      for (var i = 1; i < rows.length; i++) {
+        if (!rows[i][idxDeleted]) {
+          if (cleanFull(rows[i][idxSite]) === searchName && cleanFull(rows[i][idxCity]) === targetCity) {
+            rowIndex = i + 1;
+            break;
+          }
+        }
+      }
+    }
+
+    // 5. Match by Location
+    if (rowIndex === -1 && searchName && idxSite !== -1) {
+      for (var i = 1; i < rows.length; i++) {
+        if (!rows[i][idxDeleted] && cleanFull(rows[i][idxSite]) === searchName) {
+          rowIndex = i + 1;
+          break;
+        }
+      }
+    }
+
+    if (rowIndex === -1) {
+      return res({ success: false, error: 'Site not found' });
+    }
+
+    sheet.getRange(rowIndex, idxDeleted + 1).setValue(new Date().toISOString());
+    SpreadsheetApp.flush();
+    logDebug("DELETE SITE | Row " + rowIndex + " (" + (data.siteName || targetSL || targetSiteId) + ") marked deleted");
+    return res({ success: true, message: 'Moved to deleted records' });
+  } catch (err) {
+    logDebug("DELETE SITE ERROR: " + err.toString());
+    return res({ success: false, error: err.toString() });
+  } finally {
+    if (hasLock) {
+      try { lock.releaseLock(); } catch (e) {}
     }
   }
-  return res({ success: false, error: 'Site not found' });
 }
 
 function deleteCityHoardings(data) {
@@ -2372,6 +2471,12 @@ function deleteCityHoardings(data) {
     var idxCity = rows[0].findIndex(function(h) { return cleanFull(h) === 'city'; });
     if (idxCity === -1) return res({ success: false, error: 'City column not found' });
     var idxDeleted = rows[0].indexOf('_DeletedAt');
+    if (idxDeleted === -1) {
+      sheet.getRange(1, sheet.getLastColumn() + 1).setValue('_DeletedAt');
+      SpreadsheetApp.flush();
+      rows = sheet.getDataRange().getValues();
+      idxDeleted = rows[0].indexOf('_DeletedAt');
+    }
     createMasterBackup_('city-' + cityName);
 
     var targetCity = cleanFull(cityName);
@@ -2415,6 +2520,12 @@ function deleteAllHoardings(data) {
       createMasterBackup_('delete-all');
       var headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
       var idxDeleted = headers.indexOf('_DeletedAt');
+      if (idxDeleted === -1) {
+        sheet.getRange(1, sheet.getLastColumn() + 1).setValue('_DeletedAt');
+        SpreadsheetApp.flush();
+        headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+        idxDeleted = headers.indexOf('_DeletedAt');
+      }
       var deletedValues = [];
       var deletedAt = new Date().toISOString();
       for (var i = 0; i < deletedCount; i++) deletedValues.push([deletedAt]);

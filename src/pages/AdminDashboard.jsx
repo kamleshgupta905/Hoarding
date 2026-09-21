@@ -95,7 +95,8 @@ const MultiSelectFilter = ({ label, options, selected, onChange }) => {
         return () => document.removeEventListener('mousedown', handleClickOutside);
     }, []);
 
-    const isAll = !selected || selected.length === 0 || selected.includes('All');
+    const selectedArr = Array.isArray(selected) ? selected : (selected ? [selected] : ['All']);
+    const isAll = selectedArr.includes('All') || (!selected && selected !== '');
 
     const cleanOptions = (options || []).filter(opt => opt && opt !== 'All');
     const filteredOptions = cleanOptions.filter(opt => 
@@ -110,11 +111,10 @@ const MultiSelectFilter = ({ label, options, selected, onChange }) => {
         let next;
         if (isAll) {
             next = [opt];
-        } else if (selected.includes(opt)) {
-            next = selected.filter(s => s !== opt);
-            if (next.length === 0) next = ['All'];
+        } else if (selectedArr.includes(opt)) {
+            next = selectedArr.filter(s => s !== opt);
         } else {
-            next = [...selected, opt];
+            next = [...selectedArr.filter(s => s !== 'All'), opt];
         }
         onChange(next);
     };
@@ -129,9 +129,11 @@ const MultiSelectFilter = ({ label, options, selected, onChange }) => {
 
     const displayText = isAll
         ? 'All'
-        : selected.length === 1
-            ? selected[0]
-            : `${selected[0]} (+${selected.length - 1})`;
+        : selectedArr.length === 0
+            ? 'None'
+            : selectedArr.length === 1
+                ? selectedArr[0]
+                : `${selectedArr[0]} (+${selectedArr.length - 1})`;
 
     return (
         <div className="inventory-filter-group" ref={dropdownRef} style={{ position: 'relative' }}>
@@ -210,7 +212,7 @@ const MultiSelectFilter = ({ label, options, selected, onChange }) => {
                             {isAll ? 'Deselect All' : 'Select All'}
                         </button>
                         <span style={{ color: '#64748b', fontWeight: 500 }}>
-                            {isAll ? `${cleanOptions.length} Items` : `${selected.length} Selected`}
+                            {isAll ? `${cleanOptions.length} Items` : `${selectedArr.length} Selected`}
                         </span>
                     </div>
                     <div style={{ overflowY: 'auto', flex: 1, padding: '4px 0', maxHeight: '180px' }}>
@@ -236,7 +238,7 @@ const MultiSelectFilter = ({ label, options, selected, onChange }) => {
                             <span>All</span>
                         </label>
                         {filteredOptions.map(opt => {
-                            const isChecked = !isAll && selected.includes(opt);
+                            const isChecked = !isAll && selectedArr.includes(opt);
                             return (
                                 <label 
                                     key={opt} 
@@ -3526,36 +3528,60 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
     const handleDeleteAsset = async (target) => {
         if (!target) return;
         const targetSiteObj = typeof target === 'object' ? target.site : null;
-        const targetIndex = typeof target === 'object' ? target.index : -1;
         const siteName = typeof target === 'object' ? target.name : String(target).trim();
         const targetClean = siteName ? siteName.trim().toLowerCase() : '';
-        const targetCity = typeof target === 'object' ? String(target.city || '').trim().toLowerCase() : '';
-        const targetLocality = typeof target === 'object' ? String(target.locality || '').trim().toLowerCase() : '';
+        const targetCity = typeof target === 'object' ? String(target.city || '').trim().toLowerCase() : (targetSiteObj ? String(targetSiteObj.City || targetSiteObj.city || '').trim().toLowerCase() : '');
+        const targetLocality = typeof target === 'object' ? String(target.locality || '').trim().toLowerCase() : (targetSiteObj ? String(targetSiteObj.Locality || targetSiteObj.Area || '').trim().toLowerCase() : '');
         const targetId = targetSiteObj ? String(targetSiteObj.UniqueID || targetSiteObj["Unique ID"] || targetSiteObj.ID || targetSiteObj._SiteID || '').trim().toLowerCase() : '';
+        const targetSL = targetSiteObj ? String(targetSiteObj.SL || targetSiteObj['S. No.'] || targetSiteObj['SL NO'] || targetSiteObj.sl || '').trim() : '';
+        const targetFacing = targetSiteObj ? String(targetSiteObj.Facing || targetSiteObj['Traffic View'] || targetSiteObj.facing || '').trim().toLowerCase() : '';
 
-        // Record in deleted sites cache so it NEVER returns on refresh
+        // Record in deleted sites cache so it NEVER returns on refresh (strictly unique keys)
         if (targetId) addDeletedSite(targetId);
-        if (targetClean) addDeletedSite(targetClean);
+        if (targetSL) addDeletedSite(`sl_${targetSL.toLowerCase()}`);
+        if (targetCity && targetClean && targetFacing) {
+            addDeletedSite(`${targetCity}_${targetClean}_${targetFacing}`);
+        }
+        if (targetClean && targetFacing) {
+            addDeletedSite(`${targetClean}_${targetFacing}`);
+        }
+        if (!targetId && !targetFacing && targetClean && targetClean !== 'hoarding site') {
+            addDeletedSite(targetClean);
+        }
 
         // 1. Immediately dismiss modal so UI is fully responsive
         setDeleteTarget(null);
 
         // 2. Optimistically remove from state immediately
         setHoardings(prev => {
-            const next = prev.filter((h, idx) => {
+            const next = prev.filter((h) => {
+                if (!h) return false;
                 if (targetSiteObj && h === targetSiteObj) return false;
-                if (targetIndex !== -1 && idx === targetIndex) return false;
+
                 const hId = String(h.UniqueID || h["Unique ID"] || h.ID || h._SiteID || '').trim().toLowerCase();
                 if (targetId && hId && hId === targetId) return false;
-                const hName = String(h["Locality Site Location"] || h["Location "] || h.Location || h.site_name || '').trim().toLowerCase();
-                const hCity = String(h.City || h.city || '').trim().toLowerCase();
-                const hLocality = String(h.Locality || h.Area || '').trim().toLowerCase();
 
-                if (targetClean && targetClean !== 'hoarding site' && hName === targetClean) return false;
-                if (targetCity && targetLocality && hCity === targetCity && hLocality === targetLocality) return false;
-                if ((!hName || hName === 'hoarding site') && hCity === targetCity && hLocality === targetLocality) return false;
+                const hSL = String(h.SL || h['S. No.'] || h['SL NO'] || h.sl || '').trim();
+                if (targetSL && hSL && hSL.toLowerCase() === targetSL.toLowerCase()) return false;
+
+                const hName = String(h["Locality Site Location"] || h["Location "] || h.Location || h.site_name || '').trim().toLowerCase();
+                const hFacing = String(h.Facing || h["Traffic View"] || h.facing || '').trim().toLowerCase();
+                const hCity = String(h.City || h.city || '').trim().toLowerCase();
+
+                if (targetClean && targetClean !== 'hoarding site' && hName === targetClean) {
+                    if (targetFacing && hFacing) {
+                        if (hFacing === targetFacing) {
+                            if (targetCity && hCity) return hCity !== targetCity;
+                            return false;
+                        }
+                    } else if (!targetFacing) {
+                        if (targetCity && hCity) return hCity !== targetCity;
+                        return false;
+                    }
+                }
                 return true;
             });
+
             try {
                 localStorage.setItem('hoardings_cache', JSON.stringify(next));
                 localStorage.setItem('last_hoardings_update', Date.now().toString());
@@ -3565,9 +3591,12 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                     const localList = JSON.parse(localRaw);
                     const filtered = localList.filter(item => {
                         const id = String(item.UniqueID || item["Unique ID"] || item.ID || '').trim().toLowerCase();
+                        const sl = String(item.SL || item['S. No.'] || '').trim().toLowerCase();
                         const name = String(item["Location "] || item.Location || item["Locality Site Location"] || '').trim().toLowerCase();
+                        const facing = String(item.Facing || item['Traffic View'] || '').trim().toLowerCase();
                         if (targetId && id === targetId) return false;
-                        if (targetClean && name === targetClean) return false;
+                        if (targetSL && sl === targetSL.toLowerCase()) return false;
+                        if (targetClean && name === targetClean && targetFacing && facing === targetFacing) return false;
                         return true;
                     });
                     localStorage.setItem('local_added_sites_cache', JSON.stringify(filtered));
@@ -3581,6 +3610,9 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
         // 3. Fire-and-forget sync to Google Sheets in background
         syncToGoogleSheet({
             action: 'deleteHoarding',
+            siteId: targetId,
+            sl: targetSL,
+            facing: targetFacing,
             siteName: siteName || targetLocality || 'Hoarding Site',
             city: targetCity,
             locality: targetLocality
@@ -3598,24 +3630,41 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
             return;
         }
 
+        const citiesToDelete = Array.isArray(bulkDeleteTarget.cities)
+            ? bulkDeleteTarget.cities.filter(Boolean)
+            : [bulkDeleteTarget.city].filter(Boolean);
+
         setIsLoading(true);
         try {
-            await syncToGoogleSheet(isDeleteAll
-                ? { action: 'deleteAllHoardings', confirmation: bulkDeleteConfirmText.trim().toUpperCase() }
-                : { action: 'deleteCityHoardings', city: bulkDeleteTarget.city }
-            );
+            if (isDeleteAll) {
+                await syncToGoogleSheet({ action: 'deleteAllHoardings', confirmation: 'DELETE ALL' });
+                setHoardings([]);
+                try {
+                    localStorage.setItem('hoardings_cache', JSON.stringify([]));
+                    localStorage.removeItem('local_added_sites_cache');
+                } catch {}
+            } else {
+                for (const c of citiesToDelete) {
+                    await syncToGoogleSheet({ action: 'deleteCityHoardings', city: c });
+                }
+                const citySet = new Set(citiesToDelete.map(c => String(c).trim().toLowerCase()));
+                setHoardings(prev => {
+                    const next = prev.filter(h => !citySet.has(String(h.City || h.city || '').trim().toLowerCase()));
+                    try {
+                        localStorage.setItem('hoardings_cache', JSON.stringify(next));
+                    } catch {}
+                    return next;
+                });
+            }
 
-            const freshData = await fetchHoardings();
-            setHoardings(freshData || []);
-            localStorage.setItem('hoardings_cache', JSON.stringify(freshData || []));
             window.dispatchEvent(new CustomEvent('hoardings:sync-requested', {
                 detail: { action: bulkDeleteTarget.type }
             }));
 
-            showToast(isDeleteAll ? 'All site data deleted.' : `${bulkDeleteTarget.city} city data deleted.`, 'info');
+            showToast(isDeleteAll ? 'All site data deleted.' : `${citiesToDelete.join(', ')} city data deleted.`, 'info');
             setBulkDeleteTarget(null);
             setBulkDeleteConfirmText('');
-            setInventoryCityFilter('All');
+            setInventoryCityFilter(['All']);
         } catch (err) {
             showToast('Error deleting data: ' + err.message, 'error');
         } finally {
@@ -3670,11 +3719,24 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
     };
 
     const isSiteAvailableForDateRange = (h, startDateStr, endDateStr) => {
-        const isBooked = (h.STATUS || '').toLowerCase() === 'booked' || (h.STATUS || '').toLowerCase() === 'occupied';
+        if (!h) return false;
+        if (!startDateStr && !endDateStr) return true;
+
+        // 1. Primary: Check multi-slot BookingSchedule with interval collision logic
+        const slots = getSiteBookingSlots(h);
+        if (slots && slots.length > 0) {
+            const s = startDateStr || endDateStr;
+            const e = endDateStr || startDateStr;
+            const conflict = checkBookingConflict(slots, s, e);
+            return !conflict.conflict;
+        }
+
+        // 2. Secondary: Fallback for single-slot legacy dates or raw STATUS
+        const rawStatus = String(h.STATUS || h.Status || h.status || '').trim().toLowerCase();
+        const isBooked = rawStatus === 'booked' || rawStatus === 'occupied';
         if (!isBooked) return true;
 
         if (!h.BookingStart && !h.BookingEnd) return false;
-        if (!startDateStr && !endDateStr) return false;
 
         const parseD = (dStr) => {
             if (!dStr) return null;
@@ -3797,9 +3859,14 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
 
             // City Filter
             const siteCity = String(h.City || "").trim().toLowerCase();
-            const isAllCity = !inventoryCityFilter || inventoryCityFilter.length === 0 || inventoryCityFilter.includes('All');
-            const matchCity = isAllCity || (Array.isArray(inventoryCityFilter) && inventoryCityFilter.some(c => String(c).toLowerCase() === siteCity));
-            if (!matchCity) return false;
+            const isAllCity = !inventoryCityFilter || (Array.isArray(inventoryCityFilter) ? (inventoryCityFilter.includes('All')) : String(inventoryCityFilter).toLowerCase() === 'all');
+            if (!isAllCity) {
+                if (Array.isArray(inventoryCityFilter) && inventoryCityFilter.length === 0) return false;
+                const matchCity = Array.isArray(inventoryCityFilter)
+                    ? inventoryCityFilter.some(c => String(c).trim().toLowerCase() === siteCity)
+                    : String(inventoryCityFilter).trim().toLowerCase() === siteCity;
+                if (!matchCity) return false;
+            }
 
             // Status & Date Range Availability Filter
             let matchStatus = true;
@@ -3810,6 +3877,7 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                 if (inventoryStatusFilter === 'Available') matchStatus = isSiteOperable(h) && isAvailInDates;
                 else if (inventoryStatusFilter === 'Booked' || inventoryStatusFilter === 'Active Booked') matchStatus = isSiteOperable(h) && !isAvailInDates;
                 else if (inventoryStatusFilter === 'Upcoming (Future Booked)') matchStatus = isSiteOperable(h) && isSiteUpcoming(h);
+                else matchStatus = isSiteOperable(h) && isAvailInDates;
             } else {
                 if (inventoryStatusFilter === 'Available') matchStatus = isSiteOperable(h) && (live.status === 'Available');
                 else if (inventoryStatusFilter === 'Booked' || inventoryStatusFilter === 'Active Booked') matchStatus = isSiteOperable(h) && (live.status === 'Booked');
@@ -3818,33 +3886,52 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
             if (!matchStatus) return false;
 
             const siteLocality = String(h["Locality"] || h["Area"] || "").trim().toLowerCase();
-            const isAllLocality = !inventoryLocalityFilter || inventoryLocalityFilter.length === 0 || (Array.isArray(inventoryLocalityFilter) ? inventoryLocalityFilter.includes('All') : inventoryLocalityFilter === 'All');
-            const matchLocality = isAllLocality || (Array.isArray(inventoryLocalityFilter) 
-                ? inventoryLocalityFilter.some(l => String(l).toLowerCase() === siteLocality)
-                : String(inventoryLocalityFilter).toLowerCase() === siteLocality);
-            if (!matchLocality) return false;
+            const isAllLocality = !inventoryLocalityFilter || (Array.isArray(inventoryLocalityFilter) ? inventoryLocalityFilter.includes('All') : String(inventoryLocalityFilter).toLowerCase() === 'all');
+            if (!isAllLocality) {
+                if (Array.isArray(inventoryLocalityFilter) && inventoryLocalityFilter.length === 0) return false;
+                const matchLocality = Array.isArray(inventoryLocalityFilter) 
+                    ? inventoryLocalityFilter.some(l => String(l).trim().toLowerCase() === siteLocality)
+                    : String(inventoryLocalityFilter).trim().toLowerCase() === siteLocality;
+                if (!matchLocality) return false;
+            }
 
-            const hMedia = String(h["Media Format (Front Lit / Back Lit / Non Lit)"] || h["Media Format"] || h["Media Type"] || h.Media || '').trim();
-            const hSiteType = String(h["Type of Site (Unipole/Billboard)"] || h["Type of Site (Unipole/ Billboard)"] || h["Type of Site"] || h["Media"] || h.Media || h.Type || '').trim();
-            const isAllMedia = !inventoryMediaFilter || inventoryMediaFilter.length === 0 || (Array.isArray(inventoryMediaFilter) ? inventoryMediaFilter.includes('All') : inventoryMediaFilter === 'All');
-            const matchMedia = isAllMedia || (Array.isArray(inventoryMediaFilter) 
-                ? inventoryMediaFilter.some(m => {
-                    const mLower = String(m).trim().toLowerCase();
-                    return mLower === hMedia.toLowerCase() || mLower === hSiteType.toLowerCase() || (hSiteType && hSiteType.toLowerCase().includes(mLower)) || (hMedia && hMedia.toLowerCase().includes(mLower));
-                })
-                : (String(inventoryMediaFilter).trim().toLowerCase() === hMedia.toLowerCase() || String(inventoryMediaFilter).trim().toLowerCase() === hSiteType.toLowerCase())
-            );
-            if (!matchMedia) return false;
+            const hMedia = String(h["Media Format (Front Lit / Back Lit / Non Lit)"] || h["Media Format"] || h["Media Type"] || h.Media || '').trim().toLowerCase();
+            const hSiteType = String(h["Type of Site (Unipole/Billboard)"] || h["Type of Site (Unipole/ Billboard)"] || h["Type of Site"] || h["Media"] || h.Media || h.Type || '').trim().toLowerCase();
+            const isAllMedia = !inventoryMediaFilter || (Array.isArray(inventoryMediaFilter) ? inventoryMediaFilter.includes('All') : String(inventoryMediaFilter).toLowerCase() === 'all');
+            if (!isAllMedia) {
+                if (Array.isArray(inventoryMediaFilter) && inventoryMediaFilter.length === 0) return false;
+                const matchMedia = Array.isArray(inventoryMediaFilter) 
+                    ? inventoryMediaFilter.some(m => {
+                        const mLower = String(m).trim().toLowerCase();
+                        return mLower === hMedia || mLower === hSiteType || (hSiteType && hSiteType.includes(mLower)) || (hMedia && hMedia.includes(mLower));
+                    })
+                    : (String(inventoryMediaFilter).trim().toLowerCase() === hMedia || String(inventoryMediaFilter).trim().toLowerCase() === hSiteType);
+                if (!matchMedia) return false;
+            }
 
-            const hSize = String(h["Size (Large/Medium/Small)"] || h["Size"] || (h.Width && h.Height ? `${h.Width}x${h.Height}` : ''));
-            const isAllSize = !inventorySizeFilter || inventorySizeFilter.length === 0 || inventorySizeFilter.includes('All');
-            const matchSize = isAllSize || (Array.isArray(inventorySizeFilter) && inventorySizeFilter.includes(hSize));
-            if (!matchSize) return false;
+            const hSize1 = String(h["Size (Large/Medium/Small)"] || h["Size (Large/ Medium/ Small)"] || h["Size"] || '').trim().toLowerCase();
+            const hDim = (h.Width && h.Height ? `${h.Width}x${h.Height}` : '').trim().toLowerCase();
+            const isAllSize = !inventorySizeFilter || (Array.isArray(inventorySizeFilter) ? inventorySizeFilter.includes('All') : String(inventorySizeFilter).toLowerCase() === 'all');
+            if (!isAllSize) {
+                if (Array.isArray(inventorySizeFilter) && inventorySizeFilter.length === 0) return false;
+                const matchSize = Array.isArray(inventorySizeFilter) 
+                    ? inventorySizeFilter.some(s => {
+                        const sLower = String(s).trim().toLowerCase();
+                        return sLower === hSize1 || sLower === hDim || (hSize1 && hSize1.includes(sLower));
+                    })
+                    : (String(inventorySizeFilter).trim().toLowerCase() === hSize1 || String(inventorySizeFilter).trim().toLowerCase() === hDim);
+                if (!matchSize) return false;
+            }
 
-            const hCategory = String(h["Site Category"] || h["Category"] || '');
-            const isAllCategory = !inventoryCategoryFilter || inventoryCategoryFilter.length === 0 || inventoryCategoryFilter.includes('All');
-            const matchCategory = isAllCategory || (Array.isArray(inventoryCategoryFilter) && inventoryCategoryFilter.includes(hCategory));
-            if (!matchCategory) return false;
+            const hCategory = String(h["Site Category"] || h["Category"] || '').trim().toLowerCase();
+            const isAllCategory = !inventoryCategoryFilter || (Array.isArray(inventoryCategoryFilter) ? inventoryCategoryFilter.includes('All') : String(inventoryCategoryFilter).toLowerCase() === 'all');
+            if (!isAllCategory) {
+                if (Array.isArray(inventoryCategoryFilter) && inventoryCategoryFilter.length === 0) return false;
+                const matchCategory = Array.isArray(inventoryCategoryFilter) 
+                    ? inventoryCategoryFilter.some(c => String(c).trim().toLowerCase() === hCategory)
+                    : String(inventoryCategoryFilter).trim().toLowerCase() === hCategory;
+                if (!matchCategory) return false;
+            }
 
             // Price Range Filter
             let matchPrice = true;
@@ -4017,20 +4104,26 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
         return city.charAt(0).toUpperCase() + city.slice(1).toLowerCase();
     }).filter(Boolean))];
     const inventoryStatuses = ['All', 'Available', 'Active Booked', 'Upcoming (Future Booked)'];
-    const isAllCityFilter = !inventoryCityFilter || inventoryCityFilter.length === 0 || inventoryCityFilter.includes('All');
+    const isAllCityFilter = !inventoryCityFilter || (Array.isArray(inventoryCityFilter) ? (inventoryCityFilter.length === 0 || inventoryCityFilter.includes('All')) : inventoryCityFilter === 'All');
     const inventoryTargetHoardings = isAllCityFilter
         ? safeHoardings
-        : safeHoardings.filter(h => Array.isArray(inventoryCityFilter) && inventoryCityFilter.some(c => String(c).toLowerCase() === String(h.City || '').trim().toLowerCase()));
+        : safeHoardings.filter(h => {
+            const hCity = String(h?.City || '').trim().toLowerCase();
+            return Array.isArray(inventoryCityFilter) 
+                ? inventoryCityFilter.some(c => String(c).trim().toLowerCase() === hCity)
+                : String(inventoryCityFilter).trim().toLowerCase() === hCity;
+        });
     const inventoryLocalities = ['All', ...new Set(inventoryTargetHoardings.map(h => String(h["Locality"] || h["Area"] || '').trim()).filter(Boolean))].sort((a, b) => a === 'All' ? -1 : b === 'All' ? 1 : a.localeCompare(b));
     const inventoryMediaFormats = ['All', ...new Set(safeHoardings.flatMap(h => [
         h["Type of Site (Unipole/Billboard)"],
         h["Type of Site (Unipole/ Billboard)"],
         h["Type of Site"],
         h["Media"],
-        h["Media Format (Front Lit / Back Lit / Non Lit)"]
+        h["Media Format (Front Lit / Back Lit / Non Lit)"],
+        h["Type"]
     ]).filter(Boolean).map(s => String(s).trim()))].sort((a, b) => a === 'All' ? -1 : b === 'All' ? 1 : a.localeCompare(b));
-    const inventorySizes = ['All', ...new Set(safeHoardings.map(h => h["Size (Large/Medium/Small)"]).filter(Boolean))];
-    const inventoryCategories = ['All', ...new Set(safeHoardings.map(h => h["Site Category"]).filter(Boolean))];
+    const inventorySizes = ['All', ...new Set(safeHoardings.map(h => h["Size (Large/Medium/Small)"] || h["Size (Large/ Medium/ Small)"] || h["Size"] || (h.Width && h.Height ? `${h.Width}x${h.Height}` : null)).filter(Boolean).map(s => String(s).trim()))].sort((a, b) => a === 'All' ? -1 : b === 'All' ? 1 : a.localeCompare(b));
+    const inventoryCategories = ['All', ...new Set(safeHoardings.map(h => h["Site Category"] || h["Category"]).filter(Boolean).map(s => String(s).trim()))].sort((a, b) => a === 'All' ? -1 : b === 'All' ? 1 : a.localeCompare(b));
     const inventoryPriceRanges = [
         ['All', 'All Prices'],
         ['0-25k', 'Under ₹25k'],
@@ -8623,9 +8716,16 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                             style={{ padding: '8px 14px', fontSize: '0.84rem' }}
                                             disabled={!Array.isArray(inventoryCityFilter) || inventoryCityFilter.length === 0 || inventoryCityFilter.includes('All')}
                                             title={Array.isArray(inventoryCityFilter) && inventoryCityFilter.includes('All') ? 'Choose a city filter first' : `Delete selected city data`}
-                                            onClick={() => setBulkDeleteTarget({ type: 'city', city: Array.isArray(inventoryCityFilter) ? inventoryCityFilter[0] : '' })}
+                                            onClick={() => {
+                                                const selectedCities = Array.isArray(inventoryCityFilter) ? inventoryCityFilter.filter(c => c && c !== 'All') : [];
+                                                setBulkDeleteTarget({
+                                                    type: 'city',
+                                                    city: selectedCities.join(', '),
+                                                    cities: selectedCities
+                                                });
+                                            }}
                                         >
-                                            <Trash2 size={15} /> Delete {Array.isArray(inventoryCityFilter) ? (inventoryCityFilter.includes('All') || inventoryCityFilter.length === 0 ? 'City' : inventoryCityFilter.join(', ')) : 'City'}
+                                            <Trash2 size={15} /> Delete {Array.isArray(inventoryCityFilter) ? (inventoryCityFilter.includes('All') || inventoryCityFilter.length === 0 ? 'City' : inventoryCityFilter.filter(c => c !== 'All').join(', ')) : 'City'}
                                         </button>
 
                                         <button
@@ -8907,10 +9007,12 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                                                 const siteTitle = h["Locality Site Location"] || h["Location "] || h.Location || h.site_name || (h.City ? `${h.City} Site` : "Hoarding Site");
                                                                 setDeleteTarget({
                                                                     site: h,
-                                                                    index: i,
                                                                     name: siteTitle,
                                                                     city: h.City || h.city || '',
-                                                                    locality: h.Locality || h.Area || ''
+                                                                    locality: h.Locality || h.Area || '',
+                                                                    facing: h.Facing || h["Traffic View"] || '',
+                                                                    sl: h.SL || h['S. No.'] || '',
+                                                                    id: h.UniqueID || h["Unique ID"] || h.ID || h._SiteID || ''
                                                                 });
                                                             }}
                                                             title="Delete Site"

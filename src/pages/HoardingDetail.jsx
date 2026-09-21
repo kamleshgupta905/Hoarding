@@ -2,7 +2,7 @@ import React from 'react';
 import { useParams, Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { ChevronLeft, MapPin, Maximize2, Layers, Zap, Info, Calendar, Phone, Share2, Heart, ShieldCheck, Edit3, Trash2, X, Upload, Camera, Copy, Check, Download, ExternalLink } from 'lucide-react';
 import { Helmet } from 'react-helmet-async';
-import { getImageUrl, compressImage, syncToGoogleSheet, downloadHoardingImage, recordSiteBooking, removeSiteBooking, saveSiteBookingSlots, getLocalHistory, removeSiteHistory, parseHistoryString, getDirectDriveLink, getDeletedHistoryUrls, addDeletedHistoryUrl, isHistoryUrlDeleted } from '../services/dataService';
+import { getImageUrl, compressImage, syncToGoogleSheet, downloadHoardingImage, recordSiteBooking, removeSiteBooking, saveSiteBookingSlots, getLocalHistory, removeSiteHistory, parseHistoryString, getDirectDriveLink, getDeletedHistoryUrls, addDeletedHistoryUrl, isHistoryUrlDeleted, addDeletedSite } from '../services/dataService';
 import ImageLightbox from '../components/ImageLightbox';
 import DriveImage from '../components/DriveImage';
 import { getAdminSession } from '../services/secureApi';
@@ -292,10 +292,10 @@ const HoardingDetail = ({ hoardings, setHoardings }) => {
     };
 
     const handleDeleteAsset = async () => {
-        const siteName = hoarding["Locality Site Location"] || hoarding["Location "] || hoarding.Location || "this site";
+        const displayName = hoarding["Locality Site Location"] || hoarding["Location "] || hoarding.Location || "this site";
         const confirmed = await appConfirm({
             title: "Delete Asset Permanently?",
-            message: `Are you sure you want to PERMANENTLY delete "${siteName}"?`,
+            message: `Are you sure you want to PERMANENTLY delete "${displayName}"?`,
             bullets: [
                 "This site will be removed from all inventory listings.",
                 "This action cannot be undone."
@@ -306,11 +306,42 @@ const HoardingDetail = ({ hoardings, setHoardings }) => {
         });
         if (!confirmed) return;
 
-        const targetClean = String(siteName).trim().toLowerCase();
+        const hSiteId = String(hoarding.UniqueID || hoarding["Unique ID"] || hoarding.ID || hoarding._SiteID || '').trim().toLowerCase();
+        const hSL = String(hoarding.SL || hoarding['S. No.'] || hoarding['SL NO'] || hoarding.sl || '').trim();
+        const hFacing = String(hoarding.Facing || hoarding['Traffic View'] || hoarding.facing || '').trim().toLowerCase();
+        const hCity = String(hoarding.City || hoarding.city || city || '').trim().toLowerCase();
+        const targetClean = String(displayName).trim().toLowerCase();
+
+        if (hSiteId) addDeletedSite(hSiteId);
+        if (hSL) addDeletedSite(`sl_${hSL.toLowerCase()}`);
+        if (hCity && targetClean && hFacing) addDeletedSite(`${hCity}_${targetClean}_${hFacing}`);
+        if (targetClean && hFacing) addDeletedSite(`${targetClean}_${hFacing}`);
+        if (!hSiteId && !hFacing && targetClean && targetClean !== 'hoarding site') addDeletedSite(targetClean);
+
         setHoardings(prev => {
             const next = prev.filter(h => {
-                const hName = String(h["Locality Site Location"] || h["Location "] || h.Location || '').trim().toLowerCase();
-                return hName !== targetClean;
+                if (!h) return false;
+                if (h === hoarding) return false;
+                const id = String(h.UniqueID || h["Unique ID"] || h.ID || h._SiteID || '').trim().toLowerCase();
+                if (hSiteId && id && id === hSiteId) return false;
+                const sl = String(h.SL || h['S. No.'] || h['SL NO'] || h.sl || '').trim();
+                if (hSL && sl && sl.toLowerCase() === hSL.toLowerCase()) return false;
+
+                const name = String(h["Locality Site Location"] || h["Location "] || h.Location || '').trim().toLowerCase();
+                const facing = String(h.Facing || h["Traffic View"] || h.facing || '').trim().toLowerCase();
+                const cCity = String(h.City || h.city || '').trim().toLowerCase();
+                if (targetClean && name === targetClean) {
+                    if (hFacing && facing) {
+                        if (facing === hFacing) {
+                            if (hCity && cCity) return cCity !== hCity;
+                            return false;
+                        }
+                    } else if (!hFacing) {
+                        if (hCity && cCity) return cCity !== hCity;
+                        return false;
+                    }
+                }
+                return true;
             });
             try {
                 localStorage.setItem('hoardings_cache', JSON.stringify(next));
@@ -323,7 +354,12 @@ const HoardingDetail = ({ hoardings, setHoardings }) => {
         try {
             await syncToGoogleSheet({
                 action: 'deleteHoarding',
-                siteName: siteName
+                siteId: hSiteId,
+                sl: hSL,
+                facing: hFacing,
+                siteName: displayName,
+                city: hCity,
+                locality: hoarding.Locality || hoarding.Area || ''
             });
             appToast.success("Asset Deleted Successfully!");
             navigate(`/${city}`);

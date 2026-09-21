@@ -1121,6 +1121,23 @@ export const resolveSiteLiveStatus = (site = {}, refDateStr = null) => {
     };
   }
 
+  // 2b. Check if raw site status from spreadsheet indicates Booked or Occupied
+  const rawStatus = String(site.STATUS || site.Status || site.status || '').trim().toLowerCase();
+  if (rawStatus === 'booked' || rawStatus === 'occupied') {
+    const rawClient = String(site.BookedBy || site['Booked By'] || site.ClientName || site['Client Name'] || 'Occupied').trim();
+    return {
+      status: 'Booked',
+      badgeColor: '#ef4444',
+      badgeBg: '#fee2e2',
+      badgeBorder: '#fca5a5',
+      text: 'Booked',
+      client: rawClient,
+      subtext: rawClient !== 'Occupied' ? rawClient : 'Booked in Sheet',
+      slot: null,
+      allSlots: slots
+    };
+  }
+
   // 3. Completely available
   return {
     status: 'Available',
@@ -1336,12 +1353,18 @@ export const fetchHoardings = async () => {
           const locality = String(item['Locality'] || item['Area'] || '').trim();
           const img = String(item.ImageURL || item['Site Photo'] || '');
           const id = String(item.UniqueID || item['Unique ID'] || item.ID || item._SiteID || '').trim().toLowerCase();
+          const sl = String(item.SL || item['S. No.'] || item['SL NO'] || item.sl || '').trim().toLowerCase();
+          const facing = String(item.Facing || item['Traffic View'] || item.facing || '').trim().toLowerCase();
+          const cCity = rawCity.toLowerCase();
           
           if (img.includes('1gxuIMFvFbop-0usp0vf41QbwRgoOKJFr')) return false;
           if (!loc && (!locality || locality === 't' || locality.length <= 1)) return false;
           
           if (id && deletedSet.has(id)) return false;
-          if (loc && deletedSet.has(loc.toLowerCase())) return false;
+          if (sl && deletedSet.has(`sl_${sl}`)) return false;
+          if (cCity && loc && facing && deletedSet.has(`${cCity}_${loc.toLowerCase()}_${facing}`)) return false;
+          if (loc && facing && deletedSet.has(`${loc.toLowerCase()}_${facing}`)) return false;
+          if (loc && deletedSet.has(loc.toLowerCase()) && loc.toLowerCase() !== 'hoarding site') return false;
           
           return true;
         })
