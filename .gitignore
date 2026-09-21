@@ -43,7 +43,16 @@ token.json
 scratch/
 *.traineddata
 
+# Video generation outputs & voice clips (prevent Vercel bloat)
+recorded_tour/
+video_scenes/
+*.wav
+*.webm
+*.mp4
+check_*.png
+
 # 306 unused hoarding photos (208 MB). Site images load from Google Drive, and
 # nothing in src/ referenced these — they were bundled into every Vercel
 # deployment, consuming 208 MB of the 211 MB each build stored.
 public/images/
+
