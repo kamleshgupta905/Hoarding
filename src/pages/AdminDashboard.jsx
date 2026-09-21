@@ -19,6 +19,7 @@ import ImageLightbox from '../components/ImageLightbox';
 import DriveImage from '../components/DriveImage';
 import RenewalAlertRadar from '../components/RenewalAlertRadar';
 import BulkBookingWizard from '../components/BulkBookingWizard';
+import HeaderSitesUploadModal from '../components/HeaderSitesUploadModal';
 import { appConfirm, appToast } from '../components/ToastContext';
 import { clearAdminSession, getAdminSession, getStaffUploadLink, postDirect } from '../services/secureApi';
 import { isInternalHeader } from '../core/hoardingSchema';
@@ -1351,10 +1352,12 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
     const [staffImagePreviews, setStaffImagePreviews] = useState({});
     const orientationCacheRef = useRef(new Map());
     const sheetEditorRef = useRef(null);
+    const lastPptDestinationRef = useRef('history');
     const [excelImportPreview, setExcelImportPreview] = useState(null);
     const [excelImportToken, setExcelImportToken] = useState('');
     const [isExcelImportOpen, setIsExcelImportOpen] = useState(false);
     const [isExcelApproving, setIsExcelApproving] = useState(false);
+    const [isHeaderUploadModalOpen, setIsHeaderUploadModalOpen] = useState(false);
     const [missedPptSlides, setMissedPptSlides] = useState([]);
     const [isAutoMappingCloudPhotos, setIsAutoMappingCloudPhotos] = useState(false);
     const [sheetHeaders, setSheetHeaders] = useState([]);
@@ -1876,7 +1879,30 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
         }
     };
 
-    const handleFileUpload = async (e, type, providedFile = null) => {
+    /**
+     * 🚀 Handles modal submit from HeaderSitesUploadModal with 3 modes and PPT destination choice
+     */
+    const handleHeaderUploadSubmit = async ({ mode, excelFile, pptFile, pptDestination }) => {
+        setIsHeaderUploadModalOpen(false);
+        lastPptDestinationRef.current = pptDestination || 'history';
+
+        if (mode === 'excel' && excelFile) {
+            await handleFileUpload(null, 'excel', excelFile);
+        } else if (mode === 'ppt' && pptFile) {
+            await handleFileUpload(null, 'ppt', pptFile, { pptDestination });
+        } else if (mode === 'combo') {
+            const queue = [];
+            if (excelFile) queue.push({ file: excelFile, type: 'excel' });
+            if (pptFile) queue.push({ file: pptFile, type: 'ppt' });
+
+            for (const job of queue) {
+                // eslint-disable-next-line no-await-in-loop
+                await handleFileUpload(null, job.type, job.file, { pptDestination });
+            }
+        }
+    };
+
+    const handleFileUpload = async (e, type, providedFile = null, options = {}) => {
         const file = providedFile || e?.target?.files?.[0];
         if (!file) return;
         if (uploadInFlightRef.current || fileProcessing) {
@@ -2127,19 +2153,68 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                             });
 
                             if (res && res.success && res.url) {
-                                // Add to Phase 2 Atomic Batch
-                                batchUpdates.push({
-                                    siteId: matchedSite?._SiteID || '',
-                                    siteName: siteName,
-                                    facing: facingValue,
-                                    url: res.url,
-                                    status: ai.status || matchedSite?.STATUS || 'Available',
-                                    newSiteData: !matchedSite ? {
+                                const isSaveToHistoryOnly = options?.pptDestination === 'history';
+
+                                if (isSaveToHistoryOnly) {
+                                    const stamped = `${res.url}|${Date.now()}${coordPart ? `|${coordPart.replace(/_/g, ' ')}` : ''}`;
+                                    batchUpdates.push({
+                                        siteId: matchedSite?._SiteID || '',
+                                        sl: matchedSite?.SL || '',
                                         siteName: siteName,
                                         facing: facingValue,
-                                        latLong: lat && lng ? `${lat},${lng}` : (ai.gpsStamp || '')
-                                    } : undefined
-                                });
+                                        status: ai.status || matchedSite?.STATUS || 'Available',
+                                        fields: {
+                                            ExecutionHistory: stamped
+                                        },
+                                        newSiteData: !matchedSite ? {
+                                            siteName: siteName,
+                                            facing: facingValue,
+                                            latLong: lat && lng ? `${lat},${lng}` : (ai.gpsStamp || '')
+                                        } : undefined
+                                    });
+                                    if (matchedSite) {
+                                        recordSiteHistory(matchedSite, {
+                                            url: res.url,
+                                            preview: res.url,
+                                            timestamp: Date.now(),
+                                            date: new Date().toISOString(),
+                                            source: 'PPT Slide Upload'
+                                        });
+                                    }
+                                } else {
+                                    // As Main Image
+                                    batchUpdates.push({
+                                        siteId: matchedSite?._SiteID || '',
+                                        sl: matchedSite?.SL || '',
+                                        siteName: siteName,
+                                        facing: facingValue,
+                                        url: res.url,
+                                        status: ai.status || matchedSite?.STATUS || 'Available',
+                                        fields: {
+                                            ImageURL: res.url,
+                                            'IMAGE 1': res.url
+                                        },
+                                        newSiteData: !matchedSite ? {
+                                            siteName: siteName,
+                                            facing: facingValue,
+                                            latLong: lat && lng ? `${lat},${lng}` : (ai.gpsStamp || '')
+                                        } : undefined
+                                    });
+                                    if (matchedSite) {
+                                        const oldMaster = matchedSite.ImageURL || matchedSite["IMAGE 1"] || matchedSite["Image URL"] || '';
+                                        if (oldMaster && !oldMaster.includes('unsplash.com')) {
+                                            recordSiteHistory(matchedSite, {
+                                                url: oldMaster,
+                                                preview: oldMaster,
+                                                timestamp: Date.now() - 1000,
+                                                date: new Date().toISOString(),
+                                                source: 'Previous Master Photo'
+                                            });
+                                        }
+                                        matchedSite.ImageURL = res.url;
+                                        matchedSite["IMAGE 1"] = res.url;
+                                    }
+                                }
                                 syncedCount++;
                                 success = true;
                             } else {
@@ -5641,18 +5716,17 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                     </button>
                                 )}
 
-                                <label className="qm-btn-primary qm-btn-sm" style={{ cursor: 'pointer' }} title="Select an Excel sheet, a PPT deck, or both at once">
+                                <button 
+                                    type="button"
+                                    className="qm-btn-primary qm-btn-sm" 
+                                    style={{ cursor: 'pointer', border: 'none' }} 
+                                    title="Upload Sites Inventory via Excel, PPT, or Combined"
+                                    disabled={Boolean(fileProcessing)}
+                                    onClick={() => setIsHeaderUploadModalOpen(true)}
+                                >
                                     <UploadCloud size={14} />
                                     <span>Upload Excel / PPT</span>
-                                    <input
-                                        type="file"
-                                        style={{ display: 'none' }}
-                                        multiple
-                                        accept=".xlsx,.xls,.csv,.ppt,.pptx"
-                                        disabled={Boolean(fileProcessing)}
-                                        onChange={handleMixedUpload}
-                                    />
-                                </label>
+                                </button>
                             </div>
                         )}
 
@@ -10195,6 +10269,16 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                             setIsBulkBookingOpen(false);
                             showToast("Bulk campaigns successfully booked!", "success");
                         }}
+                    />
+                )}
+
+                {/* 🌟 Header Sites Upload Modal (Excel / PPT / Combo with Target Selector) */}
+                {isHeaderUploadModalOpen && (
+                    <HeaderSitesUploadModal
+                        isOpen={isHeaderUploadModalOpen}
+                        onClose={() => setIsHeaderUploadModalOpen(false)}
+                        onStartUpload={handleHeaderUploadSubmit}
+                        disabled={Boolean(fileProcessing)}
                     />
                 )}
 
