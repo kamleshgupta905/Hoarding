@@ -7212,13 +7212,14 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                             {(() => {
                                                 let candidateSites = [];
                                                 if (Array.isArray(img.twinCandidates) && img.twinCandidates.length > 1) {
-                                                    candidateSites = img.twinCandidates.map(t => {
+                                                    candidateSites = img.twinCandidates.slice(0, 6).map(t => {
                                                         const h = hoardings[t.index] || hoardings.find(site => String(site.SL || site['S. No.'] || '').trim() === String(t.sl).trim());
+                                                        const numDist = (t.distanceM != null && !isNaN(Number(t.distanceM))) ? Math.round(Number(t.distanceM)) : (img.distanceM != null && !isNaN(Number(img.distanceM)) ? Math.round(Number(img.distanceM)) : null);
                                                         return {
                                                             sl: t.sl || h?.SL || h?.['S. No.'] || '',
                                                             index: t.index != null ? t.index : hoardings.indexOf(h),
                                                             facing: t.facing || h?.Facing || h?.['Traffic View'] || 'Standard',
-                                                            distanceM: t.distanceM != null ? t.distanceM : (img.distanceM || null),
+                                                            distanceM: numDist,
                                                             siteName: h ? (h["Locality Site Location"] || h["Location "] || h.Location) : t.siteName,
                                                             siteId: t.siteId || h?._SiteID || h?.UniqueID || ''
                                                         };
@@ -7308,7 +7309,7 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                                                         }}
                                                                         title={`Switch to Pole #${cand.sl} | Facing: ${cand.facing} (${cand.distanceM != null ? `${cand.distanceM}m away` : 'Site'})`}
                                                                     >
-                                                                        {isCandSelected ? '✓ ' : ''}#{cand.sl} · {cand.facing} {cand.distanceM != null ? `(${cand.distanceM}m)` : ''}
+                                                                        {isCandSelected ? '✓ ' : ''}#{cand.sl} · {cand.facing} {cand.distanceM != null && !isNaN(Number(cand.distanceM)) ? `(${cand.distanceM}m)` : ''}
                                                                     </button>
                                                                 );
                                                             })}
@@ -7513,10 +7514,11 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                                                 <span>Nearby Poles & Facings (1-Click Switch):</span>
                                                             </div>
                                                             <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
-                                                                {img.twinCandidates.map((twin, tIdx) => {
+                                                                {img.twinCandidates.slice(0, 6).map((twin, tIdx) => {
                                                                     const twinSL = twin.sl || hoardings[twin.index]?.SL || hoardings[twin.index]?.['S. No.'] || (twin.index != null ? twin.index + 1 : '');
                                                                     const isSelected = (img.sl && twinSL && String(img.sl).trim() === String(twinSL).trim()) ||
                                                                                        (img.matchedIndex != null && img.matchedIndex === twin.index);
+                                                                    const numDist = (twin.distanceM != null && !isNaN(Number(twin.distanceM))) ? Math.round(Number(twin.distanceM)) : null;
                                                                     return (
                                                                         <button
                                                                             key={tIdx}
@@ -7530,7 +7532,7 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                                                                     matchedSiteId: twin.siteId,
                                                                                     facing: twin.facing,
                                                                                     matchedLocation: targetSite ? (targetSite["Locality Site Location"] || targetSite["Location "] || targetSite.Location) : twin.siteName,
-                                                                                    reasoning: `Switched to #${targetSL} | Facing: ${twin.facing} (${twin.distanceM}m away)`,
+                                                                                    reasoning: `Switched to #${targetSL} | Facing: ${twin.facing}${numDist != null ? ` (${numDist}m away)` : ''}`,
                                                                                     matchFailed: false
                                                                                 };
                                                                                 let updatedCard = null;
@@ -7559,10 +7561,10 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                                                                 gap: '5px',
                                                                                 transition: 'all 0.15s ease'
                                                                             }}
-                                                                            title={`Switch to Pole #${twinSL} | Facing: ${twin.facing} (${twin.distanceM}m away)`}
+                                                                            title={`Switch to Pole #${twinSL} | Facing: ${twin.facing}${numDist != null ? ` (${numDist}m away)` : ''}`}
                                                                         >
                                                                             {isSelected && <span>✓</span>}
-                                                                            <span>#{twinSL} | Facing: {twin.facing} ({twin.distanceM}m)</span>
+                                                                            <span>#{twinSL} | Facing: {twin.facing}{numDist != null ? ` (${numDist}m)` : ''}</span>
                                                                         </button>
                                                                     );
                                                                 })}
