@@ -342,7 +342,7 @@ export const normalizeHoarding = (item) => {
   let bookingEnd = item.BookingEnd || item.bookingEnd || '';
 
   if (localBooking) {
-    const isRecentLocal = (Date.now() - (Number(localBooking.updatedAt) || 0)) < 45000;
+    const isRecentLocal = (Date.now() - (Number(localBooking.updatedAt) || 0)) < 360000; // 6 minutes (bypasses 5-min GViz cache)
     if (isRecentLocal) {
       if (localBooking.STATUS === 'Available') {
         status = 'Available';
@@ -913,9 +913,18 @@ export const getSiteBookingSlots = (site = {}) => {
         for (const k of keys) {
           if (Array.isArray(schedules[k])) {
             const localList = schedules[k];
-            // If local is explicitly empty array and cloud also has no slots, return []
-            if (localList.length === 0 && slots.length === 0) {
-              return [];
+            if (localList.length === 0) {
+              if (slots.length === 0) return [];
+              
+              // If cloud has slots but local is empty, check if we recently cleared it (tombstone)
+              try {
+                const localBookings = JSON.parse(localStorage.getItem('adh_local_bookings') || '{}');
+                const lb = localBookings[k];
+                const isRecent = lb && (Date.now() - (Number(lb.updatedAt) || 0)) < 360000;
+                if (isRecent && lb.STATUS === 'Available') {
+                  return []; // User recently cleared it, override stale cloud slots
+                }
+              } catch (e) {}
             }
             if (localList.length > 0) {
               // Merge local slots with cloud slots (deduping by client + start + end)
