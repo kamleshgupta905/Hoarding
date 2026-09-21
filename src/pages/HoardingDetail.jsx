@@ -47,6 +47,21 @@ const HoardingDetail = ({ hoardings, setHoardings }) => {
                 hSite.replace(/\s+/g, ' ').toLowerCase() === decodedSiteName.replace(/\s+/g, ' ').toLowerCase();
         });
 
+    const siblingFaces = React.useMemo(() => {
+        if (!hoarding) return [];
+        const loc = (hoarding["Location "] || hoarding.Location || hoarding["Locality Site Location"] || decodedSiteName || '').trim().toLowerCase();
+        const c = (hoarding.City || hoarding.city || targetCity || '').trim().toLowerCase();
+        if (!loc) return [];
+        return (hoardings || []).filter(h => {
+            if (!h) return false;
+            const hLoc = (h["Location "] || h.Location || h["Locality Site Location"] || '').trim().toLowerCase();
+            const hCity = (h.City || h.city || '').trim().toLowerCase();
+            const locMatches = hLoc === loc || hLoc.replace(/\s+/g, ' ') === loc.replace(/\s+/g, ' ');
+            const cityMatches = !c || !hCity || c === 'all' || c === 'city' || hCity === c;
+            return locMatches && cityMatches;
+        });
+    }, [hoarding, hoardings, decodedSiteName, targetCity]);
+
     // Admin-only UI is gated on a real server-issued session token.
     const isAdmin = React.useMemo(() => Boolean(getAdminSession()), []);
     const [deletedHistoryUrls, setDeletedHistoryUrls] = React.useState(() => getDeletedHistoryUrls());
@@ -761,6 +776,56 @@ const HoardingDetail = ({ hoardings, setHoardings }) => {
 
                         <section className="content-intro">
                             <h1>{hoarding["Location "]}</h1>
+
+                            {siblingFaces.length > 1 && (
+                                <div className="sibling-faces-bar" style={{
+                                    display: 'flex',
+                                    gap: '8px',
+                                    flexWrap: 'wrap',
+                                    margin: '12px 0 16px 0',
+                                    alignItems: 'center'
+                                }}>
+                                    <span style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                                        Site Faces ({siblingFaces.length}):
+                                    </span>
+                                    {siblingFaces.map((sf, sidx) => {
+                                        const isCurrent = sf === hoarding || (sf.SL && hoarding.SL && String(sf.SL) === String(hoarding.SL)) || (sf._SiteID && hoarding._SiteID && sf._SiteID === hoarding._SiteID);
+                                        const sfFacing = sf.Facing || sf['Traffic View'] || `Face ${sidx + 1}`;
+                                        const sfSL = sf.SL || sf['S. No.'] || '';
+                                        return (
+                                            <button
+                                                key={sidx}
+                                                type="button"
+                                                onClick={() => {
+                                                    const params = new URLSearchParams(window.location.search);
+                                                    if (sfSL) params.set('sl', sfSL);
+                                                    if (sf.Facing) params.set('facing', sf.Facing);
+                                                    if (sf._SiteID) params.set('id', sf._SiteID);
+                                                    navigate({ search: params.toString() });
+                                                }}
+                                                style={{
+                                                    padding: '6px 14px',
+                                                    borderRadius: '20px',
+                                                    fontSize: '0.82rem',
+                                                    fontWeight: 600,
+                                                    cursor: 'pointer',
+                                                    border: isCurrent ? '2px solid #4f46e5' : '1px solid #e2e8f0',
+                                                    background: isCurrent ? '#ede9fe' : '#ffffff',
+                                                    color: isCurrent ? '#4338ca' : '#475569',
+                                                    boxShadow: isCurrent ? '0 2px 8px rgba(79, 70, 229, 0.2)' : 'none',
+                                                    display: 'inline-flex',
+                                                    alignItems: 'center',
+                                                    gap: '6px',
+                                                    transition: 'all 0.2s ease'
+                                                }}
+                                            >
+                                                <span>{sfFacing}</span>
+                                                {sfSL && <span style={{ opacity: 0.7, fontSize: '0.74rem' }}>(SL #{sfSL})</span>}
+                                            </button>
+                                        );
+                                    })}
+                                </div>
+                            )}
                             
                             {/* 🕒 BOOKING STATUS LOGIC */}
                             <div className={`booking-status-card ${status}`}>

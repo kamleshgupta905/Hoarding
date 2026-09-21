@@ -470,8 +470,42 @@ function App() {
           }
         }
 
-        // Overlay multi-slot schedule if present locally (merging with cloud schedule if both exist)
+        // Overlay multi-slot schedule and booking state with robust anti-resurrection protection (10-min window)
+        const RECENT_WINDOW_MS = 10 * 60 * 1000;
         for (const k of keys) {
+          const lb = localBookings[k];
+          const isRecentLocal = lb && (Date.now() - (Number(lb.updatedAt) || 0)) < RECENT_WINDOW_MS;
+          const localSchedItem = localSchedules[k];
+
+          // 🛡️ Case 1: Site was explicitly released/deleted locally within 10 minutes -> Clear schedule completely
+          if (isRecentLocal && lb.STATUS === 'Available') {
+            mergedList[i] = {
+              ...mergedList[i],
+              STATUS: 'Available',
+              status: 'Available',
+              Status: 'Available',
+              BookedBy: '',
+              BookingStart: '',
+              BookingEnd: '',
+              BookingSchedule: []
+            };
+            break;
+          }
+
+          // 🛡️ Case 2: Schedule was modified locally within 10 minutes -> Local schedule is authoritative (never resurrect deleted slots from cloud)
+          if (isRecentLocal && Array.isArray(localSchedItem)) {
+            mergedList[i].BookingSchedule = localSchedItem;
+            const live = resolveSiteLiveStatus({ ...mergedList[i], BookingSchedule: localSchedItem });
+            mergedList[i].STATUS = live.status;
+            mergedList[i].status = live.status;
+            mergedList[i].Status = live.status;
+            mergedList[i].BookedBy = live.client || '';
+            mergedList[i].BookingStart = live.slot?.start || '';
+            mergedList[i].BookingEnd = live.slot?.end || '';
+            break;
+          }
+
+          // Case 3: Cloud schedule from sheet (when no recent local mutations)
           const cloudSched = mergedList[i].BookingSchedule;
           let cloudSlots = [];
           if (Array.isArray(cloudSched)) {
@@ -483,61 +517,26 @@ function App() {
             } catch {}
           }
 
-          if (Array.isArray(localSchedules[k]) && localSchedules[k].length > 0) {
-            const seen = new Set(cloudSlots.map(s => `${String(s.client || '').trim().toLowerCase()}_${s.start}_${s.end}`));
-            const mergedSlots = [...cloudSlots];
-            for (const ls of localSchedules[k]) {
-              if (ls && ls.start && ls.end) {
-                const sKey = `${String(ls.client || '').trim().toLowerCase()}_${ls.start}_${ls.end}`;
-                if (!seen.has(sKey)) {
-                  mergedSlots.push(ls);
-                  seen.add(sKey);
-                }
-              }
-            }
-            mergedList[i].BookingSchedule = mergedSlots;
-            const live = resolveSiteLiveStatus({ ...mergedList[i], BookingSchedule: mergedSlots });
+          if (isRecentLocal && (lb.STATUS === 'Booked' || lb.STATUS === 'Occupied')) {
+            mergedList[i] = {
+              ...mergedList[i],
+              STATUS: lb.STATUS,
+              status: lb.STATUS,
+              Status: lb.STATUS,
+              BookedBy: lb.BookedBy || mergedList[i].BookedBy || '',
+              BookingStart: lb.BookingStart || mergedList[i].BookingStart || '',
+              BookingEnd: lb.BookingEnd || mergedList[i].BookingEnd || ''
+            };
+            break;
+          } else if (cloudSlots.length > 0) {
+            mergedList[i].BookingSchedule = cloudSlots;
+            const live = resolveSiteLiveStatus({ ...mergedList[i], BookingSchedule: cloudSlots });
             mergedList[i].STATUS = live.status;
             mergedList[i].status = live.status;
             mergedList[i].Status = live.status;
             mergedList[i].BookedBy = live.client || mergedList[i].BookedBy || '';
             mergedList[i].BookingStart = live.slot?.start || mergedList[i].BookingStart || '';
             mergedList[i].BookingEnd = live.slot?.end || mergedList[i].BookingEnd || '';
-            break;
-          } else if (cloudSlots.length > 0) {
-            mergedList[i].BookingSchedule = cloudSlots;
-            break;
-          }
-        }
-
-        // Overlay primary status/dates only if local booking is recent (< 45s)
-        for (const k of keys) {
-          const lb = localBookings[k];
-          if (lb) {
-            const isRecentLocal = (Date.now() - (Number(lb.updatedAt) || 0)) < 45000;
-            if (isRecentLocal) {
-              if (lb.STATUS === 'Available') {
-                mergedList[i] = {
-                  ...mergedList[i],
-                  STATUS: 'Available',
-                  status: 'Available',
-                  Status: 'Available',
-                  BookedBy: '',
-                  BookingStart: '',
-                  BookingEnd: ''
-                };
-              } else if (lb.STATUS === 'Booked' || lb.STATUS === 'Occupied') {
-                mergedList[i] = {
-                  ...mergedList[i],
-                  STATUS: lb.STATUS,
-                  status: lb.STATUS,
-                  Status: lb.STATUS,
-                  BookedBy: lb.BookedBy || mergedList[i].BookedBy || '',
-                  BookingStart: lb.BookingStart || mergedList[i].BookingStart || '',
-                  BookingEnd: lb.BookingEnd || mergedList[i].BookingEnd || ''
-                };
-              }
-            }
             break;
           }
         }

@@ -5,10 +5,11 @@ import {
   saveSiteBookingSlots, 
   resolveSiteLiveStatus, 
   recordSiteHistory,
+  removeDeletedHistoryUrl,
   compressImage,
   syncToGoogleSheet
-} from '../services/dataService';
-import { postDirect, getAdminSession } from '../services/secureApi';
+} from '../services/dataService.js';
+import { postDirect, getAdminSession } from '../services/secureApi.js';
 
 // Aliases for detecting headers in Excel sheets
 const CLIENT_ALIASES = ['client', 'client name', 'clientname', 'booked by', 'bookedby', 'party', 'brand', 'advertiser', 'customer', 'customer name'];
@@ -536,11 +537,13 @@ export const commitBulkBookings = async ({
 }) => {
   const eligibleItems = bookingItems.filter(item => {
     if (!item.matchedSite) return false;
-    if (item.hasConflict && skipConflicted) return false;
+    if (artworkMode !== 'history_only' && item.hasConflict && skipConflicted) return false;
     return true;
   });
 
-  if (eligibleItems.length === 0) {
+  const hasPhotos = bookingItems.some(item => item.matchedSite && item.matchedSlide?.imageBlob);
+
+  if (eligibleItems.length === 0 && !hasPhotos) {
     throw new Error("No eligible sites to book. Please resolve date conflicts or verify site names.");
   }
 
@@ -555,60 +558,70 @@ export const commitBulkBookings = async ({
   const batchUpdates = [];
   const photosToUpload = [];
 
-  // 1. Process each eligible item
-  for (let i = 0; i < eligibleItems.length; i++) {
-    const item = eligibleItems[i];
+  // 1. Process each booking item
+  for (let i = 0; i < bookingItems.length; i++) {
+    const item = bookingItems[i];
+    if (!item.matchedSite) continue;
+
     const targetSite = item.matchedSite;
     const siteKey = targetSite._SiteID || targetSite.SL || targetSite['Location '] || targetSite.Location;
+    const pLoc = targetSite['Location '] || targetSite.Location || item.location;
+    const pFacing = targetSite.Facing || targetSite['Traffic View'] || item.facing || '';
 
-    const currentSlots = getSiteBookingSlots(targetSite);
-    const newSlot = {
-      id: `slot_bulk_${Date.now()}_${i}`,
-      client: item.clientName,
-      start: item.startDate,
-      end: item.endDate,
-      status: 'Booked',
-      amount: item.proRataRent || item.monthlyRent || 0,
-      days: item.durationDays
-    };
+    const isConflicted = Boolean(item.hasConflict);
+    const shouldSkipBookingSlot = isConflicted && skipConflicted && artworkMode !== 'history_only';
 
-    const updatedSlots = [...currentSlots, newSlot].sort((a, b) => String(a.start).localeCompare(String(b.start)));
-    saveSiteBookingSlots(targetSite, updatedSlots);
+    // Update calendar slots if not skipped
+    if (!shouldSkipBookingSlot) {
+      const currentSlots = getSiteBookingSlots(targetSite);
+      const newSlot = {
+        id: `slot_bulk_${Date.now()}_${i}`,
+        client: item.clientName,
+        start: item.startDate,
+        end: item.endDate,
+        status: 'Booked',
+        amount: item.proRataRent || item.monthlyRent || 0,
+        days: item.durationDays
+      };
 
-    const liveStatus = resolveSiteLiveStatus({ ...targetSite, BookingSchedule: updatedSlots });
+      const updatedSlots = [...currentSlots, newSlot].sort((a, b) => String(a.start).localeCompare(String(b.start)));
+      saveSiteBookingSlots(targetSite, updatedSlots);
 
-    const updatedSiteObj = {
-      ...targetSite,
-      STATUS: liveStatus.status || 'Booked',
-      Status: liveStatus.status || 'Booked',
-      BookedBy: liveStatus.client || item.clientName,
-      BookingStart: liveStatus.slot?.start || item.startDate,
-      BookingEnd: liveStatus.slot?.end || item.endDate,
-      BookingSchedule: updatedSlots
-    };
+      const liveStatus = resolveSiteLiveStatus({ ...targetSite, BookingSchedule: updatedSlots });
 
-    if (siteKey) updatedHoardingsMap.set(siteKey, updatedSiteObj);
-
-    batchUpdates.push({
-      siteId: targetSite._SiteID || '',
-      sl: targetSite.SL || '',
-      siteName: targetSite['Location '] || targetSite.Location || item.location,
-      facing: targetSite.Facing || targetSite['Traffic View'] || '',
-      status: liveStatus.status || 'Booked',
-      fields: {
+      const updatedSiteObj = {
+        ...targetSite,
         STATUS: liveStatus.status || 'Booked',
         Status: liveStatus.status || 'Booked',
         BookedBy: liveStatus.client || item.clientName,
-        'Booked By': liveStatus.client || item.clientName,
         BookingStart: liveStatus.slot?.start || item.startDate,
-        'Booking Start': liveStatus.slot?.start || item.startDate,
         BookingEnd: liveStatus.slot?.end || item.endDate,
-        'Booking End': liveStatus.slot?.end || item.endDate,
-        BookingSchedule: JSON.stringify(updatedSlots)
-      }
-    });
+        BookingSchedule: updatedSlots
+      };
 
-    // Queue photo upload if PPT slide was matched
+      if (siteKey) updatedHoardingsMap.set(siteKey, updatedSiteObj);
+
+      batchUpdates.push({
+        siteId: targetSite._SiteID || '',
+        sl: targetSite.SL || '',
+        siteName: pLoc,
+        facing: pFacing,
+        status: liveStatus.status || 'Booked',
+        fields: {
+          STATUS: liveStatus.status || 'Booked',
+          Status: liveStatus.status || 'Booked',
+          BookedBy: liveStatus.client || item.clientName,
+          'Booked By': liveStatus.client || item.clientName,
+          BookingStart: liveStatus.slot?.start || item.startDate,
+          'Booking Start': liveStatus.slot?.start || item.startDate,
+          BookingEnd: liveStatus.slot?.end || item.endDate,
+          'Booking End': liveStatus.slot?.end || item.endDate,
+          BookingSchedule: JSON.stringify(updatedSlots)
+        }
+      });
+    }
+
+    // 🎯 Always queue photo upload if PPT slide was matched (artwork history proof is independent of calendar clashes!)
     if (item.matchedSlide && item.matchedSlide.imageBlob) {
       photosToUpload.push({
         site: targetSite,
@@ -641,23 +654,40 @@ export const commitBulkBookings = async ({
         }, 30000); // 30s timeout per image to guarantee no freezing
 
         if (res && res.success && res.url) {
-          // Queue the history entry onto this site's sheet update. recordSiteHistory
-          // only writes to localStorage, so on its own the artwork would never
-          // reach the ExecutionHistory column — it would look saved until the
-          // browser cache was cleared.
+          removeDeletedHistoryUrl(res.url);
+
+          // Queue the history entry onto this site's sheet update.
           const queueHistoryToSheet = (entryUrl, gps) => {
             if (!entryUrl) return;
+            removeDeletedHistoryUrl(entryUrl);
             const pLoc = p.site['Location '] || p.site.Location || '';
-            const row = batchUpdates.find(u =>
-              (p.site._SiteID && u.siteId === p.site._SiteID) ||
-              (p.site.SL && String(u.sl) === String(p.site.SL)) ||
-              (u.siteName && pLoc && u.siteName === pLoc)
+            const pFacing = p.site.Facing || p.site['Traffic View'] || '';
+
+            let row = batchUpdates.find(u =>
+              (p.site._SiteID && u.siteId && u.siteId === p.site._SiteID) ||
+              (p.site.SL && u.sl && String(u.sl) === String(p.site.SL)) ||
+              (u.siteName && pLoc && u.siteName === pLoc && (!pFacing || !u.facing || u.facing === pFacing))
             );
+
             const stamped = `${entryUrl}|${Date.now()}${gps ? `|${String(gps).replace(/,/g, ' ')}` : ''}`;
-            if (row && row.fields) {
-              row.fields.ExecutionHistory = row.fields.ExecutionHistory
-                ? `${row.fields.ExecutionHistory},${stamped}`
-                : stamped;
+
+            if (row) {
+              if (row.fields) {
+                row.fields.ExecutionHistory = row.fields.ExecutionHistory
+                  ? `${row.fields.ExecutionHistory},${stamped}`
+                  : stamped;
+              }
+            } else {
+              batchUpdates.push({
+                siteId: p.site._SiteID || '',
+                sl: p.site.SL || '',
+                siteName: pLoc,
+                facing: pFacing,
+                status: p.site.STATUS || 'Available',
+                fields: {
+                  ExecutionHistory: stamped
+                }
+              });
             }
 
             const historyItemObj = {

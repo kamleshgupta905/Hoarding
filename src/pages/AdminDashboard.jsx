@@ -8422,7 +8422,14 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                                     <div 
                                                         className="asset-title" 
                                                         style={{ cursor: 'pointer', transition: 'color 0.2s', fontWeight: '700', fontSize: '14px' }}
-                                                        onClick={() => navigate(`/${encodeURIComponent(h.City || 'city')}/${encodeURIComponent(h["Location "] || h.Location || h["Locality Site Location"] || '')}`)}
+                                                        onClick={() => {
+                                                            const q = [
+                                                                h.SL ? `sl=${encodeURIComponent(h.SL)}` : '',
+                                                                h.Facing ? `facing=${encodeURIComponent(h.Facing)}` : '',
+                                                                h._SiteID ? `id=${encodeURIComponent(h._SiteID)}` : ''
+                                                            ].filter(Boolean).join('&');
+                                                            navigate(`/${encodeURIComponent(h.City || 'city')}/${encodeURIComponent(h["Location "] || h.Location || h["Locality Site Location"] || '')}${q ? '?' + q : ''}`);
+                                                        }}
                                                         title="Open site detail page"
                                                     >
                                                         {h["Locality Site Location"] || h["Location "] || h["Location"] || "Hoarding Site"}
@@ -8521,7 +8528,14 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                                     <div className="action-row">
                                                         <button 
                                                             className="btn-icon-small view" 
-                                                            onClick={() => navigate(`/${encodeURIComponent(h.City || 'city')}/${encodeURIComponent(h["Location "] || h.Location || h["Locality Site Location"] || '')}`)}
+                                                            onClick={() => {
+                                                                const q = [
+                                                                    h.SL ? `sl=${encodeURIComponent(h.SL)}` : '',
+                                                                    h.Facing ? `facing=${encodeURIComponent(h.Facing)}` : '',
+                                                                    h._SiteID ? `id=${encodeURIComponent(h._SiteID)}` : ''
+                                                                ].filter(Boolean).join('&');
+                                                                navigate(`/${encodeURIComponent(h.City || 'city')}/${encodeURIComponent(h["Location "] || h.Location || h["Locality Site Location"] || '')}${q ? '?' + q : ''}`);
+                                                            }}
                                                             title="View Detail Page"
                                                             style={{ color: '#6c5dd3' }}
                                                         >
@@ -8955,7 +8969,17 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                                         <td style={{ padding: '16px' }}>
                                                             <button
                                                                 type="button"
-                                                                onClick={() => navigate(`/${encodeURIComponent(b.city || b.site?.City || 'city')}/${encodeURIComponent(b.location || '')}`)}
+                                                                onClick={() => {
+                                                                    const slVal = b.site?.SL || b.sl;
+                                                                    const facingVal = b.site?.Facing || b.facing;
+                                                                    const idVal = b.site?._SiteID || b.siteId;
+                                                                    const q = [
+                                                                        slVal ? `sl=${encodeURIComponent(slVal)}` : '',
+                                                                        facingVal ? `facing=${encodeURIComponent(facingVal)}` : '',
+                                                                        idVal ? `id=${encodeURIComponent(idVal)}` : ''
+                                                                    ].filter(Boolean).join('&');
+                                                                    navigate(`/${encodeURIComponent(b.city || b.site?.City || 'city')}/${encodeURIComponent(b.location || '')}${q ? '?' + q : ''}`);
+                                                                }}
                                                                 title="Open the public site page a client would see"
                                                                 style={{
                                                                     display: 'inline-flex',

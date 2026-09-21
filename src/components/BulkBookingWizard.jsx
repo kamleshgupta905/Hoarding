@@ -230,8 +230,9 @@ export default function BulkBookingWizard({
 
   const eligibleCount = useMemo(() => {
     if (!parsedData?.items) return 0;
+    if (artworkMode === 'history_only') return parsedData.items.filter(i => i.matchedSite).length;
     return parsedData.items.filter(i => i.matchedSite && (!i.hasConflict || !skipConflicted)).length;
-  }, [parsedData, skipConflicted]);
+  }, [parsedData, skipConflicted, artworkMode]);
 
   if (!isOpen) return null;
 
@@ -505,14 +506,20 @@ export default function BulkBookingWizard({
                 <AlertTriangle size={18} className="alert-icon" />
                 <div className="alert-copy">
                   <strong>Conflict Prevention Radar Active:</strong> {parsedData.conflictsCount} site(s) clash with existing client bookings.
-                  <label className="skip-checkbox-label">
-                    <input 
-                      type="checkbox" 
-                      checked={skipConflicted} 
-                      onChange={(e) => setSkipConflicted(e.target.checked)} 
-                    />
-                    <span>Automatically skip clashing sites & book remaining {eligibleCount} clear sites</span>
-                  </label>
+                  {artworkMode === 'history_only' ? (
+                    <div style={{ marginTop: '4px', fontSize: '0.82rem', color: '#047857', fontWeight: 600 }}>
+                      ✓ History Mode Active: All {eligibleCount} matched slide photos will be safely uploaded to site execution history.
+                    </div>
+                  ) : (
+                    <label className="skip-checkbox-label">
+                      <input 
+                        type="checkbox" 
+                        checked={skipConflicted} 
+                        onChange={(e) => setSkipConflicted(e.target.checked)} 
+                      />
+                      <span>Automatically skip clashing calendar bookings & book remaining {eligibleCount} clear sites</span>
+                    </label>
+                  )}
                 </div>
               </div>
             )}
@@ -622,7 +629,7 @@ export default function BulkBookingWizard({
                 <tbody>
                   {displayedItems.map((item, idx) => {
                     const clientColors = clientColorMap[item.clientName] || {};
-                    const isSkipped = item.hasConflict && skipConflicted;
+                    const isSkipped = artworkMode !== 'history_only' && item.hasConflict && skipConflicted;
 
                     return (
                       <tr key={item.id} className={isSkipped ? 'row-skipped' : item.hasConflict ? 'row-conflict' : 'row-valid'}>

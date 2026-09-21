@@ -1452,6 +1452,24 @@ function batchUpdateSheet_(data) {
         if (siteIdMap[tgt] !== undefined) r = siteIdMap[tgt];
       }
 
+      // Try SL Match if present
+      if (r === -1 && up.sl) {
+        var idxSL = headers.findIndex(function(h) {
+          var c = cleanFull(h);
+          return c === 'sl' || c === 'sno' || c === 'slno' || c === 'srno';
+        });
+        if (idxSL !== -1) {
+          var targetSL = String(up.sl).trim();
+          for (var slRow = 1; slRow < rows.length; slRow++) {
+            var cellVal = String(rows[slRow][idxSL]).trim();
+            if (cellVal === targetSL || (parseInt(cellVal, 10) === parseInt(targetSL, 10) && !isNaN(parseInt(targetSL, 10)))) {
+              r = slRow;
+              break;
+            }
+          }
+        }
+      }
+
       // Try exact Site Name + Facing Match
       if (r === -1 && up.siteName && idxSite !== -1) {
         var tgtName = cleanFull(up.siteName);

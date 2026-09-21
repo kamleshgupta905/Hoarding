@@ -602,6 +602,28 @@ export const addDeletedHistoryUrl = (url) => {
   } catch (e) {}
 };
 
+export const removeDeletedHistoryUrl = (url) => {
+  if (!url || typeof window === 'undefined') return;
+  try {
+    const raw = localStorage.getItem(DELETED_HISTORY_URLS_KEY);
+    if (!raw) return;
+    const current = new Set(JSON.parse(raw));
+    const str = typeof url === 'object' ? (url.url || url.preview || '') : String(url).trim();
+    if (!str) return;
+    current.delete(str);
+    const direct = getDirectDriveLink(str);
+    if (direct) current.delete(direct);
+    const idMatch = str.match(/(?:\/d\/|[?&]id=)([a-zA-Z0-9_-]{20,})/);
+    if (idMatch && idMatch[1]) {
+      const fileId = idMatch[1];
+      current.delete(fileId);
+      current.delete(`https://lh3.googleusercontent.com/d/${fileId}`);
+      current.delete(`https://drive.google.com/uc?id=${fileId}`);
+    }
+    localStorage.setItem(DELETED_HISTORY_URLS_KEY, JSON.stringify(Array.from(current)));
+  } catch (e) {}
+};
+
 /**
  * 📜 LOCAL EXECUTION PROOF / AUDIT HISTORY ENGINE
  * Guarantees newly uploaded daily verification photos are immediately visible
@@ -740,6 +762,10 @@ export const recordSiteHistory = (site, historyItem) => {
 
     const isRemote = /^https?:\/\//i.test(rawUrl);
     const cleanUrl = isRemote ? getDirectDriveLink(rawUrl) : rawUrl;
+
+    // Clear any previous deletion tombstones for this photo
+    removeDeletedHistoryUrl(cleanUrl);
+    removeDeletedHistoryUrl(rawUrl);
 
     const normalizedItem = {
       url: cleanUrl,
