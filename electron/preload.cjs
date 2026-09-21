@@ -4,6 +4,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     isElectron: true,
     platform: process.platform,
     checkForUpdates: () => ipcRenderer.send('check-for-updates'),
+    clearCache: () => ipcRenderer.invoke('clear-cache'),
     installUpdate: () => ipcRenderer.send('install-update-now'),
     getAppVersion: () => ipcRenderer.invoke('get-app-version'),
     onUpdateChecking: (callback) => {

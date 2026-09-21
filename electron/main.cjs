@@ -75,6 +75,17 @@ function createApplicationMenu() {
                     label: 'Check for Updates...',
                     click: () => checkForUpdatesManually()
                 },
+                {
+                    label: 'Clear Cache & Reload',
+                    accelerator: 'CmdOrCtrl+Shift+R',
+                    click: async () => {
+                        if (mainWindow && !mainWindow.isDestroyed()) {
+                            await mainWindow.webContents.session.clearCache();
+                            await mainWindow.webContents.session.clearStorageData();
+                            mainWindow.webContents.reloadIgnoringCache();
+                        }
+                    }
+                },
                 { type: 'separator' },
                 { role: 'quit', label: 'Exit' }
             ]
@@ -103,6 +114,15 @@ function createApplicationMenu() {
                 {
                     label: 'Staff Upload Link',
                     click: () => shell.openExternal('https://hoarding-hd9a.vercel.app/staff/upload')
+                },
+                { type: 'separator' },
+                {
+                    label: 'Download Android Staff Camera APK...',
+                    click: () => shell.openExternal('https://github.com/kamleshgupta905/Hoarding/releases/download/staff-apk-latest/heera-staff-camera.apk')
+                },
+                {
+                    label: 'Download Latest Windows Releases (.exe)...',
+                    click: () => shell.openExternal('https://github.com/kamleshgupta905/hoarding-desktop-releases/releases/latest')
                 },
                 { type: 'separator' },
                 {
@@ -219,6 +239,16 @@ ipcMain.on('install-update-now', () => {
 
 ipcMain.handle('get-app-version', () => {
     return app.getVersion();
+});
+
+ipcMain.handle('clear-cache', async () => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+        await mainWindow.webContents.session.clearCache();
+        await mainWindow.webContents.session.clearStorageData();
+        mainWindow.webContents.reloadIgnoringCache();
+        return true;
+    }
+    return false;
 });
 
 ipcMain.handle('extract-pptx-native', async (event, params) => {

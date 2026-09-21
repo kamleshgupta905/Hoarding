@@ -790,17 +790,50 @@ export const initializeAI = () => undefined;
  * 3. Vision AI / Gemini Matcher (Full precision GPS watermark extraction)
  * 4. Fuzzy Text / Landmark Matcher
  */
-export const analyzeHoardingImage = async (base64Image, locationList, rawFile = null) => {
+export const analyzeHoardingImage = async (base64Image, locationList, rawFile = null, options = {}) => {
     if (!base64Image || !Array.isArray(locationList) || !locationList.length) {
         return { matchedLocation: null, status: 'Available', confidence: 0, reasoning: 'Image or master inventory missing.' };
     }
 
+    const liveGpsRaw = options?.liveGps || options?.gps || (rawFile && typeof rawFile === 'object' && !rawFile.name && (rawFile.lat || rawFile.latitude) ? rawFile : null);
+    const initialFacing = options?.facing || options?.initialFacing || null;
+
+    // ─── STAGE 0: Direct Live Device GPS (Staff Camera / Pinpoint Geofence) ─────────
+    if (liveGpsRaw) {
+        const liveLat = parseFloat(liveGpsRaw.lat ?? liveGpsRaw.latitude);
+        const liveLng = parseFloat(liveGpsRaw.lng ?? liveGpsRaw.longitude);
+        if (isValidLatLng(liveLat, liveLng)) {
+            try {
+                const gpsMatch = await matchHoardingByGps({ lat: liveLat, lng: liveLng }, locationList, base64Image, initialFacing);
+                if (gpsMatch) {
+                    return {
+                        matchedIndex: gpsMatch.index,
+                        sl: gpsMatch.sl || gpsMatch.site?.SL || gpsMatch.site?.['S. No.'] || '',
+                        site: gpsMatch.site,
+                        matchedLocation: gpsMatch.siteName,
+                        matchedSiteId: gpsMatch.site?._SiteID || gpsMatch.site?.UniqueID || gpsMatch.site?.['Unique ID'] || '',
+                        facing: gpsMatch.facing || gpsMatch.site?.Facing || '',
+                        twinCandidates: gpsMatch.twinCandidates || null,
+                        status: gpsMatch.site?.STATUS || gpsMatch.status || 'Available',
+                        confidence: gpsMatch.confidence,
+                        reasoning: `📍 Live Device GPS: ${gpsMatch.reasoning}`,
+                        analysis: `Live Lat: ${liveLat.toFixed(6)}, Long: ${liveLng.toFixed(6)}`,
+                        gpsCoord: { lat: liveLat, lng: liveLng },
+                        distanceM: gpsMatch.distanceM
+                    };
+                }
+            } catch (liveGpsErr) {
+                console.warn('Live GPS match error fallback:', liveGpsErr);
+            }
+        }
+    }
+
     // ─── STAGE 1: Fast Hardware EXIF GPS Extraction ─────────────────────────
-    if (rawFile) {
+    if (rawFile && typeof rawFile === 'object' && rawFile.name) {
         try {
             const exifCoord = await extractGpsFromExif(rawFile);
             if (exifCoord && isValidLatLng(exifCoord.lat, exifCoord.lng)) {
-                const gpsMatch = await matchHoardingByGps(exifCoord, locationList, base64Image);
+                const gpsMatch = await matchHoardingByGps(exifCoord, locationList, base64Image, initialFacing);
                 if (gpsMatch) {
                     return {
                         matchedIndex: gpsMatch.index,

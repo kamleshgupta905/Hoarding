@@ -570,13 +570,14 @@ export const commitBulkBookings = async ({
 
     const isConflicted = Boolean(item.hasConflict);
     const shouldSkipBookingSlot = isConflicted && skipConflicted && artworkMode !== 'history_only';
+    const hasBookingSchedule = Boolean(item.startDate && item.endDate && !item.isPhotoOnly);
 
-    // Update calendar slots if not skipped
-    if (!shouldSkipBookingSlot) {
+    // Update calendar slots if booking schedule is provided and not skipped
+    if (hasBookingSchedule && !shouldSkipBookingSlot) {
       const currentSlots = getSiteBookingSlots(targetSite);
       const newSlot = {
         id: `slot_bulk_${Date.now()}_${i}`,
-        client: item.clientName,
+        client: item.clientName || 'Valued Client',
         start: item.startDate,
         end: item.endDate,
         status: 'Booked',
@@ -769,7 +770,22 @@ export const commitBulkBookings = async ({
               if (updateRow.fields) {
                 updateRow.fields.ImageURL = res.url;
                 updateRow.fields['Image URL'] = res.url;
+                updateRow.fields['IMAGE 1'] = res.url;
               }
+            } else {
+              batchUpdates.push({
+                siteId: p.site._SiteID || '',
+                sl: p.site.SL || '',
+                siteName: pLoc,
+                facing: pFacing,
+                status: p.site.STATUS || 'Available',
+                url: res.url,
+                fields: {
+                  ImageURL: res.url,
+                  'Image URL': res.url,
+                  'IMAGE 1': res.url
+                }
+              });
             }
           } else {
             // Save to History Only

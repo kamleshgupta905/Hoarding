@@ -90,13 +90,108 @@ export default function BulkBookingWizard({
 
   // Process and Analyze Files
   const handleAnalyzeFiles = async () => {
-    if (!excelFile) return;
+    if (mode === 'excel' && !excelFile) {
+      appToast.error("Please select an Excel Media Plan (.xlsx, .csv).");
+      return;
+    }
+    if (mode === 'ppt' && !pptFile) {
+      appToast.error("Please select a Campaign PPT Deck (.pptx).");
+      return;
+    }
+    if (mode === 'combo' && (!excelFile || !pptFile)) {
+      appToast.error("Mode 3 requires both an Excel file and a PPT deck.");
+      return;
+    }
 
     setIsProcessing(true);
-    setProcessingMsg("Reading Excel Media Plan...");
 
     try {
-      // 1. Read Excel
+      // 🎯 Mode 2: PPT Only (Site Photos / Artwork Execution)
+      if (mode === 'ppt') {
+        setProcessingMsg("Extracting PPT slides & matching site artworks...");
+        const pptBuffer = await pptFile.arrayBuffer();
+        const pptResult = await parsePptx(pptBuffer, hoardings, (pct, msg) => {
+          setProcessingMsg(`PPT: ${msg}`);
+        });
+
+        const slidesList = Array.isArray(pptResult) ? pptResult : (pptResult?.slides || []);
+        if (slidesList.length === 0) {
+          throw new Error("No slides found in the presentation.");
+        }
+
+        const validSlidesWithPhotos = slidesList.filter(s => 
+          (s.photoCandidates && s.photoCandidates.length > 0) || (s.images && s.images.length > 0)
+        );
+
+        if (validSlidesWithPhotos.length === 0) {
+          throw new Error("No billboard photos found on any slide in this presentation.");
+        }
+
+        const preparedItems = validSlidesWithPhotos.map((slide, idx) => {
+          const firstImage = (slide.photoCandidates && slide.photoCandidates.length > 0)
+            ? slide.photoCandidates[0]
+            : slide.images[0];
+
+          let previewUrl = '';
+          if (firstImage?.blob && typeof window !== 'undefined' && window.URL) {
+            try { previewUrl = URL.createObjectURL(firstImage.blob); } catch {}
+          }
+
+          const topCandidate = (slide.candidates && slide.candidates.length > 0) ? slide.candidates[0].site : null;
+          const clientName = slide.aiData?.clientName || 'Campaign Artwork';
+          const loc = topCandidate ? (topCandidate['Location '] || topCandidate.Location || topCandidate['Locality Site Location']) : `Slide ${slide.number}`;
+          const facing = slide.aiData?.facing || topCandidate?.Facing || topCandidate?.['Traffic View'] || '';
+          const city = topCandidate?.City || 'Meerut';
+
+          return {
+            id: `ppt_only_${slide.number}_${idx}`,
+            clientName,
+            location: loc,
+            facing,
+            city,
+            sl: topCandidate?.SL || '',
+            startDate: '—',
+            endDate: '—',
+            durationDays: 0,
+            proRataRent: 0,
+            monthlyRent: topCandidate?.['Rental Per Month'] || topCandidate?.Rental || 0,
+            matchedSite: topCandidate,
+            matchedSlide: {
+              number: slide.number,
+              textSnippet: (slide.text || '').slice(0, 100),
+              imageBlob: firstImage?.blob || null,
+              previewUrl,
+              confidenceScore: slide.candidates?.[0]?.score || 50,
+              matchType: slide.confidence === 'HIGH' ? 'exact_sl' : 'probable'
+            },
+            hasConflict: false,
+            conflictReason: null,
+            isPhotoOnly: true,
+            availableSlides: slidesList.map(s => {
+              const img = (s.photoCandidates && s.photoCandidates.length > 0) ? s.photoCandidates[0] : (s.images?.[0] || null);
+              return {
+                number: s.number,
+                textSnippet: (s.text || '').slice(0, 100),
+                imageBlob: img?.blob || null,
+                previewUrl: ''
+              };
+            })
+          };
+        });
+
+        const clientGroups = [{ name: 'Campaign Artwork', count: preparedItems.length, hasConflicts: false }];
+        setParsedData({
+          items: preparedItems,
+          clientGroups,
+          totalSites: preparedItems.length,
+          conflictsCount: 0
+        });
+        setStep(2);
+        return;
+      }
+
+      // 🎯 Mode 1 (Excel Only) & Mode 3 (Combo)
+      setProcessingMsg("Reading Excel Media Plan...");
       const excelBuffer = await excelFile.arrayBuffer();
       const { sheets, sheetNames } = await readWorkbook(excelBuffer, excelFile.name);
       const primarySheet = sheets[sheetNames[0]] || [];
@@ -104,7 +199,7 @@ export default function BulkBookingWizard({
       setProcessingMsg("Scanning inventory for date conflicts & grouping clients...");
       let parsed = parseBulkBookingRows(primarySheet, hoardings);
 
-      // 2. If Mode B: Parse PPT and match slides
+      // If Mode Combo: Parse PPT and match slides
       if (mode === 'combo' && pptFile) {
         setProcessingMsg("Extracting PPT slides & matching site artworks...");
         const pptBuffer = await pptFile.arrayBuffer();
@@ -230,9 +325,10 @@ export default function BulkBookingWizard({
 
   const eligibleCount = useMemo(() => {
     if (!parsedData?.items) return 0;
+    if (mode === 'ppt') return parsedData.items.filter(i => i.matchedSite && i.matchedSlide?.imageBlob).length;
     if (artworkMode === 'history_only') return parsedData.items.filter(i => i.matchedSite).length;
     return parsedData.items.filter(i => i.matchedSite && (!i.hasConflict || !skipConflicted)).length;
-  }, [parsedData, skipConflicted, artworkMode]);
+  }, [parsedData, skipConflicted, artworkMode, mode]);
 
   if (!isOpen) return null;
 
@@ -259,7 +355,8 @@ export default function BulkBookingWizard({
         {step === 1 && (
           <div className="bulk-wizard-body">
             {/* Mode Selector Cards */}
-            <div className="bulk-mode-selector">
+            <div className="bulk-mode-selector" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '12px' }}>
+              {/* Mode 1: Excel Only */}
               <div 
                 className={`bulk-mode-card ${mode === 'excel' ? 'active' : ''}`}
                 onClick={() => setMode('excel')}
@@ -271,12 +368,31 @@ export default function BulkBookingWizard({
                   <FileSpreadsheet size={24} />
                 </div>
                 <div className="mode-card-info">
-                  <h4>Mode 1: Only Excel (Fast Booking)</h4>
-                  <p>Fastest way to book. Upload Media Plan / RO with client names, dates & rates.</p>
+                  <h4>Mode 1: Only Excel</h4>
+                  <p>Media Plan booking schedule (clients, dates, rental rates).</p>
                   <span className="mode-badge">⚡ 1 File Required</span>
                 </div>
               </div>
 
+              {/* Mode 2: PPT Only */}
+              <div 
+                className={`bulk-mode-card ${mode === 'ppt' ? 'active' : ''}`}
+                onClick={() => setMode('ppt')}
+              >
+                <div className="mode-card-radio">
+                  <div className="radio-inner" />
+                </div>
+                <div className="mode-card-icon ppt-icon">
+                  <Presentation size={24} />
+                </div>
+                <div className="mode-card-info">
+                  <h4>Mode 2: Only PPT Deck</h4>
+                  <p>Display artworks & photos. Matches slides to hoarding sites.</p>
+                  <span className="mode-badge" style={{ background: '#fce7f3', color: '#be185d' }}>📸 1 File Required</span>
+                </div>
+              </div>
+
+              {/* Mode 3: Excel + PPT Combined */}
               <div 
                 className={`bulk-mode-card ${mode === 'combo' ? 'active' : ''}`}
                 onClick={() => setMode('combo')}
@@ -285,11 +401,11 @@ export default function BulkBookingWizard({
                   <div className="radio-inner" />
                 </div>
                 <div className="mode-card-icon combo-icon">
-                  <Presentation size={24} />
+                  <Layers size={24} />
                 </div>
                 <div className="mode-card-info">
-                  <h4>Mode 2: Excel + PPT Bundle (Full Campaign)</h4>
-                  <p>Excel for dates & clients + PPT deck for photos. AI auto-matches slides to sites.</p>
+                  <h4>Mode 3: Excel + PPT</h4>
+                  <p>Full Campaign. Calendar dates booking + display artworks matched.</p>
                   <span className="mode-badge combo">📦 Excel + PPT Required</span>
                 </div>
               </div>
@@ -297,40 +413,42 @@ export default function BulkBookingWizard({
 
             {/* Dropzones */}
             <div className={`bulk-dropzone-grid ${mode === 'combo' ? 'dual' : 'single'}`}>
-              {/* Excel Dropzone */}
-              <div 
-                className={`bulk-file-dropzone ${excelFile ? 'has-file' : ''}`}
-                onDragOver={(e) => e.preventDefault()}
-                onDrop={handleExcelDrop}
-                onClick={() => excelInputRef.current?.click()}
-              >
-                <input 
-                  type="file" 
-                  ref={excelInputRef} 
-                  accept=".xlsx, .xls, .csv" 
-                  style={{ display: 'none' }}
-                  onChange={(e) => {
-                    if (e.target.files?.[0]) setExcelFile(e.target.files[0]);
-                  }}
-                />
-                <div className="dropzone-content">
-                  <FileSpreadsheet size={36} className="dropzone-icon" />
-                  {excelFile ? (
-                    <div className="file-info-badge">
-                      <span className="file-name">{excelFile.name}</span>
-                      <span className="file-size">({(excelFile.size / 1024).toFixed(1)} KB)</span>
-                    </div>
-                  ) : (
-                    <>
-                      <h5>Drop Excel Media Plan (.xlsx, .csv)</h5>
-                      <p>or click to browse from computer</p>
-                    </>
-                  )}
+              {/* Excel Dropzone (Shown for Mode Excel and Mode Combo) */}
+              {(mode === 'excel' || mode === 'combo') && (
+                <div 
+                  className={`bulk-file-dropzone ${excelFile ? 'has-file' : ''}`}
+                  onDragOver={(e) => e.preventDefault()}
+                  onDrop={handleExcelDrop}
+                  onClick={() => excelInputRef.current?.click()}
+                >
+                  <input 
+                    type="file" 
+                    ref={excelInputRef} 
+                    accept=".xlsx, .xls, .csv" 
+                    style={{ display: 'none' }}
+                    onChange={(e) => {
+                      if (e.target.files?.[0]) setExcelFile(e.target.files[0]);
+                    }}
+                  />
+                  <div className="dropzone-content">
+                    <FileSpreadsheet size={36} className="dropzone-icon" />
+                    {excelFile ? (
+                      <div className="file-info-badge">
+                        <span className="file-name">{excelFile.name}</span>
+                        <span className="file-size">({(excelFile.size / 1024).toFixed(1)} KB)</span>
+                      </div>
+                    ) : (
+                      <>
+                        <h5>Drop Excel Media Plan (.xlsx, .csv)</h5>
+                        <p>or click to browse from computer</p>
+                      </>
+                    )}
+                  </div>
                 </div>
-              </div>
+              )}
 
-              {/* PPT Dropzone (Mode B) */}
-              {mode === 'combo' && (
+              {/* PPT Dropzone (Shown for Mode PPT and Mode Combo) */}
+              {(mode === 'ppt' || mode === 'combo') && (
                 <div 
                   className={`bulk-file-dropzone ${pptFile ? 'has-file' : ''}`}
                   onDragOver={(e) => e.preventDefault()}
@@ -364,8 +482,8 @@ export default function BulkBookingWizard({
               )}
             </div>
 
-            {/* PPT Artwork Target Destination Selector */}
-            {mode === 'combo' && (
+            {/* PPT Artwork Target Destination Selector (Shown whenever PPT is involved) */}
+            {(mode === 'ppt' || mode === 'combo') && (
               <div style={{
                 margin: '16px 0 8px 0',
                 padding: '14px 16px',
@@ -376,7 +494,7 @@ export default function BulkBookingWizard({
               }}>
                 <div style={{ fontSize: '0.86rem', fontWeight: '700', color: '#1e293b', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '6px' }}>
                   <span>🎯</span>
-                  <span>PPT Artwork Slides Destination:</span>
+                  <span>PPT Photos / Artwork Destination:</span>
                 </div>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '10px' }}>
                   <label style={{
@@ -400,10 +518,10 @@ export default function BulkBookingWizard({
                     />
                     <div>
                       <div style={{ fontWeight: 700, fontSize: '0.82rem', color: artworkMode === 'history_only' ? '#065f46' : '#1e293b' }}>
-                        📁 Save to History Only (Recommended)
+                        📁 Save to History (Execution Proof)
                       </div>
                       <div style={{ fontSize: '0.74rem', color: '#64748b', marginTop: '2px', lineHeight: 1.3 }}>
-                        Keep current master site photo intact; save PPT artwork slides as audit proof in site history.
+                        Keep current master site photo intact; save PPT artwork photos as audit proof in site history.
                       </div>
                     </div>
                   </label>
@@ -429,10 +547,10 @@ export default function BulkBookingWizard({
                     />
                     <div>
                       <div style={{ fontWeight: 700, fontSize: '0.82rem', color: artworkMode === 'replace_master' ? '#3730a3' : '#1e293b' }}>
-                        🔄 Replace Main Site Photo
+                        🔄 Save as Main Image (Replace Master)
                       </div>
                       <div style={{ fontSize: '0.74rem', color: '#64748b', marginTop: '2px', lineHeight: 1.3 }}>
-                        Update the primary site display photo with the PPT artwork slide; previous master photo is archived.
+                        Update the primary site display photo with the PPT photo; previous master photo is archived.
                       </div>
                     </div>
                   </label>
@@ -444,7 +562,11 @@ export default function BulkBookingWizard({
             <div className="bulk-instruction-callout">
               <Sparkles size={16} color="#6366f1" />
               <span>
-                <strong>Smart Multi-Client Engine:</strong> A single Excel file can contain multiple clients in the <code>Client Name</code> or <code>Booked By</code> column. The engine will auto-group them!
+                {mode === 'ppt' ? (
+                  <><strong>Smart Slide AI Matcher:</strong> PPT slides will be automatically matched to hoarding sites using location names, serial numbers (SL), and visual landmarks.</>
+                ) : (
+                  <><strong>Smart Multi-Client Engine:</strong> A single Excel file can contain multiple clients in the <code>Client Name</code> or <code>Booked By</code> column. The engine will auto-group them!</>
+                )}
               </span>
             </div>
 
@@ -456,7 +578,12 @@ export default function BulkBookingWizard({
               <button 
                 type="button" 
                 className="btn-wizard-next" 
-                disabled={!excelFile || (mode === 'combo' && !pptFile) || isProcessing}
+                disabled={
+                  (mode === 'excel' && !excelFile) ||
+                  (mode === 'ppt' && !pptFile) ||
+                  (mode === 'combo' && (!excelFile || !pptFile)) ||
+                  isProcessing
+                }
                 onClick={handleAnalyzeFiles}
               >
                 {isProcessing ? (
@@ -466,7 +593,7 @@ export default function BulkBookingWizard({
                   </>
                 ) : (
                   <>
-                    <span>Review & Validate Bookings</span>
+                    <span>{mode === 'ppt' ? 'Review & Validate Photos' : 'Review & Validate Bookings'}</span>
                     <ArrowRight size={16} />
                   </>
                 )}
@@ -620,9 +747,9 @@ export default function BulkBookingWizard({
                     <th>Site Location</th>
                     <th>Facing</th>
                     <th>City</th>
-                    <th>Booking Dates</th>
-                    <th>Rent</th>
-                    {mode === 'combo' && <th>Matched Photo</th>}
+                    {mode !== 'ppt' && <th>Booking Dates</th>}
+                    {mode !== 'ppt' && <th>Rent</th>}
+                    {(mode === 'combo' || mode === 'ppt') && <th>Matched Photo</th>}
                     <th>Radar Status</th>
                   </tr>
                 </thead>
@@ -658,12 +785,16 @@ export default function BulkBookingWizard({
                           </span>
                         </td>
                         <td className="col-city">{item.city}</td>
-                        <td className="col-dates">
-                          <span className="date-span">{item.startDate} → {item.endDate}</span>
-                          <small className="days-tag">({item.durationDays} days)</small>
-                        </td>
-                        <td className="col-rent">₹{Number(item.proRataRent || item.monthlyRent || 0).toLocaleString()}</td>
-                        {mode === 'combo' && (
+                        {mode !== 'ppt' && (
+                          <td className="col-dates">
+                            <span className="date-span">{item.startDate} → {item.endDate}</span>
+                            <small className="days-tag">({item.durationDays} days)</small>
+                          </td>
+                        )}
+                        {mode !== 'ppt' && (
+                          <td className="col-rent">₹{Number(item.proRataRent || item.monthlyRent || 0).toLocaleString()}</td>
+                        )}
+                        {(mode === 'combo' || mode === 'ppt') && (
                           <td className="col-photo">
                             <div className="slide-selector-cell">
                               <div className="slide-thumb-preview" title={item.matchedSlide ? `Slide ${item.matchedSlide.number}` : 'No photo'}>
@@ -730,10 +861,15 @@ export default function BulkBookingWizard({
                                 </small>
                               )}
                             </div>
+                          ) : !item.matchedSite ? (
+                            <span className="status-badge conflict" title="No matching hoarding found in master database">
+                              <AlertCircle size={12} />
+                              <span>Site Not Found</span>
+                            </span>
                           ) : (
                             <span className="status-badge clear">
                               <CheckCircle2 size={12} />
-                              <span>Clear to Book</span>
+                              <span>{mode === 'ppt' ? 'Ready to Upload' : 'Clear to Book'}</span>
                             </span>
                           )}
                         </td>
@@ -756,7 +892,7 @@ export default function BulkBookingWizard({
               }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
                   <span style={{ fontSize: '0.84rem', fontWeight: 600, color: '#334155' }}>
-                    {commitProgress.message || `Booking ${eligibleCount} sites...`}
+                    {commitProgress.message || (mode === 'ppt' ? `Uploading ${eligibleCount} photos...` : `Booking ${eligibleCount} sites...`)}
                   </span>
                   <span style={{ fontSize: '0.84rem', fontWeight: 700, color: '#4f46e5' }}>
                     {commitProgress.percent || 15}%
@@ -791,20 +927,28 @@ export default function BulkBookingWizard({
                   {isCommitting ? (
                     <>
                       <Loader2 size={16} className="spin-icon" />
-                      <span>{commitProgress.message || `Executing ${eligibleCount} sites...`}</span>
+                      <span>{commitProgress.message || (mode === 'ppt' ? `Uploading ${eligibleCount} photos...` : `Executing ${eligibleCount} sites...`)}</span>
                     </>
                   ) : (
                     <>
                       <Check size={16} />
-                      <span>Confirm & Execute {eligibleCount} Sites</span>
+                      <span>
+                        {mode === 'ppt'
+                          ? `Confirm & Upload ${eligibleCount} Photos (${artworkMode === 'replace_master' ? 'Replace Master' : 'Save to History'})`
+                          : `Confirm & Execute ${eligibleCount} Sites`}
+                      </span>
                     </>
                   )}
                 </button>
                 {eligibleCount > 0 && !isCommitting && (
                   <span style={{ fontSize: '11px', color: '#64748b', textAlign: 'right' }}>
-                    {artworkMode === 'history_only' 
-                      ? 'Only uploads photos; no calendar bookings made.' 
-                      : (skipConflicted ? 'Conflicted sites will be skipped.' : 'Only valid non-conflicted sites will be processed.')}
+                    {mode === 'ppt'
+                      ? (artworkMode === 'replace_master'
+                          ? 'Will update master hoarding display photos in database & sheet.'
+                          : 'Will attach photos to hoarding execution proof history.')
+                      : (artworkMode === 'history_only' 
+                          ? 'Only uploads photos; no calendar bookings made.' 
+                          : (skipConflicted ? 'Conflicted sites will be skipped.' : 'Only valid non-conflicted sites will be processed.'))}
                   </span>
                 )}
               </div>
@@ -818,10 +962,18 @@ export default function BulkBookingWizard({
             <div className="success-icon-wrap">
               <CheckCircle2 size={56} color="#10b981" />
             </div>
-            <h4>Bulk Campaign Successfully Onboarded!</h4>
+            <h4>{mode === 'ppt' ? 'Campaign Photos Uploaded!' : 'Bulk Campaign Successfully Onboarded!'}</h4>
             <p>
-              <strong>{commitResult.bookedCount} hoarding sites</strong> have been confirmed and booked across{' '}
-              <strong>{parsedData?.clientGroups.length || 1} client campaigns</strong>.
+              {mode === 'ppt' ? (
+                <>
+                  <strong>{commitResult.bookedCount} hoarding photos</strong> have been synced to sites ({artworkMode === 'replace_master' ? 'Master Display Photos Updated' : 'Saved to Execution History'}).
+                </>
+              ) : (
+                <>
+                  <strong>{commitResult.bookedCount} hoarding sites</strong> have been confirmed and booked across{' '}
+                  <strong>{parsedData?.clientGroups.length || 1} client campaigns</strong>.
+                </>
+              )}
             </p>
 
             {commitResult.skippedCount > 0 && (

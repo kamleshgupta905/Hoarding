@@ -1,7 +1,7 @@
 import React from 'react';
 import { Camera, CheckCircle2, MapPin, MapPinOff, RefreshCw, RotateCcw, WifiOff, XCircle, Sparkles, Check, AlertCircle, Navigation, ChevronRight, Compass, Volume2, VolumeX, ShieldCheck, Zap, Smartphone, Share2 } from 'lucide-react';
 import { uploadStaffPhoto, fetchHoardings, saveLocalStaffUpload, syncToGoogleSheet, recordSiteHistory } from '../services/dataService';
-import { matchGeofencedHoardingWithGemini } from '../services/aiService';
+import { analyzeHoardingImage } from '../services/aiService';
 import { ensureUprightBlob } from '../core/imageOrientation';
 import { HIRA_LOGO } from '../assets/hiraLogoData';
 import AppAutoUpdater from '../components/AppAutoUpdater';
@@ -940,112 +940,62 @@ const StaffUpload = () => {
             let matchConfidence = 0;
 
             const allHoardings = hoardingsRef.current;
+            const rawBase64 = await blobToDataUrl(rawBlob);
+
             if (currentGps?.latitude && currentGps?.longitude && allHoardings.length > 0) {
-                // Calculate distance to all hoardings
-                const candidatesWithDistance = allHoardings
-                    .map(h => {
-                        const lat = parseFloat(h.Latitude || h.Lat || h['Lat.'] || (h['Lat-Long'] ? h['Lat-Long'].split(',')[0] : ''));
-                        const lng = parseFloat(h.Longitude || h.Long || h['Long.'] || (h['Lat-Long'] ? h['Lat-Long'].split(',')[1] : ''));
-                        if (isNaN(lat) || isNaN(lng)) return null;
-                        const dist = distanceMeters(currentGps.latitude, currentGps.longitude, lat, lng);
-                        return { ...h, distanceM: dist, _parsedLat: lat, _parsedLng: lng };
-                    })
-                    .filter(Boolean)
-                    .sort((a, b) => a.distanceM - b.distanceM);
-
-                // Multi-tier candidate filter: 50m (pinpoint), 100m (corridor), 175m (highway)
-                const candidates50m = candidatesWithDistance.filter(h => h.distanceM <= 50);
-                const candidates100m = candidatesWithDistance.filter(h => h.distanceM <= 100);
-                const candidates = candidates50m.length > 0 
-                    ? candidates50m 
-                    : (candidates100m.length > 0 ? candidates100m : candidatesWithDistance.filter(h => h.distanceM <= 175));
-
-                const rawBase64 = await blobToDataUrl(rawBlob);
-
-                if (candidates.length > 0) {
-                    try {
-                        const geminiMatch = await matchGeofencedHoardingWithGemini(rawBase64, candidates.slice(0, 5));
-                        if (geminiMatch.matchedSiteName) {
-                            matchedSite = geminiMatch.matchedSiteName;
-                            matchedSiteData = candidates.find(c => (c["Location "] || c.siteName) === matchedSite) || candidates[0];
-                            siteStatus = geminiMatch.status || 'Available';
-                            status = 'AUTO_APPROVED';
-                            aiDecision = 'GEMINI_GPS_AUTO_MATCH';
-                            matchConfidence = Math.round((geminiMatch.confidence || 0.95) * 100);
-
-                            showMatchBanner({
-                                siteName: matchedSite,
-                                status: siteStatus,
-                                distance: Math.round(matchedSiteData.distanceM || candidates[0].distanceM),
-                                confidence: matchConfidence
-                            });
-
-                            speakOfflineVoice('Site photo auto-match aur history me sync ho gayi hai.');
-                        } else if (candidates.length === 1 && candidates[0].distanceM <= 60) {
-                            matchedSiteData = candidates[0];
-                            matchedSite = candidates[0]["Location "] || candidates[0].siteName;
-                            siteStatus = 'Available';
-                            status = 'AUTO_APPROVED';
-                            aiDecision = 'GPS_AUTO_MATCH';
-                            showMatchBanner({
-                                siteName: matchedSite,
-                                status: siteStatus,
-                                distance: Math.round(candidates[0].distanceM),
-                                confidence: 88
-                            });
-
-                            speakOfflineVoice('Site photo auto-match aur history me sync ho gayi hai.');
-                        } else {
-                            // Nearest fallback if under 40m
-                            if (candidates[0].distanceM <= 40) {
-                                matchedSiteData = candidates[0];
-                                matchedSite = candidates[0]["Location "] || candidates[0].siteName;
-                                status = 'AUTO_APPROVED';
-                                aiDecision = 'GPS_PROXIMITY_MATCH';
-                                showMatchBanner({
-                                    siteName: matchedSite,
-                                    status: 'Available',
-                                    distance: Math.round(candidates[0].distanceM),
-                                    confidence: 82
-                                });
-                                speakOfflineVoice('Site photo auto-match ho gayi hai.');
-                            } else {
-                                showMatchBanner({
-                                    warning: true,
-                                    message: 'Visual match not confirmed. Sent to admin review.'
-                                });
-                                speakOfflineVoice('Photo kisi registered site se match nahi hui.');
-                            }
+                try {
+                    // 🧠 Use the EXACT same structure-filtering, visual-landmark & twin-facing engine as Daily Updates
+                    const aiMatchResult = await analyzeHoardingImage(
+                        rawBase64, 
+                        allHoardings, 
+                        null, 
+                        { 
+                            liveGps: currentGps, 
+                            facing: compassHeading?.direction 
                         }
-                    } catch (aiErr) {
-                        console.warn('AI vision matching error:', aiErr);
-                        if (candidates.length > 0 && candidates[0].distanceM <= 50) {
-                            matchedSiteData = candidates[0];
-                            matchedSite = candidates[0]["Location "] || candidates[0].siteName;
-                            status = 'AUTO_APPROVED';
-                            aiDecision = 'GPS_AUTO_MATCH';
-                            showMatchBanner({
-                                siteName: matchedSite,
-                                status: 'Available',
-                                distance: Math.round(candidates[0].distanceM),
-                                confidence: 80
-                            });
-                            speakOfflineVoice('Site photo auto-match aur history me sync ho gayi hai.');
-                        } else {
-                            showMatchBanner({
-                                warning: true,
-                                message: 'Site match could not be confirmed.'
-                            });
-                            speakOfflineVoice('Photo kisi registered site se match nahi hui.');
-                        }
+                    );
+
+                    if (aiMatchResult && aiMatchResult.matchedLocation) {
+                        matchedSiteData = aiMatchResult.site || (aiMatchResult.matchedIndex >= 0 ? allHoardings[aiMatchResult.matchedIndex] : null);
+                        matchedSite = aiMatchResult.matchedLocation;
+                        siteStatus = aiMatchResult.status || matchedSiteData?.STATUS || 'Available';
+                        status = 'AUTO_APPROVED';
+                        aiDecision = 'GEMINI_GPS_AUTO_MATCH';
+                        matchConfidence = Math.round(aiMatchResult.confidence || 95);
+
+                        const siteSL = aiMatchResult.sl || matchedSiteData?.SL || '';
+                        const slTag = siteSL ? `[SL #${siteSL}] ` : '';
+
+                        showMatchBanner({
+                            siteName: `${slTag}${matchedSite}`,
+                            status: siteStatus,
+                            distance: aiMatchResult.distanceM != null ? Math.round(aiMatchResult.distanceM) : 0,
+                            confidence: matchConfidence,
+                            facing: aiMatchResult.facing || matchedSiteData?.Facing
+                        });
+
+                        speakOfflineVoice('Site photo auto-match aur history me sync ho gayi hai.');
+                    } else {
+                        showMatchBanner({
+                            warning: true,
+                            message: 'Visual match not confirmed. Sent to admin review.'
+                        });
+                        speakOfflineVoice('Photo kisi registered site se match nahi hui.');
                     }
-                } else {
+                } catch (aiErr) {
+                    console.warn('AI vision matching error in Staff Camera:', aiErr);
                     showMatchBanner({
                         warning: true,
-                        message: 'No registered hoarding within GPS range.'
+                        message: 'Match could not be confirmed. Sent to admin review.'
                     });
-                    speakOfflineVoice('50 meter ke range me koi hoarding nahi mili.');
+                    speakOfflineVoice('Photo kisi registered site se match nahi hui.');
                 }
+            } else {
+                showMatchBanner({
+                    warning: true,
+                    message: 'No registered hoarding within GPS range or GPS unavailable.'
+                });
+                speakOfflineVoice('Location nahi mili. Phone GPS check karein.');
             }
 
             // 🎯 Distance and Facing Calculations for Watermark & History

@@ -37,7 +37,8 @@ import './AdminDashboard.css';
 import GeoRadiusSelector from '../components/dashboard/GeoRadiusSelector';
 import { useInventoryStore } from '../stores/inventoryStore';
 import { calculateDistance } from '../services/geoService';
-import { APP_VERSION } from '../version';
+import { APP_VERSION, APP_BUILD_DATE } from '../version';
+import { checkForAppUpdates } from '../services/appUpdater';
 
 const SHEET_HISTORY_LIMIT = 30;
 const HIDDEN_SHEET_COLUMN_LETTERS = new Set(['T', 'W', 'X', 'Y', 'Z']);
@@ -385,11 +386,77 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
     const [scriptUrl] = useState('https://script.google.com/macros/s/AKfycbwmtW7Y71md_XoIk8A0JWrsWKSN-YuFgCcdahe5R56mADlGtH-t9Pj98YhPt3-Z1DoI5g/exec');
     // const API_KEY = '...'; // Removed hardcoded key in favor of VITE_OPENAI_API_KEY in .env
     const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+    const [updateCheckStatus, setUpdateCheckStatus] = useState(null);
+    const [isClearingCache, setIsClearingCache] = useState(false);
     const [isAddModalOpen, setIsAddModalOpen] = useState(false);
     const [isEditModalOpen, setIsEditModalOpen] = useState(false);
     const [isBulkBookingOpen, setIsBulkBookingOpen] = useState(false);
     const [selectedHoarding, setSelectedHoarding] = useState(null);
     const [formData, setFormData] = useState({});
+
+    const handleCheckForUpdates = async () => {
+        setUpdateCheckStatus({ checking: true, message: 'Checking for latest updates...' });
+        try {
+            if (window.electronAPI && typeof window.electronAPI.checkForUpdates === 'function') {
+                window.electronAPI.checkForUpdates();
+                setUpdateCheckStatus({ checking: false, message: 'Desktop update check triggered. Check notifications.' });
+                return;
+            }
+            const res = await checkForAppUpdates();
+            if (res.hasUpdate) {
+                setUpdateCheckStatus({ 
+                    checking: false, 
+                    hasUpdate: true, 
+                    message: `Naya update available hai: v${res.latestVersion}!`,
+                    res 
+                });
+            } else {
+                setUpdateCheckStatus({ 
+                    checking: false, 
+                    hasUpdate: false, 
+                    message: `App bilkul updated hai (v${APP_VERSION}). Latest build active hai.` 
+                });
+            }
+        } catch (err) {
+            setUpdateCheckStatus({ checking: false, error: true, message: 'Update check failed: ' + (err.message || 'Network error') });
+        }
+    };
+
+    const handleClearAppCache = async () => {
+        setIsClearingCache(true);
+        try {
+            if (window.electronAPI && typeof window.electronAPI.clearCache === 'function') {
+                await window.electronAPI.clearCache();
+                return;
+            }
+            if ('caches' in window) {
+                const cacheNames = await caches.keys();
+                await Promise.all(cacheNames.map(name => caches.delete(name)));
+            }
+            if (navigator.serviceWorker) {
+                const registrations = await navigator.serviceWorker.getRegistrations();
+                for (const reg of registrations) {
+                    await reg.unregister();
+                }
+            }
+            try {
+                localStorage.removeItem('adh_last_update_check');
+                localStorage.removeItem('adh_installed_version');
+                localStorage.removeItem('last_hoardings_update');
+                localStorage.removeItem('staff_photo_uploaded_count');
+                sessionStorage.clear();
+            } catch {}
+
+            appToast.success('Cache successfully cleared! Fresh app load ho raha hai...');
+            setTimeout(() => {
+                window.location.reload(true);
+            }, 600);
+        } catch (err) {
+            console.error('Clear cache error:', err);
+            setIsClearingCache(false);
+            appToast.error('Cache clear failed: ' + (err.message || 'Unknown error'));
+        }
+    };
 
     const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
@@ -4783,16 +4850,143 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
 
             {/* Settings Modal */}
             {isSettingsOpen && (
-                <div className="modal-overlay">
-                    <div className="modal-card">
-                        <div className="modal-header">
-                            <h3>⚙️ System Settings</h3>
-                            <button onClick={() => setIsSettingsOpen(false)}><X size={20} /></button>
+                <div className="modal-overlay" onClick={() => setIsSettingsOpen(false)}>
+                    <div className="modal-card" onClick={e => e.stopPropagation()} style={{ maxWidth: '500px', width: '100%', borderRadius: '20px', overflow: 'hidden' }}>
+                        <div className="modal-header" style={{ padding: '20px 24px', borderBottom: '1px solid #f1f5f9' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                                <div style={{ width: '36px', height: '36px', borderRadius: '10px', background: 'rgba(99, 102, 241, 0.1)', color: '#6366f1', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                    <Settings size={20} />
+                                </div>
+                                <div>
+                                    <h3 style={{ margin: 0, fontSize: '1.15rem', fontWeight: 800, color: '#0f172a' }}>System Settings</h3>
+                                    <span style={{ fontSize: '0.76rem', color: '#64748b' }}>App Version & Cache Management</span>
+                                </div>
+                            </div>
+                            <button onClick={() => setIsSettingsOpen(false)} style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: '#94a3b8' }}><X size={20} /></button>
                         </div>
-                        <div className="modal-body">
-                            <p className="modal-help">System is currently running on Enterprise AI License. All detections are active.</p>
+                        <div className="modal-body" style={{ padding: '20px 24px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                            {/* Version Info Box */}
+                            <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '14px', padding: '14px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                                <div>
+                                    <span style={{ fontSize: '0.72rem', fontWeight: 700, color: '#6366f1', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Installed Build</span>
+                                    <div style={{ fontSize: '1.08rem', fontWeight: 800, color: '#0f172a', marginTop: '1px' }}>
+                                        v{APP_VERSION} <span style={{ fontSize: '0.74rem', fontWeight: 500, color: '#64748b' }}>({window.electronAPI ? 'Desktop Electron' : 'Web Browser'})</span>
+                                    </div>
+                                    <span style={{ fontSize: '0.70rem', color: '#94a3b8' }}>
+                                        Build Date: {APP_BUILD_DATE ? new Date(APP_BUILD_DATE).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : 'Live'}
+                                    </span>
+                                </div>
+                                <div style={{ background: '#ecfdf5', border: '1px solid #a7f3d0', color: '#065f46', padding: '4px 10px', borderRadius: '20px', fontSize: '0.72rem', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                    <CheckCircle size={12} /> Active
+                                </div>
+                            </div>
+
+                            {/* Update & Cache Actions */}
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                                {/* 1. Check for Updates Button */}
+                                <button 
+                                    type="button"
+                                    onClick={handleCheckForUpdates}
+                                    disabled={updateCheckStatus?.checking}
+                                    style={{
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'center',
+                                        gap: '8px',
+                                        width: '100%',
+                                        padding: '12px 18px',
+                                        borderRadius: '12px',
+                                        background: '#0f172a',
+                                        color: '#ffffff',
+                                        border: 'none',
+                                        fontSize: '0.88rem',
+                                        fontWeight: 700,
+                                        cursor: updateCheckStatus?.checking ? 'not-allowed' : 'pointer',
+                                        transition: 'all 0.18s ease'
+                                    }}
+                                >
+                                    <RefreshCw size={16} className={updateCheckStatus?.checking ? 'spin' : ''} />
+                                    <span>{updateCheckStatus?.checking ? 'Checking for updates...' : 'Check for Updates'}</span>
+                                </button>
+
+                                {updateCheckStatus?.message && (
+                                    <div style={{
+                                        padding: '9px 13px',
+                                        borderRadius: '9px',
+                                        fontSize: '0.78rem',
+                                        fontWeight: 600,
+                                        background: updateCheckStatus.hasUpdate ? '#eef2ff' : updateCheckStatus.error ? '#fef2f2' : '#f0fdf4',
+                                        color: updateCheckStatus.hasUpdate ? '#4338ca' : updateCheckStatus.error ? '#991b1b' : '#166534',
+                                        border: `1px solid ${updateCheckStatus.hasUpdate ? '#c7d2fe' : updateCheckStatus.error ? '#fecaca' : '#bbf7d0'}`,
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        gap: '6px'
+                                    }}>
+                                        {updateCheckStatus.hasUpdate ? <Zap size={14} /> : updateCheckStatus.error ? <AlertCircle size={14} /> : <Check size={14} />}
+                                        <span>{updateCheckStatus.message}</span>
+                                    </div>
+                                )}
+
+                                {/* 2. Clear Cache Button (Directly below Check for Updates as requested) */}
+                                <button 
+                                    type="button"
+                                    onClick={handleClearAppCache}
+                                    disabled={isClearingCache}
+                                    style={{
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'center',
+                                        gap: '8px',
+                                        width: '100%',
+                                        padding: '12px 18px',
+                                        borderRadius: '12px',
+                                        background: '#ffffff',
+                                        color: '#dc2626',
+                                        border: '1.5px solid #fca5a5',
+                                        fontSize: '0.88rem',
+                                        fontWeight: 700,
+                                        cursor: isClearingCache ? 'not-allowed' : 'pointer',
+                                        transition: 'all 0.18s ease'
+                                    }}
+                                    title="Wipe service worker and browser cache to load latest code"
+                                >
+                                    <Trash2 size={16} className={isClearingCache ? 'spin' : ''} />
+                                    <span>{isClearingCache ? 'Clearing cache & reloading...' : 'Clear Cache'}</span>
+                                </button>
+                                <span style={{ fontSize: '0.72rem', color: '#94a3b8', textAlign: 'center' }}>
+                                    Agar app me koi naya update show na ho raha ho to <strong>Clear Cache</strong> karein.
+                                </span>
+                            </div>
+
+                            {/* Download Official Apps Quick Link */}
+                            <div style={{ paddingTop: '8px', borderTop: '1px solid #f1f5f9', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.78rem', color: '#475569', fontWeight: 600 }}>
+                                    <Smartphone size={14} color="#10b981" />
+                                    <span>Official Heera Mobile & PC Apps</span>
+                                </div>
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        setIsSettingsOpen(false);
+                                        setIsAppDownloadModalOpen(true);
+                                    }}
+                                    style={{
+                                        background: 'transparent',
+                                        border: 'none',
+                                        color: '#6366f1',
+                                        fontSize: '0.78rem',
+                                        fontWeight: 700,
+                                        cursor: 'pointer',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        gap: '4px'
+                                    }}
+                                >
+                                    Download Apps <ArrowUpRight size={13} />
+                                </button>
+                            </div>
                         </div>
-                        <div className="modal-footer">
+                        <div className="modal-footer" style={{ padding: '12px 24px', borderTop: '1px solid #f1f5f9', display: 'flex', justifyContent: 'flex-end' }}>
                             <button className="btn-primary-admin" onClick={() => setIsSettingsOpen(false)}>Close</button>
                         </div>
                     </div>
@@ -5377,6 +5571,11 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                         <span>Daily Updates</span>
                     </button>
 
+                    <button className="nav-item" onClick={() => setIsAppDownloadModalOpen(true)} title="Download Android APK & Desktop App">
+                        <Smartphone size={18} />
+                        <span>Download Apps</span>
+                    </button>
+
                     <button className="nav-item" onClick={() => setIsSettingsOpen(true)}>
                         <Settings size={18} />
                         <span>Settings</span>
@@ -5456,6 +5655,17 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                 </label>
                             </div>
                         )}
+
+                        {/* 📱 Download Apps Quick Button */}
+                        <button 
+                            className="topbar-icon-btn" 
+                            onClick={() => setIsAppDownloadModalOpen(true)}
+                            title="Download Heera Staff Camera (APK) & Desktop PC App"
+                            style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '0 10px', width: 'auto', borderRadius: '10px' }}
+                        >
+                            <Smartphone size={16} color="#10b981" />
+                            <span style={{ fontSize: '0.78rem', fontWeight: 700, color: '#1e293b' }}>Download App</span>
+                        </button>
 
                         {/* 🔔 Notification Bell */}
                         <button className="topbar-icon-btn" title="Notifications">
