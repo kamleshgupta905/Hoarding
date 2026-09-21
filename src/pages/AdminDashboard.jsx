@@ -12,7 +12,7 @@ import {
     Radio, Signal, Globe, Crosshair, CheckCircle2, Navigation,
     Star, FileSpreadsheet, Presentation, Loader2
 } from 'lucide-react';
-import { analyzeHoardingImage, extractSiteCoordinates } from '../services/aiService';
+import { analyzeHoardingImage, extractSiteCoordinates, generateVisualLandmarksWithGemini } from '../services/aiService';
 import { fetchHoardings, compressImage, syncToGoogleSheet, exportProposalExcel, PROPOSAL_COLUMNS, getImageUrl, downloadHoardingImage, fetchStaffUploads, reviewStaffPhoto, detectStaffPhotoOrientation, fetchSheetGrid, saveSheetGrid, addDeletedSite, parseHistoryString, saveLocalBooking, clearLocalBooking, recordSiteBooking, removeSiteBooking, getSiteBookingSlots, checkBookingConflict, calculateProRataRental, resolveSiteLiveStatus, saveSiteBookingSlots, recordSiteHistory, getLocalHistory, getDirectDriveLink, parseCellImageUrls, addDeletedHistoryUrl, isHistoryUrlDeleted, removeSiteHistory, getExpiringSites } from '../services/dataService';
 import { generateMasterMediaPlanPptx } from '../services/presentationService';
 import ImageLightbox from '../components/ImageLightbox';
@@ -2460,6 +2460,16 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
             const facingResolved = imageData.facing || targetHoarding?.Facing || targetHoarding?.['Traffic View'] || '';
             const effectiveMode = imageData.uploadMode || dailyUploadMode || 'history_only';
 
+            // 🏛️ Check or generate permanent Visual Landmark Fingerprint
+            let landmarkDesc = (targetHoarding?.Visual_Landmarks || targetHoarding?.['Visual Landmarks'] || '').trim();
+            if (!landmarkDesc && base64) {
+                try {
+                    landmarkDesc = await generateVisualLandmarksWithGemini(base64, targetHoarding || { siteName: siteNameResolved, facing: facingResolved });
+                } catch (lErr) {
+                    console.warn('[Visual Landmark Fingerprint Warning]:', lErr);
+                }
+            }
+
             // ☁️ Sync directly to Google Drive & Google Sheets ExecutionHistory via Google Apps Script
             // mode: 'archive' = New file -> History only (master image unchanged)
             // mode: 'archive_existing' = Current Master -> History, New file -> Master Image in inventory
@@ -2471,7 +2481,8 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                 facing: facingResolved,
                 fields: { 
                     "SL": targetSL,
-                    Facing: facingResolved
+                    Facing: facingResolved,
+                    ...(landmarkDesc ? { "Visual_Landmarks": landmarkDesc } : {})
                 },
                 fileData: base64,
                 mimeType: 'image/jpeg',
@@ -2498,7 +2509,8 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                         persistentPreview: finalProofUrl,
                         preview: finalProofUrl,
                         driveSaved: !!driveUrl,
-                        lastSyncedSl: targetSL
+                        lastSyncedSl: targetSL,
+                        visualLandmarks: landmarkDesc || img.visualLandmarks || ''
                     };
                 }
                 return img;
@@ -2592,7 +2604,10 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                 "Image URL": finalProofUrl || h["Image URL"],
                                 image: finalProofUrl || h.image,
                                 History: updatedHist,
-                                ExecutionHistory: updatedExecutionHistory
+                                ExecutionHistory: updatedExecutionHistory,
+                                Visual_Landmarks: landmarkDesc || h.Visual_Landmarks || '',
+                                "Visual Landmarks": landmarkDesc || h['Visual Landmarks'] || '',
+                                Structure_Notes: landmarkDesc || h.Structure_Notes || ''
                             };
                         } else {
                             // history_only (Default)
@@ -2615,7 +2630,10 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                 Facing: facingResolved || h.Facing,
                                 ImageURL: (hasValidOldImage || !finalProofUrl) ? h.ImageURL : finalProofUrl,
                                 History: newHist,
-                                ExecutionHistory: updatedExecutionHistory
+                                ExecutionHistory: updatedExecutionHistory,
+                                Visual_Landmarks: landmarkDesc || h.Visual_Landmarks || '',
+                                "Visual Landmarks": landmarkDesc || h['Visual Landmarks'] || '',
+                                Structure_Notes: landmarkDesc || h.Structure_Notes || ''
                             };
                         }
                     }
@@ -3262,7 +3280,10 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                 BookedBy: (formData.STATUS === 'Booked' || formData.STATUS === 'Occupied') ? (formData.BookedBy || '') : '',
                 BookingStart: (formData.STATUS === 'Booked' || formData.STATUS === 'Occupied') ? (formData.BookingStart || '') : '',
                 BookingEnd: (formData.STATUS === 'Booked' || formData.STATUS === 'Occupied') ? (formData.BookingEnd || '') : '',
-                ImageURL: updatedImageURL
+                ImageURL: updatedImageURL,
+                Visual_Landmarks: formData.Visual_Landmarks || formData["Visual Landmarks"] || selectedHoarding.Visual_Landmarks || '',
+                "Visual Landmarks": formData.Visual_Landmarks || formData["Visual Landmarks"] || selectedHoarding["Visual Landmarks"] || '',
+                Structure_Notes: formData.Visual_Landmarks || formData["Visual Landmarks"] || selectedHoarding.Structure_Notes || ''
             };
 
             const targetSite = selectedHoarding;
@@ -4929,6 +4950,22 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                             value={formData.Longitude ?? ''} 
                                             onChange={e => setFormData({...formData, Longitude: e.target.value})}
                                             placeholder="e.g. 77.7058"
+                                        />
+                                    </div>
+                                </div>
+
+                                <div className="form-row">
+                                    <div className="form-group full-width">
+                                        <label>🏛️ Visual Landmarks & Physical Structure (AI Anchor Fingerprint)</label>
+                                        <input 
+                                            value={formData.Visual_Landmarks ?? formData["Visual Landmarks"] ?? formData.Structure_Notes ?? ''} 
+                                            onChange={e => setFormData({
+                                                ...formData, 
+                                                Visual_Landmarks: e.target.value,
+                                                "Visual Landmarks": e.target.value,
+                                                Structure_Notes: e.target.value
+                                            })}
+                                            placeholder="e.g. Central median unipole under elevated metro track pillars / Curbside pole alongside flyover ramp retaining wall"
                                         />
                                     </div>
                                 </div>
@@ -7592,6 +7629,22 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                                         {img.analysis?.billboardType && <span className="meta-pill">{img.analysis.billboardType}</span>}
                                                         {img.analysis?.keyLandmarks?.slice(0, 2).map((l, k) => <span key={k} className="meta-pill landmark">{l}</span>)}
                                                     </div>
+
+                                                    {(() => {
+                                                        const site = (img.sl && hoardings.find(h => String(h.SL || h['S. No.'] || '').trim() === String(img.sl).trim())) ||
+                                                                     (img.matchedIndex != null && hoardings[img.matchedIndex]);
+                                                        const landmarks = img.visualLandmarks || site?.Visual_Landmarks || site?.['Visual Landmarks'] || site?.Structure_Notes;
+                                                        if (landmarks) {
+                                                            return (
+                                                                <div style={{ marginTop: '7px', marginBottom: '8px', fontSize: '0.74rem', color: '#065f46', background: '#ecfdf5', padding: '6px 10px', borderRadius: '6px', border: '1px solid #a7f3d0', display: 'flex', alignItems: 'flex-start', gap: '6px', lineHeight: 1.4 }}>
+                                                                    <span style={{ fontSize: '0.85rem' }}>🏛️</span>
+                                                                    <span><strong>Visual Landmarks:</strong> {landmarks}</span>
+                                                                </div>
+                                                            );
+                                                        }
+                                                        return null;
+                                                    })()}
+
                                                     <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                                                         <span>Match Confidence: <strong>{img.confidence > 1 ? Math.round(img.confidence) : Math.round((img.confidence || 0) * 100)}%</strong></span>
                                                         {img.uploaded && (

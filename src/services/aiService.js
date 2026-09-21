@@ -1,7 +1,7 @@
 import ExifReader from 'exifreader';
-import { matchGeofencedHoardingWithGemini, matchDailyExecutionProofWithAI, extractSitesFromRawDataWithGemini, resolveTwinSiteFacingWithGemini } from './geminiService.js';
+import { matchGeofencedHoardingWithGemini, matchDailyExecutionProofWithAI, extractSitesFromRawDataWithGemini, resolveTwinSiteFacingWithGemini, generateVisualLandmarksWithGemini } from './geminiService.js';
 
-export { matchGeofencedHoardingWithGemini, matchDailyExecutionProofWithAI, extractSitesFromRawDataWithGemini, resolveTwinSiteFacingWithGemini };
+export { matchGeofencedHoardingWithGemini, matchDailyExecutionProofWithAI, extractSitesFromRawDataWithGemini, resolveTwinSiteFacingWithGemini, generateVisualLandmarksWithGemini };
 
 let workerPromise = null;
 
@@ -435,7 +435,8 @@ export const matchHoardingByGps = async (coord, locationList, rawImageBase64 = n
         distanceM: c.distanceM,
         trafficFrom: c.site['Traffic From'] || '',
         trafficTo: c.site['Traffic To'] || '',
-        imageUrl: c.site.ImageURL || ''
+        imageUrl: c.site.ImageURL || '',
+        visualLandmarks: c.site?.Visual_Landmarks || c.site?.['Visual Landmarks'] || c.site?.Structure_Notes || ''
     })) : null;
 
     let prioritizedCluster = corridorCluster;
@@ -490,7 +491,7 @@ export const matchHoardingByGps = async (coord, locationList, rawImageBase64 = n
                         const sl = c.site?.SL || c.site?.['S. No.'] || c.site?.['SL NO'];
                         if (!sl) return false;
                         const s = String(sl).trim();
-                        if (s.toLowerCase() === String(resolved.sl).trim().toLowerCase()) return true;
+                        if (s.toLowerCase() === String(targetSLVal).trim().toLowerCase()) return true;
                         const digits = s.replace(/\D/g, '');
                         return targetSlDigits && digits && digits === targetSlDigits;
                     });

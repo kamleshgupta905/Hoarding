@@ -291,6 +291,7 @@ export const normalizeHoarding = (item) => {
 
   const parsedHistory = parseHistoryString(item['ExecutionHistory'] || item['History'] || item['execution_history'] || '');
   const siteCategory = item['Site Category'] || item['Category'] || 'Commercial';
+  const visualLandmarks = String(item['Visual_Landmarks'] || item['Visual Landmarks'] || item['visual_landmarks'] || item['Structure_Notes'] || item['structure_notes'] || item['Structure Notes'] || '').trim();
 
   const candidateKeys = getSiteBookingKeys({
     ...item,
@@ -398,6 +399,9 @@ export const normalizeHoarding = (item) => {
       ? item['ExecutionHistory'].split(',').filter(p => !p.includes('data:image/')).join(',')
       : (item['ExecutionHistory'] || (combinedHistory.length > 0 ? combinedHistory.map(h => `${typeof h === 'object' ? (h.url || h.preview || '') : h}|${typeof h === 'object' ? (h.timestamp || Date.now()) : Date.now()}${typeof h === 'object' && h.gps ? '|' + String(h.gps).replace(/,/g, ' ') : ''}`).join(',') : '')),
     'Site Category': siteCategory,
+    'Visual_Landmarks': visualLandmarks,
+    'Visual Landmarks': visualLandmarks,
+    'Structure_Notes': visualLandmarks,
     'STATUS': status,
     'BookedBy': bookedBy,
     'BookingStart': bookingStart,

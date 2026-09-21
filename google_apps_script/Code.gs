@@ -840,9 +840,10 @@ function ensureSiteMetadata_() {
   var changedHeaders = false;
 
   // 🌟 Ensure all essential business columns exist
-  var businessColumns = ['STATUS', 'ImageURL', 'BookedBy', 'BookingStart', 'BookingEnd', 'ExecutionHistory'];
+  var businessColumns = ['STATUS', 'ImageURL', 'BookedBy', 'BookingStart', 'BookingEnd', 'ExecutionHistory', 'Visual_Landmarks'];
   businessColumns.forEach(function(col) {
-    if (headers.indexOf(col) === -1) {
+    var hasCol = headers.some(function(h) { return cleanFull(h) === cleanFull(col); });
+    if (!hasCol) {
       headers.push(col);
       changedHeaders = true;
     }
@@ -979,10 +980,11 @@ function pullChanges_(since, sessionToken) {
   var maxCol = sheet.getLastColumn() || 1;
   var headersRange = sheet.getRange(1, 1, 1, maxCol);
   var rawHeaders = headersRange.getValues()[0];
-  var requiredColumns = ['BookedBy', 'BookingStart', 'BookingEnd', 'ImageURL', 'ExecutionHistory'];
+  var requiredColumns = ['BookedBy', 'BookingStart', 'BookingEnd', 'ImageURL', 'ExecutionHistory', 'Visual_Landmarks'];
   var headersChanged = false;
   requiredColumns.forEach(function(col) {
-    if (rawHeaders.indexOf(col) === -1) {
+    var hasCol = rawHeaders.some(function(h) { return cleanFull(h) === cleanFull(col); });
+    if (!hasCol) {
       sheet.getRange(1, sheet.getLastColumn() + 1).setValue(col);
       headersChanged = true;
     }
@@ -1544,9 +1546,14 @@ function batchUpdateSheet_(data) {
               continue;
             }
 
-            var idxField = headers.findIndex(function (h) { return cleanFull(h) === cleanKey; });
-            if (idxField === -1 && (cleanKey === 'bookingschedule' || cleanKey === 'bookedby' || cleanKey === 'bookingstart' || cleanKey === 'bookingend' || cleanKey === 'status')) {
-              var colName = fKey;
+            var idxField = headers.findIndex(function (h) { 
+              var shk = cleanFull(h);
+              if (shk === cleanKey) return true;
+              if ((cleanKey === 'visuallandmarks' || cleanKey === 'visual_landmarks' || cleanKey === 'structurenotes') && (shk === 'visuallandmarks' || shk === 'visual_landmarks' || shk === 'structurenotes')) return true;
+              return false;
+            });
+            if (idxField === -1 && (cleanKey === 'bookingschedule' || cleanKey === 'bookedby' || cleanKey === 'bookingstart' || cleanKey === 'bookingend' || cleanKey === 'status' || cleanKey === 'visuallandmarks' || cleanKey === 'visual_landmarks' || cleanKey === 'structurenotes')) {
+              var colName = (cleanKey === 'visuallandmarks' || cleanKey === 'visual_landmarks' || cleanKey === 'structurenotes') ? 'Visual_Landmarks' : fKey;
               var newColIndex = sheet.getLastColumn() + 1;
               sheet.getRange(1, newColIndex).setValue(colName);
               headers.push(colName);
@@ -1994,12 +2001,13 @@ function updateHoardingDetails(data) {
           if (fieldKey === 'bookingstart' && sheetKey === 'bookingstart') return true;
           if (fieldKey === 'bookingend' && sheetKey === 'bookingend') return true;
           if (fieldKey === 'bookingschedule' && sheetKey === 'bookingschedule') return true;
+          if ((fieldKey === 'visuallandmarks' || fieldKey === 'visual_landmarks' || fieldKey === 'structurenotes') && (sheetKey === 'visuallandmarks' || sheetKey === 'visual_landmarks' || sheetKey === 'structurenotes')) return true;
           return false;
         });
         
         // Auto-add missing column if not found
-        if (idx === -1 && (fieldKey === 'status' || fieldKey === 'bookedby' || fieldKey === 'bookingstart' || fieldKey === 'bookingend' || fieldKey === 'bookingschedule')) {
-          var colName = fKey === 'STATUS' ? 'STATUS' : (fKey === 'BookedBy' ? 'BookedBy' : (fKey === 'BookingStart' ? 'BookingStart' : (fKey === 'BookingEnd' ? 'BookingEnd' : 'BookingSchedule')));
+        if (idx === -1 && (fieldKey === 'status' || fieldKey === 'bookedby' || fieldKey === 'bookingstart' || fieldKey === 'bookingend' || fieldKey === 'bookingschedule' || fieldKey === 'visuallandmarks' || fieldKey === 'visual_landmarks' || fieldKey === 'structurenotes')) {
+          var colName = fKey === 'STATUS' ? 'STATUS' : (fKey === 'BookedBy' ? 'BookedBy' : (fKey === 'BookingStart' ? 'BookingStart' : (fKey === 'BookingEnd' ? 'BookingEnd' : (fKey === 'BookingSchedule' ? 'BookingSchedule' : 'Visual_Landmarks'))));
           var newColIndex = sheet.getLastColumn() + 1;
           sheet.getRange(1, newColIndex).setValue(colName);
           headers = getAllHeaders(sheet);

@@ -20,7 +20,8 @@ export const getGeminiApiKeys = () => {
     import.meta.env?.VITE_GEMINI_API_KEY_1 || nodeEnv.VITE_GEMINI_API_KEY_1 || 'AQ.Ab8RN6JX5X6bvAY9y-iBaVbdO_nAC49puDmbVyvGDZCkhGHHxQ',
     import.meta.env?.VITE_GEMINI_API_KEY_2 || nodeEnv.VITE_GEMINI_API_KEY_2 || 'AQ.Ab8RN6JloH5_7Hu50bxb4ODlyw0sG07RmWtNE57_JlGI09tPAw',
     import.meta.env?.VITE_GEMINI_API_KEY_3 || nodeEnv.VITE_GEMINI_API_KEY_3 || 'AQ.Ab8RN6KKuExOPSzweXaW0-4rEziM3GmonFb3-rvxHDc-ohOBcQ',
-    import.meta.env?.VITE_GEMINI_API_KEY_4 || nodeEnv.VITE_GEMINI_API_KEY_4 || 'AQ.Ab8RN6KpJdKYy-63CLrqiPDSuEP8LW2Q2ioYPDLIIs5IdA560g'
+    import.meta.env?.VITE_GEMINI_API_KEY_4 || nodeEnv.VITE_GEMINI_API_KEY_4 || 'AQ.Ab8RN6KpJdKYy-63CLrqiPDSuEP8LW2Q2ioYPDLIIs5IdA560g',
+    'AQ.Ab8RN6IR8j97v_TwvrhH8cB-HXI2y6-XDmPD6fjpsPHFUI1v-g'
   ].filter(Boolean);
 };
 
@@ -114,14 +115,22 @@ export const callGeminiVision = async (payload) => {
         };
 
         const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
-        const response = await fetch(endpoint, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'x-goog-api-key': apiKey
-          },
-          body: JSON.stringify(safePayload)
-        });
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 8000);
+        let response;
+        try {
+          response = await fetch(endpoint, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'x-goog-api-key': apiKey
+            },
+            body: JSON.stringify(safePayload),
+            signal: controller.signal
+          });
+        } finally {
+          clearTimeout(timeoutId);
+        }
 
         if (!response.ok) {
           const errorText = await response.text();
@@ -358,11 +367,12 @@ export const resolveTwinSiteFacingWithGemini = async (imageBase64, candidates) =
     const refUrl = rawSite.ImageURL && !rawSite.ImageURL.includes('unsplash.com') ? rawSite.ImageURL : '';
     const distText = c.distanceM !== undefined ? `~${c.distanceM}m (GPS estimate)` : '';
     const hasRefPhoto = candidateImages.some(img => img.idx === idx) ? ' (Visual Reference Photo Attached Below)' : '';
+    const landmarks = rawSite.Visual_Landmarks || rawSite['Visual Landmarks'] || rawSite.Structure_Notes || rawSite['Structure Notes'] || '';
     return `[Candidate ${idx}]:
 - S.No / SL: #${sl}
 - Structure Type: ${siteType}
 - Location: "${name}"
-- Facing Direction: "${facing}" (Face points towards ${facing}, visible to traffic coming from ${from || facing} heading towards ${to || 'opposite'})
+${landmarks ? `- Physical Structure & Visual Landmarks: "${landmarks}"\n` : ''}- Facing Direction: "${facing}" (Face points towards ${facing}, visible to traffic coming from ${from || facing} heading towards ${to || 'opposite'})
 ${distText ? `- Distance to Camera GPS: ${distText}` : ''}
 ${traffic ? `- Traffic Flow: "${traffic}"` : ''}
 ${rawSite.City ? `- City: "${rawSite.City}"` : ''}
@@ -378,6 +388,7 @@ ${candidateDescriptions}
 
 CRITICAL RULES FOR ACCURATE MATCHING:
 1. 🖼️ VISUAL REFERENCE PHOTO MATCHING & PHYSICAL LANDMARKS (TOP PRIORITY):
+   - Check if any candidate has recorded "Physical Structure & Visual Landmarks" (e.g. median unipole under metro track pillars vs overhead gantry, flyover ramp retaining wall with pedestrian staircase, curbside pole). Match the candidate with matching physical structure!
    - Compare the live audit photo against the attached REFERENCE PHOTOS for each candidate:
      * ELEVATED METRO TRACKS & PILLARS: Is the billboard a UNIPOLE mounted in the central median directly between and below elevated metro pillars? (e.g. SL #210). Or is it an OVERHEAD ROAD GANTRY spanning across the roadway lanes? (e.g. SL #211). You MUST match the exact structural type!
      * FLYOVER RAMPS & RETAINING WALLS: Is there an elevated flyover ramp concrete retaining wall with wire mesh fencing and a pedestrian staircase alongside the road? (e.g. SL #198). Match the candidate whose reference photo is situated at that exact ramp segment, rather than a different site along the same road (e.g. SL #196).
@@ -455,7 +466,7 @@ Return ONLY a single valid JSON object (no markdown, no backticks):
         const sl = rawSite.SL || rawSite['S. No.'] || rawSite['SL NO'];
         if (!sl) return false;
         const s = String(sl).trim();
-        if (s.toLowerCase() === String(result.sl).trim().toLowerCase()) return true;
+        if (s.toLowerCase() === String(returnedSL).trim().toLowerCase()) return true;
         const digits = s.replace(/\D/g, '');
         return targetSlDigits && digits && digits === targetSlDigits;
       });
@@ -492,6 +503,80 @@ Return ONLY a single valid JSON object (no markdown, no backticks):
   }
 
   return null;
+};
+
+/**
+ * 🏛️ GENERATE VISUAL LANDMARK FINGERPRINT WITH GEMINI
+ * Generates a permanent, 1-line physical structure & civil landmark description for a hoarding site.
+ * This description anchors the hoarding to permanent civil infrastructure (metro tracks/pillars,
+ * flyover ramps/retaining walls, overhead gantries vs central median unipoles, staircases, road curvature)
+ * so that future daily uploads match the exact pole regardless of changes in advertiser flex banners.
+ *
+ * CRITICAL: NEVER include brand names, advertiser names, products, or temporary slogans.
+ */
+export const generateVisualLandmarksWithGemini = async (imageBase64, siteInfo = {}) => {
+  if (!imageBase64) return '';
+
+  const parsed = parseBase64(imageBase64);
+  if (!parsed) return '';
+
+  const siteName = siteInfo['Locality Site Location'] || siteInfo['Location '] || siteInfo.Location || siteInfo.siteName || '';
+  const facing = siteInfo.Facing || siteInfo['Traffic View'] || siteInfo.facing || '';
+  const media = siteInfo['Type of Site (Unipole/Billboard)'] || siteInfo['Type of Site (Unipole/ Billboard)'] || siteInfo.Media || siteInfo.Type || 'Unipole';
+
+  const prompt = `You are an expert civil engineer and Out-of-Home (OOH) billboard infrastructure specialist.
+Examine this photograph of an outdoor billboard / hoarding site.
+Site details: Media Type: "${media}", Location: "${siteName}", Facing: "${facing}".
+
+Your task: Generate a concise, 1-sentence permanent physical landmark fingerprint description (max 25-30 words).
+
+MANDATORY RULES:
+1. Focus ONLY on permanent physical & civil infrastructure:
+   - Mounting structure (e.g., "Unipole in central road median", "Overhead highway gantry spanning across roadway", "Curbside unipole on pedestrian sidewalk", "Cantilever structure along flyover ramp wall")
+   - Surroundings & physical civil anchors (e.g., "situated under elevated metro rail viaduct pillars", "adjacent to concrete flyover ramp retaining wall with wire mesh fencing and pedestrian stairs", "at major roundabout intersection with high-mast lamp", "near corner of commercial plaza with paved curbside")
+2. 🚫 STRICT PROHIBITION: DO NOT mention ANY brand names, advertiser names, products, phone numbers, or banner slogans (e.g. NEVER mention 'Kalyan', 'Senco', 'Samsung', 'Tata', 'jewellery', etc.) because advertising banners change constantly!
+3. Output ONLY a single plain-text sentence. Do NOT wrap in quotes, do NOT include JSON or markdown.`;
+
+  const payload = {
+    contents: [
+      {
+        parts: [
+          { text: prompt },
+          {
+            inline_data: {
+              mime_type: parsed.mimeType,
+              data: parsed.base64
+            }
+          }
+        ]
+      }
+    ],
+    generationConfig: {
+      temperature: 0.1,
+      topP: 0.8,
+      maxOutputTokens: 150,
+      thinkingConfig: { thinkingBudget: 0 }
+    }
+  };
+
+  try {
+    const rawResponse = await callGeminiVision(payload);
+    if (!rawResponse || typeof rawResponse !== 'string') return '';
+    // Clean up response: remove backticks, quotes, markdown, newlines
+    let cleaned = rawResponse.replace(/```json|```/gi, '').replace(/^["']|["']$/g, '').trim();
+    // In case Gemini returns a JSON object like {"landmark": "..."}
+    if (cleaned.startsWith('{') && cleaned.endsWith('}')) {
+      try {
+        const parsedJson = JSON.parse(cleaned);
+        cleaned = parsedJson.landmark || parsedJson.description || parsedJson.visualLandmarks || Object.values(parsedJson)[0] || '';
+      } catch {}
+    }
+    cleaned = cleaned.replace(/\s+/g, ' ').trim();
+    return cleaned;
+  } catch (err) {
+    console.warn('[Gemini Visual Landmark Fingerprint Notice]:', err);
+    return '';
+  }
 };
 
 /**

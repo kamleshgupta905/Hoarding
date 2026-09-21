@@ -4,7 +4,8 @@ import {
   getSiteOccupancyStatus, 
   getSiteBookingSlots,
   PROPOSAL_COLUMNS,
-  exportProposalExcel
+  exportProposalExcel,
+  normalizeHoarding
 } from './dataService';
 
 describe('OOH Advertising Domain Standards & Commercial Calculations', () => {
@@ -122,6 +123,41 @@ describe('OOH Advertising Domain Standards & Commercial Calculations', () => {
       expect(rentalCol).toBeDefined();
       const mockSite = { 'Rental Per Month': 50000 };
       expect(rentalCol[1](mockSite)).toBe(50000);
+    });
+  });
+
+  describe('Visual Landmark Fingerprinting & Site Normalization', () => {
+    it('normalizes Visual_Landmarks from various column key synonyms', () => {
+      const site1 = normalizeHoarding({
+        SL: 210,
+        Location: 'Modipuram Chauraha',
+        Visual_Landmarks: 'Central median unipole under elevated metro track pillars'
+      });
+      expect(site1.Visual_Landmarks).toBe('Central median unipole under elevated metro track pillars');
+      expect(site1['Visual Landmarks']).toBe('Central median unipole under elevated metro track pillars');
+
+      const site2 = normalizeHoarding({
+        SL: 198,
+        Location: 'Company Garden',
+        'Visual Landmarks': 'Unipole alongside flyover ramp retaining wall with staircase'
+      });
+      expect(site2.Visual_Landmarks).toBe('Unipole alongside flyover ramp retaining wall with staircase');
+
+      const site3 = normalizeHoarding({
+        SL: 196,
+        Location: 'Company Garden',
+        Structure_Notes: 'Curbside unipole on open road before flyover'
+      });
+      expect(site3.Visual_Landmarks).toBe('Curbside unipole on open road before flyover');
+    });
+
+    it('defaults Visual_Landmarks to empty string when not provided', () => {
+      const site = normalizeHoarding({
+        SL: 50,
+        Location: 'Begum Bridge'
+      });
+      expect(site.Visual_Landmarks).toBe('');
+      expect(site['Visual Landmarks']).toBe('');
     });
   });
 });
