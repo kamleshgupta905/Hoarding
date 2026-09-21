@@ -12,11 +12,13 @@ export const getGeminiApiKeys = () => {
     window.localStorage?.getItem('gemini_api_key')
   )) || null;
 
+  const nodeEnv = (typeof process !== 'undefined' && process.env) || {};
+
   return [
     customKey,
-    import.meta.env?.VITE_GEMINI_API_KEY,
-    import.meta.env?.VITE_GEMINI_API_KEY_1,
-    import.meta.env?.VITE_GEMINI_API_KEY_2
+    import.meta.env?.VITE_GEMINI_API_KEY || nodeEnv.VITE_GEMINI_API_KEY,
+    import.meta.env?.VITE_GEMINI_API_KEY_1 || nodeEnv.VITE_GEMINI_API_KEY_1 || 'AQ.Ab8RN6IR8j97v_TwvrhH8cB-HXI2y6-XDmPD6fjpsPHFUI1v-g',
+    import.meta.env?.VITE_GEMINI_API_KEY_2 || nodeEnv.VITE_GEMINI_API_KEY_2 || 'AQ.Ab8RN6KKCBjZXkMCVP50IXHFI_oeqS88iQoSJ7wHw_fAtCc1JQ'
   ].filter(Boolean);
 };
 
@@ -24,6 +26,8 @@ export const GEMINI_MODELS = [
   'gemini-3.1-flash-lite',
   'gemini-3.5-flash',
   'gemini-flash-latest',
+  'gemini-3.5-flash-lite',
+  'gemini-flash-lite-latest',
   'gemini-3.6-flash',
   'gemini-3-flash-preview',
   'gemini-3.7-flash'
@@ -58,7 +62,7 @@ export const safeJsonParse = (rawText) => {
       if (c === '\n') return '\\n';
       if (c === '\r') return '\\r';
       if (c === '\t') return '\\t';
-      return ' ';
+      return '';
     });
     try {
       return JSON.parse(sanitized);
@@ -119,6 +123,9 @@ export const callGeminiVision = async (payload) => {
           const errorText = await response.text();
           console.warn(`Gemini [${model}] status ${response.status}:`, errorText);
           lastError = new Error(`Gemini API Error (${model}): ${response.status}`);
+          if (response.status === 429 || response.status === 503) {
+            await new Promise(r => setTimeout(r, 600));
+          }
           continue; // Try next available model seamlessly
         }
 
@@ -366,50 +373,42 @@ CANDIDATE HOARDINGS AT / NEAR THIS CORRIDOR:
 ${candidateDescriptions}
 
 CRITICAL RULES FOR ACCURATE MATCHING:
-1. 🎯 HIGHEST PRIORITY: PRIMARY FOREGROUND BILLBOARD (CLOSEST TO CAMERA):
-   - In live field audit photos, the photographer captures ONE specific primary billboard that dominates the center foreground.
-   - You MUST match this prominent FOREGROUND billboard, NOT secondary or background structures!
-   - ⚠️ NEVER select a candidate just because a distant background building, pedestrian gantry, or small roadside sign (such as "GD GOENKA Toddler House", coaching sign, or shop banner) is visible in the background!
-   - A distant background sign does NOT determine the site. The massive billboard right in the center foreground determines the site!
+1. 🧭 TOP PRIORITY: BILLBOARD FACING & TRAFFIC LINE-OF-SIGHT:
+   - In outdoor advertising (OOH), "Facing [X]" means the billboard face is oriented towards direction X and is visible to traffic approaching FROM X heading towards the opposite direction.
+   - Look at the vehicles, lane flow, and camera line of sight:
+     * If the camera is facing/moving towards destination Y, the billboard facing the camera is visible to traffic coming FROM origin direction X.
+     * Always choose the candidate whose Facing aligns with the camera's line of sight over opposite-facing candidates.
+   - ⚠️ DO NOT be deceived by advertiser store addresses or phone numbers printed on the flex ad banner! That is just the advertiser's showroom address, NOT the billboard's facing direction.
 
-2. 🏗️ BILLBOARD MOUNTING STRUCTURE & CORRIDOR MATCHING:
+2. 🎯 HIGH PRIORITY: PRIMARY FOREGROUND BILLBOARD (CLOSEST TO CAMERA):
+   - In live field audit photos, the photographer captures the ONE specific primary billboard that dominates the center foreground.
+   - You MUST match this prominent FOREGROUND billboard, NOT secondary or background structures visible down the road!
+   - If two candidate hoardings share the same road and same facing (e.g. consecutive hoardings along the road):
+     * The candidate closer in distance or first along the vehicle's approach corresponds to the prominent FOREGROUND billboard.
+     * Do NOT select a candidate representing a subsequent hoarding further down the road.
+   - A distant background sign, small shop banner, or distant billboard visible in the background does NOT determine the site. The primary billboard right in the foreground determines the site!
+
+3. 🏗️ BILLBOARD MOUNTING STRUCTURE & CORRIDOR MATCHING:
    - Carefully identify the physical structure type of the FOREGROUND billboard:
-     * UNIPOLE IN MEDIAN: A massive horizontal billboard mounted atop a single tall steel/concrete pillar in the road median, often directly underneath or parallel to the elevated metro/RRTS track pillars.
+     * UNIPOLE IN MEDIAN: A massive horizontal billboard mounted atop a single tall steel/concrete pillar in the central road divider / median, often directly underneath or beside elevated metro/flyover tracks.
      * OVERHEAD GANTRY: A steel truss bridge spanning horizontally across traffic lanes.
-     * SIDEWALK / CORNER POST: Supported on curbside posts.
-   - The correct candidate MUST match the physical structure in the foreground!
+     * ROADSIDE / SIDEWALK POST / WALL MOUNT: Mounted on curbside posts, footpath railing, or building/compound wall.
+   - The correct candidate MUST match the physical mounting structure in the foreground!
 
-3. 📍 SPECIFIC CORRIDOR LOCATIONS & CANDIDATE RESOLUTION:
-   * Modipuram Chauraha:
-     - The massive central UNIPOLE standing in the road median directly under/beside the elevated metro/RRTS viaduct track is:
-       * SL #210 (Facing Pallavpuram, seen by traffic heading towards Begum Bridge)
-       * SL #209 (Facing Begum Bridge, seen by traffic heading towards Pallavpuram)
-     - SL #211 / #212 is the roadside / bus-stand gantry structure on the curb.
-     - ⚠️ If the live audit photo shows the elevated metro pillars with the large central UNIPOLE billboard in the foreground, you MUST MATCH SL #210 (if facing Pallavpuram) or SL #209 (if facing Begum Bridge) — NEVER match SL #211 or #212!
-   * Company Garden Flyover:
-     - SL #198 is located directly along the elevated flyover ramp retaining wall with razor-wire fencing on top and sidewalk on the left.
-     - SL #196 is located further along Company Garden park trees without the concrete ramp wall beside it.
+4. 📏 GPS DISTANCE IS AN ESTIMATE (±50m variance):
+   - Calculated GPS distance numbers reflect where the vehicle/camera stopped or small coordinate inaccuracies.
+   - Never let a minor GPS distance difference override the visual structure and facing direction.
 
-4. 📏 GPS DISTANCE IS ONLY AN ESTIMATE (±50m variance):
-   - Calculated GPS distance numbers (e.g. 45m vs 70m) reflect where the vehicle/camera stopped or small coordinate inaccuracies in the master database.
-   - NEVER let a 20-30 meter GPS difference override the visual structure! The primary foreground billboard's visual structure and facing always takes precedence over slight GPS distance differences.
-
-5. 🧭 BILLBOARD FACING & TRAFFIC DIRECTION:
-   - "Facing [X]" means the billboard face points towards direction X and is directly visible to traffic coming FROM direction X heading towards the opposite direction.
-   - In outdoor advertising (OOH), multiple hoardings exist with identical or nearby coordinates (e.g. opposite faces on a median unipole like Begum Bridge vs Pallavpuram).
-   - In the audit photo, check which direction the vehicle/camera is looking. If looking towards Begum Bridge from Pallavpuram, the face is pointing towards Pallavpuram (Facing Pallavpuram).
-   - ⚠️ DO NOT be deceived by advertiser store addresses or phone numbers printed on the flex ad banner! That is just the advertiser's showroom address, NOT the billboard's facing direction!
-
-6. Status detection: "Occupied" (active commercial brand ad mounted) or "Available" (blank, white, torn, or To-Let).
+5. Status detection: "Occupied" (active commercial brand ad mounted) or "Available" (blank, white, torn, or To-Let).
 
 Return ONLY a single valid JSON object (no markdown, no backticks):
 {
   "matchedIndex": 0,
-  "sl": 210,
+  "sl": 196,
   "facing": "exact facing from selected candidate",
   "status": "Occupied",
   "confidence": 0.98,
-  "reasoning": "Detailed visual explanation of physical structure (unipole/gantry/etc), elevated metro alignment, why this candidate was chosen over other nearby poles"
+  "reasoning": "Clear explanation of road direction, foreground structure, and why this candidate was chosen"
 }`;
 
   const parts = [
@@ -527,18 +526,23 @@ export const matchDailyExecutionProofWithAI = async (imageBase64, inventoryList)
 Carefully examine this photograph of an outdoor billboard / hoarding.
 
 LOOK CLOSELY FOR CAMERA WATERMARKS & GPS OVERLAYS:
-Most inspection photos contain an on-screen camera stamp or watermark (such as "GPS Camera - PinPoint", "GPS Map Camera", "NoteCam", "Timestamp Camera") in the corners or bottom.
+Most inspection photos contain an on-screen camera stamp or watermark (such as "GPS Camera - PinPoint", "GPS Map Camera", "NoteCam", "Timestamp Camera") in the corners or along the bottom.
+These badges can be translucent dark boxes, black rectangles, or white text overlays showing:
+- Latitude & Longitude (e.g. "Lat 29.007513 Long 77.7058257" or "Lat 28.9912734 Long 77.7162097")
+- Street / Compound / Landmark address (e.g. "Alexander Club, Court Compound, Lalkurti Bazaar", "Block F, Sector 2, Shastri Nagar", "Low Floor Bus Station, NH 58, Modipuram", "Lekha Nagar, Rakshapuram")
+- City name (e.g. "Meerut")
 
 CRITICAL LOCATION EXTRACTION RULES:
 1. ⚠️ DO NOT use the advertiser's store/showroom address printed on the flex ad itself (e.g. "205, Begum Bridge Road"). That is just the advertiser's shop address!
-2. ALWAYS extract the real geographical address from the camera's GPS watermark overlay (e.g. "Low Floor Bus Station, NH 58, Modipuram, Meerut" or "Block F, Sector 2, Shastri Nagar").
-3. Extract:
+2. ALWAYS extract the real geographical address from the camera's GPS watermark overlay badge.
+3. Look in all four corners and bottom half for the GPS camera badge.
+4. Extract:
    - "latitude": numeric decimal degrees (e.g. 29.0490666) if stamped on the image, or null
    - "longitude": numeric decimal degrees (e.g. 77.7075798) if stamped on the image, or null
-   - "address": exact stamped location text or highway from the camera watermark
+   - "address": exact stamped location text, landmark, or street from the camera watermark
    - "city": city name (e.g. "Meerut")
    - "adBrand": brand name displayed on the billboard advertisement (e.g. "SENCO Gold & Diamonds")
-   - "facing": traffic direction or facing (e.g. "Begum Bridge", "Modipuram", "Delhi Road") if mentioned or evident, or null
+   - "facing": traffic direction or facing (e.g. "Begum Bridge", "Modipuram", "CCS Park", "Tej Garhi") if evident, or null
    - "status": "Occupied" if a commercial advertisement/brand flex is mounted, or "Available" if blank/white/torn/"To-Let" advertisement
 
 Output ONLY a single valid JSON object:
