@@ -292,7 +292,7 @@ export const extractCoordinatesFromText = (text) => {
 
     // 1. Labeled Lat/Long (e.g., "Lat: 28.998107, Long: 77.705821" or "Lat 28.955047 Long 77.734039")
     // Highly tolerant to OCR misreadings of "lat" (lal, lot, 1at, tat, la) and "long" (lang, lona, 1ong, lon)
-    const labeledRegex = /(?:lat|latitude|lati|lt|lal|lot|1at|tat|la)[:\s]*([+-]?\d{1,3}\.\d{3,9})\s*(?:°|[NSEWnsew])?[^\d\n\r]*(?:long|longitude|lng|longi|lg|lang|lona|1ong|lon)[:\s]*([+-]?\d{1,3}\.\d{3,9})\s*(?:°|[NSEWnsew])?/i;
+    const labeledRegex = /(?:lat|latitude|lati|lt|lal|lot|1at|tat|la)[:\s]*([+-]?\d{1,3}\.\d{3,9})\s*(?:°|[NSEWnsew])?[^\d]*?(?:long|longitude|lng|longi|lg|lang|lona|1ong|lon)[:\s]*([+-]?\d{1,3}\.\d{3,9})\s*(?:°|[NSEWnsew])?/i;
     const labeledMatch = clean.match(labeledRegex);
     if (labeledMatch) {
         const lat = parseFloat(labeledMatch[1]);
@@ -301,7 +301,7 @@ export const extractCoordinatesFromText = (text) => {
     }
 
     // 2. Reversed Labeled Long/Lat
-    const revRegex = /(?:long|longitude|lng|longi|lg|lang|lona|1ong|lon)[:\s]*([+-]?\d{1,3}\.\d{3,9})\s*(?:°|[NSEWnsew])?[^\d\n\r]*(?:lat|latitude|lati|lt|lal|lot|1at|tat|la)[:\s]*([+-]?\d{1,3}\.\d{3,9})\s*(?:°|[NSEWnsew])?/i;
+    const revRegex = /(?:long|longitude|lng|longi|lg|lang|lona|1ong|lon)[:\s]*([+-]?\d{1,3}\.\d{3,9})\s*(?:°|[NSEWnsew])?[^\d]*?(?:lat|latitude|lati|lt|lal|lot|1at|tat|la)[:\s]*([+-]?\d{1,3}\.\d{3,9})\s*(?:°|[NSEWnsew])?/i;
     const revMatch = clean.match(revRegex);
     if (revMatch) {
         const lng = parseFloat(revMatch[1]);
@@ -625,14 +625,14 @@ const cropStampRegion = async (source, region = 'bottom-right', options = {}) =>
     const isInvert = Boolean(options.invert);
 
     if (region === 'bottom-right') {
-        // Specifically for GPS Camera - PinPoint, NoteCam, Timestamp cameras in bottom-right corner
-        const startX = Math.floor(w * 0.35);
-        const startY = Math.floor(h * 0.55);
+        // Specifically for GPS Camera - PinPoint, NoteCam, Timestamp cameras in bottom-right / bottom-center
+        const startX = Math.floor(w * 0.20);
+        const startY = Math.floor(h * 0.50);
         canvas.width = w - startX;
         canvas.height = h - startY;
         const ctx = canvas.getContext('2d', { willReadFrequently: true });
         ctx.filter = isInvert ? 'invert(1) contrast(2.2) grayscale(1)' : 'contrast(1.6) grayscale(0.8)';
-        ctx.drawImage(image, Math.floor(origW * 0.35), Math.floor(origH * 0.55), origW - Math.floor(origW * 0.35), origH - Math.floor(origH * 0.55), 0, 0, canvas.width, canvas.height);
+        ctx.drawImage(image, Math.floor(origW * 0.20), Math.floor(origH * 0.50), origW - Math.floor(origW * 0.20), origH - Math.floor(origH * 0.50), 0, 0, canvas.width, canvas.height);
     } else if (region === 'bottom') {
         const startY = Math.floor(h * 0.50);
         canvas.width = w;

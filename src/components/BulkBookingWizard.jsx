@@ -807,6 +807,18 @@ export default function BulkBookingWizard({
               <strong>{parsedData?.clientGroups.length || 1} client campaigns</strong>.
             </p>
 
+            {mode === 'combo' && commitResult.uploadedPhotosCount > 0 && (
+              <p style={{ color: '#059669', fontSize: '0.9rem', marginTop: '6px', fontWeight: 600 }}>
+                🖼️ {commitResult.uploadedPhotosCount} campaign photo(s) synced to Google Drive & History!
+              </p>
+            )}
+
+            {mode === 'combo' && commitResult.failedPhotosCount > 0 && (
+              <p style={{ color: '#dc2626', fontSize: '0.85rem', marginTop: '4px', background: '#fef2f2', padding: '6px 12px', borderRadius: '6px', border: '1px solid #fecaca' }}>
+                ⚠️ {commitResult.failedPhotosCount} photo(s) failed Google Drive sync. Please verify Apps Script deployment and Google Drive authorization.
+              </p>
+            )}
+
             {commitResult.skippedCount > 0 && (
               <p className="skipped-notice">
                 ({commitResult.skippedCount} clashing sites were safely bypassed to prevent double bookings).

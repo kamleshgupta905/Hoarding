@@ -16,9 +16,13 @@ import { describe, it, expect } from 'vitest';
 // Mirrors queueHistoryToSheet + the replace_master branch in bulkBookingEngine.
 const queueHistoryToSheet = (batchUpdates, site, entryUrl, gps, now = Date.now()) => {
   if (!entryUrl) return;
+  const targetLoc = site['Location '] || site.Location || site['Locality Site Location'] || '';
+  const targetFacing = site.Facing || site['Traffic View'] || '';
   const row = batchUpdates.find(u =>
     (site._SiteID && u.siteId === site._SiteID) ||
-    (site.SL && String(u.sl) === String(site.SL))
+    (site.SL && String(u.sl) === String(site.SL)) ||
+    (targetLoc && u.siteName === targetLoc && (!targetFacing || u.facing === targetFacing)) ||
+    (targetLoc && u.siteName === targetLoc)
   );
   if (!row || !row.fields) return;
   const stamped = `${entryUrl}|${now}${gps ? `|${String(gps).replace(/,/g, ' ')}` : ''}`;
@@ -150,6 +154,19 @@ describe('history entry shaping', () => {
   it('matches the target row by SL when the site has no _SiteID', () => {
     const batch = makeBatch();
     queueHistoryToSheet(batch, { SL: '7' }, NEW_ART, null, NOW);
+
+    expect(batch[0].fields.ExecutionHistory).toBe(`${NEW_ART}|${NOW}`);
+  });
+
+  it('matches the target row by Location name when the site has no _SiteID or SL', () => {
+    const batch = [{
+      siteId: '',
+      sl: '',
+      siteName: 'Begum Bridge Metro Station',
+      facing: 'Delhi Road',
+      fields: { STATUS: 'Booked', BookedBy: 'Patanjali' }
+    }];
+    queueHistoryToSheet(batch, { Location: 'Begum Bridge Metro Station', Facing: 'Delhi Road' }, NEW_ART, null, NOW);
 
     expect(batch[0].fields.ExecutionHistory).toBe(`${NEW_ART}|${NOW}`);
   });

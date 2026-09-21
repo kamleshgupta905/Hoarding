@@ -620,6 +620,9 @@ export const commitBulkBookings = async ({
   }
 
   // 2. Upload PPT Photos (Mode B) in High-Speed Parallel Batches
+  let uploadedPhotosCount = 0;
+  let failedPhotosCount = 0;
+
   if (photosToUpload.length > 0) {
     const totalPhotos = photosToUpload.length;
     let completedPhotos = 0;
@@ -641,15 +644,20 @@ export const commitBulkBookings = async ({
         }, 14000); // 14s timeout per image to guarantee no freezing
 
         if (res && res.success && res.url) {
+          uploadedPhotosCount++;
           // Queue the history entry onto this site's sheet update. recordSiteHistory
           // only writes to localStorage, so on its own the artwork would never
           // reach the ExecutionHistory column — it would look saved until the
           // browser cache was cleared.
           const queueHistoryToSheet = (entryUrl, gps) => {
             if (!entryUrl) return;
+            const targetLoc = p.site['Location '] || p.site.Location || p.site['Locality Site Location'] || '';
+            const targetFacing = p.site.Facing || p.site['Traffic View'] || '';
             const row = batchUpdates.find(u =>
               (p.site._SiteID && u.siteId === p.site._SiteID) ||
-              (p.site.SL && String(u.sl) === String(p.site.SL))
+              (p.site.SL && String(u.sl) === String(p.site.SL)) ||
+              (targetLoc && u.siteName === targetLoc && (!targetFacing || u.facing === targetFacing)) ||
+              (targetLoc && u.siteName === targetLoc)
             );
             if (!row || !row.fields) return;
             const stamped = `${entryUrl}|${Date.now()}${gps ? `|${String(gps).replace(/,/g, ' ')}` : ''}`;
@@ -687,7 +695,12 @@ export const commitBulkBookings = async ({
               });
             }
 
-            const updateRow = batchUpdates.find(u => (p.site._SiteID && u.siteId === p.site._SiteID) || (p.site.SL && String(u.sl) === String(p.site.SL)));
+            const updateRow = batchUpdates.find(u =>
+              (p.site._SiteID && u.siteId === p.site._SiteID) ||
+              (p.site.SL && String(u.sl) === String(p.site.SL)) ||
+              (p.site['Location '] && u.siteName === p.site['Location ']) ||
+              (p.site.Location && u.siteName === p.site.Location)
+            );
             if (updateRow) {
               // Carried as `url` as well, because batchUpdateSheet_ writes the
               // image column from that and only merges `fields` alongside it.
@@ -699,17 +712,39 @@ export const commitBulkBookings = async ({
             }
           } else {
             // Save to History Only
-            recordSiteHistory(p.site, {
+            const newHistoryItem = {
               url: res.url,
               preview: res.url,
+              timestamp: Date.now(),
               date: new Date().toISOString(),
               source: `Bulk Campaign Artwork (${p.client})`,
               uploadMode: 'history_only'
-            });
+            };
+            recordSiteHistory(p.site, newHistoryItem);
             queueHistoryToSheet(res.url);
+
+            const siteKey = p.site._SiteID || p.site.SL || p.site['Location '] || p.site.Location;
+            if (siteKey && updatedHoardingsMap.has(siteKey)) {
+              const currentObj = updatedHoardingsMap.get(siteKey);
+              const existingHist = Array.isArray(currentObj.History) ? currentObj.History : [];
+              const updatedHist = [newHistoryItem, ...existingHist];
+              const stamped = `${res.url}|${newHistoryItem.timestamp}`;
+              const updatedExecHist = currentObj.ExecutionHistory
+                ? `${currentObj.ExecutionHistory},${stamped}`
+                : stamped;
+
+              updatedHoardingsMap.set(siteKey, {
+                ...currentObj,
+                History: updatedHist,
+                ExecutionHistory: updatedExecHist
+              });
+            }
           }
+        } else {
+          failedPhotosCount++;
         }
       } catch (err) {
+        failedPhotosCount++;
         console.warn(`[Bulk PPT Photo Upload] Failed for slide ${p.slideNumber}:`, err);
       } finally {
         completedPhotos++;
@@ -770,6 +805,8 @@ export const commitBulkBookings = async ({
     success: true,
     bookedCount: eligibleItems.length,
     skippedCount: bookingItems.length - eligibleItems.length,
+    uploadedPhotosCount,
+    failedPhotosCount,
     finalHoardings: finalHoardingsList
   };
 };

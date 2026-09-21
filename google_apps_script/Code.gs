@@ -1411,14 +1411,28 @@ function batchUpdateSheet_(data) {
     var idxFacing = headers.findIndex(function(h) { return cleanFull(h) === 'facing' || cleanFull(h) === 'trafficview'; });
     var idxLatLong = headers.findIndex(function(h) { return cleanFull(h).indexOf('lat') !== -1 && cleanFull(h).indexOf('long') !== -1; });
     var idxSite = findSiteColumn(headers);
+    var idxSL = headers.findIndex(function(h) { 
+      var c = cleanFull(h); 
+      return c === 'sl' || c === 'sno' || c === 'srno' || c === 'sno.' || c === 'serialno'; 
+    });
 
     // Build fast lookup maps
     var siteIdMap = {};
     var siteNameMap = {};
+    var slMap = {};
     if (idxSiteId !== -1) {
       for (var r = 1; r < rows.length; r++) {
         var sid = String(rows[r][idxSiteId]).trim().toLowerCase();
         if (sid) siteIdMap[sid] = r; // Store the 0-based array index!
+      }
+    }
+    if (idxSL !== -1) {
+      for (var r = 1; r < rows.length; r++) {
+        var sval = String(rows[r][idxSL]).trim().toLowerCase();
+        if (sval) {
+          if (!slMap[sval]) slMap[sval] = [];
+          slMap[sval].push({ idx: r, facing: cleanFull(rows[r][idxFacing]) });
+        }
       }
     }
     if (idxSite !== -1) {
@@ -1439,13 +1453,31 @@ function batchUpdateSheet_(data) {
       var up = data.updates[i];
       var r = -1; // -1 means not found
 
-      // Try Site ID Match
+      // 1. Try Site ID Match
       if (up.siteId && idxSiteId !== -1) {
         var tgt = String(up.siteId).trim().toLowerCase();
         if (siteIdMap[tgt] !== undefined) r = siteIdMap[tgt];
       }
 
-      // Try exact Site Name + Facing Match
+      // 2. Try SL Match (with facing disambiguation)
+      if (r === -1 && up.sl && idxSL !== -1) {
+        var tgtSl = String(up.sl).trim().toLowerCase();
+        var tgtFacing = cleanFull(up.facing || '');
+        var slCandidates = slMap[tgtSl];
+        if (slCandidates) {
+          for (var s = 0; s < slCandidates.length; s++) {
+            if (slCandidates[s].facing === tgtFacing) {
+              r = slCandidates[s].idx;
+              break;
+            }
+          }
+          if (r === -1 && slCandidates.length > 0) {
+            r = slCandidates[0].idx;
+          }
+        }
+      }
+
+      // 3. Try exact Site Name + Facing Match
       if (r === -1 && up.siteName && idxSite !== -1) {
         var tgtName = cleanFull(up.siteName);
         var tgtFacing = cleanFull(up.facing || '');
@@ -1486,6 +1518,15 @@ function batchUpdateSheet_(data) {
             // History needs merge semantics, never a blind overwrite.
             if (cleanKey === 'executionhistory' || cleanKey === 'history') {
               var idxHist = findHistoryColumn(headers);
+              if (idxHist === -1) {
+                var newHistCol = sheet.getLastColumn() + 1;
+                sheet.getRange(1, newHistCol).setValue('ExecutionHistory');
+                headers = getAllHeaders(sheet);
+                idxHist = headers.length - 1;
+                for (var r_idx = 0; r_idx < rows.length; r_idx++) {
+                  rows[r_idx].push(r_idx === 0 ? 'ExecutionHistory' : '');
+                }
+              }
               if (idxHist === -1) continue;
               var incoming = normalizeHistoryString_(String(fVal));
               if (!incoming) continue;
