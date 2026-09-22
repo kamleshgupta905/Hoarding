@@ -13,7 +13,7 @@ import {
     Star, FileSpreadsheet, Presentation, Loader2
 } from 'lucide-react';
 import { analyzeHoardingImage, extractSiteCoordinates, generateVisualLandmarksWithGemini } from '../services/aiService';
-import { fetchHoardings, compressImage, syncToGoogleSheet, exportProposalExcel, PROPOSAL_COLUMNS, getImageUrl, downloadHoardingImage, fetchStaffUploads, reviewStaffPhoto, detectStaffPhotoOrientation, fetchSheetGrid, saveSheetGrid, addDeletedSite, addDeletedSites, parseHistoryString, saveLocalBooking, clearLocalBooking, recordSiteBooking, removeSiteBooking, getSiteBookingSlots, checkBookingConflict, calculateProRataRental, resolveSiteLiveStatus, saveSiteBookingSlots, recordSiteHistory, getLocalHistory, getDirectDriveLink, parseCellImageUrls, addDeletedHistoryUrl, isHistoryUrlDeleted, removeSiteHistory, getExpiringSites, clearAllLocalBookingsAndCaches, clearLocalBookingsForCity, clearLocalBookingsForSite } from '../services/dataService';
+import { fetchHoardings, compressImage, syncToGoogleSheet, exportProposalExcel, PROPOSAL_COLUMNS, getImageUrl, downloadHoardingImage, fetchStaffUploads, reviewStaffPhoto, detectStaffPhotoOrientation, fetchSheetGrid, saveSheetGrid, addDeletedSite, addDeletedSites, parseHistoryString, saveLocalBooking, clearLocalBooking, recordSiteBooking, removeSiteBooking, getSiteBookingSlots, checkBookingConflict, calculateProRataRental, resolveSiteLiveStatus, saveSiteBookingSlots, recordSiteHistory, getLocalHistory, getDirectDriveLink, parseCellImageUrls, addDeletedHistoryUrl, isHistoryUrlDeleted, removeSiteHistory, getExpiringSites, clearAllLocalBookingsAndCaches, clearLocalBookingsForCity, clearLocalBookingsForSite, normalizeCityName } from '../services/dataService';
 import { generateMasterMediaPlanPptx } from '../services/presentationService';
 import ImageLightbox from '../components/ImageLightbox';
 import DriveImage from '../components/DriveImage';
@@ -3665,18 +3665,20 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                 setHoardings([]);
                 clearAllLocalBookingsAndCaches();
             } else {
+                const normalizedCities = citiesToDelete.map(c => normalizeCityName(c)).filter(Boolean);
                 const citySet = new Set(citiesToDelete.map(c => String(c).trim().toLowerCase()));
                 const cityKeys = [];
                 hoardings.forEach(h => {
-                    const hCity = String(h.City || h.city || '').trim().toLowerCase();
-                    if (citySet.has(hCity)) {
+                    const hCityRaw = String(h.City || h.city || '').trim().toLowerCase();
+                    const hCityNorm = normalizeCityName(hCityRaw);
+                    if (citySet.has(hCityRaw) || normalizedCities.includes(hCityNorm)) {
                         const hId = String(h.UniqueID || h["Unique ID"] || h.ID || h._SiteID || '').trim().toLowerCase();
                         const hSL = String(h.SL || h['S. No.'] || h['SL NO'] || h.sl || '').trim();
                         const hName = String(h["Locality Site Location"] || h["Location "] || h.Location || '').trim().toLowerCase();
                         const hFacing = String(h.Facing || h["Traffic View"] || h.facing || '').trim().toLowerCase();
                         if (hId) cityKeys.push(hId);
                         if (hSL) cityKeys.push(`sl_${hSL.toLowerCase()}`);
-                        if (hCity && hName && hFacing) cityKeys.push(`${hCity}_${hName}_${hFacing}`);
+                        if (hCityRaw && hName && hFacing) cityKeys.push(`${hCityRaw}_${hName}_${hFacing}`);
                         if (hName && hFacing) cityKeys.push(`${hName}_${hFacing}`);
                         if (hName && hName !== 'hoarding site') cityKeys.push(hName);
                     }
@@ -3688,7 +3690,11 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                     await syncToGoogleSheet({ action: 'deleteCityHoardings', city: c });
                 }
                 setHoardings(prev => {
-                    const next = prev.filter(h => !citySet.has(String(h.City || h.city || '').trim().toLowerCase()));
+                    const next = prev.filter(h => {
+                        const hCityRaw = String(h.City || h.city || '').trim().toLowerCase();
+                        const hCityNorm = normalizeCityName(hCityRaw);
+                        return !citySet.has(hCityRaw) && !normalizedCities.includes(hCityNorm);
+                    });
                     try {
                         localStorage.setItem('hoardings_cache', JSON.stringify(next));
                     } catch {}
@@ -5678,7 +5684,7 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                             </div>
                             {bulkDeleteTarget.type === 'all' && (
                                 <div className="modal-input" style={{ marginTop: '20px' }}>
-                                    <label>Type DELETE ALL</label>
+                                    <label>Type DELETE ALL (optional confirmation)</label>
                                     <input
                                         value={bulkDeleteConfirmText}
                                         onChange={(e) => setBulkDeleteConfirmText(e.target.value)}
@@ -5702,10 +5708,8 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                     fontWeight: '600',
                                     border: 'none',
                                     borderRadius: '8px',
-                                    cursor: 'pointer',
-                                    opacity: bulkDeleteTarget.type === 'all' && bulkDeleteConfirmText.trim().toUpperCase() !== 'DELETE ALL' ? 0.55 : 1
+                                    cursor: 'pointer'
                                 }}
-                                disabled={bulkDeleteTarget.type === 'all' && bulkDeleteConfirmText.trim().toUpperCase() !== 'DELETE ALL'}
                                 onClick={handleBulkDelete}
                             >
                                 Delete Forever

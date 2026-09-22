@@ -517,18 +517,32 @@ export const clearAllLocalBookingsAndCaches = () => {
 };
 
 /**
+ * 🏙️ Normalizes city names to handle aliases (e.g. "Meerut Cant" vs "Meerut Cantt" vs "Meerut Cantonment").
+ */
+export const normalizeCityName = (str) => {
+  if (!str) return '';
+  return String(str)
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, '')
+    .replace(/cantonment/g, 'cant')
+    .replace(/cantt/g, 'cant');
+};
+
+/**
  * 🧹 Clears local bookings and schedules for an entire city.
  */
 export const clearLocalBookingsForCity = (city) => {
   if (typeof window === 'undefined' || !city) return;
   const cleanCity = String(city).trim().toLowerCase();
+  const normCity = normalizeCityName(city);
   try {
     const rawBookings = localStorage.getItem('adh_local_bookings');
     if (rawBookings) {
       const bookings = JSON.parse(rawBookings);
       let mutated = false;
       Object.keys(bookings).forEach(k => {
-        if (k.toLowerCase().startsWith(`${cleanCity}_`)) {
+        const kLower = k.toLowerCase();
+        if (kLower.startsWith(`${cleanCity}_`) || (normCity && normalizeCityName(k.split('_')[0]) === normCity)) {
           delete bookings[k];
           mutated = true;
         }
@@ -541,7 +555,8 @@ export const clearLocalBookingsForCity = (city) => {
       const schedules = JSON.parse(rawSchedules);
       let mutated = false;
       Object.keys(schedules).forEach(k => {
-        if (k.toLowerCase().startsWith(`${cleanCity}_`)) {
+        const kLower = k.toLowerCase();
+        if (kLower.startsWith(`${cleanCity}_`) || (normCity && normalizeCityName(k.split('_')[0]) === normCity)) {
           delete schedules[k];
           mutated = true;
         }

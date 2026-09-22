@@ -6,7 +6,9 @@ import {
   addDeletedSite,
   addDeletedSites,
   getDeletedSites,
-  reconcileDeletedSites
+  reconcileDeletedSites,
+  normalizeCityName,
+  clearLocalBookingsForCity
 } from './dataService';
 
 const makeStorage = () => {
@@ -366,6 +368,52 @@ describe('Inventory Delete and Filter Comprehensive Test Suite', () => {
       const price = parseFloat(String(site["Rental Per Month"]).replace(/[^0-9.]/g, '')) || 0;
       const matchRange = price > 50000 && price <= 100000;
       expect(matchRange).toBe(true);
+    });
+  });
+
+  describe('City Normalization and Alias Deletion Tests', () => {
+    it('normalizes Cant, Cantt, and Cantonment variations to the same key', () => {
+      expect(normalizeCityName('Meerut Cant')).toBe('meerutcant');
+      expect(normalizeCityName('Meerut Cantt')).toBe('meerutcant');
+      expect(normalizeCityName('Meerut Cantonment')).toBe('meerutcant');
+      expect(normalizeCityName('Meerut Cantt.')).toBe('meerutcant');
+      expect(normalizeCityName('Agra Cantt')).toBe('agracant');
+      expect(normalizeCityName('Delhi Cant')).toBe('delhicant');
+    });
+
+    it('matches and removes sites when user requests deletion of "Meerut Cant" but sites are labeled "Meerut Cantt"', () => {
+      const inventory = [
+        { _SiteID: 'm1', City: 'Meerut Cantt', Location: 'Site 1', Facing: 'North' },
+        { _SiteID: 'm2', City: 'Meerut Cantt', Location: 'Site 2', Facing: 'South' },
+        { _SiteID: 'd1', City: 'Delhi', Location: 'Site 3', Facing: 'East' }
+      ];
+
+      const citiesToDelete = ['Meerut Cant'];
+      const normalizedCities = citiesToDelete.map(c => normalizeCityName(c)).filter(Boolean);
+      const citySet = new Set(citiesToDelete.map(c => String(c).trim().toLowerCase()));
+
+      const remaining = inventory.filter(h => {
+        const hCityRaw = String(h.City || '').trim().toLowerCase();
+        const hCityNorm = normalizeCityName(hCityRaw);
+        return !citySet.has(hCityRaw) && !normalizedCities.includes(hCityNorm);
+      });
+
+      expect(remaining.length).toBe(1);
+      expect(remaining[0].City).toBe('Delhi');
+    });
+
+    it('clears local bookings and schedules matching city aliases', () => {
+      const bookings = {
+        'meerut cantt_site1_north': { client: 'Client A' },
+        'delhi_site2_east': { client: 'Client B' }
+      };
+      localStorage.setItem('adh_local_bookings', JSON.stringify(bookings));
+
+      clearLocalBookingsForCity('Meerut Cant');
+
+      const saved = JSON.parse(localStorage.getItem('adh_local_bookings') || '{}');
+      expect(saved['meerut cantt_site1_north']).toBeUndefined();
+      expect(saved['delhi_site2_east']).toBeDefined();
     });
   });
 });

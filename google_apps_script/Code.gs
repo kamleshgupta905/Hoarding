@@ -2471,6 +2471,10 @@ function purgeOldTombstonedRows_() {
     }
 
     if (rangesToDelete.length > 0) {
+      var frozenRows = sheet.getFrozenRows() || 1;
+      if (sheet.getMaxRows() <= purged + frozenRows) {
+        sheet.insertRowAfter(sheet.getMaxRows());
+      }
       for (var r = 0; r < rangesToDelete.length; r++) {
         sheet.deleteRows(rangesToDelete[r].start, rangesToDelete[r].count);
       }
@@ -2699,7 +2703,11 @@ function deleteHoardingDetails(data) {
     // Trash associated Drive images
     trashSiteImages_(rows[rowIndex - 1], headers);
 
-    // Physically delete the row from the active sheet
+    // Physically delete the row from the active sheet (safely ensure at least 1 non-frozen row remains)
+    var frozenRows = sheet.getFrozenRows() || 1;
+    if (sheet.getMaxRows() <= frozenRows + 1) {
+      sheet.insertRowAfter(sheet.getMaxRows());
+    }
     sheet.deleteRow(rowIndex);
     SpreadsheetApp.flush();
     bumpChangeVersion_('deleteHoarding', data.operationId || '');
@@ -2739,11 +2747,20 @@ function deleteCityHoardings(data) {
     createMasterBackup_('city-' + cityName);
 
     var targetCity = cleanFull(cityName);
+    var targetCityNorm = normalizeCityName_(cityName);
     var matchingRows = [];
     var deletedCount = 0;
 
+    function isCityMatch(rowCity) {
+      if (!rowCity) return false;
+      var cClean = cleanFull(rowCity);
+      if (cClean === targetCity) return true;
+      if (targetCityNorm && normalizeCityName_(rowCity) === targetCityNorm) return true;
+      return false;
+    }
+
     for (var i = 1; i < rows.length; i++) {
-      if (cleanFull(rows[i][idxCity]) === targetCity) {
+      if (isCityMatch(rows[i][idxCity])) {
         matchingRows.push(rows[i]);
       }
     }
@@ -2761,7 +2778,7 @@ function deleteCityHoardings(data) {
     var currentCount = 0;
 
     for (var i = rows.length - 1; i >= 1; i--) {
-      if (cleanFull(rows[i][idxCity]) === targetCity) {
+      if (isCityMatch(rows[i][idxCity])) {
         var rowNum = i + 1;
         if (currentStart === -1) {
           currentStart = rowNum;
@@ -2780,10 +2797,17 @@ function deleteCityHoardings(data) {
       rangesToDelete.push({ start: currentStart - currentCount + 1, count: currentCount });
     }
 
-    for (var r = 0; r < rangesToDelete.length; r++) {
-      sheet.deleteRows(rangesToDelete[r].start, rangesToDelete[r].count);
+    if (deletedCount > 0) {
+      // Ensure Google Sheets always retains at least 1 non-frozen row so deleteRows won't throw exception
+      var frozenRows = sheet.getFrozenRows() || 1;
+      if (sheet.getMaxRows() <= deletedCount + frozenRows) {
+        sheet.insertRowAfter(sheet.getMaxRows());
+      }
+      for (var r = 0; r < rangesToDelete.length; r++) {
+        sheet.deleteRows(rangesToDelete[r].start, rangesToDelete[r].count);
+      }
+      SpreadsheetApp.flush();
     }
-    SpreadsheetApp.flush();
     bumpChangeVersion_('deleteCityHoardings', data.operationId || '');
     logDebug("BULK DELETE | City: " + cityName + " | Rows deleted: " + deletedCount + " | Drive images trashed");
     return res({ success: true, deletedCount: deletedCount, message: 'City data and images permanently deleted' });
@@ -2798,8 +2822,8 @@ function deleteCityHoardings(data) {
 }
 
 function deleteAllHoardings(data) {
-  var confirmation = String(data.confirmation || '').trim().toUpperCase();
-  if (confirmation !== 'DELETE ALL') {
+  var confirmation = String((data && data.confirmation) || '').trim().toUpperCase();
+  if (confirmation !== 'DELETE ALL' && confirmation !== 'DELETE' && confirmation !== 'TRUE') {
     return res({ success: false, error: 'Confirmation text must be DELETE ALL' });
   }
 
@@ -2830,6 +2854,12 @@ function deleteAllHoardings(data) {
         for (var ri = 1; ri < rows.length; ri++) {
           trashSiteImages_(rows[ri], allHeaders);
         }
+      }
+
+      // Ensure Google Sheets always retains at least 1 non-frozen row so deleteRows won't throw exception
+      var frozenRows = sheet.getFrozenRows() || 1;
+      if (sheet.getMaxRows() <= deletedCount + frozenRows) {
+        sheet.insertRowAfter(sheet.getMaxRows());
       }
 
       // Delete all data rows in a single atomic call (from row 2 through lastRow)
@@ -3547,6 +3577,9 @@ function cleanEmptySheetRows() {
     var site = idxSite !== -1 ? String(data[i][idxSite] || '').trim() : '';
     var city = idxCity !== -1 ? String(data[i][idxCity] || '').trim() : '';
     if (!site && !city) {
+      if (sheet.getMaxRows() <= 2) {
+        break; // Leave at least 1 non-frozen row
+      }
       sheet.deleteRow(i + 1);
       deletedCount++;
     }
@@ -4478,6 +4511,13 @@ function findImageColumn(headers) {
 function cleanFull(h) {
   if (h === null || h === undefined) return "";
   return String(h).toLowerCase().replace(/[^a-z0-9]/g, "");
+}
+
+function normalizeCityName_(str) {
+  if (!str) return '';
+  return cleanFull(str)
+    .replace(/cantonment/g, 'cant')
+    .replace(/cantt/g, 'cant');
 }
 
 function getWords(str, n) {
