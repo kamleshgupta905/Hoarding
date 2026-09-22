@@ -2274,6 +2274,20 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                 const hasNoMainImage = !matchedSite || (!matchedSite.ImageURL && !matchedSite['IMAGE 1'] && !matchedSite['Image URL']);
                                 const isSaveToHistoryOnly = (options?.pptDestination === 'history') && !hasNoMainImage;
 
+                                // 🏛️ Generate permanent physical Visual Landmark description for this site photo
+                                let landmarkDesc = (matchedSite?.Visual_Landmarks || matchedSite?.['Visual Landmarks'] || '').trim();
+                                if (!landmarkDesc && pureBase64) {
+                                    try {
+                                        landmarkDesc = await generateVisualLandmarksWithGemini(pureBase64, matchedSite || {
+                                            siteName,
+                                            facing: facingValue,
+                                            Media: matchedSite?.Media || matchedSite?.['Type of Site (Unipole/Billboard)'] || 'Unipole'
+                                        });
+                                    } catch (lErr) {
+                                        console.warn(`[PPT Slide ${slide.number} Landmark Error]:`, lErr);
+                                    }
+                                }
+
                                 if (isSaveToHistoryOnly) {
                                     const stamped = `${res.url}|${Date.now()}${coordPart ? `|${coordPart.replace(/_/g, ' ')}` : ''}`;
                                     batchUpdates.push({
@@ -2283,15 +2297,21 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                         facing: facingValue,
                                         status: ai.status || matchedSite?.STATUS || 'Available',
                                         fields: {
-                                            ExecutionHistory: stamped
+                                            ExecutionHistory: stamped,
+                                            ...(landmarkDesc ? { Visual_Landmarks: landmarkDesc, 'Visual Landmarks': landmarkDesc } : {})
                                         },
                                         newSiteData: !matchedSite ? {
                                             siteName: siteName,
                                             facing: facingValue,
-                                            latLong: lat && lng ? `${lat},${lng}` : (ai.gpsStamp || '')
+                                            latLong: lat && lng ? `${lat},${lng}` : (ai.gpsStamp || ''),
+                                            ...(landmarkDesc ? { Visual_Landmarks: landmarkDesc, 'Visual Landmarks': landmarkDesc } : {})
                                         } : undefined
                                     });
                                     if (matchedSite) {
+                                        if (landmarkDesc && !matchedSite.Visual_Landmarks) {
+                                            matchedSite.Visual_Landmarks = landmarkDesc;
+                                            matchedSite['Visual Landmarks'] = landmarkDesc;
+                                        }
                                         recordSiteHistory(matchedSite, {
                                             url: res.url,
                                             preview: res.url,
@@ -2313,15 +2333,21 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                         fields: {
                                             ImageURL: res.url,
                                             'IMAGE 1': res.url,
-                                            ExecutionHistory: stamped
+                                            ExecutionHistory: stamped,
+                                            ...(landmarkDesc ? { Visual_Landmarks: landmarkDesc, 'Visual Landmarks': landmarkDesc } : {})
                                         },
                                         newSiteData: !matchedSite ? {
                                             siteName: siteName,
                                             facing: facingValue,
-                                            latLong: lat && lng ? `${lat},${lng}` : (ai.gpsStamp || '')
+                                            latLong: lat && lng ? `${lat},${lng}` : (ai.gpsStamp || ''),
+                                            ...(landmarkDesc ? { Visual_Landmarks: landmarkDesc, 'Visual Landmarks': landmarkDesc } : {})
                                         } : undefined
                                     });
                                     if (matchedSite) {
+                                        if (landmarkDesc && !matchedSite.Visual_Landmarks) {
+                                            matchedSite.Visual_Landmarks = landmarkDesc;
+                                            matchedSite['Visual Landmarks'] = landmarkDesc;
+                                        }
                                         const oldMaster = matchedSite.ImageURL || matchedSite["IMAGE 1"] || matchedSite["Image URL"] || '';
                                         if (oldMaster && !oldMaster.includes('unsplash.com')) {
                                             recordSiteHistory(matchedSite, {
@@ -3394,6 +3420,20 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
             // Auto-generate Unique ID
             const autoUniqueId = String(formData.UniqueID || formData["Unique ID"] || formData.ID || `ADH-${Date.now().toString().slice(-6)}`);
 
+            // 🏛️ Auto-generate Visual Landmark description if photo is uploaded
+            let landmarkDesc = (formData.Visual_Landmarks || formData["Visual Landmarks"] || '').trim();
+            if (!landmarkDesc && fileData) {
+                try {
+                    landmarkDesc = await generateVisualLandmarksWithGemini(fileData, {
+                        siteName: siteLocationName,
+                        facing: formData.Facing,
+                        Media: formData.Media || mediaFormat
+                    });
+                } catch (lErr) {
+                    console.warn('[Add Asset Landmark Warning]:', lErr);
+                }
+            }
+
             const fullCleanFields = { 
                 ...cleanFields,
                 UniqueID: autoUniqueId,
@@ -3423,7 +3463,10 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                 BookingStart: formData.BookingStart || '',
                 BookingEnd: formData.BookingEnd || '',
                 "ExecutionHistory": historyString,
-                ImageURL: previewUrl
+                ImageURL: previewUrl,
+                Visual_Landmarks: landmarkDesc,
+                "Visual Landmarks": landmarkDesc,
+                Structure_Notes: landmarkDesc
             };
 
             // 1. Instantly update UI state & cache
@@ -3510,6 +3553,20 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                 siteLocationName = selectedHoarding["Location "] || selectedHoarding.Location || `${siteLocalityName || 'Hoarding'} Site`;
             }
 
+            // 🏛️ Auto-generate Visual Landmark description if new photo uploaded and landmark is missing
+            let landmarkDesc = (formData.Visual_Landmarks || formData["Visual Landmarks"] || selectedHoarding.Visual_Landmarks || '').trim();
+            if (!landmarkDesc && fileData) {
+                try {
+                    landmarkDesc = await generateVisualLandmarksWithGemini(fileData, {
+                        siteName: siteLocationName,
+                        facing: formData.Facing || selectedHoarding.Facing,
+                        Media: formData.Media || mediaFormat || selectedHoarding.Media
+                    });
+                } catch (lErr) {
+                    console.warn('[Edit Asset Landmark Warning]:', lErr);
+                }
+            }
+
             const autoUniqueId = String(formData.UniqueID || formData["Unique ID"] || selectedHoarding.UniqueID || selectedHoarding["Unique ID"] || `ADH-${Date.now().toString().slice(-6)}`);
 
             const fullUpdatedFields = {
@@ -3544,9 +3601,9 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                 BookingStart: (formData.STATUS === 'Booked' || formData.STATUS === 'Occupied') ? (formData.BookingStart || '') : '',
                 BookingEnd: (formData.STATUS === 'Booked' || formData.STATUS === 'Occupied') ? (formData.BookingEnd || '') : '',
                 ImageURL: updatedImageURL,
-                Visual_Landmarks: formData.Visual_Landmarks || formData["Visual Landmarks"] || selectedHoarding.Visual_Landmarks || '',
-                "Visual Landmarks": formData.Visual_Landmarks || formData["Visual Landmarks"] || selectedHoarding["Visual Landmarks"] || '',
-                Structure_Notes: formData.Visual_Landmarks || formData["Visual Landmarks"] || selectedHoarding.Structure_Notes || ''
+                Visual_Landmarks: landmarkDesc,
+                "Visual Landmarks": landmarkDesc,
+                Structure_Notes: landmarkDesc
             };
 
             const targetSite = selectedHoarding;
@@ -4595,7 +4652,30 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                 const replacementImage = corrected?.rotation && corrected.blob
                     ? { fileData: await blobToDataUrl(corrected.blob), mimeType: 'image/jpeg' }
                     : {};
-                await reviewStaffPhoto(upload.UploadId, reviewAction, siteName, replacementImage);
+
+                // 🏛️ If site has no Visual Landmark, auto-generate from the staff verification photo
+                let visualLandmarks = '';
+                if (reviewAction === 'approve' || reviewAction === 'historyOnly') {
+                    const targetSite = hoardings.find(h => {
+                        const hName = String(h["Location "] || h.Location || h["Locality Site Location"] || '').trim().toLowerCase();
+                        return hName && hName === String(siteName).trim().toLowerCase();
+                    });
+                    if (!targetSite?.Visual_Landmarks) {
+                        try {
+                            const imgSource = corrected?.blob ? await blobToDataUrl(corrected.blob) : (upload.fileData || upload.ImageURL);
+                            if (imgSource) {
+                                visualLandmarks = await generateVisualLandmarksWithGemini(imgSource, targetSite || { siteName });
+                            }
+                        } catch (lErr) {
+                            console.warn('[Staff Review Landmark Error]:', lErr);
+                        }
+                    }
+                }
+
+                await reviewStaffPhoto(upload.UploadId, reviewAction, siteName, {
+                    ...replacementImage,
+                    ...(visualLandmarks ? { visualLandmarks } : {})
+                });
                 const [uploads, freshData] = await Promise.all([
                     fetchStaffUploads(),
                     reviewAction === 'reject' ? Promise.resolve(null) : fetchHoardings()

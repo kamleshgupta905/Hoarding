@@ -10,6 +10,7 @@ import {
   syncToGoogleSheet
 } from '../services/dataService.js';
 import { postDirect, getAdminSession } from '../services/secureApi.js';
+import { generateVisualLandmarksWithGemini } from '../services/aiService.js';
 
 // Aliases for detecting headers in Excel sheets
 const CLIENT_ALIASES = ['client', 'client name', 'clientname', 'booked by', 'bookedby', 'party', 'brand', 'advertiser', 'customer', 'customer name'];
@@ -657,6 +658,20 @@ export const commitBulkBookings = async ({
         if (res && res.success && res.url) {
           removeDeletedHistoryUrl(res.url);
 
+          // 🏛️ Auto-generate Visual Landmark if site has none
+          let landmarkDesc = (p.site.Visual_Landmarks || p.site['Visual Landmarks'] || '').trim();
+          if (!landmarkDesc && pureBase64) {
+            try {
+              landmarkDesc = await generateVisualLandmarksWithGemini(pureBase64, p.site);
+              if (landmarkDesc) {
+                p.site.Visual_Landmarks = landmarkDesc;
+                p.site['Visual Landmarks'] = landmarkDesc;
+              }
+            } catch (lErr) {
+              console.warn('[Bulk Booking Landmark Warning]:', lErr);
+            }
+          }
+
           // Queue the history entry onto this site's sheet update.
           const queueHistoryToSheet = (entryUrl, gps) => {
             if (!entryUrl) return;
@@ -677,6 +692,10 @@ export const commitBulkBookings = async ({
                 row.fields.ExecutionHistory = row.fields.ExecutionHistory
                   ? `${row.fields.ExecutionHistory},${stamped}`
                   : stamped;
+                if (landmarkDesc && !row.fields.Visual_Landmarks) {
+                  row.fields.Visual_Landmarks = landmarkDesc;
+                  row.fields['Visual Landmarks'] = landmarkDesc;
+                }
               }
             } else {
               batchUpdates.push({
@@ -686,7 +705,8 @@ export const commitBulkBookings = async ({
                 facing: pFacing,
                 status: p.site.STATUS || 'Available',
                 fields: {
-                  ExecutionHistory: stamped
+                  ExecutionHistory: stamped,
+                  ...(landmarkDesc ? { Visual_Landmarks: landmarkDesc, 'Visual Landmarks': landmarkDesc } : {})
                 }
               });
             }
@@ -720,7 +740,8 @@ export const commitBulkBookings = async ({
                 updatedHoardingsMap.set(k, {
                   ...currentObj,
                   History: updatedArr,
-                  ExecutionHistory: existingHist ? `${existingHist},${stamped}` : stamped
+                  ExecutionHistory: existingHist ? `${existingHist},${stamped}` : stamped,
+                  ...(landmarkDesc ? { Visual_Landmarks: landmarkDesc, 'Visual Landmarks': landmarkDesc } : {})
                 });
               }
             });
@@ -755,7 +776,8 @@ export const commitBulkBookings = async ({
                 ...currentObj,
                 ImageURL: res.url,
                 'Image URL': res.url,
-                'IMAGE 1': res.url
+                'IMAGE 1': res.url,
+                ...(landmarkDesc ? { Visual_Landmarks: landmarkDesc, 'Visual Landmarks': landmarkDesc } : {})
               });
             }
 
@@ -771,6 +793,10 @@ export const commitBulkBookings = async ({
                 updateRow.fields.ImageURL = res.url;
                 updateRow.fields['Image URL'] = res.url;
                 updateRow.fields['IMAGE 1'] = res.url;
+                if (landmarkDesc && !updateRow.fields.Visual_Landmarks) {
+                  updateRow.fields.Visual_Landmarks = landmarkDesc;
+                  updateRow.fields['Visual Landmarks'] = landmarkDesc;
+                }
               }
             } else {
               batchUpdates.push({
@@ -783,7 +809,8 @@ export const commitBulkBookings = async ({
                 fields: {
                   ImageURL: res.url,
                   'Image URL': res.url,
-                  'IMAGE 1': res.url
+                  'IMAGE 1': res.url,
+                  ...(landmarkDesc ? { Visual_Landmarks: landmarkDesc, 'Visual Landmarks': landmarkDesc } : {})
                 }
               });
             }

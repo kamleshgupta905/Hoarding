@@ -1202,7 +1202,7 @@ function findNearbyHoardings(latitude, longitude) {
   return nearby;
 }
 
-function updateSitePhotoFromStaff(siteName, imageUrl, historyOnly, siteStatus) {
+function updateSitePhotoFromStaff(siteName, imageUrl, historyOnly, siteStatus, visualLandmarks) {
   var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(CONFIG.SHEET_NAME);
   var headers = getAllHeaders(sheet);
   var idxSite = findSiteColumn(headers);
@@ -1228,6 +1228,25 @@ function updateSitePhotoFromStaff(siteName, imageUrl, historyOnly, siteStatus) {
     }
     if (!historyOnly) sheet.getRange(rowIndex, idxImg + 1).setValue(imageUrl);
     if (siteStatus && idxStatus !== -1) sheet.getRange(rowIndex, idxStatus + 1).setValue(siteStatus);
+    if (visualLandmarks) {
+      var idxLandmark = headers.findIndex(function(h) { 
+        var c = cleanFull(h);
+        return c === 'visuallandmarks' || c === 'visual_landmarks' || c === 'structurenotes';
+      });
+      if (idxLandmark === -1) {
+        var colName = 'Visual_Landmarks';
+        var newCol = sheet.getLastColumn() + 1;
+        sheet.getRange(1, newCol).setValue(colName);
+        headers.push(colName);
+        idxLandmark = headers.length - 1;
+      }
+      if (idxLandmark !== -1) {
+        var existingLm = sheet.getRange(rowIndex, idxLandmark + 1).getValue();
+        if (!existingLm) {
+          sheet.getRange(rowIndex, idxLandmark + 1).setValue(visualLandmarks);
+        }
+      }
+    }
     SpreadsheetApp.flush();
     return { success: true, previousImageUrl: previousImage || '' };
   }
@@ -1343,7 +1362,7 @@ function reviewStaffUpload(data) {
 
   if (action === 'approve' || action === 'historyOnly') {
     if (!siteName) return res({ success: false, error: 'Select a site first' });
-    var result = updateSitePhotoFromStaff(siteName, imageUrl, action === 'historyOnly');
+    var result = updateSitePhotoFromStaff(siteName, imageUrl, action === 'historyOnly', data.siteStatus, data.visualLandmarks);
     if (!result.success) return res(result);
     previousImage = result.previousImageUrl || '';
   }
