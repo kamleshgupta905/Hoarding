@@ -7,7 +7,7 @@ import CommandPalette from './components/CommandPalette';
 import Navbar from './components/Navbar';
 import Footer from './components/Footer';
 import AdminLogin from './pages/AdminLogin';
-import { fetchHoardings, getLocalBookings, getLocalSchedules, getSiteBookingKeys, getLocalHistory, resolveSiteLiveStatus, pruneLocalHistory, pruneLocalAddedSites } from './services/dataService';
+import { fetchHoardings, getLocalBookings, getLocalSchedules, getSiteBookingKeys, getLocalHistory, resolveSiteLiveStatus, pruneLocalHistory, pruneLocalAddedSites, getDeletedSites } from './services/dataService';
 
 // Helper to auto-recover dynamic imports when a new build is deployed on Vercel
 const lazyWithRetry = (componentImport) =>
@@ -369,6 +369,17 @@ function App() {
   const lastFullRefreshRef = useRef(0);
 
   const applyFreshHoardings = useCallback((data) => {
+    // 🛡️ If a "Delete All" is in progress, suppress incoming data for up to 30 seconds
+    // so the background poll doesn't restore sites before the sheet catches up.
+    try {
+      const deleteAllUntil = parseInt(localStorage.getItem('deleteAll_until') || '0', 10);
+      if (deleteAllUntil > Date.now()) {
+        return; // still within suppression window — skip this refresh
+      } else if (deleteAllUntil > 0) {
+        localStorage.removeItem('deleteAll_until'); // expired — clean up
+      }
+    } catch {}
+
     const cleanData = sanitizeHoardings(data);
     if (!cleanData || cleanData.length === 0) {
       try {
@@ -379,6 +390,23 @@ function App() {
       return;
     }
 
+    // 🪦 Filter out locally tombstoned (deleted) sites so a slow sheet write
+    // can't resurrect a site the user just deleted.
+    const tombstones = getDeletedSites();
+    const filteredData = tombstones.size === 0 ? cleanData : cleanData.filter(h => {
+      const hId = String(h.UniqueID || h['Unique ID'] || h.ID || h._SiteID || '').trim().toLowerCase();
+      const hSL = String(h.SL || h['S. No.'] || h['SL NO'] || h.sl || '').trim().toLowerCase();
+      const hCity = String(h.City || h.city || '').trim().toLowerCase();
+      const hName = String(h['Locality Site Location'] || h['Location '] || h.Location || '').trim().toLowerCase();
+      const hFacing = String(h.Facing || h['Traffic View'] || h.facing || '').trim().toLowerCase();
+      if (hId && tombstones.has(hId)) return false;
+      if (hSL && tombstones.has(`sl_${hSL}`)) return false;
+      if (hCity && hName && hFacing && tombstones.has(`${hCity}_${hName}_${hFacing}`)) return false;
+      if (hName && hFacing && tombstones.has(`${hName}_${hFacing}`)) return false;
+      if (hName && hName !== 'hoarding site' && tombstones.has(hName)) return false;
+      return true;
+    });
+
     let localAdded = [];
     try {
       const raw = localStorage.getItem('local_added_sites_cache');
@@ -386,14 +414,14 @@ function App() {
     } catch {}
 
     const remainingLocal = [];
-    const mergedList = [...cleanData];
+    const mergedList = [...filteredData];
 
     if (Array.isArray(localAdded)) {
       localAdded.forEach(localItem => {
         if (!localItem) return;
         const localId = String(localItem.UniqueID || localItem["Unique ID"] || localItem.ID || '').trim().toLowerCase();
         const localName = String(localItem["Location "] || localItem.Location || localItem["Locality Site Location"] || '').trim().toLowerCase();
-        const existsInSheet = cleanData.some(sheetItem => {
+        const existsInSheet = filteredData.some(sheetItem => {
           const sheetId = String(sheetItem.UniqueID || sheetItem["Unique ID"] || sheetItem.ID || '').trim().toLowerCase();
           const sheetName = String(sheetItem["Location "] || sheetItem.Location || sheetItem["Locality Site Location"] || '').trim().toLowerCase();
           if (localId && sheetId && localId === sheetId) return true;

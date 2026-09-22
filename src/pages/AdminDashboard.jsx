@@ -3781,7 +3781,18 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
 
                 await syncToGoogleSheet({ action: 'deleteAllHoardings', confirmation: 'DELETE ALL' });
                 setHoardings([]);
+                // 🛡️ Set suppression window (30s) so background polls don't restore data
+                // before the sheet catches up. clearAllLocalBookingsAndCaches clears the
+                // deleted_sites_cache tombstones, so we must re-add them after the clear.
+                const savedTombstones = localStorage.getItem('deleted_sites_cache');
                 clearAllLocalBookingsAndCaches();
+                // Restore tombstones so App.jsx applyFreshHoardings keeps filtering deleted sites
+                if (savedTombstones) {
+                    try { localStorage.setItem('deleted_sites_cache', savedTombstones); } catch {}
+                }
+                // Extra safety: suppress ALL incoming refresh data for 30 seconds
+                try { localStorage.setItem('deleteAll_until', String(Date.now() + 30000)); } catch {}
+
             } else {
                 const normalizedCities = citiesToDelete.map(c => normalizeCityName(c)).filter(Boolean);
                 const citySet = new Set(citiesToDelete.map(c => String(c).trim().toLowerCase()));
@@ -3820,9 +3831,10 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                 });
             }
 
-            window.dispatchEvent(new CustomEvent('hoardings:sync-requested', {
-                detail: { action: bulkDeleteTarget.type }
-            }));
+            // 🛡️ Do NOT dispatch hoardings:sync-requested here — it would schedule
+            // a background re-fetch that restores just-deleted sites before the sheet catches up.
+            // The tombstone + deleteAll_until flag in App.jsx handles data suppression instead.
+
 
             showToast(isDeleteAll ? 'All site data deleted.' : `${citiesToDelete.join(', ')} city data deleted.`, 'info');
             setBulkDeleteTarget(null);

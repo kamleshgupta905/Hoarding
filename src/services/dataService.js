@@ -1636,8 +1636,14 @@ export const syncToGoogleSheet = async (payload, retryCount = 1) => {
 
         // Even with no-cors, we can verify that the network request didn't throw.
         console.log(`✅ [Sync Success] ${payload.action} signal delivered to Google Script.`);
-        window.dispatchEvent(new CustomEvent('hoardings:sync-requested', { detail: payload }));
+        // 🛡️ Skip re-fetch dispatch for delete actions: triggering a background refresh
+        // immediately after deleting would restore sites before the sheet catches up.
+        const skipRefreshActions = ['deleteHoarding', 'deleteCityHoardings', 'deleteAllHoardings'];
+        if (!skipRefreshActions.includes(payload.action)) {
+            window.dispatchEvent(new CustomEvent('hoardings:sync-requested', { detail: payload }));
+        }
         return { success: true, ...result };
+
     } catch (error) {
         if (retryCount > 0) {
             console.warn(`🔄 [Sync Retry] Retrying ${payload.action}...`);
