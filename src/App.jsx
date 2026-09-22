@@ -7,7 +7,7 @@ import CommandPalette from './components/CommandPalette';
 import Navbar from './components/Navbar';
 import Footer from './components/Footer';
 import AdminLogin from './pages/AdminLogin';
-import { fetchHoardings, getLocalBookings, getSiteBookingKeys, getLocalHistory, resolveSiteLiveStatus, pruneLocalHistory, pruneLocalAddedSites } from './services/dataService';
+import { fetchHoardings, getLocalBookings, getLocalSchedules, getSiteBookingKeys, getLocalHistory, resolveSiteLiveStatus, pruneLocalHistory, pruneLocalAddedSites } from './services/dataService';
 
 // Helper to auto-recover dynamic imports when a new build is deployed on Vercel
 const lazyWithRetry = (componentImport) =>
@@ -408,8 +408,7 @@ function App() {
     try {
       const localBookings = getLocalBookings();
       const localHistory = getLocalHistory();
-      const rawSchedules = localStorage.getItem('adh_booking_schedules');
-      const localSchedules = rawSchedules ? JSON.parse(rawSchedules) : {};
+      const localSchedules = getLocalSchedules();
 
       for (let i = 0; i < mergedList.length; i++) {
         const item = mergedList[i];

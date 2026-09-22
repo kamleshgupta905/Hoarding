@@ -13,7 +13,7 @@ import {
     Star, FileSpreadsheet, Presentation, Loader2
 } from 'lucide-react';
 import { analyzeHoardingImage, extractSiteCoordinates, generateVisualLandmarksWithGemini } from '../services/aiService';
-import { fetchHoardings, compressImage, syncToGoogleSheet, exportProposalExcel, PROPOSAL_COLUMNS, getImageUrl, downloadHoardingImage, fetchStaffUploads, reviewStaffPhoto, detectStaffPhotoOrientation, fetchSheetGrid, saveSheetGrid, addDeletedSite, addDeletedSites, parseHistoryString, saveLocalBooking, clearLocalBooking, recordSiteBooking, removeSiteBooking, getSiteBookingSlots, checkBookingConflict, calculateProRataRental, resolveSiteLiveStatus, saveSiteBookingSlots, recordSiteHistory, getLocalHistory, getDirectDriveLink, parseCellImageUrls, addDeletedHistoryUrl, isHistoryUrlDeleted, removeSiteHistory, getExpiringSites } from '../services/dataService';
+import { fetchHoardings, compressImage, syncToGoogleSheet, exportProposalExcel, PROPOSAL_COLUMNS, getImageUrl, downloadHoardingImage, fetchStaffUploads, reviewStaffPhoto, detectStaffPhotoOrientation, fetchSheetGrid, saveSheetGrid, addDeletedSite, addDeletedSites, parseHistoryString, saveLocalBooking, clearLocalBooking, recordSiteBooking, removeSiteBooking, getSiteBookingSlots, checkBookingConflict, calculateProRataRental, resolveSiteLiveStatus, saveSiteBookingSlots, recordSiteHistory, getLocalHistory, getDirectDriveLink, parseCellImageUrls, addDeletedHistoryUrl, isHistoryUrlDeleted, removeSiteHistory, getExpiringSites, clearAllLocalBookingsAndCaches, clearLocalBookingsForCity, clearLocalBookingsForSite } from '../services/dataService';
 import { generateMasterMediaPlanPptx } from '../services/presentationService';
 import ImageLightbox from '../components/ImageLightbox';
 import DriveImage from '../components/DriveImage';
@@ -3549,6 +3549,14 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
             addDeletedSite(targetClean);
         }
 
+        // Clear any local booking or multi-slot schedule stored for this site
+        clearLocalBookingsForSite(targetSiteObj || {
+            City: targetCity,
+            Location: siteName,
+            Facing: targetFacing,
+            _SiteID: targetId
+        });
+
         // 1. Immediately dismiss modal so UI is fully responsive
         setDeleteTarget(null);
 
@@ -3655,10 +3663,7 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
 
                 await syncToGoogleSheet({ action: 'deleteAllHoardings', confirmation: 'DELETE ALL' });
                 setHoardings([]);
-                try {
-                    localStorage.setItem('hoardings_cache', JSON.stringify([]));
-                    localStorage.removeItem('local_added_sites_cache');
-                } catch {}
+                clearAllLocalBookingsAndCaches();
             } else {
                 const citySet = new Set(citiesToDelete.map(c => String(c).trim().toLowerCase()));
                 const cityKeys = [];
@@ -3679,6 +3684,7 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                 addDeletedSites(cityKeys);
 
                 for (const c of citiesToDelete) {
+                    clearLocalBookingsForCity(c);
                     await syncToGoogleSheet({ action: 'deleteCityHoardings', city: c });
                 }
                 setHoardings(prev => {

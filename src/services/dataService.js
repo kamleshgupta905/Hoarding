@@ -413,14 +413,17 @@ export const getSiteBookingKeys = (site = {}) => {
   if (!site || typeof site !== 'object') return [];
   const keys = new Set();
 
-  const sl = site.SL || site['S. No.'] || site['S.No'] || site['SL NO'] || site.sl;
-  if (sl !== undefined && sl !== null && String(sl).trim() !== '') {
-    keys.add(String(sl).trim().toLowerCase());
-  }
+  // 🛡️ CRITICAL: Never use raw sequential serial numbers (SL: 1, 2, 3) as booking keys!
+  // Serial numbers are per-sheet/per-import row indices. Using raw numbers causes brand new
+  // imported sheets to inherit previous bookings from old rows sharing SL 1, 2, 3.
 
   const id = site._SiteID || site.UniqueID || site['Unique ID'] || site.ID || site._siteid;
   if (id !== undefined && id !== null && String(id).trim() !== '') {
-    keys.add(String(id).trim().toLowerCase());
+    const strId = String(id).trim().toLowerCase();
+    // Only accept site ID if it's not a bare sequential integer
+    if (!/^\d+$/.test(strId)) {
+      keys.add(strId);
+    }
   }
 
   const loc = String(site['Locality Site Location'] || site['Location '] || site.Location || site['Site Name'] || site.site_name || '').trim().toLowerCase();
@@ -436,9 +439,11 @@ export const getSiteBookingKeys = (site = {}) => {
       keys.add(`${city}_${loc}_${facing}`);
     }
   } else if (loc) {
-    keys.add(loc);
     if (city) {
       keys.add(`${city}_${loc}`);
+    }
+    if (loc.length > 5 && loc !== 'hoarding site' && loc !== 'unipole') {
+      keys.add(loc);
     }
   }
 
@@ -452,9 +457,9 @@ export const getLocalBookings = () => {
     if (!raw) return {};
     const current = JSON.parse(raw);
     let mutated = false;
-    // Clean up any historical generic keys that didn't include facing and caused cross-site collisions
+    // Clean up any historical numeric keys (e.g. "1", "2") and non-normalized keys
     Object.keys(current).forEach(k => {
-      if (k.includes(' ') && !k.includes('_')) {
+      if (/^\d+$/.test(k.trim()) || (k.includes(' ') && !k.includes('_'))) {
         delete current[k];
         mutated = true;
       }
@@ -465,6 +470,125 @@ export const getLocalBookings = () => {
     return current;
   } catch {
     return {};
+  }
+};
+
+export const getLocalSchedules = () => {
+  if (typeof window === 'undefined') return {};
+  try {
+    const raw = localStorage.getItem('adh_booking_schedules');
+    if (!raw) return {};
+    const current = JSON.parse(raw);
+    let mutated = false;
+    // Clean up any historical numeric keys (e.g. "1", "2") and non-normalized keys
+    Object.keys(current).forEach(k => {
+      if (/^\d+$/.test(k.trim()) || (k.includes(' ') && !k.includes('_'))) {
+        delete current[k];
+        mutated = true;
+      }
+    });
+    if (mutated) {
+      localStorage.setItem('adh_booking_schedules', JSON.stringify(current));
+    }
+    return current;
+  } catch {
+    return {};
+  }
+};
+
+/**
+ * 🧹 Clears all local bookings, multi-slot schedules, local history, and hoardings cache.
+ * Must be invoked whenever the user triggers "Delete All" in admin inventory.
+ */
+export const clearAllLocalBookingsAndCaches = () => {
+  if (typeof window === 'undefined') return;
+  try {
+    localStorage.removeItem('adh_local_bookings');
+    localStorage.removeItem('adh_booking_schedules');
+    localStorage.removeItem('adh_local_history');
+    localStorage.removeItem('adh_cached_hoardings');
+    localStorage.removeItem('hoardings_cache');
+    localStorage.removeItem('deleted_sites_cache');
+    localStorage.removeItem('local_added_sites_cache');
+    localStorage.removeItem('last_hoardings_update');
+  } catch (e) {
+    console.warn('Error clearing local caches:', e);
+  }
+};
+
+/**
+ * 🧹 Clears local bookings and schedules for an entire city.
+ */
+export const clearLocalBookingsForCity = (city) => {
+  if (typeof window === 'undefined' || !city) return;
+  const cleanCity = String(city).trim().toLowerCase();
+  try {
+    const rawBookings = localStorage.getItem('adh_local_bookings');
+    if (rawBookings) {
+      const bookings = JSON.parse(rawBookings);
+      let mutated = false;
+      Object.keys(bookings).forEach(k => {
+        if (k.toLowerCase().startsWith(`${cleanCity}_`)) {
+          delete bookings[k];
+          mutated = true;
+        }
+      });
+      if (mutated) localStorage.setItem('adh_local_bookings', JSON.stringify(bookings));
+    }
+
+    const rawSchedules = localStorage.getItem('adh_booking_schedules');
+    if (rawSchedules) {
+      const schedules = JSON.parse(rawSchedules);
+      let mutated = false;
+      Object.keys(schedules).forEach(k => {
+        if (k.toLowerCase().startsWith(`${cleanCity}_`)) {
+          delete schedules[k];
+          mutated = true;
+        }
+      });
+      if (mutated) localStorage.setItem('adh_booking_schedules', JSON.stringify(schedules));
+    }
+  } catch (e) {
+    console.warn('Error clearing local bookings for city:', e);
+  }
+};
+
+/**
+ * 🧹 Clears local bookings and schedules for a specific site.
+ */
+export const clearLocalBookingsForSite = (site) => {
+  if (!site || typeof window === 'undefined') return;
+  try {
+    const keys = getSiteBookingKeys(site);
+    if (!keys || keys.length === 0) return;
+
+    const rawBookings = localStorage.getItem('adh_local_bookings');
+    if (rawBookings) {
+      const bookings = JSON.parse(rawBookings);
+      let mutated = false;
+      keys.forEach(k => {
+        if (bookings[k]) {
+          delete bookings[k];
+          mutated = true;
+        }
+      });
+      if (mutated) localStorage.setItem('adh_local_bookings', JSON.stringify(bookings));
+    }
+
+    const rawSchedules = localStorage.getItem('adh_booking_schedules');
+    if (rawSchedules) {
+      const schedules = JSON.parse(rawSchedules);
+      let mutated = false;
+      keys.forEach(k => {
+        if (schedules[k]) {
+          delete schedules[k];
+          mutated = true;
+        }
+      });
+      if (mutated) localStorage.setItem('adh_booking_schedules', JSON.stringify(schedules));
+    }
+  } catch (e) {
+    console.warn('Error clearing local bookings for site:', e);
   }
 };
 
@@ -941,44 +1065,41 @@ export const getSiteBookingSlots = (site = {}) => {
   // 2. Check localStorage for local schedule overrides or additions
   if (typeof window !== 'undefined') {
     try {
-      const rawSchedules = localStorage.getItem('adh_booking_schedules');
-      if (rawSchedules) {
-        const schedules = JSON.parse(rawSchedules);
-        const keys = getSiteBookingKeys(site);
-        for (const k of keys) {
-          if (Array.isArray(schedules[k])) {
-            const localList = schedules[k];
-            let isRecent = false;
-            try {
-              const localBookings = JSON.parse(localStorage.getItem('adh_local_bookings') || '{}');
-              const lb = localBookings[k];
-              if (lb && (Date.now() - (Number(lb.updatedAt) || 0)) < 360000) {
-                isRecent = true;
-              }
-            } catch (e) {}
-
-            if (isRecent) {
-              return localList; // Fully override stale cloud if user recently made any slot changes (delete or add)
+      const schedules = getLocalSchedules();
+      const keys = getSiteBookingKeys(site);
+      for (const k of keys) {
+        if (Array.isArray(schedules[k])) {
+          const localList = schedules[k];
+          let isRecent = false;
+          try {
+            const localBookings = getLocalBookings();
+            const lb = localBookings[k];
+            if (lb && (Date.now() - (Number(lb.updatedAt) || 0)) < 360000) {
+              isRecent = true;
             }
+          } catch (e) {}
 
-            if (localList.length === 0 && slots.length === 0) {
-              return [];
-            }
-            if (localList.length > 0) {
-              // Merge local slots with cloud slots (deduping by client + start + end)
-              const seen = new Set(slots.map(s => `${String(s.client || '').trim().toLowerCase()}_${s.start}_${s.end}`));
-              for (const ls of localList) {
-                if (ls && ls.start && ls.end) {
-                  const idKey = `${String(ls.client || '').trim().toLowerCase()}_${ls.start}_${ls.end}`;
-                  if (!seen.has(idKey)) {
-                    slots.push(ls);
-                    seen.add(idKey);
-                  }
+          if (isRecent) {
+            return localList; // Fully override stale cloud if user recently made any slot changes (delete or add)
+          }
+
+          if (localList.length === 0 && slots.length === 0) {
+            return [];
+          }
+          if (localList.length > 0) {
+            // Merge local slots with cloud slots (deduping by client + start + end)
+            const seen = new Set(slots.map(s => `${String(s.client || '').trim().toLowerCase()}_${s.start}_${s.end}`));
+            for (const ls of localList) {
+              if (ls && ls.start && ls.end) {
+                const idKey = `${String(ls.client || '').trim().toLowerCase()}_${ls.start}_${ls.end}`;
+                if (!seen.has(idKey)) {
+                  slots.push(ls);
+                  seen.add(idKey);
                 }
               }
             }
-            break;
           }
+          break;
         }
       }
     } catch {}

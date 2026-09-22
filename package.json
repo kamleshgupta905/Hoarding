@@ -20,6 +20,7 @@
     "google:test": "node scripts/test-google-services.js",
     "script:push": "node scripts/appscript-sync.js push",
     "script:pull": "node scripts/appscript-sync.js pull",
+    "prune:vercel": "node scripts/prune-vercel-deployments.js",
     "test:arch": "node scripts/verify-architecture.js"
   },
   "main": "electron/main.cjs",

@@ -2483,6 +2483,103 @@ function purgeOldTombstonedRows_() {
   }
 }
 
+/**
+ * 🔍 Extract Google Drive File ID from any image URL or markdown/string link
+ */
+function extractDriveFileId_(url) {
+  if (!url || typeof url !== 'string') return null;
+  var str = url.trim();
+  // 1. https://lh3.googleusercontent.com/d/FILE_ID
+  var m = str.match(/\/d\/([a-zA-Z0-9_-]{25,})/);
+  if (m) return m[1];
+  // 2. id=FILE_ID or id%3DFILE_ID
+  m = str.match(/[?&]id(?:%3D|=)([a-zA-Z0-9_-]{25,})/i);
+  if (m) return m[1];
+  // 3. /file/d/FILE_ID/
+  m = str.match(/\/file\/d\/([a-zA-Z0-9_-]{25,})/i);
+  if (m) return m[1];
+  // 4. Standalone drive ID
+  if (/^[a-zA-Z0-9_-]{28,45}$/.test(str)) return str;
+  return null;
+}
+
+/**
+ * 🗑️ Safely move a Google Drive file to Trash by ID
+ */
+function trashDriveFileById_(fileId) {
+  if (!fileId || typeof fileId !== 'string') return false;
+  try {
+    var file = DriveApp.getFileById(fileId.trim());
+    if (file) {
+      file.setTrashed(true);
+      return true;
+    }
+  } catch (err) {
+    // If file already deleted, trashed, or inaccessible, ignore safely
+    logDebug('TRASH FILE NOTICE: ' + fileId + ' - ' + err.toString());
+  }
+  return false;
+}
+
+/**
+ * 🗑️ Trash all Drive images associated with a single site row (ImageURL, IMAGE 1, ExecutionHistory)
+ */
+function trashSiteImages_(rowValues, headers) {
+  if (!rowValues || !headers) return 0;
+  var trashedCount = 0;
+  try {
+    for (var c = 0; c < headers.length; c++) {
+      var h = cleanFull(headers[c]);
+      var val = String(rowValues[c] || '');
+      if (!val) continue;
+
+      if (h === 'imageurl' || h === 'image1' || h === 'photo' || h === 'photourl') {
+        var fId = extractDriveFileId_(val);
+        if (fId && trashDriveFileById_(fId)) trashedCount++;
+      } else if (h === 'executionhistory' || h === 'history') {
+        var matches = val.match(/(?:https:\/\/lh3\.googleusercontent\.com\/d\/|\/d\/|[?&]id=)([a-zA-Z0-9_-]{25,})/g);
+        if (matches) {
+          var seenIds = {};
+          matches.forEach(function(m) {
+            var extracted = extractDriveFileId_(m);
+            if (extracted && !seenIds[extracted]) {
+              seenIds[extracted] = true;
+              if (trashDriveFileById_(extracted)) trashedCount++;
+            }
+          });
+        }
+      }
+    }
+  } catch (err) {
+    logDebug('TRASH SITE IMAGES ERROR: ' + err.toString());
+  }
+  return trashedCount;
+}
+
+/**
+ * 🗑️ Trash all image files inside a given Drive folder (e.g. CONFIG.IMAGE_FOLDER_ID)
+ */
+function trashAllImagesInFolder_(folderId) {
+  if (!folderId) return 0;
+  var count = 0;
+  try {
+    var folder = DriveApp.getFolderById(folderId);
+    if (!folder) return 0;
+    var files = folder.getFiles();
+    while (files.hasNext()) {
+      var f = files.next();
+      try {
+        f.setTrashed(true);
+        count++;
+      } catch (e) {}
+    }
+    logDebug('DRIVE TRASH | Trashed ' + count + ' files from folder: ' + folderId);
+  } catch (err) {
+    logDebug('DRIVE TRASH FOLDER ERROR: ' + err.toString());
+  }
+  return count;
+}
+
 function deleteHoardingDetails(data) {
   if (!data) return res({ success: false, error: 'Payload is required' });
   ensureSiteMetadata_();
@@ -2599,12 +2696,15 @@ function deleteHoardingDetails(data) {
     // Safe Archive before hard delete
     archiveDeletedRow_(sheet, rowIndex, rows[rowIndex - 1]);
 
+    // Trash associated Drive images
+    trashSiteImages_(rows[rowIndex - 1], headers);
+
     // Physically delete the row from the active sheet
     sheet.deleteRow(rowIndex);
     SpreadsheetApp.flush();
     bumpChangeVersion_('deleteHoarding', data.operationId || '');
-    logDebug("DELETE SITE | Row " + rowIndex + " (" + (data.siteName || targetSL || targetSiteId) + ") physically deleted from sheet");
-    return res({ success: true, deleted: true, message: 'Row permanently deleted from sheet' });
+    logDebug("DELETE SITE | Row " + rowIndex + " (" + (data.siteName || targetSL || targetSiteId) + ") physically deleted from sheet and Drive images trashed");
+    return res({ success: true, deleted: true, message: 'Row and images permanently deleted' });
   } catch (err) {
     logDebug("DELETE SITE ERROR: " + err.toString());
     return res({ success: false, error: err.toString() });
@@ -2649,6 +2749,10 @@ function deleteCityHoardings(data) {
     }
     if (matchingRows.length > 0) {
       archiveDeletedRowsList_(sheet, matchingRows);
+      var cityHeaders = rows[0];
+      for (var mi = 0; mi < matchingRows.length; mi++) {
+        trashSiteImages_(matchingRows[mi], cityHeaders);
+      }
     }
 
     // Delete contiguous ranges of rows from bottom up for maximum speed and safety
@@ -2681,8 +2785,8 @@ function deleteCityHoardings(data) {
     }
     SpreadsheetApp.flush();
     bumpChangeVersion_('deleteCityHoardings', data.operationId || '');
-    logDebug("BULK DELETE | City: " + cityName + " | Rows deleted: " + deletedCount);
-    return res({ success: true, deletedCount: deletedCount, message: 'City data permanently deleted from sheet' });
+    logDebug("BULK DELETE | City: " + cityName + " | Rows deleted: " + deletedCount + " | Drive images trashed");
+    return res({ success: true, deletedCount: deletedCount, message: 'City data and images permanently deleted' });
   } catch (err) {
     logDebug("BULK DELETE CITY ERROR: " + err.toString());
     return res({ success: false, error: err.toString() });
@@ -2716,13 +2820,28 @@ function deleteAllHoardings(data) {
       createMasterBackup_('delete-all');
       var rows = sheet.getDataRange().getValues();
       archiveDeletedRowsBatch_(sheet, rows);
+
+      // 🗑️ Trash all image files from the dedicated images folder
+      trashAllImagesInFolder_(CONFIG.IMAGE_FOLDER_ID);
+
+      // Also trash individual image files referenced in the rows
+      if (rows && rows.length > 1) {
+        var allHeaders = rows[0];
+        for (var ri = 1; ri < rows.length; ri++) {
+          trashSiteImages_(rows[ri], allHeaders);
+        }
+      }
+
       // Delete all data rows in a single atomic call (from row 2 through lastRow)
       sheet.deleteRows(2, deletedCount);
       SpreadsheetApp.flush();
+    } else {
+      // Clean up orphaned images in images folder on "delete all" even if 0 rows
+      trashAllImagesInFolder_(CONFIG.IMAGE_FOLDER_ID);
     }
     bumpChangeVersion_('deleteAllHoardings', data.operationId || '');
-    logDebug("BULK DELETE | All sites | Rows deleted: " + deletedCount);
-    return res({ success: true, deletedCount: deletedCount, message: 'All site data permanently deleted from sheet' });
+    logDebug("BULK DELETE | All sites | Rows deleted: " + deletedCount + " | Drive images trashed");
+    return res({ success: true, deletedCount: deletedCount, message: 'All site data and Drive images permanently deleted' });
   } catch (err) {
     logDebug("BULK DELETE ALL ERROR: " + err.toString());
     return res({ success: false, error: err.toString() });
