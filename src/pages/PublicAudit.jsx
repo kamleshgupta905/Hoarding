@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { Camera, ShieldCheck, Zap, X, AlertCircle, Plus, Check, RefreshCcw, Smartphone } from 'lucide-react';
+import { Camera, ShieldCheck, X, AlertCircle, Plus, Check, RefreshCcw, Smartphone } from 'lucide-react';
 import { compressImage, syncToGoogleSheet } from '../services/dataService';
 import { appToast } from '../components/ToastContext';
 

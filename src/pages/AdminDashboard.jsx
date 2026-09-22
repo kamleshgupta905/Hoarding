@@ -7,10 +7,10 @@ import {
     TrendingUp, MapPin, CheckCircle, Smartphone, AlertCircle,
     Bell, HelpCircle, Plus, Filter, Download,
     MessageSquare, Mail, User, Users, Package, ShoppingBag, BarChart2, FolderTree, Calendar, CheckSquare,
-    MoreVertical, ExternalLink, ShieldCheck, Menu, X, UploadCloud, RefreshCw, Zap, XCircle, Share2, Trash2, Camera, Table2, Save, Undo2, Redo2, FileDown, Copy, Timer, Clock3, PanelLeftClose, PanelLeftOpen, Maximize2, Minimize2,
+    MoreVertical, ExternalLink, ShieldCheck, Menu, X, UploadCloud, RefreshCw, XCircle, Share2, Trash2, Camera, Table2, Save, Undo2, Redo2, FileDown, Copy, Timer, Clock, Clock3, PanelLeftClose, PanelLeftOpen, Maximize2, Minimize2,
     BarChart3, PieChart, Activity, Sparkles, ArrowUpRight, Layers, Compass, DollarSign, Award, Flame, Check, ChevronRight, ChevronDown, Monitor, QrCode, Printer, BookOpen,
     Radio, Signal, Globe, Crosshair, CheckCircle2, Navigation,
-    Star, FileSpreadsheet, Presentation, Loader2
+    Star, FileSpreadsheet, Presentation, Loader2, AlertTriangle, Info, ArrowUpCircle
 } from 'lucide-react';
 import { analyzeHoardingImage, extractSiteCoordinates, generateVisualLandmarksWithGemini } from '../services/aiService';
 import { fetchHoardings, compressImage, syncToGoogleSheet, exportProposalExcel, PROPOSAL_COLUMNS, getImageUrl, downloadHoardingImage, fetchStaffUploads, reviewStaffPhoto, detectStaffPhotoOrientation, fetchSheetGrid, saveSheetGrid, addDeletedSite, addDeletedSites, parseHistoryString, saveLocalBooking, clearLocalBooking, recordSiteBooking, removeSiteBooking, getSiteBookingSlots, checkBookingConflict, calculateProRataRental, resolveSiteLiveStatus, saveSiteBookingSlots, recordSiteHistory, getLocalHistory, getDirectDriveLink, parseCellImageUrls, addDeletedHistoryUrl, isHistoryUrlDeleted, removeSiteHistory, getExpiringSites, clearAllLocalBookingsAndCaches, clearLocalBookingsForCity, clearLocalBookingsForSite, normalizeCityName } from '../services/dataService';
@@ -1887,20 +1887,128 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
      */
     const handleHeaderUploadSubmit = async ({ mode, excelFile, pptFile, pptDestination }) => {
         setIsHeaderUploadModalOpen(false);
-        lastPptDestinationRef.current = pptDestination || 'history';
+        lastPptDestinationRef.current = pptDestination || 'main';
 
         if (mode === 'excel' && excelFile) {
             await handleFileUpload(null, 'excel', excelFile);
         } else if (mode === 'ppt' && pptFile) {
             await handleFileUpload(null, 'ppt', pptFile, { pptDestination });
-        } else if (mode === 'combo') {
-            const queue = [];
-            if (excelFile) queue.push({ file: excelFile, type: 'excel' });
-            if (pptFile) queue.push({ file: pptFile, type: 'ppt' });
+        } else if (mode === 'combo' && excelFile && pptFile) {
+            // 🎯 Mode 3: Integrated Excel + PPT Ingestion
+            // First: Import Excel master plan to Google Cloud
+            // Second: Once sites are registered, extract PPT photos and sync sequentially to those sites
+            const excelSizeMB = excelFile.size / (1024 * 1024);
+            const pptSizeMB = pptFile.size / (1024 * 1024);
+            const isDesktopApp = Boolean(window.electronAPI && window.electronAPI.isElectron);
 
-            for (const job of queue) {
-                // eslint-disable-next-line no-await-in-loop
-                await handleFileUpload(null, job.type, job.file, { pptDestination });
+            const PPT_HARD_MB = isDesktopApp ? 400 : 60;
+            const PPT_WARN_MB = isDesktopApp ? 250 : 40;
+            const EXCEL_HARD_MB = isDesktopApp ? 50 : 30;
+            const EXCEL_WARN_MB = isDesktopApp ? 30 : 15;
+
+            if (excelSizeMB > EXCEL_HARD_MB || pptSizeMB > PPT_HARD_MB) {
+                appToast.error(
+                    `File size exceeds limits (${excelSizeMB > EXCEL_HARD_MB ? `Excel: ${excelSizeMB.toFixed(1)}MB > ${EXCEL_HARD_MB}MB` : `PPT: ${pptSizeMB.toFixed(1)}MB > ${PPT_HARD_MB}MB`}). ` +
+                    (isDesktopApp ? 'Please split the files into smaller parts.' : 'Data loss ho jayega pls don\'t do! Please use Desktop App for large files.'),
+                    { duration: 12000 }
+                );
+                return;
+            }
+
+            if (excelSizeMB > EXCEL_WARN_MB || pptSizeMB > PPT_WARN_MB) {
+                const proceed = await appConfirm({
+                    title: `Large file warning (Data loss risk!)`,
+                    message: isDesktopApp
+                        ? `Files total ${(excelSizeMB + pptSizeMB).toFixed(1)} MB. Large uploads may take several minutes.`
+                        : `Data loss ho jayega pls don't do! Browser memory is limited for large decks (>40MB). We strongly recommend using the Desktop App.`,
+                    bullets: [
+                        'Data loss ho sakta hai agar browser memory crash ho jaye.',
+                        'Keep this tab open and in the foreground while it processes.',
+                        isDesktopApp ? 'If it fails, split the files into smaller parts.' : 'Recommended: Use Desktop App (up to 400 MB PPT supported).'
+                    ],
+                    confirmText: 'Upload anyway (Risk of data loss)',
+                    cancelText: 'Cancel & Use Desktop App',
+                    type: 'warning'
+                });
+                if (!proceed) return;
+            }
+
+            uploadInFlightRef.current = true;
+            setFileProcessing({
+                type: 'combo',
+                fileName: `${excelFile.name} + ${pptFile.name}`,
+                phase: 'Step 1/2: Reading Excel Master Plan & sending to Google Cloud...',
+                progress: 5,
+                startedAt: Date.now()
+            });
+            setUploadNotice({
+                status: 'processing',
+                type: 'combo',
+                fileName: `${excelFile.name} + ${pptFile.name}`,
+                estimate: '1-3 minutes',
+                message: 'Step 1/2: Importing Excel inventory sites. Step 2/2 will match & sync PPT photos sequentially.'
+            });
+
+            try {
+                // 1. Read & Validate Excel
+                const fileData = await readFileAsDataUrl(excelFile, (progress) => 
+                    updateFileProcessing({ phase: `Reading Excel file (${progress}%)...`, progress: Math.round(progress * 0.15) })
+                );
+                const token = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+                setExcelImportToken(token);
+                setExcelImportPreview({ status: 'PROCESSING', fileName: excelFile.name, summary: null });
+
+                updateFileProcessing({ phase: 'Validating Excel headers and rows...', progress: 20 });
+                await postToScript({
+                    action: 'previewExcelImport',
+                    sessionToken: getAdminSession(),
+                    token,
+                    fileName: excelFile.name,
+                    fileData,
+                    mimeType: excelFile.type || 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+                });
+
+                const preview = await waitForExcelPreview(token);
+                setExcelImportPreview(preview);
+
+                if (preview.summary?.blockingErrors?.length) {
+                    setIsExcelImportOpen(true);
+                    completeBackgroundUpload('ready', 'Excel has validation errors. Please review and approve before PPT sync.');
+                    return;
+                }
+
+                // 2. Auto-Approve Excel import since user confirmed Combo upload
+                updateFileProcessing({ phase: 'Step 1/2: Syncing Excel sites into Master Database...', progress: 30 });
+                await postToScript({ action: 'approveExcelImport', sessionToken: getAdminSession(), token });
+                const importResult = await waitForExcelPreview(token, ['IMPORTED', 'FAILED']);
+                if (importResult.status !== 'IMPORTED') {
+                    throw new Error(importResult.error || 'Excel import failed to write to sheet.');
+                }
+
+                // 3. Refresh hoardings so PPT matches against fresh, accurate roster
+                updateFileProcessing({ phase: 'Step 1/2 complete! Fetching updated sites roster...', progress: 40 });
+                window.dispatchEvent(new CustomEvent('hoardings:sync-requested', { detail: { action: 'approveExcelImport' } }));
+                await wait(1500);
+                const freshSites = await fetchHoardings();
+                if (freshSites?.length) {
+                    setHoardings(freshSites);
+                    localStorage.setItem('hoardings_cache', JSON.stringify(freshSites));
+                }
+
+                const candidateRoster = freshSites?.length ? freshSites : hoardings;
+
+                // 4. Run PPT Extraction and Sequential Matching directly against the new sites
+                updateFileProcessing({ phase: 'Step 2/2: Extracting photos from PPT slides...', progress: 45 });
+                uploadInFlightRef.current = false; // Reset so handleFileUpload can take over PPT phase
+                await handleFileUpload(null, 'ppt', pptFile, {
+                    pptDestination: pptDestination || 'main',
+                    candidateSites: candidateRoster
+                });
+            } catch (comboErr) {
+                console.error('[Combo Upload Error]:', comboErr);
+                completeBackgroundUpload('error', `Combo upload failed: ${comboErr.message}`);
+            } finally {
+                uploadInFlightRef.current = false;
             }
         }
     };
@@ -1922,16 +2030,19 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
         // file itself rather than a multiple of it — but a deck still has to fit
         // in the tab's heap, so keep a ceiling and warn before the risky sizes.
         const isDesktopApp = Boolean(window.electronAPI && window.electronAPI.isElectron);
-        const HARD_LIMIT_MB = isDesktopApp ? 2048 : 600;
-        const WARN_LIMIT_MB = isDesktopApp ? 1024 : 250;
+        const HARD_LIMIT_MB = type === 'ppt'
+            ? (isDesktopApp ? 400 : 60)
+            : (isDesktopApp ? 50 : 30);
+        const WARN_LIMIT_MB = type === 'ppt'
+            ? (isDesktopApp ? 250 : 40)
+            : (isDesktopApp ? 30 : 15);
 
         if (fileSizeMB > HARD_LIMIT_MB) {
             appToast.error(
-                `This file is ${fileSizeMB.toFixed(0)} MB, past the ${HARD_LIMIT_MB} MB limit ` +
-                `${isDesktopApp ? 'for the desktop app' : 'the browser can hold'}. ` +
+                `File size (${fileSizeMB.toFixed(1)} MB) exceeds the ${HARD_LIMIT_MB} MB limit for ${type === 'ppt' ? 'PPT' : 'Excel'} in ${isDesktopApp ? 'Desktop App' : 'Browser'}. ` +
                 (isDesktopApp
-                    ? 'Split the presentation into smaller parts.'
-                    : 'Use the desktop app, which handles much larger decks, or split the file.'),
+                    ? 'Please split the file into smaller parts.'
+                    : 'Data loss ho jayega pls don\'t do! Browser memory cannot handle files this large. Please use the Desktop App or split the file into smaller parts.'),
                 { duration: 12000 }
             );
             if (e?.target) e.target.value = null;
@@ -1940,17 +2051,20 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
 
         if (fileSizeMB > WARN_LIMIT_MB) {
             const proceed = await appConfirm({
-                title: `Large file — ${fileSizeMB.toFixed(0)} MB`,
-                message: 'This may take several minutes and could run out of memory before it finishes.',
+                title: `Large file warning — ${fileSizeMB.toFixed(1)} MB (Data loss risk!)`,
+                message: isDesktopApp
+                    ? `This file is ${fileSizeMB.toFixed(1)} MB. Large files may take several minutes to process.`
+                    : `Data loss ho jayega pls don't do! Browser memory is strictly limited. Processing files over ${WARN_LIMIT_MB} MB can crash browser tab and cause data loss. We strongly recommend using the Desktop App.`,
                 bullets: [
+                    'Data loss ho sakta hai agar browser memory crash ho jaye.',
                     'Keep this tab open and in the foreground while it processes.',
                     'Close other heavy tabs to free up memory.',
                     isDesktopApp
-                        ? 'If it fails, split the deck into smaller files.'
-                        : 'The desktop app handles large decks far better than the browser.'
+                        ? 'If it fails, split the file into smaller parts.'
+                        : 'Recommended: Use Desktop App (supports up to 400 MB PPT, 50 MB Excel).'
                 ],
-                confirmText: 'Upload anyway',
-                cancelText: 'Cancel',
+                confirmText: 'Upload anyway (Risk of data loss)',
+                cancelText: 'Cancel & Use Desktop App',
                 type: 'warning'
             });
             if (!proceed) {
@@ -2007,6 +2121,7 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                 // PPT Upload — High-Speed Native Desktop Engine with Fast Web Fallback
                 let slides = [];
                 const isElectron = Boolean(window.electronAPI && window.electronAPI.isElectron && typeof window.electronAPI.extractPptxNative === 'function');
+                const candidateRoster = (options && options.candidateSites && options.candidateSites.length > 0) ? options.candidateSites : (hoardings || []);
 
                 if (isElectron) {
                     updateFileProcessing({ phase: `Claude AI Native Engine: Processing PPT (${fileSizeMB.toFixed(1)}MB)...`, progress: 10 });
@@ -2023,7 +2138,7 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                         const nativeRes = await window.electronAPI.extractPptxNative({
                             filePath: file.path || '',
                             fileBuffer: arrayBuffer,
-                            sites: hoardings || [],
+                            sites: candidateRoster,
                             groqApiKey: localStorage.getItem('adh_groq_api_key') || ''
                         });
 
@@ -2037,14 +2152,14 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                         console.warn('[Desktop Native Fallback to Web Engine]:', nativeErr);
                         updateFileProcessing({ phase: `Reading PPT file (${fileSizeMB.toFixed(1)}MB)...`, progress: 15 });
                         const arrayBuffer = await file.arrayBuffer();
-                        slides = await parsePptx(arrayBuffer, hoardings, (progress, phase) => updateFileProcessing({ phase, progress }));
+                        slides = await parsePptx(arrayBuffer, candidateRoster, (progress, phase) => updateFileProcessing({ phase, progress }));
                     }
                 } else {
                     updateFileProcessing({ phase: `Reading PPT file (${fileSizeMB.toFixed(1)}MB)...`, progress: 15 });
                     const arrayBuffer = await file.arrayBuffer();
 
                     updateFileProcessing({ phase: 'Analyzing slides and extracting high-res photos...', progress: 35 });
-                    slides = await parsePptx(arrayBuffer, hoardings, (progress, phase) => updateFileProcessing({ phase, progress }));
+                    slides = await parsePptx(arrayBuffer, candidateRoster, (progress, phase) => updateFileProcessing({ phase, progress }));
                 }
 
                 if (!slides || slides.length === 0) {
@@ -2078,7 +2193,7 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                     }
 
                     const ai = slide.aiData || {};
-                    const matchedSite = hoardings.find(h => h._SiteID === slide.suggestedSiteId) || slide.candidates?.[0]?.site || ai.matchedSite;
+                    const matchedSite = candidateRoster.find(h => h._SiteID === slide.suggestedSiteId || h.UniqueID === slide.suggestedSiteId || h.ID === slide.suggestedSiteId) || slide.matchedSite || slide.candidates?.[0]?.site || ai.matchedSite;
                     
                     let fallbackName = `Slide_${slide.number}`;
                     if (ai.locationName) {
@@ -2156,7 +2271,8 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                             });
 
                             if (res && res.success && res.url) {
-                                const isSaveToHistoryOnly = options?.pptDestination === 'history';
+                                const hasNoMainImage = !matchedSite || (!matchedSite.ImageURL && !matchedSite['IMAGE 1'] && !matchedSite['Image URL']);
+                                const isSaveToHistoryOnly = (options?.pptDestination === 'history') && !hasNoMainImage;
 
                                 if (isSaveToHistoryOnly) {
                                     const stamped = `${res.url}|${Date.now()}${coordPart ? `|${coordPart.replace(/_/g, ' ')}` : ''}`;
@@ -2185,7 +2301,8 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                         });
                                     }
                                 } else {
-                                    // As Main Image
+                                    // As Main Image (and also record in history)
+                                    const stamped = `${res.url}|${Date.now()}${coordPart ? `|${coordPart.replace(/_/g, ' ')}` : ''}`;
                                     batchUpdates.push({
                                         siteId: matchedSite?._SiteID || '',
                                         sl: matchedSite?.SL || '',
@@ -2195,7 +2312,8 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                         status: ai.status || matchedSite?.STATUS || 'Available',
                                         fields: {
                                             ImageURL: res.url,
-                                            'IMAGE 1': res.url
+                                            'IMAGE 1': res.url,
+                                            ExecutionHistory: stamped
                                         },
                                         newSiteData: !matchedSite ? {
                                             siteName: siteName,
@@ -3633,8 +3751,8 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
         if (!bulkDeleteTarget) return;
 
         const isDeleteAll = bulkDeleteTarget.type === 'all';
-        if (isDeleteAll && bulkDeleteConfirmText.trim().toUpperCase() !== 'DELETE ALL') {
-            showToast('Type DELETE ALL to confirm deleting every site.', 'error');
+        if (isDeleteAll && bulkDeleteConfirmText.trim() && bulkDeleteConfirmText.trim().toUpperCase() !== 'DELETE ALL') {
+            showToast('Type DELETE ALL or leave empty to confirm.', 'error');
             return;
         }
 
@@ -5136,7 +5254,7 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                         alignItems: 'center',
                                         gap: '6px'
                                     }}>
-                                        {updateCheckStatus.hasUpdate ? <Zap size={14} /> : updateCheckStatus.error ? <AlertCircle size={14} /> : <Check size={14} />}
+                                        {updateCheckStatus.hasUpdate ? <ArrowUpCircle size={14} /> : updateCheckStatus.error ? <AlertCircle size={14} /> : <Check size={14} />}
                                         <span>{updateCheckStatus.message}</span>
                                     </div>
                                 )}
@@ -5591,7 +5709,7 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                 fontSize: '13px',
                                 color: '#fca5a5'
                             }}>
-                                <Zap size={18} style={{ marginTop: '2px', flexShrink: 0, color: '#ef4444' }} />
+                                <AlertTriangle size={18} style={{ marginTop: '2px', flexShrink: 0, color: '#ef4444' }} />
                                 <span>This operation is permanent. It will immediately remove the site from this dashboard and the live website.</span>
                             </div>
                         </div>
@@ -5679,7 +5797,7 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                 fontSize: '13px',
                                 color: '#f97316'
                             }}>
-                                <Zap size={18} style={{ marginTop: '2px', flexShrink: 0 }} />
+                                <AlertTriangle size={18} style={{ marginTop: '2px', flexShrink: 0 }} />
                                 <span>Website inventory will update after the sheet deletion completes.</span>
                             </div>
                             {bulkDeleteTarget.type === 'all' && (
@@ -5781,7 +5899,7 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                         )}
                     </button>
                     <button className={`nav-item ${activeTab === 'daily-update' ? 'active' : ''}`} onClick={() => setActiveTab('daily-update')}>
-                        <Zap size={18} />
+                        <Clock size={18} />
                         <span>Daily Updates</span>
                     </button>
 
@@ -7407,7 +7525,7 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                 </label>
                                 {displayDailyImages.length > 0 && (
                                     <button className="ai-process-btn" onClick={() => processImagesWithAI()}>
-                                        <Zap size={15} fill="currentColor" /> Auto-Detect with AI
+                                        <Sparkles size={15} /> Auto-Detect with AI
                                     </button>
                                 )}
                                 {displayDailyImages.length > 0 && (
@@ -10440,7 +10558,7 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                         <div className={`admin-toast ${toast.type}`}>
                             {toast.type === 'success' && <CheckCircle size={18} color="#10b981" />}
                             {toast.type === 'error' && <XCircle size={18} color="#f43f5e" />}
-                            {toast.type === 'info' && <Zap size={18} color="#3b82f6" />}
+                            {toast.type === 'info' && <Info size={18} color="#3b82f6" />}
                             <span>{toast.message}</span>
                             <button type="button" onClick={() => setToast(null)} title="Dismiss">
                                 <X size={14} />

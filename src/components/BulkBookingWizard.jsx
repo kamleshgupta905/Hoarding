@@ -273,7 +273,7 @@ export default function BulkBookingWizard({
                 <div className="mode-card-info">
                   <h4>Mode 1: Only Excel (Fast Booking)</h4>
                   <p>Fastest way to book. Upload Media Plan / RO with client names, dates & rates.</p>
-                  <span className="mode-badge">⚡ 1 File Required</span>
+                  <span className="mode-badge">1 File Required</span>
                 </div>
               </div>
 
@@ -696,7 +696,7 @@ export default function BulkBookingWizard({
                                   <div className="slide-confidence-row">
                                     {item.matchedSlide.matchType === 'manual_override' ? (
                                       <span className="confidence-pill manual" title="Manually assigned by Admin">
-                                        ⚡ 100% Manual
+                                        100% Manual
                                       </span>
                                     ) : item.matchedSlide.confidenceScore >= 80 ? (
                                       <span className="confidence-pill high" title="High Confidence Match (SL & Location Verified)">

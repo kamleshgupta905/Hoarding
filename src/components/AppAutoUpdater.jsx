@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Sparkles, RefreshCw, CheckCircle2, ArrowUpCircle, ShieldCheck, Zap } from 'lucide-react';
+import { Sparkles, RefreshCw, CheckCircle2, ArrowUpCircle, ShieldCheck } from 'lucide-react';
 import { checkForAppUpdates, performLiveAppUpdate } from '../services/appUpdater';
 import { appToast } from './ToastContext';
 import './AppAutoUpdater.css';
@@ -86,7 +86,7 @@ export default function AppAutoUpdater() {
         
         <div className="updater-icon-header">
           <div className="updater-badge-icon">
-            <Zap size={28} className="zap-pulse" />
+            <ArrowUpCircle size={28} className="spin-pulse" />
           </div>
           <span className="updater-version-tag">Version {updateInfo.latestVersion} Live</span>
         </div>

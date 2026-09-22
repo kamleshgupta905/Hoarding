@@ -9,7 +9,8 @@ import {
   ArrowRight, 
   Trash2,
   Image,
-  FolderArchive
+  FolderArchive,
+  AlertTriangle
 } from 'lucide-react';
 import './HeaderSitesUploadModal.css';
 
@@ -20,12 +21,28 @@ export default function HeaderSitesUploadModal({
   disabled = false
 }) {
   const [mode, setMode] = useState('excel'); // 'excel' | 'ppt' | 'combo'
-  const [pptDestination, setPptDestination] = useState('history'); // 'history' | 'main'
+  const [pptDestination, setPptDestination] = useState('main'); // 'main' | 'history'
   const [excelFile, setExcelFile] = useState(null);
   const [pptFile, setPptFile] = useState(null);
 
   const excelInputRef = useRef(null);
   const pptInputRef = useRef(null);
+
+  const isDesktopApp = typeof window !== 'undefined' && Boolean(window.electronAPI && window.electronAPI.isElectron);
+
+  // Limits: Browser safe warning 40MB, hard block 60MB; Desktop safe 250MB, hard 400MB
+  const PPT_WARN_MB = isDesktopApp ? 250 : 40;
+  const PPT_HARD_MB = isDesktopApp ? 400 : 60;
+  const EXCEL_WARN_MB = isDesktopApp ? 30 : 15;
+  const EXCEL_HARD_MB = isDesktopApp ? 50 : 30;
+
+  const excelSizeMB = excelFile ? excelFile.size / (1024 * 1024) : 0;
+  const pptSizeMB = pptFile ? pptFile.size / (1024 * 1024) : 0;
+
+  const isExcelOverHard = excelSizeMB > EXCEL_HARD_MB;
+  const isExcelOverWarn = excelSizeMB > EXCEL_WARN_MB;
+  const isPptOverHard = pptSizeMB > PPT_HARD_MB;
+  const isPptOverWarn = pptSizeMB > PPT_WARN_MB;
 
   if (!isOpen) return null;
 
@@ -47,9 +64,9 @@ export default function HeaderSitesUploadModal({
 
   const isSubmitDisabled = () => {
     if (disabled) return true;
-    if (mode === 'excel') return !excelFile;
-    if (mode === 'ppt') return !pptFile;
-    if (mode === 'combo') return !excelFile || !pptFile;
+    if (mode === 'excel') return !excelFile || isExcelOverHard;
+    if (mode === 'ppt') return !pptFile || isPptOverHard;
+    if (mode === 'combo') return !excelFile || !pptFile || isExcelOverHard || isPptOverHard;
     return true;
   };
 
@@ -120,7 +137,7 @@ export default function HeaderSitesUploadModal({
                 </div>
                 <h4>1. Only Excel</h4>
                 <p>Add or update sites and specifications in master sheet.</p>
-                <span className="hu-mode-badge">⚡ 1 File Required</span>
+                <span className="hu-mode-badge">1 File Required</span>
               </div>
 
               {/* Mode 2: PPT Only */}
@@ -238,21 +255,43 @@ export default function HeaderSitesUploadModal({
                     <span className="hu-dropzone-sub">Supports .xlsx, .xls, .csv formats</span>
                   </div>
                 ) : (
-                  <div className="hu-file-selected-row">
-                    <div className="hu-file-selected-info">
-                      <CheckCircle2 size={16} color="#16a34a" />
-                      <span>{excelFile.name}</span>
-                      <small style={{ color: '#64748b' }}>({formatFileSize(excelFile.size)})</small>
+                  <>
+                    <div className="hu-file-selected-row">
+                      <div className="hu-file-selected-info">
+                        <CheckCircle2 size={16} color="#16a34a" />
+                        <span>{excelFile.name}</span>
+                        <small style={{ color: '#64748b' }}>({formatFileSize(excelFile.size)})</small>
+                      </div>
+                      <button 
+                        type="button" 
+                        className="hu-file-remove-btn" 
+                        onClick={() => setExcelFile(null)}
+                        title="Remove file"
+                      >
+                        <Trash2 size={15} />
+                      </button>
                     </div>
-                    <button 
-                      type="button" 
-                      className="hu-file-remove-btn" 
-                      onClick={() => setExcelFile(null)}
-                      title="Remove file"
-                    >
-                      <Trash2 size={15} />
-                    </button>
-                  </div>
+                    {isExcelOverHard && (
+                      <div style={{ marginTop: '8px', padding: '10px 14px', background: 'rgba(239,68,68,0.12)', border: '1px solid #ef4444', borderRadius: '8px', color: '#f87171', fontSize: '13px', lineHeight: '1.4' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 600 }}>
+                          <AlertTriangle size={16} /> File Exceeds Limit ({excelSizeMB.toFixed(1)} MB / Max {EXCEL_HARD_MB} MB)
+                        </div>
+                        <div style={{ marginTop: '4px', fontSize: '12px', color: '#fca5a5' }}>
+                          {isDesktopApp ? 'Excel file is too large. Please split rows.' : 'To prevent memory overload, use the Desktop App or reduce file size.'}
+                        </div>
+                      </div>
+                    )}
+                    {isExcelOverWarn && !isExcelOverHard && (
+                      <div style={{ marginTop: '8px', padding: '10px 14px', background: 'rgba(245,158,11,0.1)', border: '1px solid #f59e0b', borderRadius: '8px', color: '#fbbf24', fontSize: '13px', lineHeight: '1.4' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 600 }}>
+                          <AlertTriangle size={16} /> Large File Notice ({excelSizeMB.toFixed(1)} MB)
+                        </div>
+                        <div style={{ marginTop: '4px', fontSize: '12px' }}>
+                          Parsing may take a few moments.
+                        </div>
+                      </div>
+                    )}
+                  </>
                 )}
               </div>
             )}
@@ -286,21 +325,47 @@ export default function HeaderSitesUploadModal({
                     <span className="hu-dropzone-sub">Supports .pptx and .ppt formats</span>
                   </div>
                 ) : (
-                  <div className="hu-file-selected-row">
-                    <div className="hu-file-selected-info">
-                      <CheckCircle2 size={16} color="#db2777" />
-                      <span>{pptFile.name}</span>
-                      <small style={{ color: '#64748b' }}>({formatFileSize(pptFile.size)})</small>
+                  <>
+                    <div className="hu-file-selected-row">
+                      <div className="hu-file-selected-info">
+                        <CheckCircle2 size={16} color="#db2777" />
+                        <span>{pptFile.name}</span>
+                        <small style={{ color: '#64748b' }}>({formatFileSize(pptFile.size)})</small>
+                      </div>
+                      <button 
+                        type="button" 
+                        className="hu-file-remove-btn" 
+                        onClick={() => setPptFile(null)}
+                        title="Remove file"
+                      >
+                        <Trash2 size={15} />
+                      </button>
                     </div>
-                    <button 
-                      type="button" 
-                      className="hu-file-remove-btn" 
-                      onClick={() => setPptFile(null)}
-                      title="Remove file"
-                    >
-                      <Trash2 size={15} />
-                    </button>
-                  </div>
+                    {isPptOverHard && (
+                      <div style={{ marginTop: '8px', padding: '10px 14px', background: 'rgba(239,68,68,0.12)', border: '1px solid #ef4444', borderRadius: '8px', color: '#f87171', fontSize: '13px', lineHeight: '1.4' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 600 }}>
+                          <AlertTriangle size={16} /> File Too Large For Browser ({pptSizeMB.toFixed(1)} MB / Max {PPT_HARD_MB} MB)
+                        </div>
+                        <div style={{ marginTop: '4px', fontSize: '12px', color: '#fca5a5' }}>
+                          {isDesktopApp 
+                            ? 'Please split the presentation deck into smaller files (under 400 MB).' 
+                            : 'Browsers cannot safely decompress large PPT decks over 60 MB without data loss or missing photos. Please use the Desktop App (supports up to 400 MB) or compress the PPT.'}
+                        </div>
+                      </div>
+                    )}
+                    {isPptOverWarn && !isPptOverHard && (
+                      <div style={{ marginTop: '8px', padding: '10px 14px', background: 'rgba(245,158,11,0.1)', border: '1px solid #f59e0b', borderRadius: '8px', color: '#fbbf24', fontSize: '13px', lineHeight: '1.4' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 600 }}>
+                          <AlertTriangle size={16} /> Data Loss Warning ({pptSizeMB.toFixed(1)} MB)
+                        </div>
+                        <div style={{ marginTop: '4px', fontSize: '12px' }}>
+                          {isDesktopApp 
+                            ? 'Large presentation detected. Native engine will process without memory loss.' 
+                            : 'Web browsers have strict heap memory limits. Decks over 40 MB may encounter memory pressure and skip photos (data loss). For 100% photo extraction, use the Desktop App.'}
+                        </div>
+                      </div>
+                    )}
+                  </>
                 )}
               </div>
             )}

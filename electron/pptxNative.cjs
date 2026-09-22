@@ -258,14 +258,20 @@ const scoreSite = (text, site, slideNumber = 0, siteIndex = -1) => {
   let score = 0;
 
   // 🎯 1. Ultra Priority: Slide Number == Serial No. / Sr No. in Google Sheet
-  const rawSrNo = site['Sr No'] || site['S.No'] || site['S. No.'] || site['Sr. No.'] || site['Serial No'] || site['S No'] || site['Sr.'] || site['No.'] || site.ID;
+  const rawSrNo = site['SL'] || site['SL NO'] || site['SL. NO.'] || site['Sr No'] || site['S.No'] || site['S. No.'] || site['Sr. No.'] || site['Serial No'] || site['S No'] || site['Sr.'] || site['No.'] || site.ID;
   const parsedSrNo = parseInt(String(rawSrNo || '').replace(/[^0-9]/g, ''), 10);
   
-  if (slideNumber > 0) {
+  const srMatch = text.match(/(?:sr|sl|s\.no|sr\.no|s\s*no|serial|site\s*#?)\s*[:#.-]?\s*(\d+)/i);
+  if (srMatch) {
+    const textSrNo = parseInt(srMatch[1], 10);
+    if (!isNaN(parsedSrNo) && parsedSrNo === textSrNo) {
+      score += 25000; // Slide text explicitly states "Sr No: X" and matches Excel S.No.!
+    }
+  } else if (slideNumber > 0) {
     if (!isNaN(parsedSrNo) && parsedSrNo === slideNumber) {
-      score += 25000; // 🌟 100% Lock: Slide Number EXACTLY equals Sheet Sr. No.!
+      score += 8000; // Exact slide number matches Excel S.No.
     } else if (siteIndex >= 0 && (siteIndex + 1) === slideNumber) {
-      score += 20000; // 🌟 Sequence Match: Slide N equals Row N in Sheet!
+      score += 5000; // Sequence Match: Slide N equals Row N in Sheet!
     }
   }
 
@@ -603,11 +609,18 @@ async function extractPptxNative({ filePath, fileBuffer, sites = [], groqApiKey 
       const area = (image.width || 0) * (image.height || 0);
       const relativeArea = maxArea > 0 ? area / maxArea : 1;
 
-      const isRepeated = totalSlides >= 4 && count >= Math.max(3, Math.floor(totalSlides * 0.6));
-      const hasLogoKeyword = /(logo|watermark|icon|badge|header|footer|bullet|arrow|stamp|button|shape|symbol|vector)/i.test(
+      // Template logos, agency headers, flash icons repeating on 2+ slides
+      const isRepeated = totalSlides >= 3 && count >= 2;
+      const hasLogoKeyword = /(logo|watermark|icon|badge|header|footer|bullet|arrow|stamp|button|shape|symbol|vector|flash|zap|lightning|bolt|electric|power|illumination|bulb|star|pin|phone|mail|avatar|social)/i.test(
         image.mediaName || ''
       );
-      const isSmallGraphic = (relativeArea < 0.2 || image.size < 12000) && slide.images.length > 1;
+      // Graphic or icon size: dimensions under 280x180 or small relative area or small byte size
+      const isSmallGraphic = slide.images.length > 1 && (
+        relativeArea < 0.25 ||
+        image.size < 30000 ||
+        (image.width && image.width < 280) ||
+        (image.height && image.height < 180)
+      );
 
       const logoCandidate = slide.images.length > 1 && (isRepeated || hasLogoKeyword || isSmallGraphic);
       return { ...image, repeated: isRepeated, logoCandidate };
@@ -615,8 +628,8 @@ async function extractPptxNative({ filePath, fileBuffer, sites = [], groqApiKey 
 
     let validPhotos = slide.images.filter((img) => !img.logoCandidate && img.size >= 500);
     if (validPhotos.length === 0 && slide.images.length > 0) {
-      const nonRepeated = slide.images.filter((img) => !img.repeated && img.size >= 500);
-      validPhotos = nonRepeated.length > 0 ? nonRepeated : slide.images;
+      const nonRepeatedNonLogo = slide.images.filter(img => !img.repeated && !/(logo|watermark|icon|badge|header|footer|bullet|arrow|stamp|button|shape|symbol|vector|flash|zap|lightning|bolt)/i.test(img.mediaName || '') && img.size >= 500);
+      validPhotos = nonRepeatedNonLogo.length > 0 ? nonRepeatedNonLogo : slide.images;
     }
 
     if (validPhotos.length > 0) {
@@ -630,7 +643,8 @@ async function extractPptxNative({ filePath, fileBuffer, sites = [], groqApiKey 
       slide.photoCandidates = [];
     }
 
-    slide.suggestedSiteId = slide.candidates[0]?.site?._SiteID || '';
+    slide.suggestedSiteId = slide.candidates[0]?.site?._SiteID || slide.candidates[0]?.site?.UniqueID || slide.candidates[0]?.site?.ID || '';
+    slide.matchedSite = slide.candidates[0]?.site || null;
     slide.confidence =
       slide.candidates[0]?.score >= 4000 ? 'HIGH' : slide.candidates[0]?.score >= 900 ? 'MEDIUM' : 'LOW';
     slide.status =
@@ -642,6 +656,46 @@ async function extractPptxNative({ filePath, fileBuffer, sites = [], groqApiKey 
           ? 'REVIEW'
           : 'SKIPPED';
   });
+
+  // 🎯 USER STRATEGY: Sequential S.No & Initial Sequence Detection
+  // If the first slides (up to 10) match their sequential Excel sites, lock 1-to-1 order for the whole deck!
+  let sequentialMatchCount = 0;
+  const checkCount = Math.min(10, slides.length, sites.length);
+  for (let idx = 0; idx < checkCount; idx++) {
+    const slide = slides[idx];
+    const site = sites[idx];
+    if (!site) break;
+
+    const siteSL = parseInt(String(site.SL || site['S. No.'] || site['S.No'] || site['Sr No'] || (idx + 1)).replace(/[^0-9]/g, ''), 10);
+    const slideText = (slide.text || '').toLowerCase();
+    const siteLoc = (site.Location || site['Locality Site Location'] || site['Location '] || '').toLowerCase();
+    const siteFacing = (site.Facing || site['Traffic View'] || '').toLowerCase();
+
+    const slMatch = slideText.match(/(?:sr|sl|s\.no|sr\.no|s\s*no|serial|site\s*#?)\s*[:#.-]?\s*(\d+)/i);
+    const textSL = slMatch ? parseInt(slMatch[1], 10) : null;
+
+    const isSLMatch = textSL === siteSL || slide.number === siteSL;
+    const isLocMatch = siteLoc && siteLoc.length >= 3 && (slideText.includes(siteLoc) || siteLoc.split(' ').some((w) => w.length >= 4 && slideText.includes(w)));
+    const isFacingMatch = siteFacing && siteFacing.length >= 3 && slideText.includes(siteFacing);
+
+    if (isSLMatch || (isLocMatch && isFacingMatch) || isLocMatch) {
+      sequentialMatchCount++;
+    }
+  }
+
+  const isSequentialDeck = checkCount >= 2 && (sequentialMatchCount / checkCount) >= 0.5;
+  if (isSequentialDeck) {
+    slides.forEach((slide, sIdx) => {
+      const targetSite = sites[sIdx];
+      if (targetSite) {
+        slide.suggestedSiteId = targetSite._SiteID || targetSite.UniqueID || targetSite.ID || targetSite.SL || String(sIdx + 1);
+        slide.matchedSite = targetSite;
+        slide.confidence = 'HIGH';
+        slide.status = 'MATCHED';
+        slide.aiReason = `Sequential 1-to-1 matching (Slide ${slide.number} -> Site ${sIdx + 1})`;
+      }
+    });
+  }
 
   // ⚡ Claude AI Site Matching in Fast Parallel Batches
   const AI_BATCH_SIZE = 16;
@@ -675,7 +729,7 @@ async function extractPptxNative({ filePath, fileBuffer, sites = [], groqApiKey 
           }
         }
 
-        if (slide.photoCandidates.length > 0 && slide.text && slide.text.trim().length > 3) {
+        if (slide.photoCandidates.length > 0 && slide.text && slide.text.trim().length > 3 && (!slide.suggestedSiteId || slide.status !== 'MATCHED')) {
           const topCandidates =
             slide.candidates.length > 0 ? slide.candidates.map((c) => c.site) : (sites || []).slice(0, 20);
 

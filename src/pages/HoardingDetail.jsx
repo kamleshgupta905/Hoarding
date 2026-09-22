@@ -1,6 +1,6 @@
 import React from 'react';
 import { useParams, Link, useNavigate, useSearchParams } from 'react-router-dom';
-import { ChevronLeft, MapPin, Maximize2, Layers, Zap, Info, Calendar, Phone, Share2, Heart, ShieldCheck, Edit3, Trash2, X, Upload, Camera, Copy, Check, Download, ExternalLink } from 'lucide-react';
+import { ChevronLeft, MapPin, Maximize2, Layers, Info, Calendar, Phone, Share2, Heart, ShieldCheck, Edit3, Trash2, X, Upload, Camera, Copy, Check, Download, ExternalLink, Clock, Sparkles, Send, Loader2, Lightbulb } from 'lucide-react';
 import { Helmet } from 'react-helmet-async';
 import { getImageUrl, compressImage, syncToGoogleSheet, downloadHoardingImage, recordSiteBooking, removeSiteBooking, saveSiteBookingSlots, getLocalHistory, removeSiteHistory, parseHistoryString, getDirectDriveLink, getDeletedHistoryUrls, addDeletedHistoryUrl, isHistoryUrlDeleted, addDeletedSite } from '../services/dataService';
 import ImageLightbox from '../components/ImageLightbox';
@@ -711,7 +711,7 @@ const HoardingDetail = ({ hoardings, setHoardings }) => {
                             )}
                             <div className="choice-btns">
                                 <button className="choice-btn history" onClick={() => handlePhotoChoice('history')}>
-                                    <div className="choice-icon"><Zap size={20} /></div>
+                                    <div className="choice-icon"><Clock size={20} /></div>
                                     <div className="choice-text">
                                         <span>Archive Old & Update</span>
                                         <small>Save current photo to history before replacing</small>
@@ -899,7 +899,7 @@ const HoardingDetail = ({ hoardings, setHoardings }) => {
                                 </div>
                             </div>
                             <div className="spec-box">
-                                <div className="icon-wrap" aria-hidden="true"><Zap size={20} /></div>
+                                <div className="icon-wrap" aria-hidden="true"><Lightbulb size={20} /></div>
                                 <div className="text-wrap">
                                     <span className="label">Media Format</span>
                                     <span className="value">{hoarding["Media Format (Front Lit / Back Lit / Non Lit)"]}</span>
@@ -946,7 +946,7 @@ const HoardingDetail = ({ hoardings, setHoardings }) => {
                                         <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', marginTop: '4px' }}>Proof of campaign execution and physical site audits.</p>
                                     </div>
                                     <div className="update-status-pill">
-                                        <Zap size={14} /> {activeHistory.length} Live Records
+                                        <Clock size={14} /> {activeHistory.length} Live Records
                                     </div>
                                 </div>
 
@@ -1085,7 +1085,7 @@ const HoardingDetail = ({ hoardings, setHoardings }) => {
                                 </button>
                                 <div className="share-actions-group">
                                     <button className="location-btn-large share" style={{ background: '#25D366', borderColor: '#25D366', color: 'white' }} onClick={handleShareAudit}>
-                                        <Zap size={18} /> WhatsApp Link
+                                        <Send size={18} /> WhatsApp Link
                                     </button>
                                     <button 
                                         className={`location-btn-large copy ${copySuccess ? 'success' : ''}`} 
@@ -1309,7 +1309,7 @@ const HoardingDetail = ({ hoardings, setHoardings }) => {
             {isLoading && !isEditModalOpen && (
                 <div className="modal-overlay" style={{ zIndex: 10001 }}>
                     <div className="stat-card" style={{ background: 'white', padding: '40px', borderRadius: '20px', textAlign: 'center' }}>
-                        <Zap className="animate-pulse" size={48} color="#6c5dd3" />
+                        <Loader2 className="animate-spin" size={48} color="#6c5dd3" />
                         <h3 style={{ marginTop: '20px' }}>Processing Asset...</h3>
                     </div>
                 </div>

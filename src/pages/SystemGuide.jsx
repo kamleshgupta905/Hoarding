@@ -1,7 +1,7 @@
 import React, { useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-    LayoutDashboard, Database, Table2, Camera, Zap, User,
+    LayoutDashboard, Database, Table2, Camera, Clock, User,
     Printer, ArrowLeft, Download, ShieldCheck, Check,
     ExternalLink, Share2, Sparkles, MapPin, Copy
 } from 'lucide-react';
@@ -224,7 +224,7 @@ const SystemGuide = ({ embedded = false }) => {
                 <section className="guide-section-card">
                     <div className="section-title-wrap">
                         <div className="section-icon-box bg-pink">
-                            <Zap size={24} />
+                            <Clock size={24} />
                         </div>
                         <div>
                             <h2>5. Daily AI Updates (Batch Photo Automation)</h2>
@@ -292,7 +292,7 @@ const SystemGuide = ({ embedded = false }) => {
                             <p>50m GPS geofencing guarantees photos are taken on-site at the exact billboard location.</p>
                         </div>
                         <div className="summary-item">
-                            <strong className="text-emerald">⚡ Zero Manual Data Entry</strong>
+                            <strong className="text-emerald">✦ Zero Manual Data Entry</strong>
                             <p>Claude Vision AI and direct Excel sync eliminate manual copy-pasting across disparate spreadsheets.</p>
                         </div>
                         <div className="summary-item">
