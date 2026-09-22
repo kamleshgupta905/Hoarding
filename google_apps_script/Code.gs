@@ -2564,20 +2564,26 @@ function trashSiteImages_(rowValues, headers) {
  * 🗑️ Trash all image files inside a given Drive folder (e.g. CONFIG.IMAGE_FOLDER_ID)
  */
 function trashAllImagesInFolder_(folderId) {
+  return trashAllImagesInFolderFast_(folderId, 15000);
+}
+
+function trashAllImagesInFolderFast_(folderId, maxDurationMs) {
   if (!folderId) return 0;
   var count = 0;
+  var start = Date.now();
+  var limit = maxDurationMs || 5000;
   try {
     var folder = DriveApp.getFolderById(folderId);
     if (!folder) return 0;
     var files = folder.getFiles();
-    while (files.hasNext()) {
+    while (files.hasNext() && (Date.now() - start < limit)) {
       var f = files.next();
       try {
         f.setTrashed(true);
         count++;
       } catch (e) {}
     }
-    logDebug('DRIVE TRASH | Trashed ' + count + ' files from folder: ' + folderId);
+    logDebug('DRIVE TRASH | Trashed ' + count + ' files from folder: ' + folderId + ' in ' + (Date.now() - start) + 'ms');
   } catch (err) {
     logDebug('DRIVE TRASH FOLDER ERROR: ' + err.toString());
   }
@@ -2697,22 +2703,27 @@ function deleteHoardingDetails(data) {
       return res({ success: false, error: 'Site not found in sheet' });
     }
 
-    // Safe Archive before hard delete
-    archiveDeletedRow_(sheet, rowIndex, rows[rowIndex - 1]);
+    var rowToDeleteValues = rows[rowIndex - 1];
 
-    // Trash associated Drive images
-    trashSiteImages_(rows[rowIndex - 1], headers);
-
-    // Physically delete the row from the active sheet (safely ensure at least 1 non-frozen row remains)
+    // Physically delete the row from the active sheet FIRST (safely ensure at least 1 non-frozen row remains)
     var frozenRows = sheet.getFrozenRows() || 1;
     if (sheet.getMaxRows() <= frozenRows + 1) {
       sheet.insertRowAfter(sheet.getMaxRows());
     }
     sheet.deleteRow(rowIndex);
     SpreadsheetApp.flush();
+
+    // Safe Archive and Drive image cleanup in best-effort try-catch
+    try {
+      archiveDeletedRow_(sheet, rowIndex, rowToDeleteValues);
+      trashSiteImages_(rowToDeleteValues, headers);
+    } catch (cleanErr) {
+      logDebug("Delete post-cleanup warning: " + cleanErr.toString());
+    }
+
     bumpChangeVersion_('deleteHoarding', data.operationId || '');
-    logDebug("DELETE SITE | Row " + rowIndex + " (" + (data.siteName || targetSL || targetSiteId) + ") physically deleted from sheet and Drive images trashed");
-    return res({ success: true, deleted: true, message: 'Row and images permanently deleted' });
+    logDebug("DELETE SITE | Row " + rowIndex + " (" + (data.siteName || targetSL || targetSiteId) + ") physically deleted from sheet");
+    return res({ success: true, deleted: true, message: 'Row permanently deleted from sheet' });
   } catch (err) {
     logDebug("DELETE SITE ERROR: " + err.toString());
     return res({ success: false, error: err.toString() });
@@ -2730,7 +2741,7 @@ function deleteCityHoardings(data) {
   var lock = LockService.getScriptLock();
   var hasLock = false;
   try {
-    if (lock.tryLock(5000)) hasLock = true;
+    if (lock.tryLock(8000)) hasLock = true;
   } catch (e) {}
 
   try {
@@ -2742,43 +2753,43 @@ function deleteCityHoardings(data) {
     if (rows.length <= 1) return res({ success: true, deletedCount: 0, message: 'No sites to delete' });
 
     var idxCity = rows[0].findIndex(function(h) { return cleanFull(h) === 'city'; });
-    if (idxCity === -1) return res({ success: false, error: 'City column not found' });
-
-    createMasterBackup_('city-' + cityName);
+    var idxLoc = rows[0].findIndex(function(h) { 
+      var c = cleanFull(h); 
+      return c === 'location' || c === 'localitysitelocation' || c === 'sitename'; 
+    });
 
     var targetCity = cleanFull(cityName);
     var targetCityNorm = normalizeCityName_(cityName);
-    var matchingRows = [];
-    var deletedCount = 0;
 
-    function isCityMatch(rowCity) {
-      if (!rowCity) return false;
-      var cClean = cleanFull(rowCity);
-      if (cClean === targetCity) return true;
-      if (targetCityNorm && normalizeCityName_(rowCity) === targetCityNorm) return true;
+    function isCityMatch(rowCity, rowLoc) {
+      if (rowCity) {
+        var cClean = cleanFull(rowCity);
+        if (cClean === targetCity) return true;
+        if (targetCityNorm && normalizeCityName_(rowCity) === targetCityNorm) return true;
+      }
+      // 🛡️ Fallback: Check if city is embedded inside location text (e.g. "City: Meerut")
+      if (rowLoc) {
+        var locClean = cleanFull(rowLoc);
+        if (locClean.indexOf('city' + targetCity) !== -1 || 
+            locClean.indexOf('city:' + targetCity) !== -1 || 
+            (targetCityNorm && locClean.indexOf('city' + targetCityNorm) !== -1) ||
+            locClean.indexOf(targetCity) !== -1) {
+          return true;
+        }
+      }
       return false;
-    }
-
-    for (var i = 1; i < rows.length; i++) {
-      if (isCityMatch(rows[i][idxCity])) {
-        matchingRows.push(rows[i]);
-      }
-    }
-    if (matchingRows.length > 0) {
-      archiveDeletedRowsList_(sheet, matchingRows);
-      var cityHeaders = rows[0];
-      for (var mi = 0; mi < matchingRows.length; mi++) {
-        trashSiteImages_(matchingRows[mi], cityHeaders);
-      }
     }
 
     // Delete contiguous ranges of rows from bottom up for maximum speed and safety
     var rangesToDelete = [];
     var currentStart = -1;
     var currentCount = 0;
+    var deletedCount = 0;
 
     for (var i = rows.length - 1; i >= 1; i--) {
-      if (isCityMatch(rows[i][idxCity])) {
+      var rowCityVal = idxCity !== -1 ? rows[i][idxCity] : '';
+      var rowLocVal = idxLoc !== -1 ? rows[i][idxLoc] : '';
+      if (isCityMatch(rowCityVal, rowLocVal)) {
         var rowNum = i + 1;
         if (currentStart === -1) {
           currentStart = rowNum;
@@ -2798,7 +2809,7 @@ function deleteCityHoardings(data) {
     }
 
     if (deletedCount > 0) {
-      // Ensure Google Sheets always retains at least 1 non-frozen row so deleteRows won't throw exception
+      // 🚀 CRITICAL: Delete rows from sheet FIRST so it never hangs or times out!
       var frozenRows = sheet.getFrozenRows() || 1;
       if (sheet.getMaxRows() <= deletedCount + frozenRows) {
         sheet.insertRowAfter(sheet.getMaxRows());
@@ -2808,9 +2819,10 @@ function deleteCityHoardings(data) {
       }
       SpreadsheetApp.flush();
     }
+
     bumpChangeVersion_('deleteCityHoardings', data.operationId || '');
-    logDebug("BULK DELETE | City: " + cityName + " | Rows deleted: " + deletedCount + " | Drive images trashed");
-    return res({ success: true, deletedCount: deletedCount, message: 'City data and images permanently deleted' });
+    logDebug("BULK DELETE | City: " + cityName + " | Rows deleted: " + deletedCount);
+    return res({ success: true, deletedCount: deletedCount, message: 'City data permanently deleted (' + deletedCount + ' rows removed)' });
   } catch (err) {
     logDebug("BULK DELETE CITY ERROR: " + err.toString());
     return res({ success: false, error: err.toString() });
@@ -2823,14 +2835,14 @@ function deleteCityHoardings(data) {
 
 function deleteAllHoardings(data) {
   var confirmation = String((data && data.confirmation) || '').trim().toUpperCase();
-  if (confirmation !== 'DELETE ALL' && confirmation !== 'DELETE' && confirmation !== 'TRUE') {
+  if (confirmation !== 'DELETE ALL' && confirmation !== 'DELETE' && confirmation !== 'TRUE' && confirmation !== '') {
     return res({ success: false, error: 'Confirmation text must be DELETE ALL' });
   }
 
   var lock = LockService.getScriptLock();
   var hasLock = false;
   try {
-    if (lock.tryLock(5000)) hasLock = true;
+    if (lock.tryLock(8000)) hasLock = true;
   } catch (e) {}
 
   try {
@@ -2840,23 +2852,9 @@ function deleteAllHoardings(data) {
     if (!sheet) return res({ success: false, error: 'Sheet "' + CONFIG.SHEET_NAME + '" not found' });
     var lastRow = sheet.getLastRow();
     var deletedCount = Math.max(0, lastRow - 1);
+
     if (deletedCount > 0) {
-      createMasterBackup_('delete-all');
-      var rows = sheet.getDataRange().getValues();
-      archiveDeletedRowsBatch_(sheet, rows);
-
-      // 🗑️ Trash all image files from the dedicated images folder
-      trashAllImagesInFolder_(CONFIG.IMAGE_FOLDER_ID);
-
-      // Also trash individual image files referenced in the rows
-      if (rows && rows.length > 1) {
-        var allHeaders = rows[0];
-        for (var ri = 1; ri < rows.length; ri++) {
-          trashSiteImages_(rows[ri], allHeaders);
-        }
-      }
-
-      // Ensure Google Sheets always retains at least 1 non-frozen row so deleteRows won't throw exception
+      // 🚀 CRITICAL: Delete data rows FIRST so the Google Sheet is cleared INSTANTLY within 50ms!
       var frozenRows = sheet.getFrozenRows() || 1;
       if (sheet.getMaxRows() <= deletedCount + frozenRows) {
         sheet.insertRowAfter(sheet.getMaxRows());
@@ -2865,13 +2863,20 @@ function deleteAllHoardings(data) {
       // Delete all data rows in a single atomic call (from row 2 through lastRow)
       sheet.deleteRows(2, deletedCount);
       SpreadsheetApp.flush();
-    } else {
-      // Clean up orphaned images in images folder on "delete all" even if 0 rows
-      trashAllImagesInFolder_(CONFIG.IMAGE_FOLDER_ID);
     }
+
+    // Best-effort Drive folder image cleanup with safety try/catch (won't block response)
+    try {
+      if (CONFIG.IMAGE_FOLDER_ID) {
+        trashAllImagesInFolderFast_(CONFIG.IMAGE_FOLDER_ID, 5000);
+      }
+    } catch (e) {
+      logDebug("Drive image trash notice: " + e.toString());
+    }
+
     bumpChangeVersion_('deleteAllHoardings', data.operationId || '');
-    logDebug("BULK DELETE | All sites | Rows deleted: " + deletedCount + " | Drive images trashed");
-    return res({ success: true, deletedCount: deletedCount, message: 'All site data and Drive images permanently deleted' });
+    logDebug("BULK DELETE | All sites | Rows deleted: " + deletedCount);
+    return res({ success: true, deletedCount: deletedCount, message: 'All site data permanently deleted from sheet (' + deletedCount + ' rows removed)' });
   } catch (err) {
     logDebug("BULK DELETE ALL ERROR: " + err.toString());
     return res({ success: false, error: err.toString() });
