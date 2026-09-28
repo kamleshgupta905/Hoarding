@@ -1047,6 +1047,18 @@ export const removeSiteHistory = (site, targetUrl) => {
         }
       }
     } catch (e) {}
+
+    // 5. In-place purge from passed site object
+    if (site && typeof site === 'object') {
+      if (Array.isArray(site.History)) {
+        site.History = site.History.filter(item => !matchesTarget(item));
+      }
+      if (site.ExecutionHistory && typeof site.ExecutionHistory === 'string') {
+        site.ExecutionHistory = site.ExecutionHistory.split(',')
+          .filter(part => !matchesTarget(part.split('|')[0]))
+          .join(',');
+      }
+    }
   } catch (err) {
     console.warn('removeSiteHistory notice:', err);
   }

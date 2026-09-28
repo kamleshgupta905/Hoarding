@@ -1009,6 +1009,38 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
     const displayDailyImages = useMemo(() => {
         if (!Array.isArray(dailyImages)) return [];
 
+        let dismissedKeys = new Set();
+        let dismissedSls = new Set();
+        let dismissedFileIds = new Set();
+        try {
+            const rawDismissed = localStorage.getItem('adh_dismissed_daily_proofs');
+            if (rawDismissed) {
+                const parsedD = JSON.parse(rawDismissed);
+                if (Array.isArray(parsedD)) {
+                    const cutoff = Date.now() - 48 * 60 * 60 * 1000;
+                    parsedD.filter(d => (Number(d?.time) || 0) > cutoff).forEach(d => {
+                        if (d?.url) dismissedKeys.add(d.url);
+                        if (d?.directUrl) dismissedKeys.add(d.directUrl);
+                        if (d?.id) dismissedKeys.add(d.id);
+                        if (d?.fileId) dismissedFileIds.add(d.fileId);
+                        if (d?.sl) dismissedSls.add(String(d.sl).trim());
+                    });
+                }
+            }
+        } catch {}
+
+        const isItemDismissed = (img) => {
+            if (!img) return true;
+            if (img.id && dismissedKeys.has(img.id)) return true;
+            const sl = img.sl ? String(img.sl).trim() : '';
+            if (sl && dismissedSls.has(sl)) return true;
+            const u = img.uploadedUrl || img.preview || img.persistentPreview;
+            if (u && (dismissedKeys.has(u) || isHistoryUrlDeleted(u))) return true;
+            const fid = extractDriveId(u);
+            if (fid && dismissedFileIds.has(fid)) return true;
+            return false;
+        };
+
         const seenIds = new Set();
         const seenFiles = new Set();
         const seenDriveIds = new Set();
@@ -1021,7 +1053,7 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
 
         // Local cards have highest priority
         for (const img of localCards) {
-            if (!img || !img.id || seenIds.has(img.id)) continue;
+            if (!img || !img.id || seenIds.has(img.id) || isItemDismissed(img)) continue;
             seenIds.add(img.id);
 
             // Deduplicate local files by name + size
@@ -1044,7 +1076,7 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
 
         // 2. Cloud cards: only add if not already represented by a local card or driveId
         for (const img of cloudCards) {
-            if (!img || !img.id || seenIds.has(img.id)) continue;
+            if (!img || !img.id || seenIds.has(img.id) || isItemDismissed(img)) continue;
             seenIds.add(img.id);
 
             const driveId = extractDriveId(img.uploadedUrl || img.preview || img.persistentPreview);
@@ -1095,35 +1127,77 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
 
             // Clean local history caches
             const siteObj = (itemToRemove.matchedIndex != null && hoardings[itemToRemove.matchedIndex]) ||
-                            (slToRemove && hoardings.find(h => String(h.SL || h['S. No.'] || '').trim() === slToRemove));
-            if (siteObj && urlToRemove) {
-                removeSiteHistory(siteObj, urlToRemove);
+                            (slToRemove && hoardings.find(h => String(h.SL || h['S. No.'] || '').trim() === slToRemove)) ||
+                            (siteIdToRemove && hoardings.find(h => (h._SiteID === siteIdToRemove || h.UniqueID === siteIdToRemove)));
+            if (siteObj) {
+                if (urlToRemove) removeSiteHistory(siteObj, urlToRemove);
+                if (directUrl) removeSiteHistory(siteObj, directUrl);
                 const siteLocName = siteObj["Location "] || siteObj.Location || siteObj["Locality Site Location"] || '';
                 const targetSL = siteObj.SL || siteObj['S. No.'] || siteObj['SL NO'] || slToRemove;
                 const siteId = siteObj._SiteID || siteObj.UniqueID || siteIdToRemove;
-                syncToGoogleSheet({
-                    action: 'deleteHistoryItem',
-                    siteName: siteLocName,
-                    sl: targetSL,
-                    siteId: siteId,
-                    imageUrl: urlToRemove
-                }, 0).catch(err => console.warn('Daily remove remote sync notice:', err));
+                if (urlToRemove || directUrl) {
+                    syncToGoogleSheet({
+                        action: 'deleteHistoryItem',
+                        siteName: siteLocName,
+                        sl: targetSL,
+                        siteId: siteId,
+                        imageUrl: urlToRemove || directUrl
+                    }, 0).catch(err => console.warn('Daily remove remote sync notice:', err));
+                }
+
+                // Update React hoardings state immediately so History is cleared in memory
+                setHoardings(prev => {
+                    const next = prev.map(h => {
+                        const isMatch = (targetSL && String(h.SL || h['S. No.'] || '').trim() === String(targetSL).trim()) ||
+                                        (siteId && (h._SiteID === siteId || h.UniqueID === siteId));
+                        if (isMatch) {
+                            const rawHist = Array.isArray(h.History) ? h.History : parseHistoryString(h.ExecutionHistory || h.History || '');
+                            const cleanHist = rawHist.filter(entry => {
+                                const u = typeof entry === 'object' ? (entry.url || entry.preview || '') : String(entry).split('|')[0].trim();
+                                if (!u) return false;
+                                if (u === urlToRemove || (directUrl && u === directUrl)) return false;
+                                if (fileId && extractDriveId(u) === fileId) return false;
+                                return true;
+                            });
+                            const cleanExecHistory = cleanHist.map(e => typeof e === 'object' ? (e.url || e.preview) : e).filter(Boolean).join(',');
+                            return {
+                                ...h,
+                                History: cleanHist,
+                                ExecutionHistory: cleanExecHistory
+                            };
+                        }
+                        return h;
+                    });
+                    try { localStorage.setItem('hoardings_cache', JSON.stringify(next)); } catch {}
+                    return next;
+                });
             }
+
+            // Remove ALL matching cards from Daily Updates list (both local card AND hydrated cloud card)
+            setDailyImages(prev => {
+                const updated = prev.filter((img, idx) => {
+                    if (typeof idOrIdx === 'string' && img.id === idOrIdx) return false;
+                    if (typeof idOrIdx === 'number' && idx === idOrIdx) return false;
+                    const s = img.sl ? String(img.sl).trim() : '';
+                    if (slToRemove && s === slToRemove) return false;
+                    const fid = extractDriveId(img.uploadedUrl || img.preview || img.persistentPreview);
+                    if (fileId && fid && fid === fileId) return false;
+                    const u = img.uploadedUrl || img.preview || img.persistentPreview;
+                    if (urlToRemove && u && (u === urlToRemove || (directUrl && u === directUrl))) return false;
+                    return true;
+                });
+                try {
+                    localStorage.setItem('adh_daily_proof_images', JSON.stringify(updated));
+                } catch {}
+                return updated;
+            });
+
+            setExpandedDailyCards(prev => {
+                const next = new Set(prev);
+                next.delete(idOrIdx);
+                return next;
+            });
         }
-
-        setDailyImages(prev => {
-            const updated = prev.filter((img, idx) => typeof idOrIdx === 'string' ? img.id !== idOrIdx : idx !== idOrIdx);
-            try {
-                localStorage.setItem('adh_daily_proof_images', JSON.stringify(updated));
-            } catch {}
-            return updated;
-        });
-
-        setExpandedDailyCards(prev => {
-            const next = new Set(prev);
-            next.delete(idOrIdx);
-            return next;
-        });
     };
 
     const handleRejectDailyImage = async (idOrIdx) => {
@@ -1250,8 +1324,20 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                     const isMatch = (targetSL && String(h.SL || h['S. No.'] || '').trim() === String(targetSL).trim()) ||
                                     (siteId && (h._SiteID === siteId || h.UniqueID === siteId));
                     if (isMatch) {
+                        const rawHist = Array.isArray(h.History) ? h.History : parseHistoryString(h.ExecutionHistory || h.History || '');
+                        const cleanHist = rawHist.filter(entry => {
+                            const u = typeof entry === 'object' ? (entry.url || entry.preview || '') : String(entry).split('|')[0].trim();
+                            if (!u) return false;
+                            if (u === urlToRemove || (directUrl && u === directUrl)) return false;
+                            if (fileId && extractDriveId(u) === fileId) return false;
+                            return true;
+                        });
+                        const cleanExecHistory = cleanHist.map(e => typeof e === 'object' ? (e.url || e.preview) : e).filter(Boolean).join(',');
+
                         return {
                             ...h,
+                            History: cleanHist,
+                            ExecutionHistory: cleanExecHistory,
                             ImageURL: rollbackRestored ? restoredPhotoUrl : h.ImageURL,
                             'Image URL': rollbackRestored ? restoredPhotoUrl : h['Image URL'],
                             'IMAGE 1': rollbackRestored ? restoredPhotoUrl : h['IMAGE 1']
@@ -1266,9 +1352,19 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
             });
         }
 
-        // 3. Remove card from Daily Updates list
+        // 3. Remove card from Daily Updates list - remove ALL matching instances (local + cloud)
         setDailyImages(prev => {
-            const updated = prev.filter((img, idx) => typeof idOrIdx === 'string' ? img.id !== idOrIdx : idx !== idOrIdx);
+            const updated = prev.filter((img, idx) => {
+                if (typeof idOrIdx === 'string' && img.id === idOrIdx) return false;
+                if (typeof idOrIdx === 'number' && idx === idOrIdx) return false;
+                const s = img.sl ? String(img.sl).trim() : '';
+                if (slToRemove && s === slToRemove) return false;
+                const fid = extractDriveId(img.uploadedUrl || img.preview || img.persistentPreview);
+                if (fileId && fid && fid === fileId) return false;
+                const u = img.uploadedUrl || img.preview || img.persistentPreview;
+                if (urlToRemove && u && (u === urlToRemove || (directUrl && u === directUrl))) return false;
+                return true;
+            });
             try {
                 localStorage.setItem('adh_daily_proof_images', JSON.stringify(updated));
             } catch {}
