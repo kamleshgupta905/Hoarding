@@ -26,15 +26,15 @@ export const getGeminiApiKeys = () => {
 };
 
 export const GEMINI_MODELS = [
+  'gemini-3.8-flash',
+  'gemini-3.5-flash',
   'gemini-3.5-flash-lite',
   'gemini-flash-latest',
-  'gemini-3.5-flash',
-  'gemini-3-flash-preview',
   'gemini-3.6-flash',
+  'gemini-3.7-flash',
+  'gemini-3-flash-preview',
   'gemini-3.1-flash-lite',
   'gemini-flash-lite-latest',
-  'gemini-3.8-flash',
-  'gemini-3.7-flash',
   'gemini-3.1-pro-preview'
 ];
 
@@ -531,18 +531,21 @@ export const generateVisualLandmarksWithGemini = async (imageBase64, siteInfo = 
   const facing = siteInfo.Facing || siteInfo['Traffic View'] || siteInfo.facing || '';
   const media = siteInfo['Type of Site (Unipole/Billboard)'] || siteInfo['Type of Site (Unipole/ Billboard)'] || siteInfo.Media || siteInfo.Type || 'Unipole';
 
-  const prompt = `You are an expert civil engineer and Out-of-Home (OOH) billboard infrastructure specialist.
-Examine this photograph of an outdoor billboard / hoarding site.
-Site details: Media Type: "${media}", Location: "${siteName}", Facing: "${facing}".
+  const prompt = `You are a chief structural engineer and master Out-of-Home (OOH) media surveyor.
+Conduct a comprehensive, highly precise physical and civil engineering audit of this billboard/hoarding site.
+Site Metadata: Media Type: "${media}", Location: "${siteName}", Facing: "${facing}".
 
-Your task: Generate a concise, 1-sentence permanent physical landmark fingerprint description (max 25-30 words).
+Write a comprehensive, rich, detailed physical landmark fingerprint (approx 50-75 words).
+MANDATORY STRUCTURAL & CIVIL DETAILS TO IDENTIFY:
+1. Exact Mounting & Structural Architecture: (e.g. Single vertical cylindrical steel unipole pillar with cross-braced ladder frame, roadside cantilever, dual-pillar gantry spanning traffic lanes, ground-level plinth footing, rooftop I-beam chassis, etc.)
+2. Roadway & Traffic Grade: (e.g. Center concrete median divider, paved sidewalk curb, multi-lane divided asphalt carriage-way, T-junction corner, roundabout turning radius, flyover entry/exit ramp, elevated rail/metro corridor alignment)
+3. Permanent Civil & Environmental Anchors: (e.g. Elevated concrete metro viaduct pillars, flyover retaining walls, high-tension electrical transmission poles with cross-arms, traffic signal junction, municipal stormwater drain culvert, pedestrian footbridge stairs, permanent multi-story commercial masonry facades)
+4. Orientation & Elevation: Line of sight facing traffic approaching from ${facing || siteName}, elevation height above street grade, clear unobstructed visibility corridor.
 
-MANDATORY RULES:
-1. Focus ONLY on permanent physical & civil infrastructure:
-   - Mounting structure (e.g., "Unipole in central road median", "Overhead highway gantry spanning across roadway", "Curbside unipole on pedestrian sidewalk", "Cantilever structure along flyover ramp wall")
-   - Surroundings & physical civil anchors (e.g., "situated under elevated metro rail viaduct pillars", "adjacent to concrete flyover ramp retaining wall with wire mesh fencing and pedestrian stairs", "at major roundabout intersection with high-mast lamp", "near corner of commercial plaza with paved curbside")
-2. 🚫 STRICT PROHIBITION: DO NOT mention ANY brand names, advertiser names, products, phone numbers, or banner slogans (e.g. NEVER mention 'Kalyan', 'Senco', 'Samsung', 'Tata', 'jewellery', etc.) because advertising banners change constantly!
-3. Output ONLY a single plain-text sentence. Do NOT wrap in quotes, do NOT include JSON or markdown.`;
+STRICT RESTRICTION:
+🚫 NEVER mention any commercial brand names, advertiser names, products, or temporary slogans (e.g., NO brand names like Samsung, Kalyan, Jewellery, etc.). Focus strictly on unchangeable civil engineering and infrastructure features.
+
+Output format: Return ONLY the continuous detailed descriptive paragraph (no bullet points, no markdown bolding, no quotes).`;
 
   const payload = {
     contents: [
@@ -559,9 +562,9 @@ MANDATORY RULES:
       }
     ],
     generationConfig: {
-      temperature: 0.1,
-      topP: 0.8,
-      maxOutputTokens: 150,
+      temperature: 0.2,
+      topP: 0.9,
+      maxOutputTokens: 2048,
       thinkingConfig: { thinkingBudget: 0 }
     }
   };
