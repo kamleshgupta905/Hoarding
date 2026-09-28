@@ -1440,6 +1440,13 @@ function batchUpdateSheet_(data) {
     var headers = getAllHeaders(sheet);
     var rows = sheet.getDataRange().getValues(); // Full sheet memory read
     var maxRow = sheet.getLastRow();
+
+    // Ensure all existing rows have exactly headers.length columns
+    for (var initR = 0; initR < rows.length; initR++) {
+      while (rows[initR].length < headers.length) {
+        rows[initR].push('');
+      }
+    }
     
     var idxImg = findImageColumn(headers);
     var idxSiteId = headers.indexOf('_SiteID');
@@ -1621,11 +1628,19 @@ function batchUpdateSheet_(data) {
 
     // Write all existing rows back in ONE blast
     if (countUpdated > 0) {
+      for (var wR = 0; wR < rows.length; wR++) {
+        while (rows[wR].length < headers.length) rows[wR].push('');
+        if (rows[wR].length > headers.length) rows[wR] = rows[wR].slice(0, headers.length);
+      }
       sheet.getRange(1, 1, rows.length, headers.length).setValues(rows);
     }
     
     // Append all new rows in ONE blast
     if (newRowsBuffer.length > 0) {
+      for (var wNb = 0; wNb < newRowsBuffer.length; wNb++) {
+        while (newRowsBuffer[wNb].length < headers.length) newRowsBuffer[wNb].push('');
+        if (newRowsBuffer[wNb].length > headers.length) newRowsBuffer[wNb] = newRowsBuffer[wNb].slice(0, headers.length);
+      }
       sheet.getRange(maxRow + 1, 1, newRowsBuffer.length, headers.length).setValues(newRowsBuffer);
     }
     

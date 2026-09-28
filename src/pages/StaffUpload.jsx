@@ -2,6 +2,7 @@ import React from 'react';
 import { Camera, CheckCircle2, MapPin, MapPinOff, RefreshCw, RotateCcw, WifiOff, XCircle, Sparkles, Check, AlertCircle, Navigation, ChevronRight, Compass, Volume2, VolumeX, ShieldCheck, Smartphone, Share2 } from 'lucide-react';
 import { uploadStaffPhoto, fetchHoardings, saveLocalStaffUpload, syncToGoogleSheet, recordSiteHistory } from '../services/dataService';
 import { analyzeHoardingImage } from '../services/aiService';
+import { generateVisualLandmarksWithGemini } from '../services/geminiService';
 import { ensureUprightBlob } from '../core/imageOrientation';
 import { HIRA_LOGO } from '../assets/hiraLogoData';
 import AppAutoUpdater from '../components/AppAutoUpdater';
@@ -1095,6 +1096,18 @@ const StaffUpload = () => {
                         console.warn('Local history update notice:', cacheErr);
                     }
 
+                    let landmarkDesc = '';
+                    if (base64Data) {
+                        try {
+                            landmarkDesc = await generateVisualLandmarksWithGemini(base64Data, {
+                                siteName: matchedSite,
+                                facing: item.facing
+                            });
+                        } catch (vlErr) {
+                            console.warn('Staff photo visual landmark notice:', vlErr);
+                        }
+                    }
+
                     // 2. Sync to Google Sheets ExecutionHistory backend asynchronously
                     syncToGoogleSheet({
                         action: 'updateHoarding',
@@ -1105,7 +1118,10 @@ const StaffUpload = () => {
                         distance: item.distance,
                         facing: item.facing,
                         mode: 'archive',
-                        isDailyProof: true
+                        isDailyProof: true,
+                        fields: {
+                            ...(landmarkDesc ? { "Visual_Landmarks": landmarkDesc } : {})
+                        }
                     }).then(res => {
                         const driveUrl = res?.imageUrl || res?.fileUrl || res?.result?.imageUrl || '';
                         if (driveUrl) {

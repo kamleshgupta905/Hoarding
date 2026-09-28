@@ -26,15 +26,15 @@ export const getGeminiApiKeys = () => {
 };
 
 export const GEMINI_MODELS = [
-  'gemini-3.6-flash',
-  'gemini-3.1-flash-lite',
   'gemini-3.5-flash-lite',
   'gemini-flash-latest',
+  'gemini-3.5-flash',
+  'gemini-3-flash-preview',
+  'gemini-3.6-flash',
+  'gemini-3.1-flash-lite',
   'gemini-flash-lite-latest',
   'gemini-3.8-flash',
   'gemini-3.7-flash',
-  'gemini-3-flash-preview',
-  'gemini-3.5-flash',
   'gemini-3.1-pro-preview'
 ];
 
@@ -335,8 +335,8 @@ export const resolveTwinSiteFacingWithGemini = async (imageBase64, candidates) =
   const parsed = parseBase64(imageBase64);
   if (!parsed) return null;
 
-  // Load candidate reference photos if available in parallel (up to 4 candidates)
-  const imageFetchPromises = candidates.slice(0, 4).map(async (c, idx) => {
+  // Load candidate reference photos if available in parallel (up to 8 candidates in tight corridors)
+  const imageFetchPromises = candidates.slice(0, 8).map(async (c, idx) => {
     const rawSite = c.site || c;
     const imgUrl = rawSite.ImageURL || rawSite.imageUrl || rawSite.image;
     if (imgUrl && !imgUrl.includes('unsplash.com')) {
@@ -387,31 +387,35 @@ CANDIDATE HOARDINGS AT / NEAR THIS CORRIDOR:
 ${candidateDescriptions}
 
 CRITICAL RULES FOR ACCURATE MATCHING:
-1. 🏗️ STRUCTURE TYPE & PHYSICAL CIVIL LANDMARKS (HIGHEST PRIORITY - ABSOLUTE RULE):
+1. 📸 DIRECT VISUAL REFERENCE MATCH (ABSOLUTE HIGHEST PRIORITY):
+   - We have attached REFERENCE PHOTOS for candidates where available below.
+   - CAREFULLY COMPARE the live audit photo against each candidate's reference photo.
+   - If the live audit photo shows the SAME scene, identical road view, exact same commercial ad banner (or billboard frame), identical gate/trees/buildings/curbs, or is clearly the SAME physical structure as Candidate [X]'s reference photo:
+     YOU MUST SELECT THAT CANDIDATE!
+   - ⚠️ NEVER let a small difference in GPS distance (e.g. 24m vs 47m) override an obvious visual match with a reference photo!
+
+2. 🏗️ STRUCTURE TYPE & PHYSICAL CIVIL LANDMARKS:
    - Check the physical mounting structure in the live audit photo:
      * UNIPOLE vs OVERHEAD GANTRY:
-       A "Unipole" is mounted on a SINGLE central vertical steel pillar/column (typically in the central road median or sidewalk).
-       An "Overhead Gantry" is an overhead steel bridge/truss structure spanning ACROSS multiple traffic lanes of the roadway with pillars on both sides.
-       ⚠️ STRICT RULE: If the live photo shows a Unipole, you MUST select a candidate with Structure Type "Unipole". You MUST NEVER select an "Overhead Gantry" (or "Gantry")! If the photo shows an Overhead Gantry spanning across the road, you MUST select a Gantry candidate, NEVER a Unipole!
-     * ELEVATED METRO VIADUCT TRACKS & PILLARS: Is the billboard a UNIPOLE mounted in the central median directly between and below elevated metro viaduct track pillars? (e.g. SL #210). If elevated metro viaduct pillars or tracks run overhead, you MUST match the candidate whose Physical Structure & Visual Landmarks explicitly mentions metro viaduct pillars (e.g. SL #210), NOT an overhead road gantry (e.g. SL #211)!
-     * FLYOVER RAMPS & RETAINING WALLS: Is there an elevated flyover ramp concrete retaining wall with wire mesh fencing and a pedestrian staircase alongside the road? (e.g. SL #198). Match the candidate whose visual landmarks or reference photo is situated at that exact ramp segment, rather than an open sidewalk site (e.g. SL #196).
-     * PAVEMENT, DIVIDERS & ROAD CURVATURE: Match the sidewalk tiles, yellow-and-black chevron curb blocks, railings, street furniture, and road angle.
-   - ⚠️ Calculated GPS distances have ±50m–100m variance depending on vehicle position. NEVER let GPS distance numbers override clear physical structure types or visual landmarks!
+       A "Unipole" is mounted on a SINGLE central vertical steel pillar/column.
+       An "Overhead Gantry" is an overhead steel bridge/truss structure spanning ACROSS multiple traffic lanes.
+       ⚠️ STRICT RULE: If the live photo shows a Unipole, you MUST select a candidate with Structure Type "Unipole", NEVER a Gantry!
+     * ELEVATED METRO VIADUCT TRACKS & PILLARS: Is the billboard directly under elevated metro viaduct track pillars? Match the candidate whose Physical Structure & Visual Landmarks mentions metro viaduct pillars!
+     * FLYOVER RAMPS, RETAINING WALLS & GATES: Match specific gates (e.g. "Meerut College Gate" vs "Alexander Club"), flyover retaining walls, railings, street furniture.
 
-2. 🧭 BILLBOARD FACING & TRAFFIC LINE-OF-SIGHT:
+3. 🧭 BILLBOARD FACING & TRAFFIC LINE-OF-SIGHT:
    - "Facing [X]" means the billboard face points towards X and is directly visible to traffic traveling from X.
    - Always choose the candidate whose Facing aligns with the camera's line of sight over opposite-facing candidates.
-   - ⚠️ DO NOT be confused by showroom addresses or phone numbers printed on flex banners.
 
-3. Status detection: "Occupied" (active commercial brand ad mounted) or "Available" (blank, white, torn, or To-Let).
+4. Status detection: "Occupied" (active commercial brand ad mounted) or "Available" (blank, white, torn, or To-Let).
 
 Return ONLY a single valid JSON object (no markdown, no backticks):
 {
   "matchedIndex": 0,
-  "sl": 210,
+  "sl": 183,
   "facing": "exact facing from selected candidate",
   "status": "Occupied",
-  "confidence": 0.98,
+  "confidence": 0.99,
   "reasoning": "Clear explanation of matched physical structure, reference photo comparison, and road landmarks"
 }`;
 

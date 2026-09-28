@@ -81,4 +81,46 @@ describe('Structure-Aware & Visual Landmark GPS Matching', () => {
     expect(match).not.toBeNull();
     expect(String(match.sl)).toBe('210');
   });
+
+  it('should prioritize candidate whose location name matches watermark text', async () => {
+    const cluster = [
+      {
+        SL: 183,
+        'Location ': 'Meerut College Gate',
+        'Locality Site Location': 'Meerut College Gate',
+        Media: 'Unipole',
+        Facing: 'CCS Park',
+        Latitude: '28.991295',
+        Longitude: '77.715539',
+        STATUS: 'Available'
+      },
+      {
+        SL: 188,
+        'Location ': 'Alexander Club Near Kutchery Gate',
+        'Locality Site Location': 'Alexander Club Near Kutchery Gate',
+        Media: 'Unipole',
+        Facing: 'CCS Park',
+        Latitude: '28.991284',
+        Longitude: '77.716060',
+        STATUS: 'Available'
+      }
+    ];
+
+    // Coordinates near Alexander Club (20m away) but photo watermark text mentions "Meerut College Gate"
+    const coord = { lat: 28.991400, lng: 77.716000 };
+    const match = await matchHoardingByGps(
+      coord,
+      cluster,
+      null,
+      'CCS Park',
+      'Unipole',
+      null,
+      'Meerut College Gate, Meerut Cantt'
+    );
+
+    expect(match).not.toBeNull();
+    expect(String(match.sl)).toBe('183');
+    expect(match.siteName).toContain('Meerut College Gate');
+  });
 });
+

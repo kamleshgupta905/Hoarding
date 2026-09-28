@@ -375,7 +375,7 @@ export const calculateDistanceMeters = (lat1, lon1, lat2, lon2) => {
  * 🎯 Match GPS Coordinates against the entire Master Inventory
  * Computes distances to all known hoardings and chooses the closest candidate with tiered confidence.
  */
-export const matchHoardingByGps = async (coord, locationList, rawImageBase64 = null, initialFacing = null, initialStructureType = null, initialVisualLandmarks = null) => {
+export const matchHoardingByGps = async (coord, locationList, rawImageBase64 = null, initialFacing = null, initialStructureType = null, initialVisualLandmarks = null, detectedTextOrAddress = null) => {
     if (!coord || !Array.isArray(locationList) || !locationList.length) return null;
 
     const candidates = [];
@@ -410,7 +410,9 @@ export const matchHoardingByGps = async (coord, locationList, rawImageBase64 = n
     const closest = candidates[0];
 
     // 🎯 IMMEDIATE EXACT PINPOINT MATCH (Camera standing right at the hoarding <= 25m with no competitor within 30m)
-    if (closest.distanceM <= 25 && (!candidates[1] || candidates[1].distanceM > 30)) {
+    // Only trigger if no conflicting watermark text contradicts this closest site
+    const closestTextConflict = detectedTextOrAddress && scoreLocationByText(detectedTextOrAddress, closest.site || closest) < 25;
+    if (closest.distanceM <= 25 && (!candidates[1] || candidates[1].distanceM > 30) && !closestTextConflict) {
         const closestSL = closest.site?.SL || closest.site?.['S. No.'] || closest.site?.['SL NO'] || (closest.index + 1);
         return {
             index: closest.index,
@@ -519,6 +521,85 @@ export const matchHoardingByGps = async (coord, locationList, rawImageBase64 = n
         } else if (facingMatches.length > 1) {
             // Prioritize facing matches for foreground resolution
             prioritizedCluster = facingMatches;
+        }
+    }
+    // 🔤 Watermark Location & Landmark Keyword Boost (e.g. "Meerut College Gate" vs "Alexander Club")
+    if (detectedTextOrAddress && prioritizedCluster.length > 1) {
+        const candidatesWithTextScore = prioritizedCluster.map(c => ({
+            candidate: c,
+            score: scoreLocationByText(detectedTextOrAddress, c.site || c)
+        })).sort((a, b) => b.score - a.score);
+
+        const bestText = candidatesWithTextScore[0];
+        const secondText = candidatesWithTextScore[1];
+        if (bestText && bestText.score >= 40 && (!secondText || bestText.score >= secondText.score + 20)) {
+            // Decisive text match advantage (e.g. "Meerut College Gate" vs "Alexander Club")
+            const target = bestText.candidate;
+            const matchSL = target.site?.SL || target.site?.['S. No.'] || (target.index + 1);
+            return {
+                index: target.index,
+                sl: matchSL,
+                site: target.site,
+                siteName: target.siteName,
+                siteCoord: target.siteCoord,
+                distanceM: target.distanceM,
+                facing: target.facing,
+                status: target.site?.STATUS || 'Available',
+                confidence: 98,
+                twinCandidates: twinCandidatesList,
+                reasoning: `🔤 Watermark Location Match: SL #${matchSL} [${target.siteName}] matching camera watermark text (${target.distanceM}m)`
+            };
+        } else if (bestText && bestText.score >= 30) {
+            const highScorers = candidatesWithTextScore.filter(c => c.score >= bestText.score - 10).map(c => c.candidate);
+            if (highScorers.length > 0 && highScorers.length < prioritizedCluster.length) {
+                prioritizedCluster = highScorers;
+            }
+        }
+    }
+
+    // 📸 DIRECT PERCEPTUAL VISUAL HASH MATCHING (Same image or high visual similarity)
+    if (prioritizedCluster.length > 1 && rawImageBase64 && typeof window !== 'undefined' && typeof document !== 'undefined') {
+        try {
+            const uploadedHash = await computeImageDHash(rawImageBase64);
+            if (uploadedHash) {
+                const candidateHashPromises = prioritizedCluster.slice(0, 8).map(async (c) => {
+                    const imgUrl = c.site?.ImageURL || c.site?.imageUrl;
+                    if (imgUrl && !imgUrl.includes('unsplash.com')) {
+                        const h = await computeImageDHash(imgUrl);
+                        if (h) {
+                            const d = getDHashDistance(uploadedHash, h);
+                            return { candidate: c, distance: d };
+                        }
+                    }
+                    return null;
+                });
+                const hashResults = (await Promise.all(candidateHashPromises)).filter(Boolean);
+                if (hashResults.length > 0) {
+                    hashResults.sort((a, b) => a.distance - b.distance);
+                    const bestVisual = hashResults[0];
+                    // Distance <= 6 out of 64 bits is >= 90% visual match; 0 is 100% exact match
+                    if (bestVisual.distance <= 6) {
+                        const matchCandidate = bestVisual.candidate;
+                        const matchSL = matchCandidate.site?.SL || matchCandidate.site?.['S. No.'] || (matchCandidate.index + 1);
+                        const matchPct = Math.round((1 - bestVisual.distance / 64) * 100);
+                        return {
+                            index: matchCandidate.index,
+                            sl: matchSL,
+                            site: matchCandidate.site,
+                            siteName: matchCandidate.siteName,
+                            siteCoord: matchCandidate.siteCoord,
+                            distanceM: matchCandidate.distanceM,
+                            facing: matchCandidate.facing,
+                            status: matchCandidate.site?.STATUS || 'Available',
+                            confidence: 99,
+                            twinCandidates: twinCandidatesList,
+                            reasoning: `🎯 Direct Visual Match: ${matchPct}% visual match with inventory reference photo for SL #${matchSL} (${matchCandidate.siteName})`
+                        };
+                    }
+                }
+            }
+        } catch (hashErr) {
+            console.warn('[Visual Hash Match Notice]:', hashErr);
         }
     }
 
@@ -679,11 +760,53 @@ export const matchHoardingByGps = async (coord, locationList, rawImageBase64 = n
 };
 
 const loadImage = (source) => new Promise((resolve, reject) => {
+    if (typeof Image === 'undefined') return reject(new Error('Image constructor not available'));
     const image = new Image();
+    image.crossOrigin = 'anonymous';
     image.onload = () => resolve(image);
     image.onerror = () => reject(new Error('Could not load image for OCR.'));
     image.src = source;
 });
+
+/**
+ * 📸 PERCEPTUAL DIFFERENCE HASH (dHash)
+ * Fast 64-bit gradient hash computed via 9x8 canvas.
+ * Highly robust against minor JPEG compression, resize, or brightness changes.
+ */
+export const computeImageDHash = async (source) => {
+    if (!source || typeof window === 'undefined' || typeof document === 'undefined') return null;
+    try {
+        const image = await loadImage(source);
+        const canvas = document.createElement('canvas');
+        canvas.width = 9;
+        canvas.height = 8;
+        const ctx = canvas.getContext('2d', { willReadFrequently: true });
+        ctx.drawImage(image, 0, 0, 9, 8);
+        const imgData = ctx.getImageData(0, 0, 9, 8).data;
+        const grays = [];
+        for (let i = 0; i < imgData.length; i += 4) {
+            grays.push(0.299 * imgData[i] + 0.587 * imgData[i + 1] + 0.114 * imgData[i + 2]);
+        }
+        let hash = '';
+        for (let y = 0; y < 8; y++) {
+            for (let x = 0; x < 8; x++) {
+                hash += grays[y * 9 + x] > grays[y * 9 + x + 1] ? '1' : '0';
+            }
+        }
+        return hash;
+    } catch {
+        return null;
+    }
+};
+
+export const getDHashDistance = (hash1, hash2) => {
+    if (!hash1 || !hash2 || hash1.length !== hash2.length) return 999;
+    let dist = 0;
+    for (let i = 0; i < hash1.length; i++) {
+        if (hash1[i] !== hash2[i]) dist++;
+    }
+    return dist;
+};
 
 const cropStampRegion = async (source, region = 'bottom-right', options = {}) => {
     const image = await loadImage(source);
@@ -912,7 +1035,7 @@ export const analyzeHoardingImage = async (base64Image, locationList, rawFile = 
         if (ocrCoord && isValidLatLng(ocrCoord.lat, ocrCoord.lng)) {
             const ocrStructureType = /gantry|bridge/i.test(detectedOcrText) ? 'Gantry' : (/unipole|pole/i.test(detectedOcrText) ? 'Unipole' : null);
             const ocrLandmarks = /metro|viaduct/i.test(detectedOcrText) ? 'metro viaduct' : null;
-            const gpsMatch = await matchHoardingByGps(ocrCoord, locationList, base64Image, ocrFacing, ocrStructureType, ocrLandmarks);
+            const gpsMatch = await matchHoardingByGps(ocrCoord, locationList, base64Image, ocrFacing, ocrStructureType, ocrLandmarks, detectedOcrText);
             if (gpsMatch) {
                 const lowerOcr = detectedOcrText.toLowerCase();
                 const ocrIndicatesOccupied = lowerOcr.includes('occupied') || lowerOcr.includes('booked');
@@ -960,7 +1083,8 @@ export const analyzeHoardingImage = async (base64Image, locationList, rawFile = 
                     base64Image,
                     aiResult.facing,
                     aiResult.structureType,
-                    aiResult.visualLandmarks
+                    aiResult.visualLandmarks,
+                    aiResult.address || aiResult.visualLandmarks
                 );
                 if (gpsMatch) {
                     return {
