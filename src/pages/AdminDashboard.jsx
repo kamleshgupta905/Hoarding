@@ -20,6 +20,7 @@ import DriveImage from '../components/DriveImage';
 import RenewalAlertRadar from '../components/RenewalAlertRadar';
 import BulkBookingWizard from '../components/BulkBookingWizard';
 import HeaderSitesUploadModal from '../components/HeaderSitesUploadModal';
+import StarredBulkBookingModal from '../components/StarredBulkBookingModal';
 import { appConfirm, appToast } from '../components/ToastContext';
 import { clearAdminSession, getAdminSession, getStaffUploadLink, postDirect } from '../services/secureApi';
 import { isInternalHeader } from '../core/hoardingSchema';
@@ -293,6 +294,48 @@ const SEARCH_CATEGORY_OPTIONS = [
     { id: 'status', label: 'Status' },
     { id: 'sl', label: 'S.No / ID' }
 ];
+
+/**
+ * 📐 Matches site dimensions against user dimension query like "40*10", "40x10", "40 * 10", "10*40", "40X10", "40×10"
+ */
+const matchSiteDimension = (site, d1, d2) => {
+    if (!site || !d1 || !d2) return false;
+    const num1 = parseFloat(d1);
+    const num2 = parseFloat(d2);
+    if (isNaN(num1) || isNaN(num2) || num1 <= 0 || num2 <= 0) return false;
+
+    // 1. Direct Width & Height numeric fields
+    const siteW = parseFloat(String(site.Width || site["Width"] || '').replace(/[^0-9.]/g, ''));
+    const siteH = parseFloat(String(site.Height || site["Height"] || '').replace(/[^0-9.]/g, ''));
+    if (!isNaN(siteW) && !isNaN(siteH) && siteW > 0 && siteH > 0) {
+        if ((siteW === num1 && siteH === num2) || (siteW === num2 && siteH === num1)) {
+            return true;
+        }
+    }
+
+    // 2. Parse Size/Dimension string, e.g. "40 x 10", "40*10", "40' x 10'", "40FT X 10FT", "10 X 40"
+    const sizeStr = String(site.Size || site["Size"] || site.Dimensions || site["Dimensions"] || site["Total SQ.ft"] || site["Total Sq. Ft"] || '');
+    if (sizeStr) {
+        const dimRegex = /(\d+(?:\.\d+)?)\s*(?:ft|'|foot|feet|mtr|m)?\s*[*xX×]\s*(\d+(?:\.\d+)?)\s*(?:ft|'|foot|feet|mtr|m)?/i;
+        const match = sizeStr.match(dimRegex);
+        if (match) {
+            const sw = parseFloat(match[1]);
+            const sh = parseFloat(match[2]);
+            if ((sw === num1 && sh === num2) || (sw === num2 && sh === num1)) {
+                return true;
+            }
+        }
+
+        // Also check if both dimension numbers appear as distinct numbers in size string
+        const hasD1 = new RegExp('(^|[^0-9.])' + num1 + '([^0-9.]|$)').test(sizeStr);
+        const hasD2 = new RegExp('(^|[^0-9.])' + num2 + '([^0-9.]|$)').test(sizeStr);
+        if (hasD1 && hasD2) {
+            return true;
+        }
+    }
+
+    return false;
+};
 
 const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
     const navigate = useNavigate();
@@ -1413,6 +1456,7 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
         }
     });
     const [showOnlyStarred, setShowOnlyStarred] = useState(false);
+    const [isStarredBookingModalOpen, setIsStarredBookingModalOpen] = useState(false);
     const [isPptGenerating, setIsPptGenerating] = useState(false);
     const [pptProgressText, setPptProgressText] = useState('');
     const isDesktopApp = Boolean(typeof window !== 'undefined' && window.electronAPI?.isElectron);
@@ -4121,65 +4165,80 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                 }
             }
 
-            // 🔍 Category-specific or Universal search
+            // 🔍 Category-specific, Universal, or Dimension (e.g. "40*10", "40x10") search
             let matchSearch = true;
             if (cleanSearch) {
-                const searchKeywords = cleanSearch.split(/\s+/).filter(Boolean);
-                const getCategoryFieldText = (cat) => {
-                    switch (cat) {
-                        case 'location':
-                            return String(h["Locality Site Location"] || h["Location "] || h["Location"] || "");
-                        case 'city':
-                            return String(h.City || "");
-                        case 'locality':
-                            return String(h["Locality"] || h["Area"] || "");
-                        case 'client':
-                            return String(h.BookedBy || h.ClientName || h["Client Name"] || h.Customer || "");
-                        case 'media':
-                            return String(h["Media Format (Front Lit / Back Lit / Non Lit)"] || h["Media Format"] || h["Media Type"] || h.Media || h["Type of Site (Unipole/Billboard)"] || h.Type || "");
-                        case 'facing':
-                            return `${h.Facing || ''} ${h["Traffic View"] || ''} ${h["Traffic From"] || ''} ${h["Traffic To"] || ''}`;
-                        case 'size':
-                            return `${h.Width || ''} ${h.Height || ''} ${h["Total SQ.ft"] || ''} ${h["Total Sq. Ft"] || ''} ${h["Size (Large/Medium/Small)"] || ''} ${h.Size || ''}`;
-                        case 'price':
-                            return String(h["Rental Per Month"] || h["Avg Monthly Cost (INR)"] || "");
-                        case 'status':
-                            return String(h.STATUS || h.Status || "");
-                        case 'sl':
-                            return String(h.SL || h["S. No."] || h["SL NO"] || "");
-                        default:
-                            return "";
-                    }
-                };
+                // Check if search contains a dimension pattern like "40*10", "40x10", "40 * 10", "10*40", "40X10", "40×10"
+                const dimRegex = /(\d+(?:\.\d+)?)\s*(?:ft|'|foot|feet|mtr|m)?\s*[*xX×]\s*(\d+(?:\.\d+)?)\s*(?:ft|'|foot|feet|mtr|m)?/i;
+                const dimMatch = cleanSearch.match(dimRegex);
 
-                let targetText = '';
-                if (!inventorySearchCategories || inventorySearchCategories.includes('all') || inventorySearchCategories.length === 0) {
-                    const siteTitle = String(h["Locality Site Location"] || h["Location "] || h["Location"] || "");
-                    const siteLocality = String(h["Locality"] || h["Area"] || "");
-                    const city = String(h.City || "");
-                    const facing = String(h.Facing || h["Traffic View"] || "");
-                    const bookedBy = String(h.BookedBy || h.ClientName || h["Client Name"] || h.Customer || "");
-                    const trafficFrom = String(h["Traffic From"] || "");
-                    const trafficTo = String(h["Traffic To"] || "");
-                    const media = String(h.Media || h["Media Format"] || h.Type || "");
-                    const status = String(h.STATUS || h.Status || "");
-                    const sl = String(h.SL || h["S. No."] || h["SL NO"] || "");
-                    const dimensions = `${h.Width || ''} ${h.Height || ''} ${h["Total SQ.ft"] || ''} ${h.Size || ''}`;
-                    const price = String(h["Rental Per Month"] || h["Avg Monthly Cost (INR)"] || "");
-
-                    const allFieldValues = Object.entries(h)
-                        .filter(([k]) => !k.startsWith('_') && k !== 'ImageURL' && k !== 'driveUrl')
-                        .map(([, v]) => String(v || ''))
-                        .join(' ');
-
-                    targetText = `${allFieldValues} ${siteTitle} ${siteLocality} ${city} ${facing} ${bookedBy} ${trafficFrom} ${trafficTo} ${media} ${status} ${sl} ${dimensions} ${price}`;
-                } else {
-                    targetText = inventorySearchCategories.map(cat => getCategoryFieldText(cat)).join(' ');
+                if (dimMatch) {
+                    const matchedDim = matchSiteDimension(h, dimMatch[1], dimMatch[2]);
+                    if (!matchedDim) return false;
                 }
 
-                const lowerTarget = targetText.toLowerCase();
-                // All typed keywords must match somewhere in the selected target text
-                matchSearch = searchKeywords.every(keyword => lowerTarget.includes(keyword));
+                const remainingSearch = dimMatch ? cleanSearch.replace(dimMatch[0], ' ').trim() : cleanSearch;
+                if (!remainingSearch) {
+                    // Only dimension was typed and it already matched this site!
+                    matchSearch = true;
+                } else {
+                    const searchKeywords = remainingSearch.split(/\s+/).filter(Boolean);
+                    const getCategoryFieldText = (cat) => {
+                        switch (cat) {
+                            case 'location':
+                                return String(h["Locality Site Location"] || h["Location "] || h["Location"] || "");
+                            case 'city':
+                                return String(h.City || "");
+                            case 'locality':
+                                return String(h["Locality"] || h["Area"] || "");
+                            case 'client':
+                                return String(h.BookedBy || h.ClientName || h["Client Name"] || h.Customer || "");
+                            case 'media':
+                                return String(h["Media Format (Front Lit / Back Lit / Non Lit)"] || h["Media Format"] || h["Media Type"] || h.Media || h["Type of Site (Unipole/Billboard)"] || h.Type || "");
+                            case 'facing':
+                                return `${h.Facing || ''} ${h["Traffic View"] || ''} ${h["Traffic From"] || ''} ${h["Traffic To"] || ''}`;
+                            case 'size':
+                                return `${h.Width || ''} ${h.Height || ''} ${h["Total SQ.ft"] || ''} ${h["Total Sq. Ft"] || ''} ${h["Size (Large/Medium/Small)"] || ''} ${h.Size || ''}`;
+                            case 'price':
+                                return String(h["Rental Per Month"] || h["Avg Monthly Cost (INR)"] || "");
+                            case 'status':
+                                return String(h.STATUS || h.Status || "");
+                            case 'sl':
+                                return String(h.SL || h["S. No."] || h["SL NO"] || "");
+                            default:
+                                return "";
+                        }
+                    };
+
+                    let targetText = '';
+                    if (!inventorySearchCategories || inventorySearchCategories.includes('all') || inventorySearchCategories.length === 0) {
+                        const siteTitle = String(h["Locality Site Location"] || h["Location "] || h["Location"] || "");
+                        const siteLocality = String(h["Locality"] || h["Area"] || "");
+                        const city = String(h.City || "");
+                        const facing = String(h.Facing || h["Traffic View"] || "");
+                        const bookedBy = String(h.BookedBy || h.ClientName || h["Client Name"] || h.Customer || "");
+                        const trafficFrom = String(h["Traffic From"] || "");
+                        const trafficTo = String(h["Traffic To"] || "");
+                        const media = String(h.Media || h["Media Format"] || h.Type || "");
+                        const status = String(h.STATUS || h.Status || "");
+                        const sl = String(h.SL || h["S. No."] || h["SL NO"] || "");
+                        const dimensions = `${h.Width || ''} ${h.Height || ''} ${h["Total SQ.ft"] || ''} ${h.Size || ''}`;
+                        const price = String(h["Rental Per Month"] || h["Avg Monthly Cost (INR)"] || "");
+
+                        const allFieldValues = Object.entries(h)
+                            .filter(([k]) => !k.startsWith('_') && k !== 'ImageURL' && k !== 'driveUrl')
+                            .map(([, v]) => String(v || ''))
+                            .join(' ');
+
+                        targetText = `${allFieldValues} ${siteTitle} ${siteLocality} ${city} ${facing} ${bookedBy} ${trafficFrom} ${trafficTo} ${media} ${status} ${sl} ${dimensions} ${price}`;
+                    } else {
+                        targetText = inventorySearchCategories.map(cat => getCategoryFieldText(cat)).join(' ');
+                    }
+
+                    const lowerTarget = targetText.toLowerCase();
+                    // All typed keywords must match somewhere in the selected target text
+                    matchSearch = searchKeywords.every(keyword => lowerTarget.includes(keyword));
+                }
             }
             if (!matchSearch) return false;
 
@@ -8929,13 +8988,38 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                                     Show All Sites
                                                 </button>
                                                 {starredSites.length > 0 && (
-                                                    <button 
-                                                        type="button"
-                                                        onClick={handleClearAllStarred}
-                                                        style={{ marginLeft: '6px', background: 'none', border: 'none', color: '#ef4444', fontWeight: 600, cursor: 'pointer', textDecoration: 'underline' }}
-                                                    >
-                                                        Clear Stars
-                                                    </button>
+                                                    <>
+                                                        <button 
+                                                            type="button"
+                                                            onClick={handleClearAllStarred}
+                                                            style={{ marginLeft: '6px', background: 'none', border: 'none', color: '#ef4444', fontWeight: 600, cursor: 'pointer', textDecoration: 'underline' }}
+                                                        >
+                                                            Clear Stars
+                                                        </button>
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => setIsStarredBookingModalOpen(true)}
+                                                            style={{
+                                                                marginLeft: '8px',
+                                                                background: 'linear-gradient(to right, #4f46e5, #4338ca)',
+                                                                color: '#ffffff',
+                                                                border: 'none',
+                                                                borderRadius: '6px',
+                                                                padding: '4px 11px',
+                                                                fontSize: '0.78rem',
+                                                                fontWeight: 700,
+                                                                cursor: 'pointer',
+                                                                display: 'inline-flex',
+                                                                alignItems: 'center',
+                                                                gap: '5px',
+                                                                boxShadow: '0 2px 4px rgba(79, 70, 229, 0.25)'
+                                                            }}
+                                                            title="Open spreadsheet bulk booking for starred sites"
+                                                        >
+                                                            <Calendar size={13} />
+                                                            Book ({starredSites.length}) Sites
+                                                        </button>
+                                                    </>
                                                 )}
                                             </div>
                                         ) : (
@@ -8963,6 +9047,29 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                                         title="Clear all stars"
                                                     >
                                                         Clear
+                                                    </button>
+                                                    <span>•</span>
+                                                    <button 
+                                                        type="button"
+                                                        onClick={() => setIsStarredBookingModalOpen(true)}
+                                                        style={{
+                                                            background: 'linear-gradient(to right, #4f46e5, #4338ca)',
+                                                            color: '#ffffff',
+                                                            border: 'none',
+                                                            borderRadius: '6px',
+                                                            padding: '4px 10px',
+                                                            fontSize: '0.76rem',
+                                                            fontWeight: 700,
+                                                            cursor: 'pointer',
+                                                            display: 'inline-flex',
+                                                            alignItems: 'center',
+                                                            gap: '4px',
+                                                            boxShadow: '0 2px 4px rgba(79, 70, 229, 0.25)'
+                                                        }}
+                                                        title="Open spreadsheet bulk booking for starred sites"
+                                                    >
+                                                        <Calendar size={12} />
+                                                        Book ({starredSites.length}) Sites
                                                     </button>
                                                 </div>
                                             )
@@ -10769,6 +10876,24 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                         onClose={() => setIsHeaderUploadModalOpen(false)}
                         onStartUpload={handleHeaderUploadSubmit}
                         disabled={Boolean(fileProcessing)}
+                    />
+                )}
+
+                {/* 📊 Starred Sites Spreadsheet Bulk Booking Modal */}
+                {isStarredBookingModalOpen && (
+                    <StarredBulkBookingModal
+                        isOpen={isStarredBookingModalOpen}
+                        onClose={() => setIsStarredBookingModalOpen(false)}
+                        starredSites={starredSites}
+                        hoardings={hoardings}
+                        setHoardings={setHoardings}
+                        onUnstarSites={(keysToRemove) => {
+                            setStarredSiteKeys(prev => {
+                                const list = Array.isArray(prev) ? prev : [];
+                                return list.filter(k => !keysToRemove.includes(k));
+                            });
+                        }}
+                        showToast={showToast}
                     />
                 )}
 
