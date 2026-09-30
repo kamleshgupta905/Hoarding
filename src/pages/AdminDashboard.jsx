@@ -558,6 +558,9 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
         return (!isNaN(parsed) && parsed > 1000000000) ? parsed : 0;
     };
 
+    // ⏱️ 7-Day Rolling Retention Window for Daily Updates & Proofs (prevents premature auto-expiration)
+    const DAILY_UPDATES_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
+
     // 📸 Daily Proof Upload State (Persists in localStorage + hydrates from cloud hoardings ExecutionHistory)
     const [dailyImages, setDailyImages] = useState(() => {
         try {
@@ -574,7 +577,7 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                 if (rawDismissed) {
                     const parsedD = JSON.parse(rawDismissed);
                     if (Array.isArray(parsedD)) {
-                        const cutoff = Date.now() - 48 * 60 * 60 * 1000;
+                        const cutoff = Date.now() - DAILY_UPDATES_RETENTION_MS;
                         parsedD.filter(d => (parseSafeTimestamp(d?.time) || 0) > cutoff).forEach(d => {
                             if (d?.url) dismissedKeys.add(d.url);
                             if (d?.directUrl) dismissedKeys.add(d.directUrl);
@@ -585,7 +588,7 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                 }
             } catch {}
 
-            const cutoff = Date.now() - 48 * 60 * 60 * 1000;
+            const cutoff = Date.now() - DAILY_UPDATES_RETENTION_MS;
             const seenCardKeys = new Set();
             const valid = [];
 
@@ -655,7 +658,7 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
             if (rawDismissed) {
                 const parsed = JSON.parse(rawDismissed);
                 if (Array.isArray(parsed)) {
-                    const cutoff = Date.now() - 48 * 60 * 60 * 1000;
+                    const cutoff = Date.now() - DAILY_UPDATES_RETENTION_MS;
                     parsed.filter(d => (parseSafeTimestamp(d?.time) || 0) > cutoff).forEach(d => {
                         if (d?.url) dismissedKeys.add(d.url);
                         if (d?.directUrl) dismissedKeys.add(d.directUrl);
@@ -666,7 +669,7 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
             }
         } catch {}
 
-        const cutoff48h = Date.now() - 48 * 60 * 60 * 1000;
+        const cutoff48h = Date.now() - DAILY_UPDATES_RETENTION_MS;
         const cloudCards = [];
         const seenCloudUrls = new Set();
 
@@ -865,10 +868,10 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
         return () => clearInterval(interval);
     }, [activeTab, hoardings, hydrateDailyImagesFromHoardings]);
 
-    // ⏱️ Auto-expire Daily Updates older than 48 hours in real-time
+    // ⏱️ Auto-expire Daily Updates older than 7 days in real-time
     useEffect(() => {
         const pruneExpiredDailyImages = () => {
-            const cutoff = Date.now() - 48 * 60 * 60 * 1000;
+            const cutoff = Date.now() - DAILY_UPDATES_RETENTION_MS;
             setDailyImages(prev => {
                 if (!Array.isArray(prev) || prev.length === 0) return prev;
                 const filtered = prev.filter(img => {
@@ -972,7 +975,7 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
             if (rawDismissed) {
                 const parsedD = JSON.parse(rawDismissed);
                 if (Array.isArray(parsedD)) {
-                    const cutoff = Date.now() - 48 * 60 * 60 * 1000;
+                    const cutoff = Date.now() - DAILY_UPDATES_RETENTION_MS;
                     parsedD.filter(d => (parseSafeTimestamp(d?.time) || 0) > cutoff).forEach(d => {
                         if (d?.url) dismissedKeys.add(d.url);
                         if (d?.directUrl) dismissedKeys.add(d.directUrl);
@@ -2860,6 +2863,35 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
             const finalProofUrl = driveUrl ? getDirectDriveLink(driveUrl) : (imageData.uploadedUrl || imageData.persistentPreview || imageData.preview || '');
             console.log("☁️ [Daily Proof] Uploaded to Google Drive & Sheet ExecutionHistory:", driveUrl || finalProofUrl, "Mode:", effectiveMode);
 
+            // 🛡️ Post-Sync In-Flight Guard: Check if user rejected/dismissed this card while upload was in progress!
+            let wasRejectedOrDismissed = false;
+            try {
+                const rawDismissed = localStorage.getItem('adh_dismissed_daily_proofs');
+                if (rawDismissed) {
+                    const parsedD = JSON.parse(rawDismissed);
+                    if (Array.isArray(parsedD)) {
+                        wasRejectedOrDismissed = parsedD.some(d => 
+                            d.id === itemIdOrIndex ||
+                            (d.url && (d.url === imageData.preview || d.url === imageData.persistentPreview || d.url === imageData.uploadedUrl))
+                        );
+                    }
+                }
+            } catch {}
+
+            if (wasRejectedOrDismissed) {
+                console.warn(`[Daily Proof] Aborting post-upload: card ${itemIdOrIndex} was rejected while sync was in flight.`);
+                // Clean up newly created photo from cloud so it does not linger or resurrect
+                if (driveUrl) {
+                    syncToGoogleSheet({
+                        action: 'deleteHistoryPhoto',
+                        sl: targetSL,
+                        photoUrl: driveUrl,
+                        fileId: extractDriveId(driveUrl)
+                    }).catch(e => console.warn('Rollback rejected in-flight upload notice:', e));
+                }
+                return;
+            }
+
             // Mark uploaded in UI with verified URL (fallback to in-memory preview during upload)
             setDailyImages(prev => prev.map(img => {
                 const matches = img.id === itemIdOrIndex || (typeof itemIdOrIndex === 'number' && prev.indexOf(img) === itemIdOrIndex);
@@ -2879,19 +2911,6 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                 }
                 return img;
             }));
-
-            if (targetSL) {
-                try {
-                    const rawD = localStorage.getItem('adh_dismissed_daily_proofs');
-                    if (rawD) {
-                        const parsedD = JSON.parse(rawD);
-                        if (Array.isArray(parsedD)) {
-                            const filteredD = parsedD.filter(d => String(d?.sl).trim() !== String(targetSL).trim());
-                            localStorage.setItem('adh_dismissed_daily_proofs', JSON.stringify(filteredD));
-                        }
-                    }
-                } catch {}
-            }
 
             // Construct new history entry with verified URL (Google Drive URL or clean preview)
             const newHistoryItem = {
@@ -4264,7 +4283,7 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
 
             // ⭐ Star-Only Filter
             if (showOnlyStarred) {
-                const siteKey = String(h.SL || h.UniqueID || h['Unique ID'] || `${h.City || ''}_${h['Location '] || h.Location || ''}_${h.Facing || ''}`).trim();
+                const siteKey = String(h.SL || h['S. No.'] || h['SL NO'] || h._SiteID || h.UniqueID || h['Unique ID'] || `${h.City || ''}_${h['Location '] || h.Location || ''}_${h.Facing || ''}`).trim();
                 if (!Array.isArray(starredSiteKeys) || !starredSiteKeys.includes(siteKey)) {
                     return false;
                 }
@@ -4276,7 +4295,20 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
 
     const getSiteStableKey = useCallback((h) => {
         if (!h) return '';
-        return String(h.SL || h.UniqueID || h['Unique ID'] || `${h.City || ''}_${h['Location '] || h.Location || ''}_${h.Facing || ''}`).trim();
+        return String(h.SL || h['S. No.'] || h['SL NO'] || h._SiteID || h.UniqueID || h['Unique ID'] || `${h.City || ''}_${h['Location '] || h.Location || ''}_${h.Facing || ''}`).trim();
+    }, []);
+
+    const resetInventoryFiltersForStarred = useCallback(() => {
+        setSearchTerm('');
+        setInventoryCityFilter(['All']);
+        setInventoryLocalityFilter(['All']);
+        setInventoryStatusFilter('All');
+        setInventoryMediaFilter(['All']);
+        setInventorySizeFilter(['All']);
+        setInventoryCategoryFilter(['All']);
+        setInventoryPriceFilter('All');
+        setFilterStartDate('');
+        setFilterEndDate('');
     }, []);
 
     const isSiteStarred = useCallback((h) => {
@@ -8874,19 +8906,19 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                         {showOnlyStarred ? (
                                             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '6px 14px', background: '#fef3c7', borderRadius: '8px', border: '1px solid #fde68a', fontSize: '0.82rem', color: '#92400e', flexWrap: 'wrap' }}>
                                                 <Star size={14} fill="#f59e0b" color="#f59e0b" />
-                                                {searchTerm ? (
-                                                    <span>Showing <strong>{filteredInventory.length}</strong> of <strong>{starredSites.length}</strong> Starred Sites matching "<em>{searchTerm}</em>"</span>
+                                                {filteredInventory.length < starredSites.length ? (
+                                                    <span>Showing <strong>{filteredInventory.length}</strong> of <strong>{starredSites.length}</strong> Starred Sites</span>
                                                 ) : (
                                                     <span>Viewing <strong>{starredSites.length}</strong> Starred Sites</span>
                                                 )}
-                                                {searchTerm && (
+                                                {filteredInventory.length < starredSites.length && (
                                                     <button
                                                         type="button"
-                                                        onClick={() => setSearchTerm('')}
+                                                        onClick={resetInventoryFiltersForStarred}
                                                         style={{ marginLeft: '4px', background: '#d97706', color: '#ffffff', border: 'none', borderRadius: '4px', padding: '2px 8px', fontSize: '0.75rem', fontWeight: 600, cursor: 'pointer' }}
-                                                        title="Clear search term to view all starred sites"
+                                                        title="Reset active search & filters to show all starred sites"
                                                     >
-                                                        Clear Search (Show All {starredSites.length})
+                                                        Show All ({starredSites.length}) Starred
                                                     </button>
                                                 )}
                                                 <button 

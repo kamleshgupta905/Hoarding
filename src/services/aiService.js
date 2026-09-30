@@ -428,11 +428,16 @@ export const matchHoardingByGps = async (coord, locationList, rawImageBase64 = n
         };
     }
 
-    // 🎯 TIGHT CORRIDOR & TWIN-SITE CLUSTER DETECTION (Consecutive road structures / opposite facings within ~80m)
-    // Only group candidates along the immediate road junction/segment (within 80m of closest site, max 250m from camera)
-    const corridorCluster = candidates.filter(c => Math.abs(c.distanceM - closest.distanceM) <= 80 && c.distanceM <= 250);
+    // 🎯 TIGHT CORRIDOR & TWIN-SITE CLUSTER DETECTION (Consecutive road structures / opposite facings within vicinity)
+    // Only group candidates along the immediate road junction/segment (within 80m of closest site when close, or up to 250m when further)
+    const clusterDelta = closest.distanceM <= 250 ? 80 : Math.min(250, closest.distanceM * 0.4 + 50);
+    const clusterMax = Math.max(350, closest.distanceM + 180);
+    const corridorCluster = candidates.filter(c => Math.abs(c.distanceM - closest.distanceM) <= clusterDelta && c.distanceM <= clusterMax);
 
-    const twinCandidatesList = corridorCluster.length > 1 ? corridorCluster.map(c => ({
+    // If corridorCluster didn't catch nearby candidates but we are in vicinity, get top 5 nearest candidates
+    const effectiveCluster = corridorCluster.length > 1 ? corridorCluster : candidates.slice(0, 5).filter(c => c.distanceM <= Math.max(650, closest.distanceM + 250));
+
+    const twinCandidatesList = effectiveCluster.length > 1 ? effectiveCluster.map(c => ({
         index: c.index,
         sl: c.site?.SL || c.site?.['S. No.'] || c.site?.['SL NO'] || (c.index + 1),
         siteId: c.siteId,
@@ -740,8 +745,8 @@ export const matchHoardingByGps = async (coord, locationList, rawImageBase64 = n
         };
     }
 
-    // 🎯 Threshold 4: <= 500m is an Area Match (75% confidence) — beyond 500m is too far for GPS-only matching
-    if (closest.distanceM <= 500) {
+    // 🎯 Threshold 4: <= 650m is a Road Approach / Area Match (80% confidence)
+    if (closest.distanceM <= 650) {
         return {
             index: closest.index,
             sl: closestSL,
@@ -751,8 +756,24 @@ export const matchHoardingByGps = async (coord, locationList, rawImageBase64 = n
             distanceM: closest.distanceM,
             facing: closest.facing,
             twinCandidates: twinCandidatesList,
-            confidence: 75,
+            confidence: 80,
             reasoning: `🗺️ Area Proximity GPS Match (${closest.distanceM}m away from ${closest.siteName})`
+        };
+    }
+
+    // 🎯 Threshold 5: <= 1200m is a Broader Vicinity Corridor Match (70% confidence)
+    if (closest.distanceM <= 1200) {
+        return {
+            index: closest.index,
+            sl: closestSL,
+            site: closest.site,
+            siteName: closest.siteName,
+            siteCoord: closest.siteCoord,
+            distanceM: closest.distanceM,
+            facing: closest.facing,
+            twinCandidates: twinCandidatesList,
+            confidence: 70,
+            reasoning: `📍 Vicinity Corridor GPS Match (${closest.distanceM}m away from ${closest.siteName})`
         };
     }
 
@@ -867,13 +888,15 @@ const meaningfulTokens = (value) => {
 const scoreLocationByText = (detectedText, location) => {
     const normalizedDetected = normalizeText(detectedText);
     const siteName = location?.["Locality Site Location"] || location?.['Location '] || location?.Location || '';
+    const locality = location?.Locality || location?.Area || '';
     const normalizedSite = normalizeText(siteName);
-    if (!normalizedSite) return 0;
-    if (normalizedDetected.includes(normalizedSite) || normalizedSite.includes(normalizedDetected)) return 100;
+    const normalizedLocality = normalizeText(locality);
+    if (!normalizedSite && !normalizedLocality) return 0;
+    if (normalizedSite && (normalizedDetected.includes(normalizedSite) || normalizedSite.includes(normalizedDetected))) return 100;
 
     let score = 0;
 
-    // Check for distinctive 2-word key phrases (e.g. "shastri nagar", "central market", "begum bridge")
+    // Check for distinctive 2-word key phrases in site name (e.g. "central market", "begum bridge")
     const siteWords = normalizedSite.split(/\s+/).filter(w => w.length >= 3);
     for (let i = 0; i < siteWords.length - 1; i++) {
         const bigram = `${siteWords[i]} ${siteWords[i+1]}`;
@@ -882,11 +905,21 @@ const scoreLocationByText = (detectedText, location) => {
         }
     }
 
-    // Check for Block letter matching (e.g., "block k" <-> "k block", "block a" <-> "a block")
-    const blockMatch = normalizedSite.match(/\b([a-z0-9])\s*block\b|\bblock\s*([a-z0-9])\b/);
+    // Check for distinctive 2-word key phrases in Area / Locality (e.g. "shastri nagar", "garh road", "pvs road")
+    const localityWords = normalizedLocality.split(/\s+/).filter(w => w.length >= 3);
+    for (let i = 0; i < localityWords.length - 1; i++) {
+        const bigram = `${localityWords[i]} ${localityWords[i+1]}`;
+        if (bigram.length >= 7 && normalizedDetected.includes(bigram)) {
+            score = Math.max(score, 60);
+        }
+    }
+
+    // Check for Block / Sector matching (e.g., "block 1", "block k", "sector 2")
+    const combinedSiteInfo = `${normalizedSite} ${normalizedLocality}`;
+    const blockMatch = combinedSiteInfo.match(/\b([a-z0-9])\s*block\b|\bblock\s*([a-z0-9]+)\b|\bsector\s*([a-z0-9]+)\b/);
     if (blockMatch) {
-        const letter = blockMatch[1] || blockMatch[2];
-        if (letter && (normalizedDetected.includes(`block ${letter}`) || normalizedDetected.includes(`${letter} block`))) {
+        const num = blockMatch[1] || blockMatch[2] || blockMatch[3];
+        if (num && (normalizedDetected.includes(`block ${num}`) || normalizedDetected.includes(`sector ${num}`))) {
             score += 25;
         }
     }
@@ -897,9 +930,8 @@ const scoreLocationByText = (detectedText, location) => {
         score += Math.round((hits / siteTokens.length) * 50);
     }
 
-    const locality = location.Locality || location.Area || '';
-    if (locality && normalizedDetected.includes(normalizeText(locality))) score += 15;
-    if (location.City && normalizedDetected.includes(normalizeText(location.City))) score += 10;
+    if (normalizedLocality && normalizedDetected.includes(normalizedLocality)) score += 30;
+    if (location.City && normalizedDetected.includes(normalizeText(location.City))) score += 15;
 
     return Math.min(100, score);
 };
