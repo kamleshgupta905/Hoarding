@@ -12,14 +12,16 @@ import {
   ArrowRight, 
   Sparkles,
   CheckCircle2,
-  FileSpreadsheet
+  FileSpreadsheet,
+  Zap
 } from 'lucide-react';
 import { 
   checkBookingConflict, 
   calculateProRataRental, 
   getSiteBookingSlots, 
   saveSiteBookingSlots, 
-  resolveSiteLiveStatus 
+  resolveSiteLiveStatus,
+  overrideSiteBookingSlot
 } from '../services/dataService.js';
 import { postDirect, getAdminSession } from '../services/secureApi.js';
 
@@ -42,6 +44,8 @@ export const StarredBulkBookingModal = ({
     return d.toISOString().split('T')[0];
   });
   const [unstarAfterBooking, setUnstarAfterBooking] = useState(true);
+  const [globalOverride, setGlobalOverride] = useState(false);
+  const [overrideMode, setOverrideMode] = useState('trim'); // 'trim' | 'replace' | 'force'
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitProgress, setSubmitProgress] = useState({ current: 0, total: 0, text: '' });
   const [rows, setRows] = useState([]);
@@ -83,7 +87,8 @@ export const StarredBulkBookingModal = ({
         amount: proRata.total,
         days: proRata.days,
         hasConflict: conflict.conflict,
-        conflictReason: conflict.reason || ''
+        conflictReason: conflict.reason || '',
+        overrideEnabled: false
       };
     });
 
@@ -105,6 +110,9 @@ export const StarredBulkBookingModal = ({
     updatedRow.days = proRata.days;
     updatedRow.hasConflict = conflict.conflict;
     updatedRow.conflictReason = conflict.reason || '';
+    if (!conflict.conflict) {
+      updatedRow.overrideEnabled = false;
+    }
     return updatedRow;
   }, []);
 
@@ -183,12 +191,19 @@ export const StarredBulkBookingModal = ({
     let totalAmount = 0;
     let conflictCount = 0;
     let readyCount = 0;
+    let overrideCount = 0;
 
     rows.forEach(r => {
       totalMonthly += Number(r.monthlyRent || 0);
       totalAmount += Number(r.amount || 0);
-      if (r.hasConflict) conflictCount++;
-      else if (r.clientName.trim() && r.startDate && r.endDate) readyCount++;
+      if (r.hasConflict) {
+        conflictCount++;
+        if (r.overrideEnabled || globalOverride) {
+          overrideCount++;
+        }
+      } else if (r.clientName.trim() && r.startDate && r.endDate) {
+        readyCount++;
+      }
     });
 
     return {
@@ -196,9 +211,11 @@ export const StarredBulkBookingModal = ({
       totalMonthly,
       totalAmount,
       conflictCount,
-      readyCount
+      readyCount,
+      overrideCount,
+      executableCount: readyCount + overrideCount
     };
-  }, [rows]);
+  }, [rows, globalOverride]);
 
   // Execute Bulk Booking for all rows
   const handleConfirmBulkBooking = async () => {
@@ -214,18 +231,18 @@ export const StarredBulkBookingModal = ({
       return;
     }
 
-    // Check if any row has unresolved conflict
-    const conflictedSite = rows.find(r => r.hasConflict);
-    if (conflictedSite) {
+    // Check if any row has unresolved conflict that is NOT overridden
+    const unhandledConflictedSites = rows.filter(r => r.hasConflict && !r.overrideEnabled && !globalOverride);
+    if (unhandledConflictedSites.length > 0) {
       const proceed = window.confirm(
-        `Site SL #${conflictedSite.sl} has a booking conflict (${conflictedSite.conflictReason}). Do you want to proceed and book the remaining non-conflicted sites?`
+        `${unhandledConflictedSites.length} site(s) have booking conflicts and override is not active. Do you want to proceed and book the remaining eligible/overridden sites?`
       );
       if (!proceed) return;
     }
 
-    const sitesToBook = rows.filter(r => !r.hasConflict);
+    const sitesToBook = rows.filter(r => !r.hasConflict || r.overrideEnabled || globalOverride);
     if (sitesToBook.length === 0) {
-      showToast('All selected sites have date conflicts. Please adjust the dates.', 'error');
+      showToast('All selected sites have date conflicts. Enable "Allow Override" or adjust the dates.', 'error');
       return;
     }
 
@@ -243,41 +260,64 @@ export const StarredBulkBookingModal = ({
         const targetLoc = site["Locality Site Location"] || site["Location "] || site.Location || item.location;
         const targetFacing = site.Facing || site["Traffic View"] || item.facing;
 
+        const isOverriding = item.hasConflict && (item.overrideEnabled || globalOverride);
+
         setSubmitProgress({ 
           current: i + 1, 
           total: sitesToBook.length, 
-          text: `Processing SL #${targetSL} for ${item.clientName}...` 
+          text: isOverriding 
+            ? `Overriding SL #${targetSL} for ${item.clientName} (${overrideMode.toUpperCase()})...`
+            : `Processing SL #${targetSL} for ${item.clientName}...` 
         });
 
-        const existingSlots = getSiteBookingSlots(site);
-        const newSlot = {
-          id: 'slot-' + Date.now() + '-' + i,
-          client: item.clientName.trim(),
-          start: item.startDate,
-          end: item.endDate,
-          days: item.days,
-          amount: item.amount,
-          status: 'Booked',
-          createdAt: new Date().toISOString()
-        };
+        let updatedSlots = [];
+        let siteUpdatedFields = null;
 
-        const updatedSlots = [...existingSlots, newSlot].sort((a, b) => a.start.localeCompare(b.start));
+        if (isOverriding) {
+          // ⚡ Execute Override Engine
+          const overrideResult = overrideSiteBookingSlot(
+            site,
+            {
+              client: item.clientName.trim(),
+              start: item.startDate,
+              end: item.endDate,
+              monthlyRent: item.monthlyRent
+            },
+            overrideMode,
+            'Starred Bulk Booking Override'
+          );
+          updatedSlots = overrideResult.updatedSlots;
+          siteUpdatedFields = overrideResult.updatedSite;
+        } else {
+          // Standard Normal Slot Addition
+          const existingSlots = getSiteBookingSlots(site);
+          const newSlot = {
+            id: 'slot-' + Date.now() + '-' + i,
+            client: item.clientName.trim(),
+            start: item.startDate,
+            end: item.endDate,
+            days: item.days,
+            amount: item.amount,
+            status: 'Booked',
+            createdAt: new Date().toISOString()
+          };
 
-        // Save locally to IndexedDB & cache
-        saveSiteBookingSlots(site, updatedSlots);
+          updatedSlots = [...existingSlots, newSlot].sort((a, b) => a.start.localeCompare(b.start));
+          saveSiteBookingSlots(site, updatedSlots);
 
-        const liveStatus = resolveSiteLiveStatus({ ...site, BookingSchedule: updatedSlots });
-        const primarySlot = liveStatus.slot || updatedSlots[0];
+          const liveStatus = resolveSiteLiveStatus({ ...site, BookingSchedule: updatedSlots });
+          const primarySlot = liveStatus.slot || updatedSlots[0];
 
-        const siteUpdatedFields = {
-          STATUS: liveStatus.status === 'Available' ? 'Available' : 'Booked',
-          status: liveStatus.status === 'Available' ? 'Available' : 'Booked',
-          Status: liveStatus.status === 'Available' ? 'Available' : 'Booked',
-          BookedBy: primarySlot ? primarySlot.client : '',
-          BookingStart: primarySlot ? primarySlot.start : '',
-          BookingEnd: primarySlot ? primarySlot.end : '',
-          BookingSchedule: updatedSlots
-        };
+          siteUpdatedFields = {
+            STATUS: liveStatus.status === 'Available' ? 'Available' : 'Booked',
+            status: liveStatus.status === 'Available' ? 'Available' : 'Booked',
+            Status: liveStatus.status === 'Available' ? 'Available' : 'Booked',
+            BookedBy: primarySlot ? primarySlot.client : item.clientName.trim(),
+            BookingStart: primarySlot ? primarySlot.start : item.startDate,
+            BookingEnd: primarySlot ? primarySlot.end : item.endDate,
+            BookingSchedule: updatedSlots
+          };
+        }
 
         updatedSitesMap.set(site, siteUpdatedFields);
 
@@ -286,12 +326,12 @@ export const StarredBulkBookingModal = ({
           sl: targetSL,
           siteName: targetLoc,
           facing: targetFacing,
-          status: 'Booked',
+          status: siteUpdatedFields.STATUS || 'Booked',
           fields: {
-            STATUS: 'Booked',
-            BookedBy: primarySlot ? primarySlot.client : item.clientName.trim(),
-            BookingStart: primarySlot ? primarySlot.start : item.startDate,
-            BookingEnd: primarySlot ? primarySlot.end : item.endDate,
+            STATUS: siteUpdatedFields.STATUS || 'Booked',
+            BookedBy: siteUpdatedFields.BookedBy || item.clientName.trim(),
+            BookingStart: siteUpdatedFields.BookingStart || item.startDate,
+            BookingEnd: siteUpdatedFields.BookingEnd || item.endDate,
             BookingSchedule: JSON.stringify(updatedSlots)
           }
         });
@@ -602,18 +642,50 @@ export const StarredBulkBookingModal = ({
                 style={{
                   display: 'flex',
                   alignItems: 'center',
-                  gap: '6px',
-                  background: '#fef2f2',
-                  border: '1px solid #fecaca',
+                  gap: '8px',
+                  background: globalOverride ? '#fef3c7' : '#fef2f2',
+                  border: globalOverride ? '1px solid #fde68a' : '1px solid #fecaca',
                   borderRadius: '8px',
-                  padding: '6px 10px',
-                  color: '#dc2626',
+                  padding: '6px 12px',
+                  color: globalOverride ? '#b45309' : '#dc2626',
                   fontSize: '0.8rem',
                   fontWeight: 600
                 }}
               >
-                <AlertTriangle size={15} />
-                {summary.conflictCount} Conflict{summary.conflictCount > 1 ? 's' : ''}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <AlertTriangle size={15} />
+                  <span>{summary.conflictCount} Conflict{summary.conflictCount > 1 ? 's' : ''}</span>
+                </div>
+                <div style={{ height: '16px', width: '1px', background: globalOverride ? '#fde68a' : '#fecaca' }} />
+                <label style={{ display: 'flex', alignItems: 'center', gap: '5px', cursor: 'pointer' }}>
+                  <input 
+                    type="checkbox"
+                    checked={globalOverride}
+                    onChange={(e) => setGlobalOverride(e.target.checked)}
+                    style={{ accentColor: '#d97706', width: '14px', height: '14px' }}
+                  />
+                  <span>⚡ Allow Override</span>
+                </label>
+                {globalOverride && (
+                  <select
+                    value={overrideMode}
+                    onChange={(e) => setOverrideMode(e.target.value)}
+                    style={{
+                      padding: '2px 6px',
+                      borderRadius: '5px',
+                      border: '1px solid #d97706',
+                      background: '#ffffff',
+                      fontSize: '0.74rem',
+                      fontWeight: 700,
+                      color: '#92400e',
+                      outline: 'none'
+                    }}
+                  >
+                    <option value="trim">✂️ Smart Trim</option>
+                    <option value="replace">🔄 Replace</option>
+                    <option value="force">⚠️ Force Overlap</option>
+                  </select>
+                )}
               </div>
             )}
           </div>
@@ -793,22 +865,43 @@ export const StarredBulkBookingModal = ({
                     {/* Status / Conflict Badge */}
                     <td style={{ padding: '10px 12px' }}>
                       {row.hasConflict ? (
-                        <span 
-                          style={{
-                            display: 'inline-flex',
-                            alignItems: 'center',
-                            gap: '4px',
-                            padding: '3px 8px',
-                            borderRadius: '6px',
-                            background: '#fee2e2',
-                            color: '#dc2626',
-                            fontSize: '0.74rem',
-                            fontWeight: 600
-                          }}
-                          title={row.conflictReason}
-                        >
-                          <AlertTriangle size={12} /> Conflict
-                        </span>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', alignItems: 'flex-start' }}>
+                          <span 
+                            style={{
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '4px',
+                              padding: '3px 8px',
+                              borderRadius: '6px',
+                              background: (row.overrideEnabled || globalOverride) ? '#fef3c7' : '#fee2e2',
+                              color: (row.overrideEnabled || globalOverride) ? '#b45309' : '#dc2626',
+                              fontSize: '0.74rem',
+                              fontWeight: 600
+                            }}
+                            title={row.conflictReason}
+                          >
+                            <AlertTriangle size={12} /> 
+                            {(row.overrideEnabled || globalOverride) 
+                              ? `Override (${overrideMode === 'trim' ? 'Trim' : overrideMode === 'replace' ? 'Replace' : 'Force'})` 
+                              : 'Conflict'}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => handleCellChange(row.id, 'overrideEnabled', !row.overrideEnabled)}
+                            style={{
+                              padding: '2px 8px',
+                              borderRadius: '4px',
+                              fontSize: '0.7rem',
+                              fontWeight: 600,
+                              cursor: 'pointer',
+                              border: (row.overrideEnabled || globalOverride) ? '1px solid #f59e0b' : '1px solid #cbd5e1',
+                              background: (row.overrideEnabled || globalOverride) ? '#fffbeb' : '#f8fafc',
+                              color: (row.overrideEnabled || globalOverride) ? '#b45309' : '#475569'
+                            }}
+                          >
+                            {(row.overrideEnabled || globalOverride) ? '⚡ Override Active' : '⚡ Enable Override'}
+                          </button>
+                        </div>
                       ) : row.clientName.trim() ? (
                         <span 
                           style={{
@@ -940,7 +1033,9 @@ export const StarredBulkBookingModal = ({
               <Calendar size={16} />
               {isSubmitting 
                 ? 'Booking in Progress...' 
-                : `Confirm & Book ${rows.length} Sites (₹${summary.totalAmount.toLocaleString('en-IN')})`}
+                : summary.overrideCount > 0
+                  ? `Confirm & Book ${summary.executableCount} Sites (${summary.overrideCount} Overridden)`
+                  : `Confirm & Book ${rows.length} Sites (₹${summary.totalAmount.toLocaleString('en-IN')})`}
             </button>
           </div>
         </div>

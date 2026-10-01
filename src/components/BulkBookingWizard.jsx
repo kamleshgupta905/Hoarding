@@ -42,6 +42,8 @@ export default function BulkBookingWizard({
   const [processingMsg, setProcessingMsg] = useState('');
   const [parsedData, setParsedData] = useState(null); // { items, clientGroups, totalSites, conflictsCount }
   const [skipConflicted, setSkipConflicted] = useState(true);
+  const [allowOverride, setAllowOverride] = useState(false);
+  const [overrideMode, setOverrideMode] = useState('trim'); // 'trim' | 'replace' | 'force'
   const [activeClientFilter, setActiveClientFilter] = useState('All');
   const [artworkMode, setArtworkMode] = useState('history_only'); // 'history_only' | 'replace_master'
 
@@ -182,8 +184,10 @@ export default function BulkBookingWizard({
       const result = await commitBulkBookings({
         bookingItems: parsedData.items,
         existingHoardings: hoardings,
-        skipConflicted,
+        skipConflicted: allowOverride ? false : skipConflicted,
         artworkMode,
+        allowOverride,
+        overrideMode,
         onProgress: (percent, message) => {
           setCommitProgress({ percent, message });
         }
@@ -230,9 +234,9 @@ export default function BulkBookingWizard({
 
   const eligibleCount = useMemo(() => {
     if (!parsedData?.items) return 0;
-    if (artworkMode === 'history_only') return parsedData.items.filter(i => i.matchedSite).length;
+    if (artworkMode === 'history_only' || allowOverride) return parsedData.items.filter(i => i.matchedSite).length;
     return parsedData.items.filter(i => i.matchedSite && (!i.hasConflict || !skipConflicted)).length;
-  }, [parsedData, skipConflicted, artworkMode]);
+  }, [parsedData, skipConflicted, artworkMode, allowOverride]);
 
   if (!isOpen) return null;
 
@@ -505,13 +509,50 @@ export default function BulkBookingWizard({
               <div className="bulk-conflict-alert-banner">
                 <AlertTriangle size={18} className="alert-icon" />
                 <div className="alert-copy">
-                  <strong>Conflict Prevention Radar Active:</strong> {parsedData.conflictsCount} site(s) clash with existing client bookings.
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px' }}>
+                    <div>
+                      <strong>Conflict Prevention Radar Active:</strong> {parsedData.conflictsCount} site(s) clash with existing client bookings.
+                    </div>
+                    {artworkMode !== 'history_only' && (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                        <label style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer', fontSize: '0.82rem', fontWeight: 600, color: allowOverride ? '#b45309' : '#475569' }}>
+                          <input 
+                            type="checkbox"
+                            checked={allowOverride}
+                            onChange={(e) => setAllowOverride(e.target.checked)}
+                            style={{ accentColor: '#d97706' }}
+                          />
+                          <span>⚡ Allow Override Conflicted Sites</span>
+                        </label>
+                        {allowOverride && (
+                          <select
+                            value={overrideMode}
+                            onChange={(e) => setOverrideMode(e.target.value)}
+                            style={{
+                              padding: '2px 8px',
+                              borderRadius: '6px',
+                              border: '1px solid #d97706',
+                              background: '#fffbeb',
+                              fontSize: '0.78rem',
+                              fontWeight: 700,
+                              color: '#92400e',
+                              outline: 'none'
+                            }}
+                          >
+                            <option value="trim">✂️ Smart Trim (Adjust Dates)</option>
+                            <option value="replace">🔄 Complete Replace (Cancel Existing)</option>
+                            <option value="force">⚠️ Force Overlap</option>
+                          </select>
+                        )}
+                      </div>
+                    )}
+                  </div>
                   {artworkMode === 'history_only' ? (
                     <div style={{ marginTop: '4px', fontSize: '0.82rem', color: '#047857', fontWeight: 600 }}>
                       ✓ History Mode Active: All {eligibleCount} matched slide photos will be safely uploaded to site execution history.
                     </div>
-                  ) : (
-                    <label className="skip-checkbox-label">
+                  ) : !allowOverride ? (
+                    <label className="skip-checkbox-label" style={{ marginTop: '4px' }}>
                       <input 
                         type="checkbox" 
                         checked={skipConflicted} 
@@ -519,6 +560,10 @@ export default function BulkBookingWizard({
                       />
                       <span>Automatically skip clashing calendar bookings & book remaining {eligibleCount} clear sites</span>
                     </label>
+                  ) : (
+                    <div style={{ marginTop: '4px', fontSize: '0.82rem', color: '#b45309', fontWeight: 600 }}>
+                      ⚡ Override Active ({overrideMode.toUpperCase()}): Clashing sites will be updated according to selected override mode.
+                    </div>
                   )}
                 </div>
               </div>

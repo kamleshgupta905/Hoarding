@@ -7,7 +7,8 @@ import {
   recordSiteHistory,
   removeDeletedHistoryUrl,
   compressImage,
-  syncToGoogleSheet
+  syncToGoogleSheet,
+  overrideSiteBookingSlot
 } from '../services/dataService.js';
 import { postDirect, getAdminSession } from '../services/secureApi.js';
 import { generateVisualLandmarksWithGemini } from '../services/aiService.js';
@@ -534,11 +535,13 @@ export const commitBulkBookings = async ({
   existingHoardings = [],
   skipConflicted = true,
   artworkMode = 'history_only',
+  allowOverride = false,
+  overrideMode = 'trim',
   onProgress = null
 }) => {
   const eligibleItems = bookingItems.filter(item => {
     if (!item.matchedSite) return false;
-    if (artworkMode !== 'history_only' && item.hasConflict && skipConflicted) return false;
+    if (artworkMode !== 'history_only' && item.hasConflict && skipConflicted && !allowOverride) return false;
     return true;
   });
 
@@ -570,36 +573,57 @@ export const commitBulkBookings = async ({
     const pFacing = targetSite.Facing || targetSite['Traffic View'] || item.facing || '';
 
     const isConflicted = Boolean(item.hasConflict);
-    const shouldSkipBookingSlot = isConflicted && skipConflicted && artworkMode !== 'history_only';
+    const shouldSkipBookingSlot = isConflicted && skipConflicted && !allowOverride && artworkMode !== 'history_only';
     const hasBookingSchedule = Boolean(item.startDate && item.endDate && !item.isPhotoOnly);
 
     // Update calendar slots if booking schedule is provided and not skipped
     if (hasBookingSchedule && !shouldSkipBookingSlot) {
-      const currentSlots = getSiteBookingSlots(targetSite);
-      const newSlot = {
-        id: `slot_bulk_${Date.now()}_${i}`,
-        client: item.clientName || 'Valued Client',
-        start: item.startDate,
-        end: item.endDate,
-        status: 'Booked',
-        amount: item.proRataRent || item.monthlyRent || 0,
-        days: item.durationDays
-      };
+      let updatedSlots = [];
+      let updatedSiteObj = null;
 
-      const updatedSlots = [...currentSlots, newSlot].sort((a, b) => String(a.start).localeCompare(String(b.start)));
-      saveSiteBookingSlots(targetSite, updatedSlots);
+      if (isConflicted && allowOverride) {
+        // ⚡ Run Override Engine for Conflicted Site
+        const overrideRes = overrideSiteBookingSlot(
+          targetSite,
+          {
+            client: item.clientName || 'Valued Client',
+            start: item.startDate,
+            end: item.endDate,
+            monthlyRent: item.monthlyRent || item.proRataRent || 0
+          },
+          item.overrideMode || overrideMode || 'trim',
+          'Bulk Booking Import Override'
+        );
+        updatedSlots = overrideRes.updatedSlots;
+        updatedSiteObj = overrideRes.updatedSite;
+      } else {
+        // Standard non-conflicted slot addition
+        const currentSlots = getSiteBookingSlots(targetSite);
+        const newSlot = {
+          id: `slot_bulk_${Date.now()}_${i}`,
+          client: item.clientName || 'Valued Client',
+          start: item.startDate,
+          end: item.endDate,
+          status: 'Booked',
+          amount: item.proRataRent || item.monthlyRent || 0,
+          days: item.durationDays
+        };
 
-      const liveStatus = resolveSiteLiveStatus({ ...targetSite, BookingSchedule: updatedSlots });
+        updatedSlots = [...currentSlots, newSlot].sort((a, b) => String(a.start).localeCompare(String(b.start)));
+        saveSiteBookingSlots(targetSite, updatedSlots);
 
-      const updatedSiteObj = {
-        ...targetSite,
-        STATUS: liveStatus.status || 'Booked',
-        Status: liveStatus.status || 'Booked',
-        BookedBy: liveStatus.client || item.clientName,
-        BookingStart: liveStatus.slot?.start || item.startDate,
-        BookingEnd: liveStatus.slot?.end || item.endDate,
-        BookingSchedule: updatedSlots
-      };
+        const liveStatus = resolveSiteLiveStatus({ ...targetSite, BookingSchedule: updatedSlots });
+
+        updatedSiteObj = {
+          ...targetSite,
+          STATUS: liveStatus.status || 'Booked',
+          Status: liveStatus.status || 'Booked',
+          BookedBy: liveStatus.client || item.clientName,
+          BookingStart: liveStatus.slot?.start || item.startDate,
+          BookingEnd: liveStatus.slot?.end || item.endDate,
+          BookingSchedule: updatedSlots
+        };
+      }
 
       if (siteKey) updatedHoardingsMap.set(siteKey, updatedSiteObj);
 

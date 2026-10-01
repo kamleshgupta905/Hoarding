@@ -1334,6 +1334,199 @@ export const saveSiteBookingSlots = (site, updatedSlots = []) => {
 };
 
 /**
+ * 📅 Adds or subtracts days from a 'YYYY-MM-DD' date string safely without timezone drift.
+ */
+export const addDaysToDateString = (dateStr, days) => {
+  if (!dateStr) return '';
+  const parts = String(dateStr).split('-');
+  if (parts.length !== 3) return dateStr;
+  const y = parseInt(parts[0], 10);
+  const m = parseInt(parts[1], 10);
+  const d = parseInt(parts[2], 10);
+  if (isNaN(y) || isNaN(m) || isNaN(d)) return dateStr;
+  const dt = new Date(Date.UTC(y, m - 1, d));
+  dt.setUTCDate(dt.getUTCDate() + days);
+  const resY = dt.getUTCFullYear();
+  const resM = String(dt.getUTCMonth() + 1).padStart(2, '0');
+  const resD = String(dt.getUTCDate()).padStart(2, '0');
+  return `${resY}-${resM}-${resD}`;
+};
+
+/**
+ * ⚡ Override Booking Engine for Single Sites and Bulk Operations.
+ * 
+ * Supports 3 Modes:
+ * - 'trim': Smart Date Adjustment. Shortens/trims conflicting slots to remove collision.
+ * - 'replace': Complete Replacement. Archives/cancels conflicting slots.
+ * - 'force': Forced Co-existence. Keeps all existing slots and appends the new slot.
+ * 
+ * @param {Object} site The master hoarding site record.
+ * @param {Object} newBookingSlot { client, start, end, id?, monthlyRent? }
+ * @param {String} mode 'trim' | 'replace' | 'force' (default: 'trim')
+ * @param {String} reason Optional user-provided reason for the override.
+ * @returns {Object} { success, updatedSlots, trimmedSlots, replacedSlots, auditEntry, updatedSite }
+ */
+export const overrideSiteBookingSlot = (site = {}, newBookingSlot = {}, mode = 'trim', reason = '') => {
+  if (!site || !newBookingSlot.start || !newBookingSlot.end) {
+    return { success: false, error: 'Invalid site or booking parameters', updatedSlots: [] };
+  }
+
+  const newStart = String(newBookingSlot.start).trim();
+  const newEnd = String(newBookingSlot.end).trim();
+  const newClient = String(newBookingSlot.client || newBookingSlot.clientName || 'Valued Client').trim();
+  const newSlotId = newBookingSlot.id || `slot-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`;
+
+  const createdNewSlot = {
+    id: newSlotId,
+    client: newClient,
+    start: newStart,
+    end: newEnd,
+    status: 'Booked',
+    monthlyRent: Number(newBookingSlot.monthlyRent || site['Rental Per Month'] || site['Avg Monthly Cost (INR)'] || 0)
+  };
+
+  const existingSlots = getSiteBookingSlots(site);
+  let updatedSlots = [];
+  const trimmedSlots = [];
+  const replacedSlots = [];
+
+  if (mode === 'force') {
+    // Mode 3: Forced Overlap (keep everything, append new slot)
+    updatedSlots = [...existingSlots, createdNewSlot];
+  } else if (mode === 'replace') {
+    // Mode 1: Complete Replacement (archive/remove all overlapping slots)
+    for (const slot of existingSlots) {
+      if (!slot.start || !slot.end) continue;
+      const s1 = String(slot.start).trim();
+      const e1 = String(slot.end).trim();
+      const overlaps = (s1 <= newEnd && e1 >= newStart);
+      if (overlaps) {
+        replacedSlots.push({ ...slot, overriddenAt: new Date().toISOString(), overrideReason: reason });
+      } else {
+        updatedSlots.push(slot);
+      }
+    }
+    updatedSlots.push(createdNewSlot);
+  } else {
+    // Mode 2: 'trim' (Smart Trim / Pre-mature Exit)
+    for (const slot of existingSlots) {
+      if (!slot.start || !slot.end) continue;
+      const s1 = String(slot.start).trim();
+      const e1 = String(slot.end).trim();
+      const overlaps = (s1 <= newEnd && e1 >= newStart);
+
+      if (!overlaps) {
+        updatedSlots.push(slot);
+        continue;
+      }
+
+      // Overlap detected: Determine trim strategy
+      if (s1 < newStart && e1 > newEnd) {
+        // Enclosing slot: New slot is in the middle of existing slot
+        // 1. Pre-segment: from s1 to (newStart - 1 day)
+        const preEnd = addDaysToDateString(newStart, -1);
+        if (s1 <= preEnd) {
+          const preSlot = { ...slot, id: `slot-${Date.now()}-pre`, end: preEnd };
+          updatedSlots.push(preSlot);
+          trimmedSlots.push({ original: slot, trimmedTo: preSlot, reason: 'Trimmed before new booking' });
+        }
+        // 2. Post-segment: from (newEnd + 1 day) to e1
+        const postStart = addDaysToDateString(newEnd, 1);
+        if (postStart <= e1) {
+          const postSlot = { ...slot, id: `slot-${Date.now()}-post`, start: postStart };
+          updatedSlots.push(postSlot);
+          trimmedSlots.push({ original: slot, trimmedTo: postSlot, reason: 'Trimmed after new booking' });
+        }
+      } else if (s1 < newStart && e1 <= newEnd) {
+        // Starts before, ends during new booking: trim end date to (newStart - 1 day)
+        const trimmedEnd = addDaysToDateString(newStart, -1);
+        if (s1 <= trimmedEnd) {
+          const trimmedSlot = { ...slot, end: trimmedEnd };
+          updatedSlots.push(trimmedSlot);
+          trimmedSlots.push({ original: slot, trimmedTo: trimmedSlot, reason: 'Trimmed end date' });
+        } else {
+          replacedSlots.push(slot);
+        }
+      } else if (s1 >= newStart && e1 > newEnd) {
+        // Starts during new booking, ends after: trim start date to (newEnd + 1 day)
+        const trimmedStart = addDaysToDateString(newEnd, 1);
+        if (trimmedStart <= e1) {
+          const trimmedSlot = { ...slot, start: trimmedStart };
+          updatedSlots.push(trimmedSlot);
+          trimmedSlots.push({ original: slot, trimmedTo: trimmedSlot, reason: 'Trimmed start date' });
+        } else {
+          replacedSlots.push(slot);
+        }
+      } else {
+        // Subcase: s1 >= newStart && e1 <= newEnd (Completely inside new booking)
+        // No remaining days outside new range; entirely replaced
+        replacedSlots.push({ ...slot, overriddenAt: new Date().toISOString(), overrideReason: reason });
+      }
+    }
+    updatedSlots.push(createdNewSlot);
+  }
+
+  // Sort updated slots chronologically
+  updatedSlots = updatedSlots.sort((a, b) => String(a.start).localeCompare(String(b.start)));
+
+  // Build Audit Action Description
+  const auditActionDesc = mode === 'replace'
+    ? `Replaced ${replacedSlots.map(s => s.client).join(', ') || 'existing booking'}`
+    : mode === 'trim'
+      ? `Trimmed ${trimmedSlots.map(t => `${t.original.client} (${t.trimmedTo.start}→${t.trimmedTo.end})`).join(', ') || 'dates'}`
+      : `Forced overlap with existing slots`;
+
+  const auditEntry = {
+    timestamp: Date.now(),
+    date: new Date().toISOString(),
+    mode,
+    newBooking: { client: newClient, start: newStart, end: newEnd },
+    action: auditActionDesc,
+    reason: reason || 'Admin Override'
+  };
+
+  // Persist updated slots to local schedule storage
+  saveSiteBookingSlots(site, updatedSlots);
+
+  // Compute live active booking status
+  const today = new Date().toISOString().split('T')[0];
+  const activeOrNext = updatedSlots.find(s => today >= s.start && today <= s.end) 
+    || updatedSlots.find(s => s.start > today) 
+    || updatedSlots[0];
+
+  const statusStr = activeOrNext ? 'Booked' : 'Available';
+  const bookedByStr = activeOrNext ? activeOrNext.client : '';
+  const bookingStartStr = activeOrNext ? activeOrNext.start : '';
+  const bookingEndStr = activeOrNext ? activeOrNext.end : '';
+
+  recordSiteBooking(site, {
+    STATUS: statusStr,
+    BookedBy: bookedByStr,
+    BookingStart: bookingStartStr,
+    BookingEnd: bookingEndStr
+  });
+
+  const updatedSite = {
+    ...site,
+    STATUS: statusStr,
+    BookedBy: bookedByStr,
+    BookingStart: bookingStartStr,
+    BookingEnd: bookingEndStr,
+    BookingSchedule: updatedSlots
+  };
+
+  return {
+    success: true,
+    mode,
+    updatedSlots,
+    trimmedSlots,
+    replacedSlots,
+    auditEntry,
+    updatedSite
+  };
+};
+
+/**
  * 🚀 FETCH LIVE DATA
  * Syncs with the spreadsheet and maps columns precisely.
  */

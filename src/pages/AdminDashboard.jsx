@@ -13,7 +13,7 @@ import {
     Star, FileSpreadsheet, Presentation, Loader2, AlertTriangle, Info, ArrowUpCircle
 } from 'lucide-react';
 import { analyzeHoardingImage, extractSiteCoordinates, generateVisualLandmarksWithGemini } from '../services/aiService';
-import { fetchHoardings, compressImage, syncToGoogleSheet, exportProposalExcel, PROPOSAL_COLUMNS, getImageUrl, downloadHoardingImage, fetchStaffUploads, reviewStaffPhoto, detectStaffPhotoOrientation, fetchSheetGrid, saveSheetGrid, addDeletedSite, addDeletedSites, parseHistoryString, saveLocalBooking, clearLocalBooking, recordSiteBooking, removeSiteBooking, getSiteBookingSlots, checkBookingConflict, calculateProRataRental, resolveSiteLiveStatus, saveSiteBookingSlots, recordSiteHistory, getLocalHistory, getDirectDriveLink, parseCellImageUrls, addDeletedHistoryUrl, isHistoryUrlDeleted, removeSiteHistory, getExpiringSites, clearAllLocalBookingsAndCaches, clearLocalBookingsForCity, clearLocalBookingsForSite, normalizeCityName } from '../services/dataService';
+import { fetchHoardings, compressImage, syncToGoogleSheet, exportProposalExcel, PROPOSAL_COLUMNS, getImageUrl, downloadHoardingImage, fetchStaffUploads, reviewStaffPhoto, detectStaffPhotoOrientation, fetchSheetGrid, saveSheetGrid, addDeletedSite, addDeletedSites, parseHistoryString, saveLocalBooking, clearLocalBooking, recordSiteBooking, removeSiteBooking, getSiteBookingSlots, checkBookingConflict, calculateProRataRental, resolveSiteLiveStatus, saveSiteBookingSlots, recordSiteHistory, getLocalHistory, getDirectDriveLink, parseCellImageUrls, addDeletedHistoryUrl, isHistoryUrlDeleted, removeSiteHistory, getExpiringSites, clearAllLocalBookingsAndCaches, clearLocalBookingsForCity, clearLocalBookingsForSite, normalizeCityName, overrideSiteBookingSlot } from '../services/dataService';
 import { generateMasterMediaPlanPptx } from '../services/presentationService';
 import ImageLightbox from '../components/ImageLightbox';
 import DriveImage from '../components/DriveImage';
@@ -3310,8 +3310,8 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
 
         const existingSlots = getSiteBookingSlots(site);
         const conflict = checkBookingConflict(existingSlots, startDate, endDate);
-        if (conflict.conflict) {
-            showToast(`Cannot book: ${conflict.reason}`, "error");
+        if (conflict.conflict && !quickBookingTarget.isOverride) {
+            showToast(`Cannot book: ${conflict.reason}. Enable Override to proceed.`, "error");
             return;
         }
 
@@ -3323,35 +3323,63 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
         const targetLat = String(targetSite.Latitude || '').trim();
         const targetLng = String(targetSite.Longitude || '').trim();
 
-        const proRata = calculateProRataRental(targetSite['Rental Per Month'] || targetSite['Avg Monthly Cost (INR)'] || 0, startDate, endDate);
+        let updatedSlots = [];
+        let bookingUpdates = null;
 
-        const newSlot = {
-            id: 'slot-' + Date.now(),
-            client: clientName.trim(),
-            start: startDate,
-            end: endDate,
-            days: proRata.days,
-            amount: proRata.total,
-            status: 'Booked',
-            createdAt: new Date().toISOString()
-        };
+        if (conflict.conflict && quickBookingTarget.isOverride) {
+            // ⚡ Execute Override Engine
+            const overrideRes = overrideSiteBookingSlot(
+                targetSite,
+                {
+                    client: clientName.trim(),
+                    start: startDate,
+                    end: endDate,
+                    monthlyRent: targetSite['Rental Per Month'] || targetSite['Avg Monthly Cost (INR)'] || 0
+                },
+                quickBookingTarget.overrideMode || 'trim',
+                quickBookingTarget.overrideReason || 'Quick Booking Override'
+            );
+            updatedSlots = overrideRes.updatedSlots;
+            bookingUpdates = {
+                STATUS: overrideRes.updatedSite.STATUS,
+                status: overrideRes.updatedSite.STATUS,
+                Status: overrideRes.updatedSite.STATUS,
+                BookedBy: overrideRes.updatedSite.BookedBy,
+                BookingStart: overrideRes.updatedSite.BookingStart,
+                BookingEnd: overrideRes.updatedSite.BookingEnd,
+                BookingSchedule: updatedSlots
+            };
+        } else {
+            const proRata = calculateProRataRental(targetSite['Rental Per Month'] || targetSite['Avg Monthly Cost (INR)'] || 0, startDate, endDate);
 
-        const updatedSlots = [...existingSlots, newSlot].sort((a, b) => a.start.localeCompare(b.start));
+            const newSlot = {
+                id: 'slot-' + Date.now(),
+                client: clientName.trim(),
+                start: startDate,
+                end: endDate,
+                days: proRata.days,
+                amount: proRata.total,
+                status: 'Booked',
+                createdAt: new Date().toISOString()
+            };
 
-        saveSiteBookingSlots(targetSite, updatedSlots);
+            updatedSlots = [...existingSlots, newSlot].sort((a, b) => a.start.localeCompare(b.start));
 
-        const liveStatus = resolveSiteLiveStatus({ ...targetSite, BookingSchedule: updatedSlots });
-        const primarySlot = liveStatus.slot || updatedSlots[0];
+            saveSiteBookingSlots(targetSite, updatedSlots);
 
-        const bookingUpdates = {
-            STATUS: liveStatus.status === 'Available' ? 'Available' : 'Booked',
-            status: liveStatus.status === 'Available' ? 'Available' : 'Booked',
-            Status: liveStatus.status === 'Available' ? 'Available' : 'Booked',
-            BookedBy: primarySlot ? primarySlot.client : '',
-            BookingStart: primarySlot ? primarySlot.start : '',
-            BookingEnd: primarySlot ? primarySlot.end : '',
-            BookingSchedule: updatedSlots
-        };
+            const liveStatus = resolveSiteLiveStatus({ ...targetSite, BookingSchedule: updatedSlots });
+            const primarySlot = liveStatus.slot || updatedSlots[0];
+
+            bookingUpdates = {
+                STATUS: liveStatus.status === 'Available' ? 'Available' : 'Booked',
+                status: liveStatus.status === 'Available' ? 'Available' : 'Booked',
+                Status: liveStatus.status === 'Available' ? 'Available' : 'Booked',
+                BookedBy: primarySlot ? primarySlot.client : '',
+                BookingStart: primarySlot ? primarySlot.start : '',
+                BookingEnd: primarySlot ? primarySlot.end : '',
+                BookingSchedule: updatedSlots
+            };
+        }
 
         // 1. Instantly update React state & cache with precision targeting
         setHoardings(prev => {
@@ -3774,6 +3802,20 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                             status: 'Booked'
                         }].sort((a, b) => a.start.localeCompare(b.start));
                         saveSiteBookingSlots(targetSite, existingSlots);
+                    } else if (formData.isOverride) {
+                        // ⚡ Execute Override for Single Site
+                        const overrideRes = overrideSiteBookingSlot(
+                            targetSite,
+                            {
+                                client: formData.BookedBy.trim(),
+                                start: formData.BookingStart,
+                                end: formData.BookingEnd,
+                                monthlyRent: formData['Rental Per Month'] || targetSite['Rental Per Month']
+                            },
+                            formData.overrideMode || 'trim',
+                            formData.overrideReason || 'Admin Edit Modal Override'
+                        );
+                        existingSlots = overrideRes.updatedSlots;
                     }
                 }
                 recordSiteBooking(targetSite, fullUpdatedFields);
@@ -5839,6 +5881,78 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                                     className="animate-in"
                                                 />
                                             </div>
+                                            {(() => {
+                                                if (!selectedHoarding || !formData.BookingStart || !formData.BookingEnd) return null;
+                                                const siteSlots = getSiteBookingSlots(selectedHoarding);
+                                                const editConflict = checkBookingConflict(siteSlots, formData.BookingStart, formData.BookingEnd);
+                                                if (!editConflict.conflict) return null;
+
+                                                return (
+                                                    <div style={{
+                                                        gridColumn: '1 / -1',
+                                                        padding: '12px 14px',
+                                                        background: '#fffbeb',
+                                                        border: '1.5px solid #f59e0b',
+                                                        borderRadius: '10px',
+                                                        marginTop: '8px',
+                                                        marginBottom: '4px'
+                                                    }}>
+                                                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#b45309', fontWeight: 700, fontSize: '0.84rem' }}>
+                                                            <AlertTriangle size={16} />
+                                                            <span>Date Collision Detected: {editConflict.reason}</span>
+                                                        </div>
+                                                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px', alignItems: 'center', marginTop: '8px' }}>
+                                                            <label style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer', fontSize: '0.82rem', fontWeight: 700, color: '#92400e' }}>
+                                                                <input 
+                                                                    type="checkbox"
+                                                                    checked={Boolean(formData.isOverride)}
+                                                                    onChange={(e) => setFormData({ ...formData, isOverride: e.target.checked, overrideMode: formData.overrideMode || 'trim' })}
+                                                                    style={{ accentColor: '#d97706', width: '15px', height: '15px' }}
+                                                                />
+                                                                <span>⚡ Allow Override Booking</span>
+                                                            </label>
+                                                            {formData.isOverride && (
+                                                                <select
+                                                                    value={formData.overrideMode || 'trim'}
+                                                                    onChange={(e) => setFormData({ ...formData, overrideMode: e.target.value })}
+                                                                    style={{
+                                                                        padding: '3px 8px',
+                                                                        borderRadius: '6px',
+                                                                        border: '1px solid #d97706',
+                                                                        background: '#ffffff',
+                                                                        color: '#92400e',
+                                                                        fontSize: '0.8rem',
+                                                                        fontWeight: 700,
+                                                                        outline: 'none'
+                                                                    }}
+                                                                >
+                                                                    <option value="trim">✂️ Smart Trim (Adjust Dates)</option>
+                                                                    <option value="replace">🔄 Complete Replace (Cancel Existing)</option>
+                                                                    <option value="force">⚠️ Force Overlap</option>
+                                                                </select>
+                                                            )}
+                                                        </div>
+                                                        {formData.isOverride && (
+                                                            <div style={{ marginTop: '8px' }}>
+                                                                <input 
+                                                                    type="text"
+                                                                    placeholder="Reason for override (e.g. VIP client, early exit)..."
+                                                                    value={formData.overrideReason || ''}
+                                                                    onChange={(e) => setFormData({ ...formData, overrideReason: e.target.value })}
+                                                                    style={{
+                                                                        width: '100%',
+                                                                        padding: '6px 10px',
+                                                                        borderRadius: '6px',
+                                                                        border: '1px solid #cbd5e1',
+                                                                        fontSize: '0.8rem',
+                                                                        background: '#ffffff'
+                                                                    }}
+                                                                />
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                );
+                                            })()}
                                         </>
                                     )}
                                     </div>
@@ -10785,21 +10899,89 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                         </div>
                                     </div>
 
-                                    {/* ⚠️ Collision Error Alert */}
+                                    {/* ⚠️ Collision Error Alert / ⚡ Override Controls */}
                                     {conflict.conflict && (
-                                        <div style={{ background: '#fef2f2', border: '1px solid #fca5a5', borderRadius: '10px', padding: '10px 12px', display: 'flex', alignItems: 'flex-start', gap: '10px', color: '#991b1b' }}>
-                                            <div style={{ fontSize: '1.1rem', lineHeight: 1 }}>🚫</div>
-                                            <div>
-                                                <div style={{ fontWeight: 800, fontSize: '0.82rem' }}>Slot Collision Detected!</div>
-                                                <div style={{ fontSize: '0.76rem', marginTop: '2px', color: '#b91c1c' }}>
-                                                    {conflict.reason}. You can book dates before or after this reservation.
+                                        <div style={{ 
+                                            background: quickBookingTarget.isOverride ? '#fffbeb' : '#fef2f2', 
+                                            border: `1px solid ${quickBookingTarget.isOverride ? '#fde68a' : '#fca5a5'}`, 
+                                            borderRadius: '10px', 
+                                            padding: '10px 12px', 
+                                            color: quickBookingTarget.isOverride ? '#92400e' : '#991b1b' 
+                                        }}>
+                                            <div style={{ display: 'flex', alignItems: 'flex-start', gap: '10px' }}>
+                                                <div style={{ fontSize: '1.1rem', lineHeight: 1 }}>{quickBookingTarget.isOverride ? '⚡' : '🚫'}</div>
+                                                <div style={{ flex: 1 }}>
+                                                    <div style={{ fontWeight: 800, fontSize: '0.82rem' }}>
+                                                        {quickBookingTarget.isOverride ? 'Override Booking Active' : 'Slot Collision Detected!'}
+                                                    </div>
+                                                    <div style={{ fontSize: '0.76rem', marginTop: '2px', color: quickBookingTarget.isOverride ? '#b45309' : '#b91c1c' }}>
+                                                        {conflict.reason}. {quickBookingTarget.isOverride ? 'Existing slots will be adjusted according to your override mode.' : 'You can enable override or select alternate dates.'}
+                                                    </div>
+
+                                                    {/* Override Controls */}
+                                                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px', alignItems: 'center', marginTop: '8px' }}>
+                                                        <label style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer', fontSize: '0.82rem', fontWeight: 700, color: '#92400e' }}>
+                                                            <input 
+                                                                type="checkbox"
+                                                                checked={Boolean(quickBookingTarget.isOverride)}
+                                                                onChange={(e) => setQuickBookingTarget({ 
+                                                                    ...quickBookingTarget, 
+                                                                    isOverride: e.target.checked, 
+                                                                    overrideMode: quickBookingTarget.overrideMode || 'trim' 
+                                                                })}
+                                                                style={{ accentColor: '#d97706', width: '15px', height: '15px' }}
+                                                            />
+                                                            <span>⚡ Enable Override Booking</span>
+                                                        </label>
+
+                                                        {quickBookingTarget.isOverride && (
+                                                            <select
+                                                                value={quickBookingTarget.overrideMode || 'trim'}
+                                                                onChange={(e) => setQuickBookingTarget({ ...quickBookingTarget, overrideMode: e.target.value })}
+                                                                style={{
+                                                                    padding: '3px 8px',
+                                                                    borderRadius: '6px',
+                                                                    border: '1px solid #d97706',
+                                                                    background: '#ffffff',
+                                                                    color: '#92400e',
+                                                                    fontSize: '0.8rem',
+                                                                    fontWeight: 700,
+                                                                    outline: 'none'
+                                                                }}
+                                                            >
+                                                                <option value="trim">✂️ Smart Trim (Adjust Dates)</option>
+                                                                <option value="replace">🔄 Complete Replace (Cancel Existing)</option>
+                                                                <option value="force">⚠️ Force Overlap</option>
+                                                            </select>
+                                                        )}
+                                                    </div>
+
+                                                    {quickBookingTarget.isOverride && (
+                                                        <div style={{ marginTop: '8px' }}>
+                                                            <input 
+                                                                type="text"
+                                                                placeholder="Reason for override (e.g. VIP client, priority booking)..."
+                                                                value={quickBookingTarget.overrideReason || ''}
+                                                                onChange={(e) => setQuickBookingTarget({ ...quickBookingTarget, overrideReason: e.target.value })}
+                                                                style={{
+                                                                    width: '100%',
+                                                                    padding: '6px 10px',
+                                                                    borderRadius: '6px',
+                                                                    border: '1px solid #fcd34d',
+                                                                    fontSize: '0.8rem',
+                                                                    background: '#ffffff',
+                                                                    color: '#1e293b'
+                                                                }}
+                                                            />
+                                                        </div>
+                                                    )}
                                                 </div>
                                             </div>
                                         </div>
                                     )}
 
                                     {/* 💰 Pro-Rata Rental Breakdown */}
-                                    {!conflict.conflict && quickBookingTarget.startDate && quickBookingTarget.endDate && (
+                                    {(!conflict.conflict || quickBookingTarget.isOverride) && quickBookingTarget.startDate && quickBookingTarget.endDate && (
                                         <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: '10px', padding: '10px 14px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                                             <div>
                                                 <div style={{ fontSize: '0.82rem', fontWeight: 700, color: '#166534' }}>
@@ -10830,21 +11012,21 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                         </button>
                                         <button
                                             type="submit"
-                                            disabled={conflict.conflict || !quickBookingTarget.clientName.trim()}
+                                            disabled={(!quickBookingTarget.isOverride && conflict.conflict) || !quickBookingTarget.clientName.trim()}
                                             style={{ 
                                                 padding: '10px 22px', 
                                                 borderRadius: '10px', 
                                                 border: 'none', 
-                                                background: conflict.conflict ? '#94a3b8' : '#ef4444', 
+                                                background: (!quickBookingTarget.isOverride && conflict.conflict) ? '#94a3b8' : quickBookingTarget.isOverride ? '#d97706' : '#ef4444', 
                                                 color: '#ffffff', 
                                                 fontSize: '0.86rem', 
                                                 fontWeight: 800, 
-                                                cursor: conflict.conflict ? 'not-allowed' : 'pointer', 
-                                                boxShadow: conflict.conflict ? 'none' : '0 4px 14px rgba(239, 68, 68, 0.35)',
-                                                opacity: conflict.conflict ? 0.7 : 1
+                                                cursor: (!quickBookingTarget.isOverride && conflict.conflict) ? 'not-allowed' : 'pointer', 
+                                                boxShadow: (!quickBookingTarget.isOverride && conflict.conflict) ? 'none' : quickBookingTarget.isOverride ? '0 4px 14px rgba(217, 119, 6, 0.35)' : '0 4px 14px rgba(239, 68, 68, 0.35)',
+                                                opacity: (!quickBookingTarget.isOverride && conflict.conflict) ? 0.7 : 1
                                             }}
                                         >
-                                            {conflict.conflict ? 'Cannot Book (Date Clash)' : 'Confirm Booking'}
+                                            {conflict.conflict && quickBookingTarget.isOverride ? '⚡ Confirm Override Booking' : conflict.conflict ? 'Cannot Book (Date Clash)' : 'Confirm Booking'}
                                         </button>
                                     </div>
                                 </form>
