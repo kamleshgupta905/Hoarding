@@ -1,15 +1,16 @@
 {
   "features": [
     "Site photos load reliably from Google Drive, with automatic fallbacks",
+    "Production-ready Jarvis Voice & Desktop Copilot with sub-second action execution and crash fixes",
     "Google Sheet is the single record — stale browser copies no longer reappear",
     "Bulk campaign artwork and booking details now save to the sheet correctly",
     "Upload an Excel sheet and a PPT deck together in one step",
     "Large presentations parse without exhausting memory",
     "Over-the-air automatic updates for Desktop, Web, and Mobile apps"
   ],
-  "version": "1.8.10",
-  "buildTimestamp": 1790842689194,
-  "buildDate": "2026-10-01T08:18:09.194Z",
-  "releaseTag": "v1.8.10",
+  "version": "1.8.11",
+  "buildTimestamp": 1790876389800,
+  "buildDate": "2026-10-01T17:39:49.800Z",
+  "releaseTag": "v1.8.11",
   "apkUrl": "https://github.com/kamleshgupta905/Hoarding/releases/download/staff-apk-latest/heera-staff-camera.apk"
 }

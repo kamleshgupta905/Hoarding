@@ -30,5 +30,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
         const handler = (_event, value) => callback(value);
         ipcRenderer.on('pptx-progress', handler);
         return () => ipcRenderer.removeListener('pptx-progress', handler);
-    }
+    },
+    onToggleJarvis: (callback) => {
+        const handler = () => callback();
+        ipcRenderer.on('toggle-jarvis', handler);
+        return () => ipcRenderer.removeListener('toggle-jarvis', handler);
+    },
+    openLogFolder: () => ipcRenderer.invoke('open-log-folder'),
+    logEvent: (level, message, meta) => ipcRenderer.send('log-jarvis-event', { level, message, meta })
 });

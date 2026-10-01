@@ -15,14 +15,32 @@ describe('Voice Action Engine (Offline NLP & Date Resolver)', () => {
     expect(res.action).toBe('RESET_FILTERS');
   });
 
-  it('parses tab switch commands for clients and analytics', () => {
+  it('parses tab switch commands for clients and dashboard report', () => {
     const resClients = parseOfflineVoiceCommand('client campaigns dikhao');
     expect(resClients.action).toBe('SWITCH_TAB');
     expect(resClients.tab).toBe('clients');
 
     const resAnalytics = parseOfflineVoiceCommand('analytics report kholo');
     expect(resAnalytics.action).toBe('SWITCH_TAB');
-    expect(resAnalytics.tab).toBe('analytics');
+    expect(resAnalytics.tab).toBe('dashboard');
+  });
+
+  it('does not hijack questions in parseOfflineVoiceCommand', () => {
+    const resQuestion = parseOfflineVoiceCommand('hoarding ka rate kya hai');
+    expect(resQuestion).toBeNull();
+
+    const resHelp = parseOfflineVoiceCommand('mujhe madad chahiye');
+    expect(resHelp).toBeNull();
+  });
+
+  it('resolves relative dates properly beyond 2029 and Hinglish months', () => {
+    const res2030 = resolveRelativeDates('2032-05-01', '2032-05-31');
+    expect(res2030.startDate).toBe('2032-05-01');
+    expect(res2030.endDate).toBe('2032-05-31');
+
+    const resHinglish = resolveRelativeDates('1 November se 30 November');
+    expect(resHinglish.startDate).toMatch(/^\d{4}-11-01$/);
+    expect(resHinglish.endDate).toMatch(/^\d{4}-11-30$/);
   });
 
   it('parses dimension and location search commands (e.g. 40x10 at Begum Bridge)', () => {

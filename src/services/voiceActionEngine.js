@@ -14,11 +14,8 @@ const GROQ_ENDPOINT = 'https://api.groq.com/openai/v1/chat/completions';
 /**
  * 📅 Formats date helper for relative dates (e.g. today, tomorrow, next month)
  */
-export const resolveRelativeDates = (startPhrase, endPhrase) => {
+export const resolveRelativeDates = (startPhrase = '', endPhrase = '') => {
   const now = new Date();
-  const y = now.getFullYear();
-  const m = now.getMonth();
-  const d = now.getDate();
 
   const toYmd = (date) => {
     const yStr = date.getFullYear();
@@ -28,18 +25,89 @@ export const resolveRelativeDates = (startPhrase, endPhrase) => {
   };
 
   let startDate = toYmd(now);
-  // Default end date is 30 days from start
   const defaultEnd = new Date(now);
   defaultEnd.setDate(defaultEnd.getDate() + 30);
   let endDate = toYmd(defaultEnd);
 
-  // If specific YYYY-MM-DD provided in phrase
-  const dateRegex = /\b(202[4-9]-\d{2}-\d{2})\b/;
-  const startMatch = String(startPhrase || '').match(dateRegex);
-  if (startMatch) startDate = startMatch[1];
+  const combined = `${startPhrase} ${endPhrase}`.toLowerCase();
 
-  const endMatch = String(endPhrase || '').match(dateRegex);
-  if (endMatch) endDate = endMatch[1];
+  // 1. Literal YYYY-MM-DD (supports 2024-2039+)
+  const dateRegex = /\b(20\d{2}-\d{2}-\d{2})\b/g;
+  const directMatches = combined.match(dateRegex);
+  if (directMatches && directMatches.length >= 2) {
+    startDate = directMatches[0];
+    endDate = directMatches[1];
+    return { startDate, endDate };
+  } else if (directMatches && directMatches.length === 1) {
+    startDate = directMatches[0];
+    const sDateObj = new Date(startDate);
+    sDateObj.setDate(sDateObj.getDate() + 30);
+    endDate = toYmd(sDateObj);
+    return { startDate, endDate };
+  }
+
+  // 2. Month name mappings (English & Hinglish)
+  const monthMap = {
+    jan: 0, january: 0, janvari: 0,
+    feb: 1, february: 1, farvari: 1,
+    mar: 2, march: 2,
+    apr: 3, april: 3, aprail: 3,
+    may: 4, mai: 4,
+    jun: 5, june: 5,
+    jul: 6, july: 6,
+    aug: 7, august: 7, agast: 7,
+    sep: 8, sept: 8, september: 8, sitambar: 8,
+    oct: 9, october: 9, aktubar: 9,
+    nov: 10, november: 10, navambar: 10,
+    dec: 11, december: 11, disambar: 11
+  };
+
+  const monthPattern = /(?:(\d{1,2})\s+)?(jan(?:uary|vari)?|feb(?:ruary|vari)?|mar(?:ch)?|apr(?:il|ail)?|may|mai|jun(?:e)?|jul(?:y)?|aug(?:ust|ast)?|sep(?:t(?:ember)?|itambar)?|oct(?:ober)?|aktubar|nov(?:ember|ambar)?|dec(?:ember|isambar)?)(?:\s+(\d{4}))?/gi;
+  const monthMatches = [...combined.matchAll(monthPattern)];
+
+  if (monthMatches.length >= 2) {
+    const m1 = monthMatches[0];
+    const m2 = monthMatches[1];
+
+    const d1 = parseInt(m1[1] || '1', 10);
+    const mon1 = monthMap[m1[2].toLowerCase()];
+    const yr1 = parseInt(m1[3] || String(now.getFullYear()), 10);
+
+    const d2 = parseInt(m2[1] || '30', 10);
+    const mon2 = monthMap[m2[2].toLowerCase()];
+    const yr2 = parseInt(m2[3] || String(yr1), 10);
+
+    startDate = toYmd(new Date(yr1, mon1, d1));
+    endDate = toYmd(new Date(yr2, mon2, d2));
+    return { startDate, endDate };
+  } else if (monthMatches.length === 1) {
+    const m = monthMatches[0];
+    const d = parseInt(m[1] || '1', 10);
+    const mon = monthMap[m[2].toLowerCase()];
+    const yr = parseInt(m[3] || String(now.getFullYear()), 10);
+
+    const s = new Date(yr, mon, d);
+    const e = new Date(yr, mon + 1, 0);
+    startDate = toYmd(s);
+    endDate = toYmd(e);
+    return { startDate, endDate };
+  }
+
+  // 3. "agle mahine" / "next month"
+  if (combined.includes('agle mahine') || combined.includes('next month')) {
+    const nextMonthStart = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+    const nextMonthEnd = new Date(now.getFullYear(), now.getMonth() + 2, 0);
+    return { startDate: toYmd(nextMonthStart), endDate: toYmd(nextMonthEnd) };
+  }
+
+  // 4. "15 din" / "15 days"
+  const daysMatch = combined.match(/(\d+)\s*(?:din|days)\b/);
+  if (daysMatch) {
+    const days = parseInt(daysMatch[1], 10);
+    const end = new Date(now);
+    end.setDate(end.getDate() + days);
+    return { startDate: toYmd(now), endDate: toYmd(end) };
+  }
 
   return { startDate, endDate };
 };
@@ -47,9 +115,18 @@ export const resolveRelativeDates = (startPhrase, endPhrase) => {
 /**
  * ⚡ Offline Local Pattern Matcher (Ensures instant execution even without API keys or internet)
  */
-export const parseOfflineVoiceCommand = (rawText = '', context = {}) => {
+export const parseOfflineVoiceCommand = (rawText = '', _context = {}) => {
   const text = String(rawText || '').trim().toLowerCase();
   if (!text) return null;
+
+  // Question guard: Do not hijack informational questions, rate queries, or conversational greetings!
+  const isQuestion = /^(kya|kaise|kitna|kitne|kitni|kyun|kahan|kaun|batao|bataiye|rate|rates|price|cost|kharidna|madad|help|who|what|when|where|why|how)\b/i.test(text) ||
+                     text.includes('?') || text.includes('kya hai') || text.includes('kaisa hai') || text.includes('kitna hai') || text.includes('rate kya');
+  const hasActionVerb = /\b(dikhao|filter|saaf|reset|export|download|kholo|switch|book|allot|reserve)\b/i.test(text);
+
+  if (isQuestion && !hasActionVerb) {
+    return null; // Fall through to conversational AI / LLM!
+  }
 
   // 1. Reset Filters
   if (text.includes('reset') || text.includes('saaf karo') || text.includes('clear filter') || text.includes('hatao filter')) {
@@ -59,43 +136,53 @@ export const parseOfflineVoiceCommand = (rawText = '', context = {}) => {
     };
   }
 
-  // 2. Export Commands (check before tab keywords like "campaign")
-  if (text.includes('ppt') || text.includes('powerpoint') || text.includes('proposal') || (text.includes('download') && text.includes('ppt'))) {
-    return {
-      action: 'EXPORT_PPT',
-      speech: 'Campaign PPT proposal export shuru kar diya hai.'
-    };
-  }
-  if (text.includes('excel') || text.includes('sheet download') || text.includes('csv')) {
-    return {
-      action: 'EXPORT_EXCEL',
-      speech: 'Excel sheet export shuru kar diya hai.'
-    };
+  // 2. Export Commands (guard against "import")
+  if (!text.includes('import')) {
+    const isPptExport = (text.includes('ppt') || text.includes('powerpoint') || text.includes('proposal')) &&
+                        (text.includes('download') || text.includes('export') || text.includes('banao') || text.includes('generate'));
+    if (isPptExport) {
+      return {
+        action: 'EXPORT_PPT',
+        speech: 'Campaign PPT proposal export shuru kar diya hai.'
+      };
+    }
+    const isExcelExport = (text.includes('excel') || text.includes('sheet download') || text.includes('csv')) &&
+                          (text.includes('download') || text.includes('export') || text.includes('karo'));
+    if (isExcelExport) {
+      return {
+        action: 'EXPORT_EXCEL',
+        speech: 'Excel sheet export shuru kar diya hai.'
+      };
+    }
   }
 
-  // 3. Booking Commands (match booking verb with word boundary so "bookings" doesn't falsely trigger)
-  const isBookCmd = /\b(book|reserve|allot|kardo\s+book|booking\s+karo)\b/i.test(text);
+  // 3. Booking Commands (match booking verb with word boundary)
+  const isBookCmd = /\b(book|reserve|allot|kardo\s+book|booking\s+karo)\b/i.test(text) && !text.includes('booking list') && !text.includes('bookings dikhao');
   if (isBookCmd) {
     let clientName = 'Valued Client';
     const hindiClientMatch = text.match(/([a-zA-Z0-9\s]+?)\s+(?:ke\s+liye|ko|ka\s+booking)\b/i);
     const engClientMatch = text.match(/(?:for|client|party)\s+([a-zA-Z0-9\s]+?)(?:\s+(?:at|on|site|from)|$)/i);
-    if (hindiClientMatch && hindiClientMatch[1]) {
+    if (hindiClientMatch && hindiClientMatch[1] && !hindiClientMatch[1].includes('agle mahine') && !hindiClientMatch[1].includes('next month')) {
       clientName = hindiClientMatch[1].trim();
-    } else if (engClientMatch && engClientMatch[1]) {
+    } else if (engClientMatch && engClientMatch[1] && !engClientMatch[1].includes('next month') && !engClientMatch[1].includes('agle mahine')) {
       clientName = engClientMatch[1].trim();
     }
 
-    let siteQuery = '';
-    const siteMatch = text.match(/(?:at|pe|par|site|hoarding)\s+([a-zA-Z0-9\s]+?)(?:\s+(?:for|liye|book|from|se)|$)/i);
-    if (siteMatch && siteMatch[1]) {
-      siteQuery = siteMatch[1].trim();
-    }
+    // Extract site without swallowing dates
+    let textForSite = text
+      .replace(new RegExp(`\\b${clientName}\\b`, 'gi'), '')
+      .replace(/(?:ke\s+liye|for|client|party)\b/gi, '')
+      .replace(/\b\d{1,2}\s+(?:jan(?:uary|vari)?|feb(?:ruary|vari)?|mar(?:ch)?|apr(?:il|ail)?|may|mai|jun(?:e)?|jul(?:y)?|aug(?:ust|ast)?|sep(?:t(?:ember)?|itambar)?|oct(?:ober)?|aktubar|nov(?:ember|ambar)?|dec(?:ember|isambar)?)(?:\s+\d{4})?\b/gi, '')
+      .replace(/(?:se\s+\d{1,2}\s+[a-z]+|tak|to)\b/gi, '')
+      .replace(/\b(?:agle\s+mahine|next\s+month|book|kardo|karo|override|replace|force|mode|me|pe|par|at|site|hoarding)\b/gi, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
 
-    const { startDate, endDate } = resolveRelativeDates();
+    const { startDate, endDate } = resolveRelativeDates(text, text);
 
     return {
       action: 'QUICK_BOOK',
-      siteQuery: siteQuery || text,
+      siteQuery: textForSite || text,
       clientName,
       startDate,
       endDate,
@@ -113,7 +200,45 @@ export const parseOfflineVoiceCommand = (rawText = '', context = {}) => {
     };
   }
 
-  // 5. Tab Switches
+  // 5. Inventory Searching & Filtering (MUST BE BEFORE GENERAL TAB SWITCHES)
+  let status = 'All';
+  if (text.includes('available') || text.includes('khali') || text.includes('free')) status = 'Available';
+  if (text.includes('booked') || text.includes('bhari') || text.includes('occupied')) status = 'Booked';
+
+  const dimMatch = text.match(/\b(\d{1,3}\s*[*xX×]\s*\d{1,3})\b/);
+  const dimensions = dimMatch ? dimMatch[1].replace(/\s+/g, '') : null;
+
+  let city = null;
+  const knownCities = ['meerut', 'delhi', 'noida', 'ghaziabad', 'hapur', 'muzaffarnagar', 'modinagar', 'dehradun'];
+  for (const c of knownCities) {
+    if (text.includes(c)) {
+      city = c.charAt(0).toUpperCase() + c.slice(1);
+      break;
+    }
+  }
+
+  let media = null;
+  if (text.includes('unipole')) media = 'Unipole';
+  if (text.includes('gantry')) media = 'Gantry';
+  if (text.includes('billboard')) media = 'Billboard';
+
+  const isExplicitSearch = text.includes('dikhao') || text.includes('search') || text.includes('filter') ||
+                           text.includes('show') || text.includes('dikhayein') || text.includes('dhoondo');
+
+  if (isExplicitSearch && (Boolean(dimensions) || Boolean(city) || status !== 'All' || Boolean(media) || text.includes('site') || text.includes('hoarding'))) {
+    const rawSearch = siteQueryExtract(text);
+    return {
+      action: 'FILTER_INVENTORY',
+      search: rawSearch || dimensions || '',
+      city,
+      dimensions,
+      status,
+      media,
+      speech: `Aapke filter ke mutabik hoardings screen par dikha diye hain.`
+    };
+  }
+
+  // 6. Tab Switches (ONLY AFTER FILTER CHECKS)
   if (text.includes('client') || text.includes('campaign') || text.includes('grahak') || text.includes('booking list')) {
     return {
       action: 'SWITCH_TAB',
@@ -128,60 +253,18 @@ export const parseOfflineVoiceCommand = (rawText = '', context = {}) => {
       speech: 'Inventory view open kar diya hai.'
     };
   }
-  if (text.includes('analytics') || text.includes('report') || text.includes('stat') || text.includes('graph')) {
+  if (text.includes('dashboard') || text.includes('analytics') || text.includes('report') || text.includes('stat') || text.includes('graph')) {
     return {
       action: 'SWITCH_TAB',
-      tab: 'analytics',
-      speech: 'Analytics report open kar diya hai.'
+      tab: 'dashboard',
+      speech: 'Dashboard report open kar diya hai.'
     };
   }
-  if (text.includes('guide') || text.includes('help') || text.includes('madad')) {
+  if (text.includes('guide') || (text.includes('help') && text.includes('tab')) || (text.includes('madad') && text.includes('tab'))) {
     return {
       action: 'SWITCH_TAB',
       tab: 'guide',
       speech: 'System guide open kar diya hai.'
-    };
-  }
-
-  // 6. Filtering & Searching Inventory
-  let status = 'All';
-  if (text.includes('available') || text.includes('khali') || text.includes('free')) status = 'Available';
-  if (text.includes('booked') || text.includes('bhari') || text.includes('occupied')) status = 'Booked';
-
-  // Dimension extraction like 40x10, 40*10, 20x10
-  const dimMatch = text.match(/\b(\d{1,3}\s*[*xX×]\s*\d{1,3})\b/);
-  const dimensions = dimMatch ? dimMatch[1].replace(/\s+/g, '') : null;
-
-  // City extraction
-  let city = null;
-  const knownCities = ['meerut', 'delhi', 'noida', 'ghaziabad', 'hapur', 'muzaffarnagar', 'modinagar', 'dehradun'];
-  for (const c of knownCities) {
-    if (text.includes(c)) {
-      city = c.charAt(0).toUpperCase() + c.slice(1);
-      break;
-    }
-  }
-
-  // Media type extraction
-  let media = null;
-  if (text.includes('unipole')) media = 'Unipole';
-  if (text.includes('gantry')) media = 'Gantry';
-  if (text.includes('billboard') || text.includes('hoarding')) media = 'Billboard';
-
-  const isSearchCmd = text.includes('dikhao') || text.includes('search') || text.includes('filter') ||
-                      text.includes('show') || text.includes('dikhayein') || text.includes('dhoondo') ||
-                      Boolean(dimensions) || Boolean(city) || status !== 'All' || Boolean(media);
-
-  if (isSearchCmd) {
-    const rawSearch = siteQueryExtract(text);
-    return {
-      action: 'FILTER_INVENTORY',
-      search: rawSearch || dimensions || text,
-      city,
-      dimensions,
-      status,
-      media,
-      speech: `Aapke filter ke mutabik hoardings screen par dikha diye hain.`
     };
   }
 
@@ -224,7 +307,7 @@ Action Schemas:
 2. RESET_FILTERS:
    { "action": "RESET_FILTERS", "speech": "Saare filters reset kar diye hain." }
 3. SWITCH_TAB:
-   { "action": "SWITCH_TAB", "tab": "inventory" | "clients" | "analytics" | "guide", "speech": "Spoken feedback" }
+   { "action": "SWITCH_TAB", "tab": "dashboard" | "inventory" | "clients" | "guide", "speech": "Spoken feedback" }
 4. QUICK_BOOK:
    { "action": "QUICK_BOOK", "siteQuery": "Begum Bridge", "clientName": "Tata Motors", "startDate": "YYYY-MM-DD", "endDate": "YYYY-MM-DD", "isOverride": true|false, "overrideMode": "trim" | "replace" | "force", "speech": "Spoken feedback" }
 5. EDIT_SLOT:
@@ -278,12 +361,12 @@ RULES:
     console.warn('Gemini voice interpreter error, falling back to Groq/offline:', geminiErr?.message);
   }
 
-  // 2. Try Groq Llama 3.3 Fallback
+  // 2. Try Groq Llama 3.1 8B Instant Fallback
   const groqKey = getGroqApiKey();
   if (groqKey) {
     try {
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 4000);
+      const timeoutId = setTimeout(() => controller.abort(), 3000);
       const res = await fetch(GROQ_ENDPOINT, {
         method: 'POST',
         headers: {
@@ -291,10 +374,11 @@ RULES:
           'Authorization': `Bearer ${groqKey}`
         },
         body: JSON.stringify({
-          model: 'llama-3.3-70b-versatile',
+          model: 'llama-3.1-8b-instant',
           messages: [{ role: 'user', content: prompt }],
           temperature: 0.1,
-          max_tokens: 500
+          max_tokens: 500,
+          response_format: { type: 'json_object' }
         }),
         signal: controller.signal
       });
@@ -349,7 +433,7 @@ export const chatWithJarvis = async ({
   }
 
   // 2. Greetings
-  if (/^(hello|hi|namaste|hey|jarvis|monika)\b/i.test(lower) && lower.length < 25) {
+  if (/^(hello|hi|namaste|hey|jarvis)\b/i.test(lower) && lower.length < 25) {
     return {
       reply: "Namaste! Main Jarvis hoon. Hoarding inventory, bookings ya campaigns ke liye batayein main kya karoon?",
       action: 'NONE',
@@ -360,8 +444,11 @@ export const chatWithJarvis = async ({
 
   // 3. Current Dashboard Context
   const totalCount = hoardings.length;
-  const availCount = hoardings.filter(h => String(h.STATUS || '').toLowerCase() === 'available').length;
-  const occCount = hoardings.filter(h => String(h.STATUS || '').toLowerCase() === 'occupied' || String(h.STATUS || '').toLowerCase() === 'booked').length;
+  const availCount = hoardings.filter(h => {
+    const st = String(h.STATUS || h.Status || '').trim().toLowerCase();
+    return st === 'available';
+  }).length;
+  const occCount = Math.max(0, totalCount - availCount);
   const cities = [...new Set(hoardings.map(h => h.City).filter(Boolean))].slice(0, 8);
   const sampleLocations = hoardings.slice(0, 10).map(h => h['Location '] || h.Location).filter(Boolean).slice(0, 6);
 
@@ -468,11 +555,11 @@ Return ONLY valid JSON matching this schema:
   "reply": "Conversational Hindi speech to say back to user",
   "action": "FILTER_INVENTORY" | "RESET_FILTERS" | "SWITCH_TAB" | "QUICK_BOOK" | "VIEW_DISPLACED" | "EXPORT_PPT" | "EXPORT_EXCEL" | "NONE",
   "actionPayload": {
-    "action": "FILTER_INVENTORY" | "...",
+    "action": "FILTER_INVENTORY" | "RESET_FILTERS" | "SWITCH_TAB" | "QUICK_BOOK" | "VIEW_DISPLACED" | "EXPORT_PPT" | "EXPORT_EXCEL" | "NONE",
     "search": "...",
     "city": "...",
     "status": "Available" | "Occupied" | "All",
-    "tab": "inventory" | "clients" | "sheet-editor" | "analytics" | "guide",
+    "tab": "dashboard" | "inventory" | "clients" | "sheet-editor" | "guide",
     "clientName": "...",
     "startDate": "YYYY-MM-DD",
     "endDate": "YYYY-MM-DD",
@@ -496,7 +583,7 @@ Return ONLY valid JSON matching this schema:
     };
     const rawRes = await Promise.race([
       callGeminiVision(geminiPayload),
-      new Promise((_, reject) => setTimeout(() => reject(new Error('Gemini voice timeout')), 2500))
+      new Promise((_, reject) => setTimeout(() => reject(new Error('Gemini voice timeout')), 3000))
     ]);
     if (rawRes) {
       const parsed = safeJsonParse(rawRes);
@@ -510,23 +597,24 @@ Return ONLY valid JSON matching this schema:
       }
     }
   } catch (err) {
-    console.warn("Gemini chatWithJarvis error, trying Groq/offline:", err?.message);
+    console.warn("Gemini chatWithJarvis notice:", err?.message);
   }
 
-  // Try Groq with fast timeout
+  // Try Groq with ultra-fast 8b instant model
   const groqKey = getGroqApiKey();
   if (groqKey) {
     try {
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 2500);
+      const timeoutId = setTimeout(() => controller.abort(), 3000);
       const res = await fetch(GROQ_ENDPOINT, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${groqKey}` },
         body: JSON.stringify({
-          model: 'llama-3.3-70b-versatile',
+          model: 'llama-3.1-8b-instant',
           messages: [{ role: 'user', content: prompt }],
           temperature: 0.2,
-          max_tokens: 500
+          max_tokens: 500,
+          response_format: { type: 'json_object' }
         }),
         signal: controller.signal
       });
@@ -545,7 +633,7 @@ Return ONLY valid JSON matching this schema:
         }
       }
     } catch (gErr) {
-      console.warn("Groq chatWithJarvis error:", gErr?.message);
+      console.warn("Groq chatWithJarvis notice:", gErr?.message);
     }
   }
 

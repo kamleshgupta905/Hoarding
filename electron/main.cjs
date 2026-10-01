@@ -1,9 +1,47 @@
-const { app, BrowserWindow, ipcMain, dialog, Menu, shell } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, Menu, shell, session, globalShortcut } = require('electron');
 const path = require('path');
+const fs = require('fs');
 const { autoUpdater } = require('electron-updater');
+
+// 🔒 Enforce Single Instance Lock
+const gotTheLock = app.requestSingleInstanceLock();
+if (!gotTheLock) {
+    app.quit();
+} else {
+    app.on('second-instance', () => {
+        if (mainWindow) {
+            if (mainWindow.isMinimized()) mainWindow.restore();
+            mainWindow.focus();
+        }
+    });
+}
 
 let mainWindow = null;
 const isDev = process.env.NODE_ENV === 'development' || !app.isPackaged;
+
+function getLogFile() {
+    try {
+        const logDir = path.join(app.getPath('userData'), 'logs');
+        if (!fs.existsSync(logDir)) {
+            fs.mkdirSync(logDir, { recursive: true });
+        }
+        return path.join(logDir, 'jarvis.log');
+    } catch (e) {
+        return null;
+    }
+}
+
+function logToFile(level, message, meta) {
+    try {
+        const file = getLogFile();
+        if (!file) return;
+        const timestamp = new Date().toISOString();
+        const line = `[${timestamp}] [${level}] ${message} ${meta ? (typeof meta === 'string' ? meta : JSON.stringify(meta)) : ''}\n`;
+        fs.appendFileSync(file, line, 'utf8');
+    } catch (e) {
+        console.error('Failed to write log:', e);
+    }
+}
 
 function createWindow() {
     mainWindow = new BrowserWindow({
@@ -63,6 +101,17 @@ function createWindow() {
         }
     });
 
+    // Navigation guard: Block navigating away inside the Electron window
+    mainWindow.webContents.on('will-navigate', (event, navigationUrl) => {
+        try {
+            const parsed = new URL(navigationUrl);
+            if (isDev && parsed.origin === 'http://localhost:3000') return;
+            if (parsed.protocol === 'file:') return;
+        } catch (e) {}
+        event.preventDefault();
+        shell.openExternal(navigationUrl);
+    });
+
     // Open external links in default system browser
     mainWindow.webContents.setWindowOpenHandler(({ url }) => {
         if (url.startsWith('http:') || url.startsWith('https:')) {
@@ -119,6 +168,21 @@ function createApplicationMenu() {
         {
             label: 'Help',
             submenu: [
+                {
+                    label: 'Open Logs Folder',
+                    click: async () => {
+                        try {
+                            const logDir = path.join(app.getPath('userData'), 'logs');
+                            if (!fs.existsSync(logDir)) {
+                                fs.mkdirSync(logDir, { recursive: true });
+                            }
+                            await shell.openPath(logDir);
+                        } catch (e) {
+                            console.error('Cannot open log folder:', e);
+                        }
+                    }
+                },
+                { type: 'separator' },
                 {
                     label: 'Open Web Portal',
                     click: () => shell.openExternal('https://hoarding-hd9a.vercel.app/admin/dashboard')
@@ -284,7 +348,74 @@ ipcMain.handle('extract-pptx-native', async (event, params) => {
     }
 });
 
-app.whenReady().then(createWindow);
+ipcMain.handle('open-log-folder', async () => {
+    try {
+        const logDir = path.join(app.getPath('userData'), 'logs');
+        if (!fs.existsSync(logDir)) {
+            fs.mkdirSync(logDir, { recursive: true });
+        }
+        await shell.openPath(logDir);
+        return true;
+    } catch (e) {
+        return false;
+    }
+});
+
+ipcMain.on('log-jarvis-event', (event, { level, message, meta }) => {
+    logToFile(level || 'INFO', message || '', meta);
+});
+
+app.whenReady().then(() => {
+    // 🎙️ Explicit media & microphone permissions for Jarvis Voice Copilot
+    session.defaultSession.setPermissionRequestHandler((webContents, permission, callback) => {
+        const allowedPermissions = ['media', 'audioCapture', 'mediaKeySystem'];
+        if (allowedPermissions.includes(permission)) {
+            callback(true);
+        } else {
+            callback(false);
+        }
+    });
+
+    session.defaultSession.setPermissionCheckHandler((webContents, permission) => {
+        const allowedPermissions = ['media', 'audioCapture', 'mediaKeySystem'];
+        return allowedPermissions.includes(permission);
+    });
+
+    // Content Security Policy: Enforce security while whitelisting AI & Google endpoints
+    session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
+        const responseHeaders = Object.assign({}, details.responseHeaders);
+        const csp = [
+            "default-src 'self' 'unsafe-inline' 'unsafe-eval' data: blob: file: http://localhost:*",
+            "connect-src 'self' https://generativelanguage.googleapis.com https://api.groq.com https://*.googleapis.com https://sheets.googleapis.com https://*.supabase.co https://api.github.com ws://localhost:* http://localhost:* data: blob:",
+            "media-src 'self' blob: data: mediastream:",
+            "img-src 'self' data: blob: https: http:",
+            "font-src 'self' data: https:",
+            "style-src 'self' 'unsafe-inline' https:"
+        ].join('; ');
+
+        responseHeaders['Content-Security-Policy'] = [csp];
+        callback({ responseHeaders });
+    });
+
+    createWindow();
+
+    // Register global shortcut: CmdOrCtrl+Shift+J to toggle Jarvis Voice Copilot
+    try {
+        globalShortcut.register('CommandOrControl+Shift+J', () => {
+            if (mainWindow && !mainWindow.isDestroyed()) {
+                mainWindow.webContents.send('toggle-jarvis');
+            }
+        });
+    } catch (err) {
+        logToFile('WARN', 'Global shortcut registration failed', err?.message || String(err));
+    }
+});
+
+app.on('will-quit', () => {
+    try {
+        globalShortcut.unregisterAll();
+    } catch (e) {}
+});
 
 app.on('window-all-closed', () => {
     if (process.platform !== 'darwin') {

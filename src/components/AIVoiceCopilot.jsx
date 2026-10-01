@@ -6,9 +6,12 @@ import {
   ChevronDown, 
   Loader2, 
   AudioLines, 
-  Check 
+  Check,
+  Send,
+  Sparkles
 } from 'lucide-react';
 import { chatWithJarvis } from '../services/voiceActionEngine.js';
+import localAvatar from '../assets/krishna_avatar.jpg';
 
 export default function AIVoiceCopilot({
   hoardings = [],
@@ -25,6 +28,8 @@ export default function AIVoiceCopilot({
   const [isMuted, setIsMuted] = useState(false);
   const [callDuration, setCallDuration] = useState(0);
   const [successCard, setSuccessCard] = useState(null);
+  const [voiceNotice, setVoiceNotice] = useState(null);
+  const [manualInput, setManualInput] = useState('');
 
   const timerRef = useRef(null);
   const recognitionRef = useRef(null);
@@ -35,11 +40,50 @@ export default function AIVoiceCopilot({
   const historyRef = useRef([]);
   const isSpeakingRef = useRef(false);
   const isConnectedRef = useRef(false);
+  const isMutedRef = useRef(false);
+  const hoardingsRef = useRef(hoardings);
+  const activeTabRef = useRef(activeTab);
+  const isProcessingRef = useRef(false);
 
-  // Sync ref
+  // Sync refs to avoid stale closures
   useEffect(() => {
     isConnectedRef.current = isConnected;
   }, [isConnected]);
+
+  useEffect(() => {
+    isMutedRef.current = isMuted;
+  }, [isMuted]);
+
+  useEffect(() => {
+    hoardingsRef.current = hoardings;
+  }, [hoardings]);
+
+  useEffect(() => {
+    activeTabRef.current = activeTab;
+  }, [activeTab]);
+
+  // Global shortcut Ctrl+Shift+J and Electron IPC to toggle Jarvis
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if ((e.ctrlKey || e.metaKey) && e.shiftKey && (e.key === 'J' || e.key === 'j')) {
+        e.preventDefault();
+        setIsOpen(prev => !prev);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+
+    let unsub = null;
+    if (window.electronAPI?.onToggleJarvis) {
+      unsub = window.electronAPI.onToggleJarvis(() => {
+        setIsOpen(prev => !prev);
+      });
+    }
+
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      if (typeof unsub === 'function') unsub();
+    };
+  }, []);
 
   // Call duration counter
   useEffect(() => {
@@ -107,14 +151,15 @@ export default function AIVoiceCopilot({
 
     // Audio Visualizer waveform simulation during model speech
     let volInterval = null;
+    let step = 0;
     utterance.onstart = () => {
       setIsModelSpeaking(true);
       isSpeakingRef.current = true;
       volInterval = setInterval(() => {
-        // Natural speech modulation between 0.2 and 0.8
-        const dynamicVol = 0.25 + Math.random() * 0.55;
+        step += 0.25;
+        const dynamicVol = 0.35 + 0.3 * Math.sin(step);
         setModelVolume(dynamicVol);
-      }, 100);
+      }, 80);
     };
 
     utterance.onend = () => {
@@ -210,6 +255,7 @@ export default function AIVoiceCopilot({
 
     recognition.onresult = async (event) => {
       if (!isConnectedRef.current) return;
+      if (isSpeakingRef.current) return; // Prevent echo loop when Jarvis is speaking
 
       let interim = '';
       let finalTranscript = '';
@@ -224,17 +270,13 @@ export default function AIVoiceCopilot({
       }
 
       if (interim) {
-        // If user starts talking while model is speaking, interrupt model immediately!
-        if (isSpeakingRef.current && window.speechSynthesis) {
-          window.speechSynthesis.cancel();
-          setIsModelSpeaking(false);
-          isSpeakingRef.current = false;
-        }
         setCurrentTranscript(interim);
       }
 
       if (finalTranscript.trim()) {
         const spoken = finalTranscript.trim();
+        if (isProcessingRef.current) return;
+        isProcessingRef.current = true;
         setCurrentTranscript(spoken);
 
         // Add to history
@@ -245,8 +287,8 @@ export default function AIVoiceCopilot({
           const res = await chatWithJarvis({
             userText: spoken,
             history: historyRef.current,
-            hoardings,
-            activeTab
+            hoardings: hoardingsRef.current,
+            activeTab: activeTabRef.current
           });
 
           if (res) {
@@ -271,6 +313,8 @@ export default function AIVoiceCopilot({
         } catch (err) {
           console.warn("Conversation turn error:", err);
           speakNaturalReply("Theek hai, main samajh gaya.", () => {});
+        } finally {
+          isProcessingRef.current = false;
         }
       }
     };
@@ -278,11 +322,14 @@ export default function AIVoiceCopilot({
     recognition.onerror = (e) => {
       if (e.error === 'no-speech') return;
       console.warn("Speech recognition error:", e.error);
+      if (e.error === 'network' || e.error === 'service-not-allowed' || e.error === 'not-allowed') {
+        setVoiceNotice("Speech recognition unavailable in desktop app/browser. Niche input box se commands execute karein.");
+      }
     };
 
     recognition.onend = () => {
       // Auto-restart if call is still active and not muted
-      if (isConnectedRef.current && !isMuted) {
+      if (isConnectedRef.current && !isMutedRef.current) {
         try {
           recognition.start();
         } catch (e) {}
@@ -302,11 +349,18 @@ export default function AIVoiceCopilot({
     setIsConnecting(true);
     setCurrentTranscript('');
     setSuccessCard(null);
+    setVoiceNotice(null);
 
     // Warm up speech synthesis voices
     if (typeof window !== 'undefined' && window.speechSynthesis) {
       window.speechSynthesis.getVoices();
     }
+
+    // Set connection active BEFORE starting analysis so RMS volume loop runs properly
+    setIsConnected(true);
+    isConnectedRef.current = true;
+    setIsMuted(false);
+    isMutedRef.current = false;
 
     // Start mic stream & waveform analyser
     await startMicAnalysis();
@@ -320,21 +374,23 @@ export default function AIVoiceCopilot({
       } catch (err) {
         console.warn("Recognition start issue:", err);
       }
+    } else {
+      setVoiceNotice("Speech recognition unavailable in desktop app/browser. Niche input box se commands execute karein.");
     }
 
-    setIsConnected(true);
     setIsConnecting(false);
-    setIsMuted(false);
 
     // Initial greeting in natural human voice (Prescripto style)
     const greeting = "Namaste! Main Jarvis hoon. Hoarding inventory, bookings ya campaigns ke liye batayein main kya madad kar sakta hoon?";
     setCurrentTranscript(greeting);
     historyRef.current = [{ role: 'assistant', content: greeting }];
     speakNaturalReply(greeting);
+    window.electronAPI?.logEvent?.('INFO', 'Voice Copilot call session started');
   };
 
   // End Call Session
   const handleEndCall = () => {
+    window.electronAPI?.logEvent?.('INFO', 'Voice Copilot call session ended');
     if (window.speechSynthesis) window.speechSynthesis.cancel();
     if (recognitionRef.current) {
       try { recognitionRef.current.stop(); } catch(e) {}
@@ -343,6 +399,7 @@ export default function AIVoiceCopilot({
     stopMicAnalysis();
 
     setIsConnected(false);
+    isConnectedRef.current = false;
     setIsConnecting(false);
     setIsModelSpeaking(false);
     setModelVolume(0);
@@ -352,10 +409,23 @@ export default function AIVoiceCopilot({
     historyRef.current = [];
   };
 
+  // Unmount cleanup
+  useEffect(() => {
+    return () => {
+      if (window.speechSynthesis) window.speechSynthesis.cancel();
+      if (recognitionRef.current) {
+        try { recognitionRef.current.stop(); } catch(e) {}
+      }
+      stopMicAnalysis();
+      if (timerRef.current) clearInterval(timerRef.current);
+    };
+  }, []);
+
   // Toggle Mute
   const toggleMute = () => {
-    const nextMuted = !isMuted;
+    const nextMuted = !isMutedRef.current;
     setIsMuted(nextMuted);
+    isMutedRef.current = nextMuted;
     if (nextMuted) {
       if (recognitionRef.current) {
         try { recognitionRef.current.stop(); } catch(e) {}
@@ -368,12 +438,48 @@ export default function AIVoiceCopilot({
     }
   };
 
-  // High Resolution Professional Avatar from Prescripto
-  const AVATAR_URL = "https://images.unsplash.com/photo-1580489944761-15a19d654956?auto=format&fit=crop&q=100&w=1000";
-  const FALLBACK_AVATAR = "https://ui-avatars.com/api/?name=Jarvis&background=5F6FFF&color=fff&size=512";
+  // Manual command dispatcher (works anywhere, including Electron desktop app)
+  const handleSendManualCommand = async (e) => {
+    e?.preventDefault?.();
+    if (!manualInput.trim() || isProcessingRef.current) return;
+    const cmd = manualInput.trim();
+    setManualInput('');
+    setCurrentTranscript(cmd);
+    historyRef.current.push({ role: 'user', content: cmd });
+    isProcessingRef.current = true;
+    try {
+      const res = await chatWithJarvis({
+        userText: cmd,
+        history: historyRef.current,
+        hoardings: hoardingsRef.current,
+        activeTab: activeTabRef.current
+      });
+      if (res) {
+        historyRef.current.push({ role: 'assistant', content: res.reply });
+        setCurrentTranscript(res.reply);
+        if (res.action && res.action !== 'NONE' && onExecuteAction) {
+          onExecuteAction(res.actionPayload);
+        }
+        if (res.successCard) {
+          setSuccessCard(res.successCard);
+        }
+        speakNaturalReply(res.reply, () => {});
+      }
+    } catch (err) {
+      console.warn("Manual command error:", err);
+    } finally {
+      isProcessingRef.current = false;
+    }
+  };
+
+  // High Resolution Professional Avatar (Local asset)
+  const AVATAR_URL = localAvatar || "/krishna_avatar.jpg";
+  const FALLBACK_AVATAR = localAvatar || "/krishna_avatar.jpg";
 
   const handleImageError = (e) => {
-    e.currentTarget.src = FALLBACK_AVATAR;
+    if (e.currentTarget.src !== FALLBACK_AVATAR) {
+      e.currentTarget.src = FALLBACK_AVATAR;
+    }
   };
 
   return (
@@ -673,21 +779,78 @@ export default function AIVoiceCopilot({
               flexDirection: 'column',
               alignItems: 'center',
               justifyContent: 'center',
-              padding: '0 28px',
+              padding: '0 20px',
               textAlign: 'center',
               overflowY: 'auto'
             }}>
-              <div style={{ width: '100%', padding: '6px 0', minHeight: '52px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <style>{`
+                @keyframes adh-spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+              `}</style>
+              <div style={{ width: '100%', padding: '6px 0', minHeight: '52px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
                 {!isConnected ? (
                   <p style={{ color: '#94a3b8', fontSize: '13px', fontWeight: 500, lineHeight: 1.45, margin: 0 }}>
                     Hello! I'm Jarvis. How can I help you manage hoardings, bookings or PPT proposals today?
                   </p>
                 ) : (
-                  <p style={{ color: '#1E1B4B', fontSize: '13.5px', fontWeight: 600, lineHeight: 1.4, margin: 0 }}>
-                    {currentTranscript || (userVolume > 0.08 ? "Sun raha hoon..." : "Listening...")}
-                  </p>
+                  <>
+                    <p style={{ color: '#1E1B4B', fontSize: '13.5px', fontWeight: 600, lineHeight: 1.4, margin: '0 0 6px' }}>
+                      {currentTranscript || (userVolume > 0.08 ? "Sun raha hoon..." : "Listening...")}
+                    </p>
+                    {voiceNotice && (
+                      <div style={{
+                        background: '#fef3c7',
+                        color: '#92400e',
+                        padding: '4px 10px',
+                        borderRadius: '6px',
+                        fontSize: '11px',
+                        fontWeight: 600,
+                        margin: '4px 0 8px',
+                        border: '1px solid #fde68a'
+                      }}>
+                        {voiceNotice}
+                      </div>
+                    )}
+                  </>
                 )}
               </div>
+
+              {/* ⌨️ Inline Command Input (Guarantees usability even on Electron without WebSpeech) */}
+              <form onSubmit={handleSendManualCommand} style={{ width: '100%', marginTop: '6px', display: 'flex', gap: '6px' }}>
+                <input
+                  type="text"
+                  placeholder="Ya type karein: 'Begum Bridge book karo'..."
+                  value={manualInput}
+                  onChange={(e) => setManualInput(e.target.value)}
+                  style={{
+                    flex: 1,
+                    padding: '8px 12px',
+                    borderRadius: '10px',
+                    border: '1px solid #cbd5e1',
+                    fontSize: '12px',
+                    outline: 'none',
+                    background: '#f8fafc',
+                    color: '#0f172a'
+                  }}
+                />
+                <button
+                  type="submit"
+                  disabled={!manualInput.trim()}
+                  style={{
+                    padding: '8px 12px',
+                    borderRadius: '10px',
+                    border: 'none',
+                    background: manualInput.trim() ? '#5F6FFF' : '#cbd5e1',
+                    color: '#ffffff',
+                    cursor: manualInput.trim() ? 'pointer' : 'default',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center'
+                  }}
+                  title="Send command"
+                >
+                  <Send size={14} />
+                </button>
+              </form>
             </div>
 
             {/* 🎛️ Footer Controls */}
@@ -719,7 +882,7 @@ export default function AIVoiceCopilot({
                     onMouseLeave={(e) => e.currentTarget.style.transform = 'scale(1.0)'}
                   >
                     {isConnecting ? (
-                      <Loader2 size={20} className="animate-spin" color="#ffffff" />
+                      <Loader2 size={20} style={{ animation: 'adh-spin 1s linear infinite' }} color="#ffffff" />
                     ) : (
                       <>
                         <AudioLines size={20} color="#ffffff" />

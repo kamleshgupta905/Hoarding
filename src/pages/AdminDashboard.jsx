@@ -3321,7 +3321,7 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
     };
 
     const handleExecuteAIAction = (actionPayload) => {
-        if (!actionPayload || !actionPayload.action) return;
+        if (!actionPayload || !actionPayload.action) return { success: false, error: 'No action payload' };
 
         setAiActionNotice({
             speech: actionPayload.speech || 'Action executed',
@@ -3334,20 +3334,49 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
             case 'FILTER_INVENTORY': {
                 setActiveTab('inventory');
                 if (actionPayload.city) {
-                    setActiveFilterCity(actionPayload.city);
+                    const cityVal = actionPayload.city === 'All' ? ['All'] : (Array.isArray(actionPayload.city) ? actionPayload.city : [actionPayload.city]);
+                    setInventoryCityFilter(cityVal);
                 }
-                if (actionPayload.status && actionPayload.status !== 'All') {
-                    setStatusFilter(actionPayload.status.toLowerCase());
-                } else if (actionPayload.status === 'All') {
-                    setStatusFilter('all');
+                if (actionPayload.locality || actionPayload.area) {
+                    const locVal = (actionPayload.locality || actionPayload.area) === 'All' ? ['All'] : (Array.isArray(actionPayload.locality || actionPayload.area) ? (actionPayload.locality || actionPayload.area) : [actionPayload.locality || actionPayload.area]);
+                    setInventoryLocalityFilter(locVal);
+                }
+                if (actionPayload.media) {
+                    const mediaVal = actionPayload.media === 'All' ? ['All'] : (Array.isArray(actionPayload.media) ? actionPayload.media : [actionPayload.media]);
+                    setInventoryMediaFilter(mediaVal);
+                }
+                if (actionPayload.dimensions) {
+                    const dimVal = actionPayload.dimensions === 'All' ? ['All'] : (Array.isArray(actionPayload.dimensions) ? actionPayload.dimensions : [actionPayload.dimensions]);
+                    if (typeof setInventorySizeFilter === 'function') {
+                        setInventorySizeFilter(dimVal);
+                    }
+                }
+                if (actionPayload.status) {
+                    const rawStatus = String(actionPayload.status).trim();
+                    if (/^avail/i.test(rawStatus)) {
+                        setInventoryStatusFilter('Available');
+                    } else if (/^book/i.test(rawStatus) || /^active/i.test(rawStatus) || /^occup/i.test(rawStatus)) {
+                        setInventoryStatusFilter('Booked');
+                    } else if (/^upcom/i.test(rawStatus) || /^future/i.test(rawStatus)) {
+                        setInventoryStatusFilter('Upcoming (Future Booked)');
+                    } else {
+                        setInventoryStatusFilter('All');
+                    }
                 }
                 if (actionPayload.search) {
-                    setSearchQuery(actionPayload.search);
+                    setSearchTerm(String(actionPayload.search).trim());
                 }
+                if (actionPayload.availableFrom && typeof setFilterStartDate === 'function') {
+                    setFilterStartDate(actionPayload.availableFrom);
+                }
+                if (actionPayload.availableTo && typeof setFilterEndDate === 'function') {
+                    setFilterEndDate(actionPayload.availableTo);
+                }
+
                 const matched = hoardings.find(h => {
                     const loc = String(h['Location '] || h.Location || h['Locality Site Location'] || '').toLowerCase();
                     const q = String(actionPayload.search || actionPayload.siteQuery || '').toLowerCase();
-                    return loc.includes(q);
+                    return q && loc.includes(q);
                 });
                 if (matched) {
                     const sId = matched._SiteID || matched.UniqueID || matched.ID;
@@ -3355,41 +3384,78 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                     setTimeout(() => setAiHighlightedSiteId(null), 4000);
                 }
                 showToast(actionPayload.speech || 'Inventory filtered by AI', 'info');
-                break;
+                return { success: true };
             }
 
             case 'RESET_FILTERS': {
-                setSearchQuery('');
-                setActiveFilterCity('All');
-                setActiveFilterArea('All');
-                setStatusFilter('all');
+                setSearchTerm('');
+                setInventoryCityFilter(['All']);
+                setInventoryLocalityFilter(['All']);
+                setInventoryMediaFilter(['All']);
+                if (typeof setInventorySizeFilter === 'function') {
+                    setInventorySizeFilter(['All']);
+                }
+                setInventoryStatusFilter('All');
+                if (typeof setFilterStartDate === 'function') setFilterStartDate('');
+                if (typeof setFilterEndDate === 'function') setFilterEndDate('');
                 showToast('All filters reset by AI', 'info');
-                break;
+                return { success: true };
             }
 
             case 'SWITCH_TAB': {
-                if (actionPayload.tab) {
-                    setActiveTab(actionPayload.tab);
-                    showToast(`Switched to ${actionPayload.tab} tab`, 'info');
+                const validTabs = ['dashboard', 'inventory', 'clients', 'sheet-editor', 'staff-review', 'daily-update', 'guide', 'download-apps'];
+                const targetTab = String(actionPayload.tab || '').toLowerCase().trim();
+                if (validTabs.includes(targetTab)) {
+                    setActiveTab(targetTab);
+                    showToast(`Switched to ${targetTab} tab`, 'info');
+                    return { success: true, tab: targetTab };
+                } else {
+                    showToast(`View '${actionPayload.tab}' nahi mila. Valid tabs: Inventory, Clients, Dashboard, etc.`, 'error');
+                    return { success: false, error: 'unknown_view', validTabs };
                 }
-                break;
             }
 
             case 'QUICK_BOOK': {
                 setActiveTab('inventory');
-                const targetSite = hoardings.find(h => {
+                const rawQ = String(actionPayload.siteQuery || '').trim().toLowerCase();
+                
+                const candidates = hoardings.filter(h => {
+                    if (!rawQ) return false;
                     const loc = String(h['Location '] || h.Location || h['Locality Site Location'] || '').toLowerCase();
+                    const area = String(h.Area || h['Area '] || h.Locality || '').toLowerCase();
+                    const city = String(h.City || '').toLowerCase();
                     const sl = String(h.SL || h['S. No.'] || h['SL NO'] || '');
-                    const q = String(actionPayload.siteQuery || '').toLowerCase();
-                    return loc.includes(q) || sl === q;
-                }) || hoardings[0];
+                    return loc.includes(rawQ) || area.includes(rawQ) || sl === rawQ || (city.includes(rawQ) && rawQ.length > 3);
+                });
+
+                if (candidates.length === 0) {
+                    showToast(`Site nahi mila: "${actionPayload.siteQuery || 'Unknown'}". Kripya sahi site batayein.`, 'error');
+                    return { success: false, error: 'site_not_found', siteQuery: actionPayload.siteQuery };
+                }
+
+                if (candidates.length > 1) {
+                    showToast(`"${actionPayload.siteQuery}" ke ${candidates.length} sites mile hain. Kripya specific site chuniye.`, 'info');
+                    return {
+                        success: false,
+                        needsClarification: true,
+                        candidates: candidates.slice(0, 5).map(c => ({
+                            siteId: c._SiteID || c.UniqueID,
+                            location: c['Location '] || c.Location,
+                            city: c.City
+                        }))
+                    };
+                }
+
+                const targetSite = candidates[0];
+                const startDate = actionPayload.startDate || new Date().toISOString().split('T')[0];
+                const endDate = actionPayload.endDate || '';
 
                 if (targetSite) {
                     setQuickBookingTarget({
                         site: targetSite,
                         clientName: actionPayload.clientName || 'Valued Client',
-                        startDate: actionPayload.startDate || new Date().toISOString().split('T')[0],
-                        endDate: actionPayload.endDate || '',
+                        startDate,
+                        endDate,
                         isOverride: Boolean(actionPayload.isOverride),
                         overrideMode: actionPayload.overrideMode || 'trim',
                         overrideReason: 'Booked via AI Copilot'
@@ -3398,6 +3464,7 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                     setAiHighlightedSiteId(sId);
                     setTimeout(() => setAiHighlightedSiteId(null), 4000);
                     showToast(`Opening booking for ${actionPayload.clientName || 'client'}`, 'info');
+                    return { success: true, siteId: sId };
                 }
                 break;
             }
@@ -3406,24 +3473,40 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                 setActiveTab('clients');
                 setClientStatusFilter('displaced');
                 showToast('Viewing displaced & overridden bookings', 'info');
-                break;
+                return { success: true };
+            }
+
+            case 'FILTER_CLIENT_BOOKINGS': {
+                setActiveTab('clients');
+                if (actionPayload.status) {
+                    setClientStatusFilter(actionPayload.status);
+                }
+                if (actionPayload.clientName) {
+                    setClientSearchTerm(actionPayload.clientName);
+                }
+                showToast(`Viewing ${actionPayload.status || 'all'} client bookings`, 'info');
+                return { success: true };
             }
 
             case 'EXPORT_PPT': {
-                handleExportPptCampaign();
+                if (actionPayload.scope === 'starred') {
+                    handleDownloadStarredPpt();
+                } else {
+                    handleDownloadProposalPpt();
+                }
                 showToast('Generating PPT proposal...', 'info');
-                break;
+                return { success: true, started: true };
             }
 
             case 'EXPORT_EXCEL': {
                 exportProposalExcel(hoardings);
                 showToast('Exporting Excel inventory...', 'info');
-                break;
+                return { success: true, started: true };
             }
 
             case 'ANSWER_QUERY': {
                 showToast(actionPayload.answer || actionPayload.speech, 'info');
-                break;
+                return { success: true, answer: actionPayload.answer || actionPayload.speech };
             }
 
             default:
@@ -4560,7 +4643,7 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
             const list = Array.isArray(prev) ? prev : [];
             return list.includes(key) ? list.filter(k => k !== key) : [...list, key];
         });
-    }, [getSiteStableKey]);
+    }, [getSiteStableKey, setStarredSiteKeys]);
 
     const starredSites = useMemo(() => {
         return (Array.isArray(hoardings) ? hoardings : []).filter(h => isSiteStarred(h));
