@@ -501,16 +501,18 @@ export const getLocalSchedules = () => {
  * Must be invoked whenever the user triggers "Delete All" in admin inventory.
  */
 export const clearAllLocalBookingsAndCaches = () => {
-  if (typeof window === 'undefined') return;
+  const storage = typeof localStorage !== 'undefined' ? localStorage : (typeof window !== 'undefined' ? window.localStorage : null);
+  if (!storage) return;
   try {
-    localStorage.removeItem('adh_local_bookings');
-    localStorage.removeItem('adh_booking_schedules');
-    localStorage.removeItem('adh_local_history');
-    localStorage.removeItem('adh_cached_hoardings');
-    localStorage.removeItem('hoardings_cache');
-    localStorage.removeItem('deleted_sites_cache');
-    localStorage.removeItem('local_added_sites_cache');
-    localStorage.removeItem('last_hoardings_update');
+    storage.removeItem('adh_local_bookings');
+    storage.removeItem('adh_booking_schedules');
+    storage.removeItem('adh_displaced_booking_slots');
+    storage.removeItem('adh_local_history');
+    storage.removeItem('adh_cached_hoardings');
+    storage.removeItem('hoardings_cache');
+    storage.removeItem('deleted_sites_cache');
+    storage.removeItem('local_added_sites_cache');
+    storage.removeItem('last_hoardings_update');
   } catch (e) {
     console.warn('Error clearing local caches:', e);
   }
@@ -1301,18 +1303,21 @@ export const resolveSiteLiveStatus = (site = {}, refDateStr = null) => {
 };
 
 export const saveSiteBookingSlots = (site, updatedSlots = []) => {
-  if (!site || typeof window === 'undefined') return;
+  if (!site) return;
+  site.BookingSchedule = updatedSlots;
+  const storage = typeof localStorage !== 'undefined' ? localStorage : (typeof window !== 'undefined' ? window.localStorage : null);
+  if (!storage) return;
   try {
     const keys = getSiteBookingKeys(site);
     if (keys.length === 0) return;
 
     // Save schedules
-    const rawSchedules = localStorage.getItem('adh_booking_schedules');
+    const rawSchedules = storage.getItem('adh_booking_schedules');
     const schedules = rawSchedules ? JSON.parse(rawSchedules) : {};
     keys.forEach(k => {
       schedules[k] = updatedSlots;
     });
-    localStorage.setItem('adh_booking_schedules', JSON.stringify(schedules));
+    storage.setItem('adh_booking_schedules', JSON.stringify(schedules));
 
     // Update active primary booking for legacy backwards compatibility
     const today = new Date().toISOString().split('T')[0];
@@ -1350,6 +1355,62 @@ export const addDaysToDateString = (dateStr, days) => {
   const resM = String(dt.getUTCMonth() + 1).padStart(2, '0');
   const resD = String(dt.getUTCDate()).padStart(2, '0');
   return `${resY}-${resM}-${resD}`;
+};
+
+const inMemoryFallbackStore = new Map();
+const getSafeStorage = () => {
+  if (typeof localStorage !== 'undefined' && localStorage) return localStorage;
+  if (typeof window !== 'undefined' && window.localStorage) return window.localStorage;
+  return {
+    getItem: (k) => inMemoryFallbackStore.get(k) || null,
+    setItem: (k, v) => inMemoryFallbackStore.set(k, String(v)),
+    removeItem: (k) => inMemoryFallbackStore.delete(k),
+    clear: () => inMemoryFallbackStore.clear()
+  };
+};
+
+/**
+ * 📦 DISPLACED / OVERRIDDEN BOOKING STORAGE & MANAGEMENT
+ */
+export const getDisplacedBookingSlots = (site = null) => {
+  const storage = getSafeStorage();
+  try {
+    const raw = storage.getItem('adh_displaced_booking_slots');
+    const all = raw ? JSON.parse(raw) : [];
+    if (!Array.isArray(all)) return [];
+    if (!site) return all;
+    const siteId = site._SiteID || site.UniqueID || site.ID;
+    const siteSL = site.SL || site['S. No.'] || site['SL NO'];
+    return all.filter(item => 
+      (siteId && item.siteId === siteId) || 
+      (siteSL && item.siteSL === siteSL)
+    );
+  } catch {
+    return [];
+  }
+};
+
+export const saveDisplacedBookingSlots = (displacedSlots = []) => {
+  const storage = getSafeStorage();
+  try {
+    storage.setItem('adh_displaced_booking_slots', JSON.stringify(displacedSlots));
+  } catch (err) {
+    console.warn('saveDisplacedBookingSlots error:', err);
+  }
+};
+
+export const recordDisplacedSlots = (site, newDisplacedItems = []) => {
+  if (!Array.isArray(newDisplacedItems) || newDisplacedItems.length === 0) return;
+  const current = getDisplacedBookingSlots();
+  const merged = [...newDisplacedItems, ...current.filter(c => !newDisplacedItems.some(n => n.id === c.id))];
+  saveDisplacedBookingSlots(merged);
+};
+
+export const removeDisplacedSlot = (slotId) => {
+  if (!slotId) return;
+  const current = getDisplacedBookingSlots();
+  const filtered = current.filter(s => s.id !== slotId);
+  saveDisplacedBookingSlots(filtered);
 };
 
 /**
@@ -1515,6 +1576,64 @@ export const overrideSiteBookingSlot = (site = {}, newBookingSlot = {}, mode = '
     BookingSchedule: updatedSlots
   };
 
+  // 🛡️ Record displaced / overridden slots for subsequent editing, shifting, or restoring
+  try {
+    const siteLoc = site["Location "] || site.Location || site["Locality Site Location"] || '';
+    const siteFacing = site.Facing || site["Traffic View"] || '';
+    const siteCity = site.City || '';
+    const siteId = site._SiteID || site.UniqueID || site.ID || '';
+    const siteSL = site.SL || site["S. No."] || site["SL NO"] || '';
+
+    const displacedItems = [];
+    if (replacedSlots && replacedSlots.length > 0) {
+      replacedSlots.forEach(s => {
+        displacedItems.push({
+          ...s,
+          id: s.id || `disp-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
+          siteId,
+          siteSL,
+          siteLocation: siteLoc,
+          siteFacing,
+          siteCity,
+          status: 'Overridden',
+          overriddenBy: newClient,
+          overriddenAt: new Date().toISOString(),
+          overrideReason: reason || 'Replaced by admin',
+          originalStart: s.start,
+          originalEnd: s.end
+        });
+      });
+    }
+
+    if (trimmedSlots && trimmedSlots.length > 0) {
+      trimmedSlots.forEach(t => {
+        displacedItems.push({
+          ...t.original,
+          id: `disp-trim-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
+          siteId,
+          siteSL,
+          siteLocation: siteLoc,
+          siteFacing,
+          siteCity,
+          status: 'Trimmed',
+          overriddenBy: newClient,
+          overriddenAt: new Date().toISOString(),
+          overrideReason: reason || t.reason || 'Trimmed by admin',
+          originalStart: t.original.start,
+          originalEnd: t.original.end,
+          trimmedToStart: t.trimmedTo.start,
+          trimmedToEnd: t.trimmedTo.end
+        });
+      });
+    }
+
+    if (displacedItems.length > 0) {
+      recordDisplacedSlots(site, displacedItems);
+    }
+  } catch (err) {
+    console.warn("recordDisplacedSlots warning:", err);
+  }
+
   return {
     success: true,
     mode,
@@ -1524,6 +1643,125 @@ export const overrideSiteBookingSlot = (site = {}, newBookingSlot = {}, mode = '
     auditEntry,
     updatedSite
   };
+};
+
+/**
+ * ✏️ Update a specific booking slot (client, dates, price, status)
+ */
+export const updateSiteBookingSlot = (site, updatedSlot) => {
+  if (!site || !updatedSlot || !updatedSlot.id) return { success: false };
+  const slots = getSiteBookingSlots(site);
+  const idx = slots.findIndex(s => s.id === updatedSlot.id);
+  let newSlots = [];
+  if (idx !== -1) {
+    const targetSlot = slots[idx];
+    const sStart = updatedSlot.start || targetSlot.start;
+    const sEnd = updatedSlot.end || targetSlot.end;
+    const proRata = calculateProRataRental(site['Rental Per Month'] || site['Avg Monthly Cost (INR)'] || 0, sStart, sEnd);
+
+    const merged = {
+      ...targetSlot,
+      ...updatedSlot,
+      start: sStart,
+      end: sEnd,
+      days: updatedSlot.days || proRata.days,
+      amount: updatedSlot.amount || proRata.total,
+      updatedAt: new Date().toISOString()
+    };
+
+    newSlots = slots.map(s => s.id === updatedSlot.id ? merged : s);
+    newSlots.sort((a, b) => String(a.start).localeCompare(String(b.start)));
+    site.BookingSchedule = newSlots;
+    saveSiteBookingSlots(site, newSlots);
+    return { success: true, updatedSlots: newSlots };
+  } else {
+    // Check if slot was in displaced list
+    const displaced = getDisplacedBookingSlots();
+    const dIdx = displaced.findIndex(d => d.id === updatedSlot.id);
+    if (dIdx !== -1) {
+      const targetDisplaced = displaced[dIdx];
+      const mergedDisplaced = {
+        ...targetDisplaced,
+        ...updatedSlot,
+        updatedAt: new Date().toISOString()
+      };
+      const updatedDisplaced = displaced.map(d => d.id === updatedSlot.id ? mergedDisplaced : d);
+      saveDisplacedBookingSlots(updatedDisplaced);
+      return { success: true, isDisplaced: true, updatedDisplaced };
+    }
+  }
+  return { success: false, error: 'Slot not found' };
+};
+
+/**
+ * 🔁 Shift a booking slot or displaced slot to an alternate hoarding
+ */
+export const shiftBookingSlotToSite = (fromSite, toSite, slot, newStart = null, newEnd = null) => {
+  if (!toSite || !slot) return { success: false, error: 'Target site or slot missing' };
+
+  // 1. Remove from source site if present
+  if (fromSite) {
+    const fromSlots = getSiteBookingSlots(fromSite);
+    const remaining = fromSlots.filter(s => s.id !== slot.id);
+    fromSite.BookingSchedule = remaining;
+    saveSiteBookingSlots(fromSite, remaining);
+  }
+
+  // 2. Remove from displaced slots
+  removeDisplacedSlot(slot.id);
+
+  // 3. Add to target site
+  const toSlots = getSiteBookingSlots(toSite);
+  const start = newStart || slot.start || slot.originalStart;
+  const end = newEnd || slot.end || slot.originalEnd;
+  const proRata = calculateProRataRental(toSite['Rental Per Month'] || toSite['Avg Monthly Cost (INR)'] || 0, start, end);
+
+  const shiftedSlot = {
+    id: `slot-shift-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
+    client: slot.client,
+    start: start,
+    end: end,
+    status: 'Booked',
+    amount: proRata.total,
+    days: proRata.days,
+    shiftedFrom: fromSite ? (fromSite['Location '] || fromSite.Location || fromSite['Locality Site Location'] || 'Previous Site') : undefined,
+    shiftedAt: new Date().toISOString()
+  };
+
+  const updatedToSlots = [...toSlots, shiftedSlot].sort((a, b) => String(a.start).localeCompare(String(b.start)));
+  toSite.BookingSchedule = updatedToSlots;
+  saveSiteBookingSlots(toSite, updatedToSlots);
+
+  return { success: true, shiftedSlot, updatedToSlots };
+};
+
+/**
+ * ↩️ Restore an overridden / displaced slot back into site's schedule
+ */
+export const restoreOverriddenSlot = (site, displacedSlotId) => {
+  if (!site || !displacedSlotId) return { success: false };
+  const displaced = getDisplacedBookingSlots();
+  const target = displaced.find(d => d.id === displacedSlotId);
+  if (!target) return { success: false, error: 'Slot not found in displaced records' };
+
+  // Remove from displaced
+  removeDisplacedSlot(displacedSlotId);
+
+  // Add back to site schedule
+  const slots = getSiteBookingSlots(site);
+  const restoredSlot = {
+    ...target,
+    id: `slot-restored-${Date.now()}`,
+    status: 'Booked',
+    start: target.originalStart || target.start,
+    end: target.originalEnd || target.end,
+    restoredAt: new Date().toISOString()
+  };
+
+  const updatedSlots = [...slots, restoredSlot].sort((a, b) => String(a.start).localeCompare(String(b.start)));
+  site.BookingSchedule = updatedSlots;
+  saveSiteBookingSlots(site, updatedSlots);
+  return { success: true, restoredSlot, updatedSlots };
 };
 
 /**

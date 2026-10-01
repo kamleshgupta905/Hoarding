@@ -1,14 +1,32 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { 
   overrideSiteBookingSlot, 
   addDaysToDateString, 
   getSiteBookingSlots, 
   clearAllLocalBookingsAndCaches,
-  saveSiteBookingSlots
+  saveSiteBookingSlots,
+  getDisplacedBookingSlots,
+  updateSiteBookingSlot,
+  shiftBookingSlotToSite,
+  restoreOverriddenSlot
 } from './dataService.js';
+
+const makeStorage = () => {
+  let store = {};
+  return {
+    getItem: (k) => (k in store ? store[k] : null),
+    setItem: (k, v) => { store[k] = String(v); },
+    removeItem: (k) => { delete store[k]; },
+    clear: () => { store = {}; },
+    _store: store
+  };
+};
 
 describe('Override Booking Engine (dataService.js)', () => {
   beforeEach(() => {
+    const storage = makeStorage();
+    vi.stubGlobal('window', { localStorage: storage });
+    vi.stubGlobal('localStorage', storage);
     clearAllLocalBookingsAndCaches();
   });
 
@@ -184,6 +202,128 @@ describe('Override Booking Engine (dataService.js)', () => {
       expect(res.updatedSlots.length).toBe(2);
       expect(res.updatedSlots[0].client).toBe('Co-Sponsor 1');
       expect(res.updatedSlots[1].client).toBe('Co-Sponsor 2');
+    });
+  });
+
+  describe('Displaced Booking Management & Post-Override Editing', () => {
+    it('records replaced slots into displaced bookings storage for subsequent actions', () => {
+      const site = {
+        _SiteID: 'site-disp-1',
+        City: 'Meerut',
+        Location: 'Begum Bridge',
+        Facing: 'Modipuram',
+        'Rental Per Month': '45000',
+        BookingSchedule: [
+          { id: 'slot-patanjali', client: 'Patanjali', start: '2026-10-01', end: '2026-10-31', status: 'Booked' }
+        ]
+      };
+      saveSiteBookingSlots(site, site.BookingSchedule);
+
+      overrideSiteBookingSlot(
+        site,
+        { client: 'Samsung New Launch', start: '2026-10-01', end: '2026-10-31' },
+        'replace',
+        'VIP Festival Campaign'
+      );
+
+      const displaced = getDisplacedBookingSlots();
+      expect(displaced.length).toBeGreaterThan(0);
+      const patanjaliDisp = displaced.find(d => d.client === 'Patanjali');
+      expect(patanjaliDisp).toBeDefined();
+      expect(patanjaliDisp.status).toBe('Overridden');
+      expect(patanjaliDisp.overriddenBy).toBe('Samsung New Launch');
+    });
+
+    it('allows editing an existing booking slot dates or client name', () => {
+      const site = {
+        _SiteID: 'site-edit-1',
+        City: 'Meerut',
+        Location: 'Clock Tower',
+        Facing: 'Civil Lines',
+        'Rental Per Month': '30000',
+        BookingSchedule: [
+          { id: 'slot-editable', client: 'Old Client', start: '2026-11-01', end: '2026-11-15', status: 'Booked' }
+        ]
+      };
+      saveSiteBookingSlots(site, site.BookingSchedule);
+
+      const editRes = updateSiteBookingSlot(site, {
+        id: 'slot-editable',
+        client: 'Updated Client Name',
+        start: '2026-11-05',
+        end: '2026-11-20'
+      });
+
+      expect(editRes.success).toBe(true);
+      const slots = getSiteBookingSlots(site);
+      expect(slots[0].client).toBe('Updated Client Name');
+      expect(slots[0].start).toBe('2026-11-05');
+      expect(slots[0].end).toBe('2026-11-20');
+    });
+
+    it('shifts a booking slot from Site A to Site B', () => {
+      const siteA = {
+        _SiteID: 'site-from-1',
+        City: 'Meerut',
+        Location: 'Site A Location',
+        'Rental Per Month': '40000',
+        BookingSchedule: [
+          { id: 'slot-to-shift', client: 'Shifting Client', start: '2026-10-10', end: '2026-10-25', status: 'Booked' }
+        ]
+      };
+      const siteB = {
+        _SiteID: 'site-to-2',
+        City: 'Meerut',
+        Location: 'Site B Alternative',
+        'Rental Per Month': '40000',
+        BookingSchedule: []
+      };
+      saveSiteBookingSlots(siteA, siteA.BookingSchedule);
+      saveSiteBookingSlots(siteB, siteB.BookingSchedule);
+
+      const shiftRes = shiftBookingSlotToSite(siteA, siteB, siteA.BookingSchedule[0], '2026-10-15', '2026-10-30');
+      expect(shiftRes.success).toBe(true);
+
+      // Site A should have 0 slots remaining
+      expect(getSiteBookingSlots(siteA).length).toBe(0);
+
+      // Site B should now have the shifted slot
+      const bSlots = getSiteBookingSlots(siteB);
+      expect(bSlots.length).toBe(1);
+      expect(bSlots[0].client).toBe('Shifting Client');
+      expect(bSlots[0].start).toBe('2026-10-15');
+      expect(bSlots[0].end).toBe('2026-10-30');
+    });
+
+    it('restores an overridden slot back into active schedule', () => {
+      const site = {
+        _SiteID: 'site-restore-1',
+        City: 'Meerut',
+        Location: 'Jail Chauraha',
+        'Rental Per Month': '50000',
+        BookingSchedule: [
+          { id: 'slot-overridee', client: 'Displaced Brand', start: '2026-10-01', end: '2026-10-15', status: 'Booked' }
+        ]
+      };
+      saveSiteBookingSlots(site, site.BookingSchedule);
+
+      overrideSiteBookingSlot(
+        site,
+        { client: 'Takeover Brand', start: '2026-10-01', end: '2026-10-15' },
+        'replace'
+      );
+
+      const displaced = getDisplacedBookingSlots();
+      const displacedTarget = displaced.find(d => d.client === 'Displaced Brand');
+      expect(displacedTarget).toBeDefined();
+
+      const restoreRes = restoreOverriddenSlot(site, displacedTarget.id);
+      expect(restoreRes.success).toBe(true);
+
+      const updatedSlots = getSiteBookingSlots(site);
+      const foundRestored = updatedSlots.find(s => s.client === 'Displaced Brand');
+      expect(foundRestored).toBeDefined();
+      expect(foundRestored.status).toBe('Booked');
     });
   });
 });

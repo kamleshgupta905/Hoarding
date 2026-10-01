@@ -10,10 +10,11 @@ import {
     MoreVertical, ExternalLink, ShieldCheck, Menu, X, UploadCloud, RefreshCw, XCircle, Share2, Trash2, Camera, Table2, Save, Undo2, Redo2, FileDown, Copy, Timer, Clock, Clock3, PanelLeftClose, PanelLeftOpen, Maximize2, Minimize2,
     BarChart3, PieChart, Activity, Sparkles, ArrowUpRight, Layers, Compass, DollarSign, Award, Flame, Check, ChevronRight, ChevronDown, Monitor, QrCode, Printer, BookOpen,
     Radio, Signal, Globe, Crosshair, CheckCircle2, Navigation,
-    Star, FileSpreadsheet, Presentation, Loader2, AlertTriangle, Info, ArrowUpCircle
+    Star, FileSpreadsheet, Presentation, Loader2, AlertTriangle, Info, ArrowUpCircle,
+    Edit3, ArrowRightLeft, RotateCcw
 } from 'lucide-react';
 import { analyzeHoardingImage, extractSiteCoordinates, generateVisualLandmarksWithGemini } from '../services/aiService';
-import { fetchHoardings, compressImage, syncToGoogleSheet, exportProposalExcel, PROPOSAL_COLUMNS, getImageUrl, downloadHoardingImage, fetchStaffUploads, reviewStaffPhoto, detectStaffPhotoOrientation, fetchSheetGrid, saveSheetGrid, addDeletedSite, addDeletedSites, parseHistoryString, saveLocalBooking, clearLocalBooking, recordSiteBooking, removeSiteBooking, getSiteBookingSlots, checkBookingConflict, calculateProRataRental, resolveSiteLiveStatus, saveSiteBookingSlots, recordSiteHistory, getLocalHistory, getDirectDriveLink, parseCellImageUrls, addDeletedHistoryUrl, isHistoryUrlDeleted, removeSiteHistory, getExpiringSites, clearAllLocalBookingsAndCaches, clearLocalBookingsForCity, clearLocalBookingsForSite, normalizeCityName, overrideSiteBookingSlot } from '../services/dataService';
+import { fetchHoardings, compressImage, syncToGoogleSheet, exportProposalExcel, PROPOSAL_COLUMNS, getImageUrl, downloadHoardingImage, fetchStaffUploads, reviewStaffPhoto, detectStaffPhotoOrientation, fetchSheetGrid, saveSheetGrid, addDeletedSite, addDeletedSites, parseHistoryString, saveLocalBooking, clearLocalBooking, recordSiteBooking, removeSiteBooking, getSiteBookingSlots, checkBookingConflict, calculateProRataRental, resolveSiteLiveStatus, saveSiteBookingSlots, recordSiteHistory, getLocalHistory, getDirectDriveLink, parseCellImageUrls, addDeletedHistoryUrl, isHistoryUrlDeleted, removeSiteHistory, getExpiringSites, clearAllLocalBookingsAndCaches, clearLocalBookingsForCity, clearLocalBookingsForSite, normalizeCityName, overrideSiteBookingSlot, getDisplacedBookingSlots, saveDisplacedBookingSlots, removeDisplacedSlot, updateSiteBookingSlot, shiftBookingSlotToSite, restoreOverriddenSlot } from '../services/dataService';
 import { generateMasterMediaPlanPptx } from '../services/presentationService';
 import ImageLightbox from '../components/ImageLightbox';
 import DriveImage from '../components/DriveImage';
@@ -21,6 +22,9 @@ import RenewalAlertRadar from '../components/RenewalAlertRadar';
 import BulkBookingWizard from '../components/BulkBookingWizard';
 import HeaderSitesUploadModal from '../components/HeaderSitesUploadModal';
 import StarredBulkBookingModal from '../components/StarredBulkBookingModal';
+import SlotEditModal from '../components/SlotEditModal';
+import ShiftSlotModal from '../components/ShiftSlotModal';
+import AIVoiceCopilot from '../components/AIVoiceCopilot';
 import { appConfirm, appToast } from '../components/ToastContext';
 import { clearAdminSession, getAdminSession, getStaffUploadLink, postDirect } from '../services/secureApi';
 import { isInternalHeader } from '../core/hoardingSchema';
@@ -439,6 +443,10 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
     const [isBulkBookingOpen, setIsBulkBookingOpen] = useState(false);
     const [selectedHoarding, setSelectedHoarding] = useState(null);
     const [formData, setFormData] = useState({});
+    const [editingSlotTarget, setEditingSlotTarget] = useState(null);
+    const [shiftingSlotTarget, setShiftingSlotTarget] = useState(null);
+    const [aiActionNotice, setAiActionNotice] = useState(null);
+    const [aiHighlightedSiteId, setAiHighlightedSiteId] = useState(null);
 
     const handleCheckForUpdates = async () => {
         setUpdateCheckStatus({ checking: true, message: 'Checking for latest updates...' });
@@ -3292,6 +3300,135 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                 window.dispatchEvent(new CustomEvent('hoardings:sync-requested'));
             }
         }).catch(err => console.warn("Remove slot background sync:", err));
+    };
+
+    const handleRestoreDisplacedSlot = (site, slotId) => {
+        if (!site || !slotId) return;
+        const res = restoreOverriddenSlot(site, slotId);
+        if (res.success) {
+            setHoardings(prev => prev.map(h => (h === site || h._SiteID === site._SiteID) ? { ...h, BookingSchedule: res.updatedSlots } : h));
+            showToast("Overridden slot restored to schedule!", "success");
+        } else {
+            showToast(res.error || "Could not restore slot", "error");
+        }
+    };
+
+    const handleDismissDisplacedSlot = (slotId) => {
+        if (!slotId) return;
+        removeDisplacedSlot(slotId);
+        showToast("Displaced booking dismissed", "info");
+        setHoardings(prev => [...prev]);
+    };
+
+    const handleExecuteAIAction = (actionPayload) => {
+        if (!actionPayload || !actionPayload.action) return;
+
+        setAiActionNotice({
+            speech: actionPayload.speech || 'Action executed',
+            action: actionPayload.action,
+            text: actionPayload.search || actionPayload.clientName || actionPayload.siteQuery || ''
+        });
+        setTimeout(() => setAiActionNotice(null), 5000);
+
+        switch (actionPayload.action) {
+            case 'FILTER_INVENTORY': {
+                setActiveTab('inventory');
+                if (actionPayload.city) {
+                    setActiveFilterCity(actionPayload.city);
+                }
+                if (actionPayload.status && actionPayload.status !== 'All') {
+                    setStatusFilter(actionPayload.status.toLowerCase());
+                } else if (actionPayload.status === 'All') {
+                    setStatusFilter('all');
+                }
+                if (actionPayload.search) {
+                    setSearchQuery(actionPayload.search);
+                }
+                const matched = hoardings.find(h => {
+                    const loc = String(h['Location '] || h.Location || h['Locality Site Location'] || '').toLowerCase();
+                    const q = String(actionPayload.search || actionPayload.siteQuery || '').toLowerCase();
+                    return loc.includes(q);
+                });
+                if (matched) {
+                    const sId = matched._SiteID || matched.UniqueID || matched.ID;
+                    setAiHighlightedSiteId(sId);
+                    setTimeout(() => setAiHighlightedSiteId(null), 4000);
+                }
+                showToast(actionPayload.speech || 'Inventory filtered by AI', 'info');
+                break;
+            }
+
+            case 'RESET_FILTERS': {
+                setSearchQuery('');
+                setActiveFilterCity('All');
+                setActiveFilterArea('All');
+                setStatusFilter('all');
+                showToast('All filters reset by AI', 'info');
+                break;
+            }
+
+            case 'SWITCH_TAB': {
+                if (actionPayload.tab) {
+                    setActiveTab(actionPayload.tab);
+                    showToast(`Switched to ${actionPayload.tab} tab`, 'info');
+                }
+                break;
+            }
+
+            case 'QUICK_BOOK': {
+                setActiveTab('inventory');
+                const targetSite = hoardings.find(h => {
+                    const loc = String(h['Location '] || h.Location || h['Locality Site Location'] || '').toLowerCase();
+                    const sl = String(h.SL || h['S. No.'] || h['SL NO'] || '');
+                    const q = String(actionPayload.siteQuery || '').toLowerCase();
+                    return loc.includes(q) || sl === q;
+                }) || hoardings[0];
+
+                if (targetSite) {
+                    setQuickBookingTarget({
+                        site: targetSite,
+                        clientName: actionPayload.clientName || 'Valued Client',
+                        startDate: actionPayload.startDate || new Date().toISOString().split('T')[0],
+                        endDate: actionPayload.endDate || '',
+                        isOverride: Boolean(actionPayload.isOverride),
+                        overrideMode: actionPayload.overrideMode || 'trim',
+                        overrideReason: 'Booked via AI Copilot'
+                    });
+                    const sId = targetSite._SiteID || targetSite.UniqueID || targetSite.ID;
+                    setAiHighlightedSiteId(sId);
+                    setTimeout(() => setAiHighlightedSiteId(null), 4000);
+                    showToast(`Opening booking for ${actionPayload.clientName || 'client'}`, 'info');
+                }
+                break;
+            }
+
+            case 'VIEW_DISPLACED': {
+                setActiveTab('clients');
+                setClientStatusFilter('displaced');
+                showToast('Viewing displaced & overridden bookings', 'info');
+                break;
+            }
+
+            case 'EXPORT_PPT': {
+                handleExportPptCampaign();
+                showToast('Generating PPT proposal...', 'info');
+                break;
+            }
+
+            case 'EXPORT_EXCEL': {
+                exportProposalExcel(hoardings);
+                showToast('Exporting Excel inventory...', 'info');
+                break;
+            }
+
+            case 'ANSWER_QUERY': {
+                showToast(actionPayload.answer || actionPayload.speech, 'info');
+                break;
+            }
+
+            default:
+                break;
+        }
     };
 
     const handleConfirmQuickBooking = async (e) => {
@@ -9388,8 +9525,24 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                         </tr>
                                     </thead>
                                     <tbody>
-                                        {filteredInventory.map((h, i) => (
-                                            <tr key={getProposalKey(h) || i}>
+                                        {filteredInventory.map((h, i) => {
+                                            const sKey = getProposalKey(h) || i;
+                                            const isAiHighlighted = Boolean(aiHighlightedSiteId && (
+                                                h._SiteID === aiHighlightedSiteId || 
+                                                h.UniqueID === aiHighlightedSiteId || 
+                                                h.ID === aiHighlightedSiteId || 
+                                                (h.SL && String(h.SL) === String(aiHighlightedSiteId))
+                                            ));
+                                            return (
+                                            <tr 
+                                                key={sKey}
+                                                style={isAiHighlighted ? { 
+                                                    backgroundColor: '#eff6ff', 
+                                                    outline: '2px solid #3b82f6', 
+                                                    boxShadow: '0 4px 14px rgba(59, 130, 246, 0.25)',
+                                                    transition: 'all 0.3s ease' 
+                                                } : {}}
+                                            >
                                                 <td className="select-col">
                                                     <input
                                                         type="checkbox"
@@ -9624,7 +9777,8 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                                     </div>
                                                 </td>
                                             </tr>
-                                        ))}
+                                        );
+                                    })}
                                     </tbody>
                                 </table>
                             </div>
@@ -9726,16 +9880,69 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                         });
                     });
 
+                    // Load displaced & overridden bookings
+                    const displacedList = getDisplacedBookingSlots();
+                    displacedList.forEach(disp => {
+                        const originalSite = hoardings.find(h => 
+                            (disp.siteId && (h._SiteID === disp.siteId || h.UniqueID === disp.siteId || h.ID === disp.siteId)) ||
+                            (disp.siteSL && String(h.SL) === String(disp.siteSL)) ||
+                            (disp.siteLocation && (h['Location '] === disp.siteLocation || h.Location === disp.siteLocation))
+                        ) || {
+                            SL: disp.siteSL || '?',
+                            'Location ': disp.siteLocation || 'Original Location',
+                            City: disp.siteCity || 'Unknown',
+                            Facing: disp.siteFacing || 'N/A'
+                        };
+
+                        const proRata = calculateProRataRental(
+                            originalSite['Rental Per Month'] || originalSite['Avg Monthly Cost (INR)'] || 0,
+                            disp.start || disp.originalStart,
+                            disp.end || disp.originalEnd
+                        );
+
+                        allBookings.push({
+                            site: originalSite,
+                            slot: {
+                                id: disp.slotId || disp.id,
+                                client: disp.client || disp.clientName || 'Overridden Client',
+                                start: disp.start || disp.originalStart,
+                                end: disp.end || disp.originalEnd,
+                                amount: disp.amount || proRata.total,
+                                days: disp.days || proRata.days
+                            },
+                            displacedData: disp,
+                            isDisplaced: true,
+                            clientName: String(disp.client || disp.clientName || 'Overridden Client').trim(),
+                            location: String(disp.siteLocation || originalSite['Location '] || originalSite.Location || 'Unknown Location'),
+                            city: String(disp.siteCity || originalSite.City || 'Unknown'),
+                            facing: String(disp.siteFacing || originalSite.Facing || '').trim(),
+                            trafficFrom: String(originalSite['Traffic From'] || '').trim(),
+                            trafficTo: String(originalSite['Traffic To'] || '').trim(),
+                            trafficFlow: (originalSite['Traffic From'] && originalSite['Traffic To']) ? `${originalSite['Traffic From']} → ${originalSite['Traffic To']}` : (originalSite['Traffic From'] || originalSite['Traffic To'] || ''),
+                            latLong: String(originalSite['Lat-Long'] || originalSite['Lat Long (Concatenated)'] || '').trim(),
+                            monthlyPrice: Number(originalSite['Rental Per Month'] || originalSite['Avg Monthly Cost (INR)'] || 0) || 0,
+                            proRataAmount: disp.amount || proRata.total,
+                            proRataDays: disp.days || proRata.days,
+                            start: disp.start || disp.originalStart,
+                            end: disp.end || disp.originalEnd,
+                            isTodayActive: false,
+                            isUpcoming: false,
+                            isCompleted: false
+                        });
+                    });
+
                     const totalBookingsCount = allBookings.length;
-                    const activeBookingsCount = allBookings.filter(b => b.isTodayActive).length;
-                    const upcomingBookingsCount = allBookings.filter(b => b.isUpcoming).length;
-                    const completedBookingsCount = allBookings.filter(b => b.isCompleted).length;
+                    const activeBookingsCount = allBookings.filter(b => b.isTodayActive && !b.isDisplaced).length;
+                    const upcomingBookingsCount = allBookings.filter(b => b.isUpcoming && !b.isDisplaced).length;
+                    const completedBookingsCount = allBookings.filter(b => b.isCompleted && !b.isDisplaced).length;
+                    const displacedBookingsCount = allBookings.filter(b => b.isDisplaced).length;
 
                     // Search & Slot Status filter
                     const filteredBookings = allBookings.filter(b => {
-                        if (clientStatusFilter === 'active' && !b.isTodayActive) return false;
-                        if (clientStatusFilter === 'upcoming' && !b.isUpcoming) return false;
-                        if (clientStatusFilter === 'completed' && !b.isCompleted) return false;
+                        if (clientStatusFilter === 'active' && (!b.isTodayActive || b.isDisplaced)) return false;
+                        if (clientStatusFilter === 'upcoming' && (!b.isUpcoming || b.isDisplaced)) return false;
+                        if (clientStatusFilter === 'completed' && (!b.isCompleted || b.isDisplaced)) return false;
+                        if (clientStatusFilter === 'displaced' && !b.isDisplaced) return false;
 
                         const search = clientSearchTerm.toLowerCase().trim();
                         if (!search) return true;
@@ -9943,6 +10150,35 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                             borderRadius: '10px' 
                                         }}>{completedBookingsCount}</span>
                                     </button>
+
+                                    <button
+                                        type="button"
+                                        onClick={() => setClientStatusFilter('displaced')}
+                                        style={{
+                                            padding: '7px 14px',
+                                            borderRadius: '20px',
+                                            fontSize: '0.8rem',
+                                            fontWeight: 600,
+                                            border: clientStatusFilter === 'displaced' ? '1px solid #7c3aed' : '1px solid #ede9fe',
+                                            cursor: 'pointer',
+                                            background: clientStatusFilter === 'displaced' ? '#8b5cf6' : '#f5f3ff',
+                                            color: clientStatusFilter === 'displaced' ? '#ffffff' : '#6d28d9',
+                                            display: 'inline-flex',
+                                            alignItems: 'center',
+                                            gap: '7px',
+                                            transition: 'all 0.15s ease'
+                                        }}
+                                        title="View bookings displaced or trimmed by override bookings"
+                                    >
+                                        <span>⚡</span>
+                                        <span>Overridden / Displaced</span>
+                                        <span style={{ 
+                                            fontSize: '0.7rem', 
+                                            background: clientStatusFilter === 'displaced' ? 'rgba(255,255,255,0.2)' : '#ede9fe',
+                                            padding: '2px 7px', 
+                                            borderRadius: '10px' 
+                                        }}>{displacedBookingsCount}</span>
+                                    </button>
                                 </div>
                             </div>
 
@@ -9956,7 +10192,7 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                             <th style={{ padding: '14px 16px', fontSize: '0.75rem', fontWeight: 600, color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.05em', width: '170px' }}>FACING / TRAFFIC</th>
                                             <th style={{ padding: '14px 16px', fontSize: '0.75rem', fontWeight: 600, color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.05em', width: '150px' }}>RENTAL / VALUE</th>
                                             <th style={{ padding: '14px 16px', fontSize: '0.75rem', fontWeight: 600, color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.05em', width: '180px' }}>BOOKING DATES</th>
-                                            <th style={{ padding: '14px 16px', fontSize: '0.75rem', fontWeight: 600, color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.05em', width: '90px', textAlign: 'center' }}>ACTION</th>
+                                            <th style={{ padding: '14px 16px', fontSize: '0.75rem', fontWeight: 600, color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.05em', width: '130px', textAlign: 'center' }}>ACTION</th>
                                         </tr>
                                     </thead>
                                     <tbody>
@@ -10132,7 +10368,11 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                                                 {start} → {end}
                                                             </div>
                                                             <div style={{ marginTop: '3px' }}>
-                                                                {isCurrent ? (
+                                                                {b.isDisplaced ? (
+                                                                    <span style={{ fontSize: '0.68rem', padding: '2px 7px', background: '#ede9fe', color: '#6d28d9', borderRadius: '4px', fontWeight: 700, border: '1px solid #ddd6fe', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                                                                        ⚡ Displaced ({b.displacedData?.status || 'Overridden'})
+                                                                    </span>
+                                                                ) : isCurrent ? (
                                                                     <span style={{ fontSize: '0.68rem', padding: '1px 6px', background: '#fee2e2', color: '#b91c1c', borderRadius: '4px', fontWeight: 700 }}>
                                                                         ● Active Today
                                                                     </span>
@@ -10150,27 +10390,129 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
 
                                                         {/* ACTION */}
                                                         <td style={{ padding: '16px', textAlign: 'center' }}>
-                                                            <button
-                                                                type="button"
-                                                                onClick={() => handleRemoveSlot(b.site, b.slot.id)}
-                                                                style={{
-                                                                    background: '#fee2e2',
-                                                                    border: 'none',
-                                                                    borderRadius: '6px',
-                                                                    padding: '6px 8px',
-                                                                    color: '#dc2626',
-                                                                    fontSize: '0.75rem',
-                                                                    fontWeight: 700,
-                                                                    cursor: 'pointer',
-                                                                    display: 'inline-flex',
-                                                                    alignItems: 'center',
-                                                                    justifyContent: 'center',
-                                                                    transition: 'background 0.15s ease'
-                                                                }}
-                                                                title="Delete / Release this booking slot"
-                                                            >
-                                                                <Trash2 size={15} />
-                                                            </button>
+                                                            {b.isDisplaced ? (
+                                                                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}>
+                                                                    <button
+                                                                        type="button"
+                                                                        onClick={() => setShiftingSlotTarget({ fromSite: b.site, slot: b.slot, isDisplaced: true })}
+                                                                        style={{
+                                                                            background: '#e0e7ff',
+                                                                            border: 'none',
+                                                                            borderRadius: '6px',
+                                                                            padding: '6px 8px',
+                                                                            color: '#4338ca',
+                                                                            cursor: 'pointer',
+                                                                            display: 'inline-flex',
+                                                                            alignItems: 'center',
+                                                                            justifyContent: 'center',
+                                                                            transition: 'background 0.15s ease'
+                                                                        }}
+                                                                        title="Shift / Reallocate this displaced booking to another available hoarding site"
+                                                                    >
+                                                                        <ArrowRightLeft size={14} />
+                                                                    </button>
+                                                                    <button
+                                                                        type="button"
+                                                                        onClick={() => handleRestoreDisplacedSlot(b.site, b.displacedData?.id)}
+                                                                        style={{
+                                                                            background: '#dcfce7',
+                                                                            border: 'none',
+                                                                            borderRadius: '6px',
+                                                                            padding: '6px 8px',
+                                                                            color: '#15803d',
+                                                                            cursor: 'pointer',
+                                                                            display: 'inline-flex',
+                                                                            alignItems: 'center',
+                                                                            justifyContent: 'center',
+                                                                            transition: 'background 0.15s ease'
+                                                                        }}
+                                                                        title="Restore this displaced booking back into original site schedule"
+                                                                    >
+                                                                        <RotateCcw size={14} />
+                                                                    </button>
+                                                                    <button
+                                                                        type="button"
+                                                                        onClick={() => handleDismissDisplacedSlot(b.displacedData?.id)}
+                                                                        style={{
+                                                                            background: '#f1f5f9',
+                                                                            border: 'none',
+                                                                            borderRadius: '6px',
+                                                                            padding: '6px 8px',
+                                                                            color: '#64748b',
+                                                                            cursor: 'pointer',
+                                                                            display: 'inline-flex',
+                                                                            alignItems: 'center',
+                                                                            justifyContent: 'center',
+                                                                            transition: 'background 0.15s ease'
+                                                                        }}
+                                                                        title="Dismiss displaced record"
+                                                                    >
+                                                                        <X size={14} />
+                                                                    </button>
+                                                                </div>
+                                                            ) : (
+                                                                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}>
+                                                                    <button
+                                                                        type="button"
+                                                                        onClick={() => setEditingSlotTarget({ site: b.site, slot: b.slot })}
+                                                                        style={{
+                                                                            background: '#fef3c7',
+                                                                            border: 'none',
+                                                                            borderRadius: '6px',
+                                                                            padding: '6px 8px',
+                                                                            color: '#b45309',
+                                                                            cursor: 'pointer',
+                                                                            display: 'inline-flex',
+                                                                            alignItems: 'center',
+                                                                            justifyContent: 'center',
+                                                                            transition: 'background 0.15s ease'
+                                                                        }}
+                                                                        title="Edit client name, booking dates, price or status"
+                                                                    >
+                                                                        <Edit3 size={14} />
+                                                                    </button>
+                                                                    <button
+                                                                        type="button"
+                                                                        onClick={() => setShiftingSlotTarget({ fromSite: b.site, slot: b.slot })}
+                                                                        style={{
+                                                                            background: '#e0e7ff',
+                                                                            border: 'none',
+                                                                            borderRadius: '6px',
+                                                                            padding: '6px 8px',
+                                                                            color: '#4338ca',
+                                                                            cursor: 'pointer',
+                                                                            display: 'inline-flex',
+                                                                            alignItems: 'center',
+                                                                            justifyContent: 'center',
+                                                                            transition: 'background 0.15s ease'
+                                                                        }}
+                                                                        title="Shift this booking to an alternate hoarding site"
+                                                                    >
+                                                                        <ArrowRightLeft size={14} />
+                                                                    </button>
+                                                                    <button
+                                                                        type="button"
+                                                                        onClick={() => handleRemoveSlot(b.site, b.slot.id)}
+                                                                        style={{
+                                                                            background: '#fee2e2',
+                                                                            border: 'none',
+                                                                            borderRadius: '6px',
+                                                                            padding: '6px 8px',
+                                                                            color: '#dc2626',
+                                                                            fontSize: '0.75rem',
+                                                                            fontWeight: 700,
+                                                                            cursor: 'pointer',
+                                                                            display: 'inline-flex',
+                                                                            alignItems: 'center',
+                                                                            justifyContent: 'center',
+                                                                            transition: 'background 0.15s ease'
+                                                                        }}
+                                                                        title="Delete / Release this booking slot"
+                                                                    >
+                                                                        <Trash2 size={14} />
+                                                                    </button>
+                                                                </div>
+                                                            )}
                                                         </td>
                                                     </tr>
                                                 );
@@ -11090,6 +11432,89 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                             <button type="button" onClick={() => setToast(null)} title="Dismiss">
                                 <X size={14} />
                             </button>
+                        </div>
+                    </div>
+                )}
+
+                {/* ⚡ Slot Edit Modal (Edit client, dates, pro-rata rental, status) */}
+                <SlotEditModal
+                    isOpen={Boolean(editingSlotTarget)}
+                    onClose={() => setEditingSlotTarget(null)}
+                    site={editingSlotTarget?.site}
+                    slot={editingSlotTarget?.slot}
+                    onSuccess={(updatedSlot, targetSite) => {
+                        setHoardings(prev => prev.map(h => (h === targetSite || h._SiteID === targetSite._SiteID) ? { ...h, BookingSchedule: targetSite.BookingSchedule } : h));
+                        showToast("Booking slot updated successfully!", "success");
+                        setEditingSlotTarget(null);
+                    }}
+                />
+
+                {/* 🔁 Shift Slot Modal (Move slot to another site) */}
+                <ShiftSlotModal
+                    isOpen={Boolean(shiftingSlotTarget)}
+                    onClose={() => setShiftingSlotTarget(null)}
+                    fromSite={shiftingSlotTarget?.fromSite}
+                    slot={shiftingSlotTarget?.slot}
+                    allHoardings={hoardings}
+                    onSuccess={(fromSite, toSite) => {
+                        setHoardings(prev => prev.map(h => {
+                            if (fromSite && (h === fromSite || h._SiteID === fromSite._SiteID)) {
+                                return { ...h, BookingSchedule: fromSite.BookingSchedule };
+                            }
+                            if (toSite && (h === toSite || h._SiteID === toSite._SiteID)) {
+                                return { ...h, BookingSchedule: toSite.BookingSchedule };
+                            }
+                            return h;
+                        }));
+                        showToast(`Booking shifted to ${toSite['Location '] || toSite.Location || 'new site'} successfully!`, "success");
+                        setShiftingSlotTarget(null);
+                    }}
+                />
+
+                {/* 🎙️ Live AI Voice Copilot Widget */}
+                <AIVoiceCopilot
+                    hoardings={hoardings}
+                    activeTab={activeTab}
+                    onExecuteAction={handleExecuteAIAction}
+                />
+
+                {/* 🔮 Live AI Spotlight Action Notification */}
+                {aiActionNotice && (
+                    <div style={{
+                        position: 'fixed',
+                        top: '76px',
+                        left: '50%',
+                        transform: 'translateX(-50%)',
+                        zIndex: 9999,
+                        background: 'linear-gradient(135deg, #1e1b4b 0%, #312e81 100%)',
+                        color: '#ffffff',
+                        padding: '10px 22px',
+                        borderRadius: '9999px',
+                        boxShadow: '0 10px 25px -5px rgba(49, 46, 129, 0.4), 0 0 15px rgba(99, 102, 241, 0.5)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '12px',
+                        border: '1px solid rgba(129, 140, 248, 0.4)',
+                        pointerEvents: 'none'
+                    }}>
+                        <div style={{
+                            width: '26px',
+                            height: '26px',
+                            borderRadius: '50%',
+                            background: 'linear-gradient(135deg, #6366f1 0%, #a855f7 100%)',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center'
+                        }}>
+                            <Sparkles size={14} color="#ffffff" />
+                        </div>
+                        <div style={{ display: 'flex', flexDirection: 'column' }}>
+                            <span style={{ fontSize: '0.82rem', fontWeight: 700, letterSpacing: '0.01em' }}>
+                                AI Action: {aiActionNotice.action}
+                            </span>
+                            <span style={{ fontSize: '0.74rem', opacity: 0.9, color: '#c7d2fe' }}>
+                                {aiActionNotice.speech}
+                            </span>
                         </div>
                     </div>
                 )}
