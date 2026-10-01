@@ -2,19 +2,13 @@ import React, { useState, useEffect, useRef } from 'react';
 import { 
   Mic, 
   MicOff, 
-  Sparkles, 
-  Volume2, 
-  VolumeX, 
-  Send, 
-  X, 
+  Power, 
   ChevronDown, 
-  ChevronUp, 
-  Radio, 
-  Zap, 
-  Bot, 
-  CornerDownLeft 
+  Loader2, 
+  AudioLines, 
+  Check 
 } from 'lucide-react';
-import { interpretVoiceCommand } from '../services/voiceActionEngine.js';
+import { chatWithJarvis } from '../services/voiceActionEngine.js';
 
 export default function AIVoiceCopilot({
   hoardings = [],
@@ -22,464 +16,844 @@ export default function AIVoiceCopilot({
   onExecuteAction = null
 }) {
   const [isOpen, setIsOpen] = useState(false);
-  const [isListening, setIsListening] = useState(false);
-  const [transcript, setTranscript] = useState('');
-  const [interimText, setInterimText] = useState('');
-  const [manualText, setManualText] = useState('');
-  const [status, setStatus] = useState('idle'); // 'idle' | 'listening' | 'processing' | 'executing' | 'speaking'
-  const [statusMsg, setStatusMsg] = useState('Say something or ask anything...');
+  const [isConnected, setIsConnected] = useState(false);
+  const [isConnecting, setIsConnecting] = useState(false);
+  const [isModelSpeaking, setIsModelSpeaking] = useState(false);
+  const [modelVolume, setModelVolume] = useState(0);
+  const [userVolume, setUserVolume] = useState(0);
+  const [currentTranscript, setCurrentTranscript] = useState('');
   const [isMuted, setIsMuted] = useState(false);
-  const [recentActions, setRecentActions] = useState([]);
+  const [callDuration, setCallDuration] = useState(0);
+  const [successCard, setSuccessCard] = useState(null);
 
+  const timerRef = useRef(null);
   const recognitionRef = useRef(null);
-  const synthRef = useRef(typeof window !== 'undefined' ? window.speechSynthesis : null);
+  const streamRef = useRef(null);
+  const audioContextRef = useRef(null);
+  const analyserRef = useRef(null);
+  const animFrameRef = useRef(null);
+  const historyRef = useRef([]);
+  const isSpeakingRef = useRef(false);
+  const isConnectedRef = useRef(false);
 
-  // Initialize Speech Recognition
+  // Sync ref
   useEffect(() => {
-    if (typeof window === 'undefined') return;
+    isConnectedRef.current = isConnected;
+  }, [isConnected]);
 
-    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (SpeechRecognition) {
-      const recognition = new SpeechRecognition();
-      recognition.continuous = false;
-      recognition.interimResults = true;
-      recognition.lang = 'hi-IN'; // Supports Hindi + English (Hinglish) seamlessly
-
-      recognition.onstart = () => {
-        setIsListening(true);
-        setStatus('listening');
-        setStatusMsg('🎙️ Sun raha hoon... (Listening)');
-      };
-
-      recognition.onresult = (event) => {
-        let currentInterim = '';
-        let finalTranscript = '';
-
-        for (let i = event.resultIndex; i < event.results.length; i++) {
-          const trans = event.results[i][0].transcript;
-          if (event.results[i].isFinal) {
-            finalTranscript += trans;
-          } else {
-            currentInterim += trans;
-          }
-        }
-
-        setInterimText(currentInterim);
-        if (finalTranscript) {
-          setTranscript(finalTranscript);
-          handleProcessCommand(finalTranscript);
-        }
-      };
-
-      recognition.onerror = (event) => {
-        console.warn('Speech recognition notice:', event.error);
-        setIsListening(false);
-        if (event.error === 'not-allowed') {
-          setStatusMsg('⚠️ Microphone permission chahiye.');
-        } else {
-          setStatus('idle');
-          setStatusMsg('Say something or ask anything...');
-        }
-      };
-
-      recognition.onend = () => {
-        setIsListening(false);
-      };
-
-      recognitionRef.current = recognition;
+  // Call duration counter
+  useEffect(() => {
+    if (isConnected) {
+      setCallDuration(0);
+      timerRef.current = window.setInterval(() => {
+        setCallDuration(prev => prev + 1);
+      }, 1000);
+    } else {
+      if (timerRef.current) clearInterval(timerRef.current);
     }
-  }, []);
+    return () => {
+      if (timerRef.current) clearInterval(timerRef.current);
+    };
+  }, [isConnected]);
 
-  const toggleListening = () => {
-    if (!recognitionRef.current) {
-      alert('Speech Recognition aapke browser me support nahi karta. Please use Chrome or Edge, ya text type karein.');
+  // Format call duration MM:SS
+  const formatDuration = (secs) => {
+    const m = Math.floor(secs / 60).toString().padStart(2, '0');
+    const s = (secs % 60).toString().padStart(2, '0');
+    return `${m}:${s}`;
+  };
+
+  // Find the highest quality Natural / Neural voice available in the browser
+  const getNaturalVoice = () => {
+    if (typeof window === 'undefined' || !window.speechSynthesis) return null;
+    const voices = window.speechSynthesis.getVoices();
+    if (!voices || voices.length === 0) return null;
+
+    // 1. Preferred Hindi natural voices
+    const hindiVoice = voices.find(v => 
+      v.lang.startsWith('hi') && (v.name.includes('Google') || v.name.includes('Natural') || v.name.includes('Online'))
+    ) || voices.find(v => v.lang.startsWith('hi'));
+    if (hindiVoice) return hindiVoice;
+
+    // 2. High fidelity English natural voices (Indian or UK/US Neural)
+    const indianEn = voices.find(v => v.lang === 'en-IN' && (v.name.includes('Natural') || v.name.includes('Google') || v.name.includes('Neerja') || v.name.includes('Prabhat')));
+    if (indianEn) return indianEn;
+
+    const ukFemale = voices.find(v => v.name.includes('Google UK English Female') || (v.lang === 'en-GB' && v.name.includes('Natural')));
+    if (ukFemale) return ukFemale;
+
+    const naturalEn = voices.find(v => v.name.includes('Natural') || v.name.includes('Google'));
+    if (naturalEn) return naturalEn;
+
+    return voices[0];
+  };
+
+  // Natural Speech Playback with Real-Time Audio Waveform Simulation
+  const speakNaturalReply = (text, onComplete) => {
+    if (typeof window === 'undefined' || !window.speechSynthesis) {
+      if (onComplete) onComplete();
       return;
     }
 
-    if (isListening) {
-      recognitionRef.current.stop();
-      setIsListening(false);
-      setStatus('idle');
-    } else {
-      setTranscript('');
-      setInterimText('');
-      try {
-        recognitionRef.current.start();
-        setIsOpen(true);
-      } catch (err) {
-        console.warn('Recognition start notice:', err);
-      }
-    }
+    window.speechSynthesis.cancel();
+
+    const utterance = new SpeechSynthesisUtterance(text);
+    const chosenVoice = getNaturalVoice();
+    if (chosenVoice) utterance.voice = chosenVoice;
+
+    utterance.lang = chosenVoice?.lang || 'hi-IN';
+    utterance.rate = 1.04;
+    utterance.pitch = 1.05;
+
+    // Audio Visualizer waveform simulation during model speech
+    let volInterval = null;
+    utterance.onstart = () => {
+      setIsModelSpeaking(true);
+      isSpeakingRef.current = true;
+      volInterval = setInterval(() => {
+        // Natural speech modulation between 0.2 and 0.8
+        const dynamicVol = 0.25 + Math.random() * 0.55;
+        setModelVolume(dynamicVol);
+      }, 100);
+    };
+
+    utterance.onend = () => {
+      if (volInterval) clearInterval(volInterval);
+      setModelVolume(0);
+      setIsModelSpeaking(false);
+      isSpeakingRef.current = false;
+      if (onComplete) onComplete();
+    };
+
+    utterance.onerror = () => {
+      if (volInterval) clearInterval(volInterval);
+      setModelVolume(0);
+      setIsModelSpeaking(false);
+      isSpeakingRef.current = false;
+      if (onComplete) onComplete();
+    };
+
+    window.speechSynthesis.speak(utterance);
   };
 
-  const speakText = (text) => {
-    if (isMuted || !synthRef.current || !text) return;
+  // Start continuous user microphone capture with RMS volume analysis
+  const startMicAnalysis = async () => {
     try {
-      synthRef.current.cancel();
-      const utterance = new SpeechSynthesisUtterance(text);
-      utterance.rate = 1.05;
-      utterance.pitch = 1.0;
+      if (!navigator.mediaDevices?.getUserMedia) return;
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      streamRef.current = stream;
 
-      // Prefer Indian English / Hindi voice
-      const voices = synthRef.current.getVoices();
-      const hindiVoice = voices.find(v => v.lang.includes('hi') || v.lang.includes('IN'));
-      if (hindiVoice) utterance.voice = hindiVoice;
+      const AudioCtx = window.AudioContext || window.webkitAudioContext;
+      if (!AudioCtx) return;
 
-      utterance.onstart = () => setStatus('speaking');
-      utterance.onend = () => setStatus('idle');
-      synthRef.current.speak(utterance);
-    } catch (e) {
-      console.warn('Speech synthesis notice:', e);
-    }
-  };
+      const audioCtx = new AudioCtx();
+      audioContextRef.current = audioCtx;
 
-  const handleProcessCommand = async (commandText) => {
-    if (!commandText || !commandText.trim()) return;
-    setStatus('processing');
-    setStatusMsg('🧠 Thinking & Planning Action...');
+      const source = audioCtx.createMediaStreamSource(stream);
+      const analyser = audioCtx.createAnalyser();
+      analyser.fftSize = 256;
+      source.connect(analyser);
+      analyserRef.current = analyser;
 
-    try {
-      const actionPayload = await interpretVoiceCommand(commandText, {
-        totalSites: hoardings.length,
-        activeTab
-      });
+      const dataArray = new Uint8Array(analyser.frequencyBinCount);
+      const updateVolume = () => {
+        if (!analyserRef.current || !isConnectedRef.current) return;
+        analyserRef.current.getByteFrequencyData(dataArray);
 
-      if (!actionPayload) {
-        setStatus('idle');
-        setStatusMsg('Samajh nahi aaya, please dobara bolein.');
-        return;
-      }
+        let sum = 0;
+        for (let i = 0; i < dataArray.length; i++) {
+          sum += dataArray[i];
+        }
+        const avg = sum / dataArray.length;
+        const norm = Math.min(1, avg / 128);
 
-      setStatus('executing');
-      setStatusMsg(`⚡ Executing: ${actionPayload.action}`);
+        // Don't show user volume if model is speaking or mic is muted
+        if (!isSpeakingRef.current) {
+          setUserVolume(norm);
+        } else {
+          setUserVolume(0);
+        }
 
-      // Add to recent actions
-      setRecentActions(prev => [{
-        text: commandText,
-        action: actionPayload.action,
-        speech: actionPayload.speech,
-        time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-      }, ...prev.slice(0, 4)]);
+        animFrameRef.current = requestAnimationFrame(updateVolume);
+      };
 
-      // Speak feedback
-      if (actionPayload.speech) {
-        speakText(actionPayload.speech);
-      }
-
-      // Trigger Execution in Parent Dashboard
-      if (onExecuteAction) {
-        onExecuteAction(actionPayload);
-      }
-
-      setTimeout(() => {
-        setStatus('idle');
-        setStatusMsg('Ready for next command...');
-      }, 2500);
-
+      updateVolume();
     } catch (err) {
-      console.warn('Action interpretation error:', err);
-      setStatus('idle');
-      setStatusMsg('Error processing command. Dobara try karein.');
+      console.warn("Microphone analyser not accessible:", err);
     }
   };
 
-  const handleManualSubmit = (e) => {
-    e.preventDefault();
-    if (!manualText.trim()) return;
-    setTranscript(manualText);
-    const textToRun = manualText;
-    setManualText('');
-    handleProcessCommand(textToRun);
+  // Stop microphone stream & visualizer
+  const stopMicAnalysis = () => {
+    if (animFrameRef.current) cancelAnimationFrame(animFrameRef.current);
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach(t => t.stop());
+      streamRef.current = null;
+    }
+    if (audioContextRef.current && audioContextRef.current.state !== 'closed') {
+      try { audioContextRef.current.close(); } catch(e) {}
+      audioContextRef.current = null;
+    }
+    setUserVolume(0);
   };
 
-  const quickPrompts = [
-    'Begum Bridge ke 40x10 available sites',
-    'Tata Motors ke liye book karo',
-    'Overridden bookings dikhao',
-    'Client campaigns open karo',
-    'Reset all filters',
-    'PPT campaign proposal download karo'
-  ];
+  // Initialize Speech Recognition for continuous two-way conversation
+  const initSpeechRecognition = () => {
+    if (typeof window === 'undefined') return null;
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SpeechRecognition) return null;
+
+    const recognition = new SpeechRecognition();
+    recognition.continuous = true;
+    recognition.interimResults = true;
+    recognition.lang = 'hi-IN'; // Understands Hindi, English, and Hinglish
+
+    recognition.onresult = async (event) => {
+      if (!isConnectedRef.current) return;
+
+      let interim = '';
+      let finalTranscript = '';
+
+      for (let i = event.resultIndex; i < event.results.length; i++) {
+        const t = event.results[i][0].transcript;
+        if (event.results[i].isFinal) {
+          finalTranscript += t;
+        } else {
+          interim += t;
+        }
+      }
+
+      if (interim) {
+        // If user starts talking while model is speaking, interrupt model immediately!
+        if (isSpeakingRef.current && window.speechSynthesis) {
+          window.speechSynthesis.cancel();
+          setIsModelSpeaking(false);
+          isSpeakingRef.current = false;
+        }
+        setCurrentTranscript(interim);
+      }
+
+      if (finalTranscript.trim()) {
+        const spoken = finalTranscript.trim();
+        setCurrentTranscript(spoken);
+
+        // Add to history
+        historyRef.current.push({ role: 'user', content: spoken });
+
+        // Query conversational engine
+        try {
+          const res = await chatWithJarvis({
+            userText: spoken,
+            history: historyRef.current,
+            hoardings,
+            activeTab
+          });
+
+          if (res) {
+            historyRef.current.push({ role: 'assistant', content: res.reply });
+            setCurrentTranscript(res.reply);
+
+            // Execute dashboard action live!
+            if (res.action && res.action !== 'NONE' && onExecuteAction) {
+              onExecuteAction(res.actionPayload);
+            }
+
+            // Display success card if present (Prescripto style!)
+            if (res.successCard) {
+              setSuccessCard(res.successCard);
+            }
+
+            // Speak natural response
+            speakNaturalReply(res.reply, () => {
+              // Stay in continuous call, ready for next turn
+            });
+          }
+        } catch (err) {
+          console.warn("Conversation turn error:", err);
+          speakNaturalReply("Theek hai, main samajh gaya.", () => {});
+        }
+      }
+    };
+
+    recognition.onerror = (e) => {
+      if (e.error === 'no-speech') return;
+      console.warn("Speech recognition error:", e.error);
+    };
+
+    recognition.onend = () => {
+      // Auto-restart if call is still active and not muted
+      if (isConnectedRef.current && !isMuted) {
+        try {
+          recognition.start();
+        } catch (e) {}
+      }
+    };
+
+    return recognition;
+  };
+
+  // Start Call Session
+  const handleStartCall = async () => {
+    if (!isOpen) { 
+      setIsOpen(true); 
+      return; 
+    }
+
+    setIsConnecting(true);
+    setCurrentTranscript('');
+    setSuccessCard(null);
+
+    // Warm up speech synthesis voices
+    if (typeof window !== 'undefined' && window.speechSynthesis) {
+      window.speechSynthesis.getVoices();
+    }
+
+    // Start mic stream & waveform analyser
+    await startMicAnalysis();
+
+    // Start continuous speech recognition
+    const rec = initSpeechRecognition();
+    recognitionRef.current = rec;
+    if (rec) {
+      try {
+        rec.start();
+      } catch (err) {
+        console.warn("Recognition start issue:", err);
+      }
+    }
+
+    setIsConnected(true);
+    setIsConnecting(false);
+    setIsMuted(false);
+
+    // Initial greeting in natural human voice (Prescripto style)
+    const greeting = "Namaste! Main Jarvis hoon. Hoarding inventory, bookings ya campaigns ke liye batayein main kya madad kar sakta hoon?";
+    setCurrentTranscript(greeting);
+    historyRef.current = [{ role: 'assistant', content: greeting }];
+    speakNaturalReply(greeting);
+  };
+
+  // End Call Session
+  const handleEndCall = () => {
+    if (window.speechSynthesis) window.speechSynthesis.cancel();
+    if (recognitionRef.current) {
+      try { recognitionRef.current.stop(); } catch(e) {}
+      recognitionRef.current = null;
+    }
+    stopMicAnalysis();
+
+    setIsConnected(false);
+    setIsConnecting(false);
+    setIsModelSpeaking(false);
+    setModelVolume(0);
+    setUserVolume(0);
+    setCurrentTranscript('');
+    setSuccessCard(null);
+    historyRef.current = [];
+  };
+
+  // Toggle Mute
+  const toggleMute = () => {
+    const nextMuted = !isMuted;
+    setIsMuted(nextMuted);
+    if (nextMuted) {
+      if (recognitionRef.current) {
+        try { recognitionRef.current.stop(); } catch(e) {}
+      }
+      setUserVolume(0);
+    } else {
+      if (recognitionRef.current) {
+        try { recognitionRef.current.start(); } catch(e) {}
+      }
+    }
+  };
+
+  // High Resolution Professional Avatar from Prescripto
+  const AVATAR_URL = "https://images.unsplash.com/photo-1580489944761-15a19d654956?auto=format&fit=crop&q=100&w=1000";
+  const FALLBACK_AVATAR = "https://ui-avatars.com/api/?name=Jarvis&background=5F6FFF&color=fff&size=512";
+
+  const handleImageError = (e) => {
+    e.currentTarget.src = FALLBACK_AVATAR;
+  };
 
   return (
-    <div style={{ position: 'fixed', bottom: '24px', right: '24px', zIndex: 9999 }}>
-      {/* 🚀 EXPANDED ASSISTANT PANEL */}
+    <div style={{
+      position: 'fixed',
+      bottom: '24px',
+      right: '24px',
+      zIndex: 9999,
+      display: 'flex',
+      flexDirection: 'column',
+      alignItems: 'flex-end',
+      fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif"
+    }}>
+      <style>{`
+        @keyframes ping {
+          75%, 100% {
+            transform: scale(2);
+            opacity: 0;
+          }
+        }
+        @keyframes pulse {
+          0%, 100% { opacity: 1; }
+          50% { opacity: .4; }
+        }
+        @keyframes slideUpFade {
+          from { opacity: 0; transform: translateY(16px) scale(0.96); }
+          to { opacity: 1; transform: translateY(0) scale(1); }
+        }
+      `}</style>
       {isOpen && (
         <div style={{
-          width: '360px',
-          maxHeight: '520px',
-          background: 'rgba(15, 23, 42, 0.95)',
-          backdropFilter: 'blur(16px)',
-          borderRadius: '20px',
-          border: '1px solid rgba(245, 158, 11, 0.35)',
-          boxShadow: '0 20px 50px rgba(0,0,0,0.5), 0 0 30px rgba(245, 158, 11, 0.2)',
+          background: '#ffffff',
+          borderRadius: '2rem',
+          boxShadow: '0 20px 60px -15px rgba(0,0,0,0.22)',
+          width: '92vw',
+          maxWidth: '320px',
+          height: '520px',
+          maxHeight: '85vh',
+          overflow: 'hidden',
           display: 'flex',
           flexDirection: 'column',
-          overflow: 'hidden',
-          marginBottom: '14px',
-          animation: 'fadeInUp 0.25s ease'
+          position: 'relative',
+          border: '1px solid #f3f4f6',
+          marginBottom: '16px',
+          animation: 'slideUpFade 0.35s cubic-bezier(0.16, 1, 0.3, 1)'
         }}>
-          {/* Header */}
+
+          {/* 🌟 Header Section (Prescripto Primary #5F6FFF) */}
           <div style={{
-            padding: '14px 16px',
-            borderBottom: '1px solid rgba(255, 255, 255, 0.1)',
+            background: '#5F6FFF',
+            padding: '16px 20px',
             display: 'flex',
-            alignItems: 'center',
             justifyContent: 'space-between',
-            background: 'linear-gradient(135deg, rgba(217, 119, 6, 0.25), transparent)'
+            alignItems: 'center',
+            position: 'relative',
+            zIndex: 20
           }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
               <div style={{
-                width: '30px',
-                height: '30px',
-                borderRadius: '8px',
-                background: 'linear-gradient(135deg, #f59e0b, #d97706)',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                color: '#ffffff',
-                boxShadow: '0 2px 10px rgba(245, 158, 11, 0.5)'
+                width: '36px',
+                height: '36px',
+                borderRadius: '50%',
+                overflow: 'hidden',
+                border: '2px solid #ffffff',
+                boxShadow: '0 2px 6px rgba(0,0,0,0.1)',
+                flexShrink: 0
               }}>
-                <Bot size={18} />
+                <img 
+                  src={AVATAR_URL} 
+                  onError={handleImageError}
+                  alt="Jarvis" 
+                  style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                />
               </div>
-              <div>
-                <div style={{ fontSize: '0.88rem', fontWeight: 800, color: '#f8fafc', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  <span>Jarvis AI Copilot</span>
-                  <span style={{ fontSize: '0.65rem', background: 'rgba(245, 158, 11, 0.2)', color: '#fbbf24', padding: '1px 6px', borderRadius: '10px', border: '1px solid rgba(245, 158, 11, 0.4)' }}>
-                    Live Auto
+              <div style={{ display: 'flex', flexDirection: 'column' }}>
+                <h3 style={{ color: '#ffffff', fontSize: '14px', fontWeight: 800, margin: 0, lineHeight: 1.2, letterSpacing: '0.01em' }}>
+                  Jarvis
+                </h3>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+                  <span style={{
+                    width: '6px',
+                    height: '6px',
+                    borderRadius: '50%',
+                    background: '#ffffff',
+                    animation: isConnected ? 'pulse 1.5s infinite' : 'none'
+                  }}></span>
+                  <span style={{ fontSize: '9px', color: 'rgba(255,255,255,0.75)', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.08em' }}>
+                    {isConnected ? `Live Call • ${formatDuration(callDuration)}` : "Online"}
                   </span>
                 </div>
-                <div style={{ fontSize: '0.7rem', color: '#94a3b8' }}>
-                  Voice & Autonomous Dashboard
-                </div>
               </div>
             </div>
 
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <button
-                type="button"
-                onClick={() => setIsMuted(!isMuted)}
-                title={isMuted ? 'Unmute Audio' : 'Mute Audio'}
-                style={{
-                  background: isMuted ? 'rgba(239, 68, 68, 0.2)' : 'rgba(255,255,255,0.08)',
-                  border: 'none',
-                  borderRadius: '6px',
-                  padding: '6px',
-                  color: isMuted ? '#f87171' : '#cbd5e1',
-                  cursor: 'pointer'
-                }}
-              >
-                {isMuted ? <VolumeX size={15} /> : <Volume2 size={15} />}
-              </button>
-              <button
-                type="button"
-                onClick={() => setIsOpen(false)}
-                style={{
-                  background: 'rgba(255,255,255,0.08)',
-                  border: 'none',
-                  borderRadius: '6px',
-                  padding: '6px',
-                  color: '#cbd5e1',
-                  cursor: 'pointer'
-                }}
-              >
-                <X size={15} />
-              </button>
-            </div>
+            <button
+              type="button"
+              onClick={() => setIsOpen(false)}
+              style={{
+                background: 'none',
+                border: 'none',
+                color: 'rgba(255,255,255,0.6)',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                padding: '4px',
+                transition: 'color 0.15s ease'
+              }}
+              onMouseEnter={(e) => e.currentTarget.style.color = '#ffffff'}
+              onMouseLeave={(e) => e.currentTarget.style.color = 'rgba(255,255,255,0.6)'}
+              title="Minimize Copilot"
+            >
+              <ChevronDown size={24} />
+            </button>
           </div>
 
-          {/* Status & Waveform */}
-          <div style={{
-            padding: '16px',
-            textAlign: 'center',
-            background: 'rgba(2, 6, 23, 0.5)',
-            borderBottom: '1px solid rgba(255, 255, 255, 0.06)'
-          }}>
+          {/* 🌟 Main Content Area */}
+          <div style={{ flexGrow: 1, display: 'flex', flexDirection: 'column', position: 'relative', background: '#ffffff' }}>
+
+            {/* 🎯 Success Card Overlay (Prescripto Style) */}
+            {successCard ? (
+              <div style={{
+                position: 'absolute',
+                inset: 0,
+                zIndex: 30,
+                background: 'rgba(255, 255, 255, 0.96)',
+                backdropFilter: 'blur(5px)',
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                justifyContent: 'center',
+                padding: '24px'
+              }}>
+                <div style={{
+                  background: '#ffffff',
+                  width: '100%',
+                  borderRadius: '16px',
+                  boxShadow: '0 15px 35px rgba(0,0,0,0.12)',
+                  border: '1px solid #e0e7ff',
+                  overflow: 'hidden'
+                }}>
+                  <div style={{ background: '#10b981', padding: '16px', textAlign: 'center' }}>
+                    <div style={{
+                      width: '44px',
+                      height: '44px',
+                      background: '#ffffff',
+                      borderRadius: '50%',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      margin: '0 auto 8px',
+                      color: '#10b981',
+                      boxShadow: '0 2px 8px rgba(0,0,0,0.08)'
+                    }}>
+                      <Check size={26} strokeWidth={3.5} />
+                    </div>
+                    <h3 style={{ color: '#ffffff', fontWeight: 800, fontSize: '16px', margin: 0 }}>
+                      {successCard.title || "Executed!"}
+                    </h3>
+                  </div>
+
+                  <div style={{ padding: '18px 20px', display: 'flex', flexDirection: 'column', gap: '10px', fontSize: '13px', color: '#475569' }}>
+                    {(successCard.items || []).map((item, idx) => (
+                      <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', borderBottom: idx === successCard.items.length - 1 ? 'none' : '1px solid #f1f5f9', paddingBottom: '6px' }}>
+                        <span style={{ fontSize: '11px', fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase' }}>
+                          {item.label}
+                        </span>
+                        <span style={{ fontWeight: 700, color: '#0f172a', textAlign: 'right', maxWidth: '160px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {item.value}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+
+                  <div style={{ padding: '12px', background: '#f8fafc', textAlign: 'center', borderTop: '1px solid #f1f5f9' }}>
+                    <button
+                      type="button"
+                      onClick={() => setSuccessCard(null)}
+                      style={{
+                        background: 'none',
+                        border: 'none',
+                        color: '#4f46e5',
+                        fontSize: '11px',
+                        fontWeight: 800,
+                        textTransform: 'uppercase',
+                        letterSpacing: '0.08em',
+                        cursor: 'pointer'
+                      }}
+                    >
+                      Dismiss
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div style={{
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                transition: 'all 0.5s ease',
+                paddingTop: isConnected ? '24px' : '36px',
+                paddingBottom: '8px'
+              }}>
+                <div style={{ position: 'relative', marginBottom: '14px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  {/* Dynamic Voice Pulse Ring */}
+                  {isConnected && (
+                    <div
+                      style={{
+                        position: 'absolute',
+                        borderRadius: '50%',
+                        background: 'rgba(95, 111, 255, 0.22)',
+                        width: `${(isConnected ? 96 : 128) + (isModelSpeaking ? modelVolume * 65 : userVolume * 55)}px`,
+                        height: `${(isConnected ? 96 : 128) + (isModelSpeaking ? modelVolume * 65 : userVolume * 55)}px`,
+                        opacity: (isModelSpeaking || userVolume > 0.05) ? Math.min(1, 0.35 + Math.max(modelVolume, userVolume)) : 0,
+                        transition: 'all 0.12s ease-out',
+                        pointerEvents: 'none'
+                      }}
+                    />
+                  )}
+
+                  {/* Avatar Container */}
+                  <div style={{
+                    position: 'relative',
+                    zIndex: 10,
+                    borderRadius: '50%',
+                    overflow: 'hidden',
+                    border: '5px solid #ffffff',
+                    boxShadow: '0 10px 35px -5px rgba(0,0,0,0.12)',
+                    background: '#f1f5f9',
+                    width: isConnected ? '96px' : '128px',
+                    height: isConnected ? '96px' : '128px',
+                    transition: 'all 0.5s cubic-bezier(0.16, 1, 0.3, 1)'
+                  }}>
+                    <img 
+                      src={AVATAR_URL} 
+                      onError={handleImageError}
+                      alt="Jarvis" 
+                      style={{
+                        width: '100%',
+                        height: '100%',
+                        objectFit: 'cover',
+                        transform: (isModelSpeaking && isConnected) ? 'scale(1.10)' : 'scale(1.0)',
+                        transition: 'transform 0.15s ease'
+                      }}
+                    />
+                  </div>
+
+                  {/* Status Dot */}
+                  <div style={{
+                    position: 'absolute',
+                    background: '#5F6FFF',
+                    border: '3px solid #ffffff',
+                    borderRadius: '50%',
+                    zIndex: 20,
+                    width: isConnected ? '14px' : '18px',
+                    height: isConnected ? '14px' : '18px',
+                    bottom: isConnected ? '4px' : '8px',
+                    right: isConnected ? '4px' : '8px',
+                    boxShadow: '0 2px 6px rgba(0,0,0,0.15)'
+                  }}></div>
+                </div>
+
+                <div style={{ textAlign: 'center', padding: '0 16px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', marginBottom: '2px' }}>
+                    <h2 style={{
+                      fontFamily: "'Inter', sans-serif",
+                      fontWeight: 900,
+                      color: '#1E1B4B',
+                      fontSize: isConnected ? '17px' : '20px',
+                      margin: 0,
+                      letterSpacing: '-0.01em'
+                    }}>
+                      Jarvis
+                    </h2>
+                    <span style={{
+                      background: '#E0F2FE',
+                      color: '#0369A1',
+                      fontSize: '9px',
+                      fontWeight: 900,
+                      padding: '2px 6px',
+                      borderRadius: '4px',
+                      textTransform: 'uppercase',
+                      border: '1px solid #BAE6FD'
+                    }}>
+                      AI
+                    </span>
+                  </div>
+                  <p style={{ color: '#94a3b8', fontSize: '10px', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.06em', margin: 0 }}>
+                    OOH Media Copilot
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {/* 💬 Interaction Area (Live Transcript / Dialogue) */}
             <div style={{
-              fontSize: '0.78rem',
-              color: status === 'listening' ? '#f59e0b' : status === 'executing' ? '#10b981' : '#94a3b8',
-              fontWeight: 700,
-              marginBottom: '10px',
+              flexGrow: 1,
               display: 'flex',
+              flexDirection: 'column',
               alignItems: 'center',
               justifyContent: 'center',
-              gap: '6px'
+              padding: '0 28px',
+              textAlign: 'center',
+              overflowY: 'auto'
             }}>
-              {status === 'listening' && <Radio size={14} className="animate-pulse" />}
-              {status === 'executing' && <Zap size={14} />}
-              <span>{statusMsg}</span>
+              <div style={{ width: '100%', padding: '6px 0', minHeight: '52px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                {!isConnected ? (
+                  <p style={{ color: '#94a3b8', fontSize: '13px', fontWeight: 500, lineHeight: 1.45, margin: 0 }}>
+                    Hello! I'm Jarvis. How can I help you manage hoardings, bookings or PPT proposals today?
+                  </p>
+                ) : (
+                  <p style={{ color: '#1E1B4B', fontSize: '13.5px', fontWeight: 600, lineHeight: 1.4, margin: 0 }}>
+                    {currentTranscript || (userVolume > 0.08 ? "Sun raha hoon..." : "Listening...")}
+                  </p>
+                )}
+              </div>
             </div>
 
-            {/* Live Subtitles / Transcript */}
-            <div style={{
-              minHeight: '44px',
-              padding: '8px 12px',
-              background: 'rgba(255, 255, 255, 0.04)',
-              borderRadius: '10px',
-              border: '1px dashed rgba(255, 255, 255, 0.15)',
-              fontSize: '0.84rem',
-              color: '#f1f5f9',
-              fontStyle: transcript || interimText ? 'normal' : 'italic',
-              lineHeight: 1.4
-            }}>
-              {interimText ? (
-                <span style={{ color: '#fbbf24' }}>"{interimText}..."</span>
-              ) : transcript ? (
-                <span>"{transcript}"</span>
+            {/* 🎛️ Footer Controls */}
+            <div style={{ padding: '0 24px 28px', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+              {!isConnected ? (
+                <div style={{ width: '100%' }}>
+                  <button
+                    type="button"
+                    onClick={handleStartCall}
+                    disabled={isConnecting}
+                    style={{
+                      width: '100%',
+                      background: '#5F6FFF',
+                      color: '#ffffff',
+                      borderRadius: '16px',
+                      padding: '18px 24px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: '10px',
+                      fontWeight: 700,
+                      fontSize: '14px',
+                      border: 'none',
+                      cursor: isConnecting ? 'wait' : 'pointer',
+                      boxShadow: '0 12px 28px rgba(95, 111, 255, 0.32)',
+                      transition: 'all 0.15s ease'
+                    }}
+                    onMouseEnter={(e) => e.currentTarget.style.transform = 'scale(1.02)'}
+                    onMouseLeave={(e) => e.currentTarget.style.transform = 'scale(1.0)'}
+                  >
+                    {isConnecting ? (
+                      <Loader2 size={20} className="animate-spin" color="#ffffff" />
+                    ) : (
+                      <>
+                        <AudioLines size={20} color="#ffffff" />
+                        <span>Start Voice Call</span>
+                      </>
+                    )}
+                  </button>
+                </div>
               ) : (
-                <span style={{ color: '#64748b' }}>"Begum bridge 40x10 filter karo..."</span>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '28px' }}>
+                  <button
+                    type="button"
+                    onClick={toggleMute}
+                    style={{
+                      width: '48px',
+                      height: '48px',
+                      borderRadius: '50%',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      border: '1px solid #f1f5f9',
+                      background: isMuted ? '#ef4444' : '#ffffff',
+                      color: isMuted ? '#ffffff' : '#64748b',
+                      cursor: 'pointer',
+                      boxShadow: isMuted ? '0 6px 16px rgba(239, 68, 68, 0.3)' : '0 4px 12px rgba(0,0,0,0.06)',
+                      transition: 'all 0.15s ease'
+                    }}
+                    title={isMuted ? "Unmute Microphone" : "Mute Microphone"}
+                  >
+                    {isMuted ? <MicOff size={20} /> : <Mic size={20} />}
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={handleEndCall}
+                    style={{
+                      width: '56px',
+                      height: '56px',
+                      borderRadius: '50%',
+                      background: '#EF4444',
+                      color: '#ffffff',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      border: 'none',
+                      cursor: 'pointer',
+                      boxShadow: '0 12px 28px rgba(239, 68, 68, 0.35)',
+                      transition: 'all 0.15s ease'
+                    }}
+                    title="End Call"
+                    onMouseEnter={(e) => e.currentTarget.style.transform = 'scale(1.05)'}
+                    onMouseLeave={(e) => e.currentTarget.style.transform = 'scale(1.0)'}
+                  >
+                    <Power size={24} />
+                  </button>
+                </div>
               )}
             </div>
 
-            {/* Big Mic Button with Pulsing Wave */}
-            <div style={{ marginTop: '14px', display: 'flex', justifyContent: 'center' }}>
-              <button
-                type="button"
-                onClick={toggleListening}
-                style={{
-                  width: '56px',
-                  height: '56px',
-                  borderRadius: '50%',
-                  border: 'none',
-                  background: isListening 
-                    ? 'linear-gradient(135deg, #ef4444, #dc2626)' 
-                    : 'linear-gradient(135deg, #f59e0b, #d97706)',
-                  color: '#ffffff',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  cursor: 'pointer',
-                  boxShadow: isListening 
-                    ? '0 0 25px rgba(239, 68, 68, 0.7)' 
-                    : '0 0 20px rgba(245, 158, 11, 0.5)',
-                  transform: isListening ? 'scale(1.08)' : 'scale(1)',
-                  transition: 'all 0.2s ease'
-                }}
-              >
-                {isListening ? <MicOff size={24} /> : <Mic size={24} />}
-              </button>
+            {/* 🏷️ Bottom Branding (Prescripto style) */}
+            <div style={{
+              padding: '12px 0',
+              background: '#ffffff',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              borderTop: '1px solid #f8fafc'
+            }}>
+              <p style={{ fontSize: '10px', color: '#94a3b8', fontWeight: 700, margin: 0, letterSpacing: '0.02em' }}>
+                Powered by <span style={{ color: '#5F6FFF', fontWeight: 900 }}>Scallar IT Solution</span>
+              </p>
             </div>
           </div>
-
-          {/* Quick Command Suggestions */}
-          <div style={{ padding: '12px 14px', flex: 1, overflowY: 'auto', maxHeight: '160px' }}>
-            <div style={{ fontSize: '0.7rem', color: '#94a3b8', fontWeight: 700, marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-              Quick Voice Commands:
-            </div>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
-              {quickPrompts.map((prompt, idx) => (
-                <button
-                  key={idx}
-                  type="button"
-                  onClick={() => {
-                    setTranscript(prompt);
-                    handleProcessCommand(prompt);
-                  }}
-                  style={{
-                    background: 'rgba(255, 255, 255, 0.06)',
-                    border: '1px solid rgba(255, 255, 255, 0.1)',
-                    borderRadius: '12px',
-                    padding: '4px 10px',
-                    color: '#e2e8f0',
-                    fontSize: '0.74rem',
-                    cursor: 'pointer',
-                    transition: 'all 0.15s ease'
-                  }}
-                  onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(245, 158, 11, 0.2)'}
-                  onMouseLeave={(e) => e.currentTarget.style.background = 'rgba(255, 255, 255, 0.06)'}
-                >
-                  {prompt}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Manual Input Form */}
-          <form onSubmit={handleManualSubmit} style={{
-            padding: '10px 14px',
-            borderTop: '1px solid rgba(255, 255, 255, 0.08)',
-            display: 'flex',
-            gap: '8px',
-            background: 'rgba(15, 23, 42, 0.8)'
-          }}>
-            <input 
-              type="text"
-              placeholder="Or type voice command in Hindi/English..."
-              value={manualText}
-              onChange={(e) => setManualText(e.target.value)}
-              style={{
-                flex: 1,
-                background: 'rgba(255, 255, 255, 0.08)',
-                border: '1px solid rgba(255, 255, 255, 0.15)',
-                borderRadius: '8px',
-                padding: '7px 12px',
-                fontSize: '0.8rem',
-                color: '#ffffff',
-                outline: 'none'
-              }}
-            />
-            <button
-              type="submit"
-              disabled={!manualText.trim()}
-              style={{
-                background: '#f59e0b',
-                border: 'none',
-                borderRadius: '8px',
-                padding: '7px 12px',
-                color: '#000000',
-                fontWeight: 700,
-                cursor: manualText.trim() ? 'pointer' : 'default',
-                opacity: manualText.trim() ? 1 : 0.4
-              }}
-            >
-              <Send size={14} />
-            </button>
-          </form>
         </div>
       )}
 
-      {/* 🔘 COLLAPSED FLOATING TRIGGER BUTTON */}
+      {/* 🚀 Launcher Icon (Bigger w-20 h-20 / 80px exactly like Prescripto) */}
       {!isOpen && (
         <button
           type="button"
-          onClick={() => {
-            setIsOpen(true);
-            toggleListening();
-          }}
+          onClick={() => setIsOpen(true)}
           style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: '10px',
-            background: 'linear-gradient(135deg, #0f172a, #1e293b)',
-            border: '2px solid #f59e0b',
-            borderRadius: '9999px',
-            padding: '10px 18px',
-            color: '#f8fafc',
-            boxShadow: '0 8px 30px rgba(0, 0, 0, 0.4), 0 0 20px rgba(245, 158, 11, 0.35)',
-            cursor: 'pointer',
-            transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)'
-          }}
-        >
-          <div style={{
-            width: '28px',
-            height: '28px',
+            position: 'relative',
+            width: '80px',
+            height: '80px',
             borderRadius: '50%',
-            background: 'linear-gradient(135deg, #f59e0b, #d97706)',
+            overflow: 'hidden',
+            border: '4px solid #ffffff',
+            boxShadow: '0 15px 45px -10px rgba(0,0,0,0.45)',
+            background: '#5F6FFF',
+            cursor: 'pointer',
+            padding: 0,
+            transition: 'transform 0.3s cubic-bezier(0.16, 1, 0.3, 1)'
+          }}
+          onMouseEnter={(e) => e.currentTarget.style.transform = 'scale(1.08)'}
+          onMouseLeave={(e) => e.currentTarget.style.transform = 'scale(1.0)'}
+          title="Open Jarvis AI Voice Copilot"
+        >
+          <img 
+            src={AVATAR_URL} 
+            onError={handleImageError}
+            alt="Jarvis AI" 
+            style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+          />
+
+          {/* Glowing Beacon Indicator */}
+          <div style={{
+            position: 'absolute',
+            top: '8px',
+            right: '8px',
             display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            color: '#ffffff',
-            boxShadow: '0 2px 8px rgba(245, 158, 11, 0.6)'
+            width: '14px',
+            height: '14px'
           }}>
-            <Mic size={16} />
-          </div>
-          <div style={{ textAlign: 'left' }}>
-            <div style={{ fontSize: '0.84rem', fontWeight: 800, color: '#f59e0b', lineHeight: 1.2 }}>
-              Voice Copilot
-            </div>
-            <div style={{ fontSize: '0.68rem', color: '#94a3b8' }}>
-              Speak Hindi / English
-            </div>
+            <span style={{
+              position: 'absolute',
+              display: 'inline-flex',
+              width: '100%',
+              height: '100%',
+              borderRadius: '50%',
+              background: '#ffffff',
+              opacity: 0.75,
+              animation: 'ping 1.5s cubic-bezier(0, 0, 0.2, 1) infinite'
+            }}></span>
+            <span style={{
+              position: 'relative',
+              display: 'inline-flex',
+              borderRadius: '50%',
+              width: '14px',
+              height: '14px',
+              background: '#ffffff',
+              border: '2.5px solid #5F6FFF',
+              boxShadow: '0 1px 3px rgba(0,0,0,0.1)'
+            }}></span>
           </div>
         </button>
       )}

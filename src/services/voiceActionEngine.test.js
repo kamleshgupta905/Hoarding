@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parseOfflineVoiceCommand, resolveRelativeDates } from './voiceActionEngine.js';
+import { parseOfflineVoiceCommand, resolveRelativeDates, chatWithJarvis } from './voiceActionEngine.js';
 
 describe('Voice Action Engine (Offline NLP & Date Resolver)', () => {
   it('resolves relative dates properly', () => {
@@ -50,4 +50,29 @@ describe('Voice Action Engine (Offline NLP & Date Resolver)', () => {
     const res = parseOfflineVoiceCommand('campaign proposal ka PPT download kardo');
     expect(res.action).toBe('EXPORT_PPT');
   });
+
+  it('answers creator identity questions in conversational chatWithJarvis', async () => {
+    const res = await chatWithJarvis({ userText: 'Tumhe kisne banaya hai?' });
+    expect(res.reply).toContain('Kamlesh Gupta');
+    expect(res.reply).toContain('Scallar IT Solution');
+    expect(res.action).toBe('ANSWER_QUERY');
+    expect(res.successCard).toBeDefined();
+  });
+
+  it('greets user warmly on friendly hello', async () => {
+    const res = await chatWithJarvis({ userText: 'Hello Jarvis' });
+    expect(res.reply).toContain('Jarvis');
+  });
+
+  it('dispatches filter action and success card on inventory search query', async () => {
+    const res = await chatWithJarvis({ 
+      userText: 'Begum Bridge ke 40*10 hoardings dikhao',
+      hoardings: [{ 'Location ': 'Begum Bridge', STATUS: 'Available' }]
+    });
+    expect(res.action).toBe('FILTER_INVENTORY');
+    expect(res.reply).toBeDefined();
+    expect(res.successCard).toBeDefined();
+    expect(res.successCard.title).toContain('Inventory Filtered');
+  });
 });
+

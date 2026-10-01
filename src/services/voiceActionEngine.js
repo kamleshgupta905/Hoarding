@@ -168,24 +168,34 @@ export const parseOfflineVoiceCommand = (rawText = '', context = {}) => {
   if (text.includes('gantry')) media = 'Gantry';
   if (text.includes('billboard') || text.includes('hoarding')) media = 'Billboard';
 
-  return {
-    action: 'FILTER_INVENTORY',
-    search: dimensions ? dimensions : (siteQueryExtract(text) || text),
-    city,
-    dimensions,
-    status,
-    media,
-    speech: `Aapke filter ke mutabik hoardings screen par dikha diye hain.`
-  };
+  const isSearchCmd = text.includes('dikhao') || text.includes('search') || text.includes('filter') ||
+                      text.includes('show') || text.includes('dikhayein') || text.includes('dhoondo') ||
+                      Boolean(dimensions) || Boolean(city) || status !== 'All' || Boolean(media);
+
+  if (isSearchCmd) {
+    const rawSearch = siteQueryExtract(text);
+    return {
+      action: 'FILTER_INVENTORY',
+      search: rawSearch || dimensions || text,
+      city,
+      dimensions,
+      status,
+      media,
+      speech: `Aapke filter ke mutabik hoardings screen par dikha diye hain.`
+    };
+  }
+
+  return null;
 };
 
 const siteQueryExtract = (text) => {
-  const stopwords = ['dikhao', 'filter', 'karo', 'mujhe', 'chahiye', 'wale', 'wali', 'show', 'all', 'available', 'khali', 'sites', 'hoardings', 'search'];
+  const stopwords = ['dikhao', 'filter', 'karo', 'mujhe', 'chahiye', 'wale', 'wali', 'show', 'all', 'available', 'khali', 'sites', 'hoardings', 'search', 'ke', 'ka', 'ki', 'pe', 'par', 'hain'];
   let clean = text;
+  clean = clean.replace(/\b\d{1,3}\s*[*xX×]\s*\d{1,3}\b/g, '');
   stopwords.forEach(w => {
     clean = clean.replace(new RegExp(`\\b${w}\\b`, 'gi'), '');
   });
-  return clean.trim();
+  return clean.replace(/\s+/g, ' ').trim();
 };
 
 /**
@@ -240,7 +250,7 @@ RULES:
 - The "speech" field MUST be friendly conversational Hindi (Devanagari or Hinglish Latin), concise (10-15 words).
 - If relative dates are mentioned (e.g. "next month", "15 days", "agle mahine"), calculate the exact YYYY-MM-DD dates starting from today (${todayStr}).`;
 
-  // 1. Try Google Gemini first
+  // 1. Try Google Gemini first with fast voice timeout
   try {
     const payload = {
       contents: [
@@ -254,7 +264,10 @@ RULES:
       }
     };
 
-    const rawResponse = await callGeminiVision(payload);
+    const rawResponse = await Promise.race([
+      callGeminiVision(payload),
+      new Promise((_, reject) => setTimeout(() => reject(new Error('Gemini voice timeout')), 2500))
+    ]);
     if (rawResponse) {
       const parsed = safeJsonParse(rawResponse);
       if (parsed && parsed.action) {
@@ -262,7 +275,7 @@ RULES:
       }
     }
   } catch (geminiErr) {
-    console.warn('Gemini voice interpreter error, falling back to Groq:', geminiErr?.message);
+    console.warn('Gemini voice interpreter error, falling back to Groq/offline:', geminiErr?.message);
   }
 
   // 2. Try Groq Llama 3.3 Fallback
@@ -303,3 +316,245 @@ RULES:
   // 3. Fallback to Local Offline Pattern Matcher
   return parseOfflineVoiceCommand(userText, context);
 };
+
+/**
+ * 💬 Conversational Dialogue Engine ("Jarvis") with Turn Memory & Real-Time Action Dispatch
+ * Powers full two-way natural Hindi / Hinglish / English voice calls.
+ */
+export const chatWithJarvis = async ({
+  userText = '',
+  history = [],
+  hoardings = [],
+  activeTab = 'inventory'
+}) => {
+  const text = String(userText || '').trim();
+  if (!text) return { reply: "Haan ji, boliye main sun raha hoon." };
+
+  const lower = text.toLowerCase();
+
+  // 1. Instant response for creator identity
+  if (lower.includes('kisne banaya') || lower.includes('who made you') || lower.includes('creator') || lower.includes('developer')) {
+    return {
+      reply: "Mujhe Scallar IT Solution ke developer Kamlesh Gupta ji ne banaya hai.",
+      action: 'ANSWER_QUERY',
+      actionPayload: { action: 'ANSWER_QUERY', speech: "Mujhe Scallar IT Solution ke developer Kamlesh Gupta ji ne banaya hai." },
+      successCard: {
+        title: "Developer Info",
+        items: [
+          { label: "Creator", value: "Kamlesh Gupta" },
+          { label: "Company", value: "Scallar IT Solution" }
+        ]
+      }
+    };
+  }
+
+  // 2. Greetings
+  if (/^(hello|hi|namaste|hey|jarvis|monika)\b/i.test(lower) && lower.length < 25) {
+    return {
+      reply: "Namaste! Main Jarvis hoon. Hoarding inventory, bookings ya campaigns ke liye batayein main kya karoon?",
+      action: 'NONE',
+      actionPayload: null,
+      successCard: null
+    };
+  }
+
+  // 3. Current Dashboard Context
+  const totalCount = hoardings.length;
+  const availCount = hoardings.filter(h => String(h.STATUS || '').toLowerCase() === 'available').length;
+  const occCount = hoardings.filter(h => String(h.STATUS || '').toLowerCase() === 'occupied' || String(h.STATUS || '').toLowerCase() === 'booked').length;
+  const cities = [...new Set(hoardings.map(h => h.City).filter(Boolean))].slice(0, 8);
+  const sampleLocations = hoardings.slice(0, 10).map(h => h['Location '] || h.Location).filter(Boolean).slice(0, 6);
+
+  // 4. Check Offline Local Matcher first for instant zero-latency action dispatch
+  const offlineMatch = parseOfflineVoiceCommand(text, { activeTab });
+  if (offlineMatch && offlineMatch.action) {
+    let successCard = null;
+    let reply = offlineMatch.speech || "Action execute kar diya hai.";
+    if (offlineMatch.action === 'QUICK_BOOK') {
+      successCard = {
+        title: "Booking Form Opened!",
+        items: [
+          { label: "Client", value: offlineMatch.clientName || "Valued Client" },
+          { label: "Site", value: offlineMatch.siteQuery || "Selected Hoarding" },
+          { label: "Mode", value: offlineMatch.isOverride ? `Override (${offlineMatch.overrideMode})` : "Standard" }
+        ]
+      };
+    } else if (offlineMatch.action === 'FILTER_INVENTORY') {
+      const parts = [];
+      if (offlineMatch.search && offlineMatch.search !== 'All') parts.push(offlineMatch.search);
+      if (offlineMatch.dimensions) parts.push(offlineMatch.dimensions);
+      if (offlineMatch.city) parts.push(offlineMatch.city);
+      reply = `${parts.join(' ') || 'Inventory'} hoardings screen par filter kar diye hain.`;
+      successCard = {
+        title: "Inventory Filtered!",
+        items: [
+          { label: "Search", value: offlineMatch.search || "All" },
+          { label: "Status", value: offlineMatch.status || "All" },
+          { label: "Size", value: offlineMatch.dimensions || "All Sizes" }
+        ]
+      };
+    } else if (offlineMatch.action === 'VIEW_DISPLACED') {
+      successCard = {
+        title: "Displaced Slots Loaded!",
+        items: [
+          { label: "Tab", value: "Clients & Booking" },
+          { label: "Filter", value: "Overridden / Displaced" }
+        ]
+      };
+    } else if (offlineMatch.action === 'RESET_FILTERS') {
+      successCard = {
+        title: "Filters Cleared",
+        items: [
+          { label: "Display", value: "All Hoardings" }
+        ]
+      };
+    } else if (offlineMatch.action === 'SWITCH_TAB') {
+      successCard = {
+        title: "Tab Switched",
+        items: [
+          { label: "Current View", value: offlineMatch.tab }
+        ]
+      };
+    } else if (offlineMatch.action === 'EXPORT_PPT') {
+      successCard = {
+        title: "PPT Proposal",
+        items: [
+          { label: "Status", value: "Exporting" }
+        ]
+      };
+    } else if (offlineMatch.action === 'EXPORT_EXCEL') {
+      successCard = {
+        title: "Excel Export",
+        items: [
+          { label: "Status", value: "Downloading" }
+        ]
+      };
+    }
+
+    return {
+      reply,
+      action: offlineMatch.action,
+      actionPayload: { ...offlineMatch, speech: reply },
+      successCard
+    };
+  }
+
+  // 5. Try conversational AI with Gemini or Groq
+  const historyText = history.slice(-6).map(h => `${h.role === 'user' ? 'User' : 'Jarvis'}: ${h.text || h.content}`).join('\n');
+  const todayStr = new Date().toISOString().split('T')[0];
+
+  const prompt = `You are Jarvis, an ultra-intelligent, energetic, and professional AI Copilot for Heera Advertising (OOH Billboard Management).
+Creator: If asked who made you, reply: "Mujhe Scallar IT Solution ke developer Kamlesh Gupta ji ne banaya hai."
+
+DASHBOARD CONTEXT:
+- Active Tab: ${activeTab}
+- Total Hoardings: ${totalCount} (Available: ${availCount}, Occupied: ${occCount})
+- Operating Cities: ${cities.join(', ') || 'Meerut, Delhi, Noida'}
+- Sample Locations: ${sampleLocations.join(', ')}
+- Today's Date: ${todayStr}
+
+CONVERSATION HISTORY:
+${historyText || 'No prior turns.'}
+
+LATEST USER MESSAGE: "${text}"
+
+RULES:
+1. Speak in friendly, natural Hindi / Hinglish. Keep speech replies CONCISE (12-25 words), confident, and actionable.
+2. If the user wants to execute an action (filter inventory, search dimensions like 40*10, switch tab, book a hoarding, see displaced bookings, export PPT), return the structured action and parameters.
+3. If the user is having a conversation or asking a question (e.g. rates, inventory status, GST, greeting), give a helpful conversational answer and set action to "NONE".
+
+Return ONLY valid JSON matching this schema:
+{
+  "reply": "Conversational Hindi speech to say back to user",
+  "action": "FILTER_INVENTORY" | "RESET_FILTERS" | "SWITCH_TAB" | "QUICK_BOOK" | "VIEW_DISPLACED" | "EXPORT_PPT" | "EXPORT_EXCEL" | "NONE",
+  "actionPayload": {
+    "action": "FILTER_INVENTORY" | "...",
+    "search": "...",
+    "city": "...",
+    "status": "Available" | "Occupied" | "All",
+    "tab": "inventory" | "clients" | "sheet-editor" | "analytics" | "guide",
+    "clientName": "...",
+    "startDate": "YYYY-MM-DD",
+    "endDate": "YYYY-MM-DD",
+    "isOverride": false,
+    "overrideMode": "trim" | "replace",
+    "speech": "..."
+  },
+  "successCard": {
+    "title": "Action Title",
+    "items": [
+      { "label": "Key", "value": "Val" }
+    ]
+  }
+}`;
+
+  // Try Gemini with fast voice timeout
+  try {
+    const geminiPayload = {
+      contents: [{ parts: [{ text: prompt }] }],
+      generationConfig: { temperature: 0.2, maxOutputTokens: 600 }
+    };
+    const rawRes = await Promise.race([
+      callGeminiVision(geminiPayload),
+      new Promise((_, reject) => setTimeout(() => reject(new Error('Gemini voice timeout')), 2500))
+    ]);
+    if (rawRes) {
+      const parsed = safeJsonParse(rawRes);
+      if (parsed && (parsed.reply || parsed.action)) {
+        return {
+          reply: parsed.reply || parsed.actionPayload?.speech || "Theek hai, action execute kar diya hai.",
+          action: parsed.action || 'NONE',
+          actionPayload: { ...parsed.actionPayload, action: parsed.action, speech: parsed.reply || parsed.actionPayload?.speech },
+          successCard: parsed.successCard || null
+        };
+      }
+    }
+  } catch (err) {
+    console.warn("Gemini chatWithJarvis error, trying Groq/offline:", err?.message);
+  }
+
+  // Try Groq with fast timeout
+  const groqKey = getGroqApiKey();
+  if (groqKey) {
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 2500);
+      const res = await fetch(GROQ_ENDPOINT, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${groqKey}` },
+        body: JSON.stringify({
+          model: 'llama-3.3-70b-versatile',
+          messages: [{ role: 'user', content: prompt }],
+          temperature: 0.2,
+          max_tokens: 500
+        }),
+        signal: controller.signal
+      });
+      clearTimeout(timeoutId);
+      if (res.ok) {
+        const json = await res.json();
+        const content = json.choices?.[0]?.message?.content;
+        const parsed = safeJsonParse(content);
+        if (parsed && (parsed.reply || parsed.action)) {
+          return {
+            reply: parsed.reply || parsed.actionPayload?.speech || "Theek hai, action execute ho gaya.",
+            action: parsed.action || 'NONE',
+            actionPayload: { ...parsed.actionPayload, action: parsed.action, speech: parsed.reply || parsed.actionPayload?.speech },
+            successCard: parsed.successCard || null
+          };
+        }
+      }
+    } catch (gErr) {
+      console.warn("Groq chatWithJarvis error:", gErr?.message);
+    }
+  }
+
+  // Conversational response fallback
+  return {
+    reply: `Maine suna: "${text}". Aap hoardings search, booking ya PPT export ke liye bol sakte hain.`,
+    action: 'NONE',
+    actionPayload: null,
+    successCard: null
+  };
+};
+
