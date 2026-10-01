@@ -37,6 +37,18 @@ function createWindow() {
         }
     });
 
+    // Fallback: Ensure window displays even if ready-to-show is delayed
+    setTimeout(() => {
+        if (mainWindow && !mainWindow.isDestroyed() && !mainWindow.isVisible()) {
+            mainWindow.show();
+            if (!isDev) checkForUpdatesSilently();
+        }
+    }, 2500);
+
+    mainWindow.webContents.on('did-fail-load', (event, errorCode, errorDescription, validatedURL) => {
+        console.error('[WebContents Load Failure]:', errorCode, errorDescription, validatedURL);
+    });
+
     // Handle ESC key to exit full screen and F11 to toggle full screen
     mainWindow.webContents.on('before-input-event', (event, input) => {
         if (input.key === 'Escape' && input.type === 'keyDown') {
