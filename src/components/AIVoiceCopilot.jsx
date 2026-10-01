@@ -30,6 +30,8 @@ export default function AIVoiceCopilot({
   const [successCard, setSuccessCard] = useState(null);
   const [voiceNotice, setVoiceNotice] = useState(null);
   const [manualInput, setManualInput] = useState('');
+  const [isRecordingAudio, setIsRecordingAudio] = useState(false);
+  const [isAiProcessing, setIsAiProcessing] = useState(false);
 
   const timerRef = useRef(null);
   const recognitionRef = useRef(null);
@@ -44,6 +46,9 @@ export default function AIVoiceCopilot({
   const hoardingsRef = useRef(hoardings);
   const activeTabRef = useRef(activeTab);
   const isProcessingRef = useRef(false);
+  const mediaRecorderRef = useRef(null);
+  const audioChunksRef = useRef([]);
+  const isRecordingAudioRef = useRef(false);
 
   // Sync refs to avoid stale closures
   useEffect(() => {
@@ -321,10 +326,7 @@ export default function AIVoiceCopilot({
 
     recognition.onerror = (e) => {
       if (e.error === 'no-speech') return;
-      console.warn("Speech recognition error:", e.error);
-      if (e.error === 'network' || e.error === 'service-not-allowed' || e.error === 'not-allowed') {
-        setVoiceNotice("Speech recognition unavailable in desktop app/browser. Niche input box se commands execute karein.");
-      }
+      console.warn("Speech recognition note:", e.error);
     };
 
     recognition.onend = () => {
@@ -337,6 +339,101 @@ export default function AIVoiceCopilot({
     };
 
     return recognition;
+  };
+
+  // Direct Microphone Audio Capture for Gemini 3.8 Flash
+  const startAudioRecording = () => {
+    if (!streamRef.current) return;
+    try {
+      audioChunksRef.current = [];
+      let mimeType = 'audio/webm';
+      if (typeof MediaRecorder !== 'undefined') {
+        if (MediaRecorder.isTypeSupported('audio/webm')) mimeType = 'audio/webm';
+        else if (MediaRecorder.isTypeSupported('audio/mp4')) mimeType = 'audio/mp4';
+      }
+
+      const mr = new MediaRecorder(streamRef.current, { mimeType });
+      mr.ondataavailable = (e) => {
+        if (e.data && e.data.size > 0) {
+          audioChunksRef.current.push(e.data);
+        }
+      };
+
+      mr.onstop = async () => {
+        setIsRecordingAudio(false);
+        isRecordingAudioRef.current = false;
+        if (audioChunksRef.current.length === 0) return;
+
+        const blob = new Blob(audioChunksRef.current, { type: mimeType });
+        if (blob.size < 600) return; // Ignore accidental micro clicks
+
+        setIsAiProcessing(true);
+        setCurrentTranscript("✨ Gemini 3.8 Flash voice process kar raha hai...");
+
+        const reader = new FileReader();
+        reader.onloadend = async () => {
+          try {
+            const base64Audio = reader.result.split(',')[1];
+            const res = await chatWithJarvis({
+              audioBase64: base64Audio,
+              mimeType,
+              history: historyRef.current,
+              hoardings: hoardingsRef.current,
+              activeTab: activeTabRef.current
+            });
+
+            if (res) {
+              const userSpoken = res.transcript || "Voice Command";
+              historyRef.current.push({ role: 'user', content: userSpoken });
+              historyRef.current.push({ role: 'assistant', content: res.reply });
+              setCurrentTranscript(res.reply);
+
+              if (res.action && res.action !== 'NONE' && onExecuteAction) {
+                onExecuteAction(res.actionPayload);
+              }
+
+              if (res.successCard) {
+                setSuccessCard(res.successCard);
+              }
+
+              speakNaturalReply(res.reply, () => {});
+            }
+          } catch (err) {
+            console.warn("Gemini audio voice turn error:", err);
+            speakNaturalReply("Theek hai, main samajh gaya.", () => {});
+          } finally {
+            setIsAiProcessing(false);
+          }
+        };
+        reader.readAsDataURL(blob);
+      };
+
+      mr.start(100);
+      mediaRecorderRef.current = mr;
+      setIsRecordingAudio(true);
+      isRecordingAudioRef.current = true;
+      setCurrentTranscript("🎙️ Sun raha hoon... Boliye aur fir Mic dabayein");
+    } catch (err) {
+      console.warn("MediaRecorder start error:", err);
+    }
+  };
+
+  const stopAudioRecording = () => {
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+      try {
+        mediaRecorderRef.current.stop();
+      } catch (e) {}
+    }
+    setIsRecordingAudio(false);
+    isRecordingAudioRef.current = false;
+  };
+
+  const toggleMicRecording = () => {
+    if (isRecordingAudioRef.current) {
+      stopAudioRecording();
+    } else {
+      startAudioRecording();
+    }
   };
 
   // Start Call Session
@@ -365,17 +462,13 @@ export default function AIVoiceCopilot({
     // Start mic stream & waveform analyser
     await startMicAnalysis();
 
-    // Start continuous speech recognition
+    // Start continuous speech recognition if available in browser
     const rec = initSpeechRecognition();
     recognitionRef.current = rec;
     if (rec) {
       try {
         rec.start();
-      } catch (err) {
-        console.warn("Recognition start issue:", err);
-      }
-    } else {
-      setVoiceNotice("Speech recognition unavailable in desktop app/browser. Niche input box se commands execute karein.");
+      } catch (err) {}
     }
 
     setIsConnecting(false);
@@ -396,16 +489,21 @@ export default function AIVoiceCopilot({
       try { recognitionRef.current.stop(); } catch(e) {}
       recognitionRef.current = null;
     }
+    stopAudioRecording();
     stopMicAnalysis();
 
     setIsConnected(false);
     isConnectedRef.current = false;
     setIsConnecting(false);
+    setIsRecordingAudio(false);
+    isRecordingAudioRef.current = false;
+    setIsAiProcessing(false);
     setIsModelSpeaking(false);
     setModelVolume(0);
     setUserVolume(0);
     setCurrentTranscript('');
     setSuccessCard(null);
+    setVoiceNotice(null);
     historyRef.current = [];
   };
 
@@ -421,23 +519,6 @@ export default function AIVoiceCopilot({
     };
   }, []);
 
-  // Toggle Mute
-  const toggleMute = () => {
-    const nextMuted = !isMutedRef.current;
-    setIsMuted(nextMuted);
-    isMutedRef.current = nextMuted;
-    if (nextMuted) {
-      if (recognitionRef.current) {
-        try { recognitionRef.current.stop(); } catch(e) {}
-      }
-      setUserVolume(0);
-    } else {
-      if (recognitionRef.current) {
-        try { recognitionRef.current.start(); } catch(e) {}
-      }
-    }
-  };
-
   // Manual command dispatcher (works anywhere, including Electron desktop app)
   const handleSendManualCommand = async (e) => {
     e?.preventDefault?.();
@@ -447,6 +528,7 @@ export default function AIVoiceCopilot({
     setCurrentTranscript(cmd);
     historyRef.current.push({ role: 'user', content: cmd });
     isProcessingRef.current = true;
+    setIsAiProcessing(true);
     try {
       const res = await chatWithJarvis({
         userText: cmd,
@@ -469,6 +551,7 @@ export default function AIVoiceCopilot({
       console.warn("Manual command error:", err);
     } finally {
       isProcessingRef.current = false;
+      setIsAiProcessing(false);
     }
   };
 
@@ -793,23 +876,42 @@ export default function AIVoiceCopilot({
                   </p>
                 ) : (
                   <>
+                    {/* ⚡ Gemini 3.8 Flash Engine Status Pill */}
+                    <div style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '6px',
+                      background: isRecordingAudio ? '#fef2f2' : (isAiProcessing ? '#eff6ff' : '#f0fdf4'),
+                      color: isRecordingAudio ? '#dc2626' : (isAiProcessing ? '#2563eb' : '#15803d'),
+                      padding: '3px 12px',
+                      borderRadius: '9999px',
+                      fontSize: '11px',
+                      fontWeight: 700,
+                      marginBottom: '8px',
+                      border: isRecordingAudio ? '1px solid #fecaca' : (isAiProcessing ? '1px solid #bfdbfe' : '1px solid #bbf7d0'),
+                      transition: 'all 0.2s ease'
+                    }}>
+                      {isRecordingAudio ? (
+                        <>
+                          <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#dc2626', display: 'inline-block' }} />
+                          <span>🎙️ Recording... Boliye aur Mic dabayein</span>
+                        </>
+                      ) : isAiProcessing ? (
+                        <>
+                          <Loader2 size={12} style={{ animation: 'adh-spin 1s linear infinite' }} />
+                          <span>✨ Gemini 3.8 Flash process kar raha hai...</span>
+                        </>
+                      ) : (
+                        <>
+                          <Sparkles size={12} color="#16a34a" />
+                          <span>⚡ Gemini 3.8 Flash Active</span>
+                        </>
+                      )}
+                    </div>
+
                     <p style={{ color: '#1E1B4B', fontSize: '13.5px', fontWeight: 600, lineHeight: 1.4, margin: '0 0 6px' }}>
                       {currentTranscript || (userVolume > 0.08 ? "Sun raha hoon..." : "Listening...")}
                     </p>
-                    {voiceNotice && (
-                      <div style={{
-                        background: '#fef3c7',
-                        color: '#92400e',
-                        padding: '4px 10px',
-                        borderRadius: '6px',
-                        fontSize: '11px',
-                        fontWeight: 600,
-                        margin: '4px 0 8px',
-                        border: '1px solid #fde68a'
-                      }}>
-                        {voiceNotice}
-                      </div>
-                    )}
                   </>
                 )}
               </div>
@@ -895,24 +997,24 @@ export default function AIVoiceCopilot({
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '28px' }}>
                   <button
                     type="button"
-                    onClick={toggleMute}
+                    onClick={toggleMicRecording}
                     style={{
-                      width: '48px',
-                      height: '48px',
+                      width: '52px',
+                      height: '52px',
                       borderRadius: '50%',
                       display: 'flex',
                       alignItems: 'center',
                       justifyContent: 'center',
-                      border: '1px solid #f1f5f9',
-                      background: isMuted ? '#ef4444' : '#ffffff',
-                      color: isMuted ? '#ffffff' : '#64748b',
+                      border: isRecordingAudio ? '2px solid #ef4444' : '1px solid #e2e8f0',
+                      background: isRecordingAudio ? '#fee2e2' : '#ffffff',
+                      color: isRecordingAudio ? '#ef4444' : '#475569',
                       cursor: 'pointer',
-                      boxShadow: isMuted ? '0 6px 16px rgba(239, 68, 68, 0.3)' : '0 4px 12px rgba(0,0,0,0.06)',
+                      boxShadow: isRecordingAudio ? '0 0 18px rgba(239, 68, 68, 0.45)' : '0 4px 12px rgba(0,0,0,0.06)',
                       transition: 'all 0.15s ease'
                     }}
-                    title={isMuted ? "Unmute Microphone" : "Mute Microphone"}
+                    title={isRecordingAudio ? "Recording voice... Click when finished speaking" : "Mic se bolein (Gemini 3.8 Flash)"}
                   >
-                    {isMuted ? <MicOff size={20} /> : <Mic size={20} />}
+                    {isRecordingAudio ? <Mic size={24} color="#ef4444" /> : <Mic size={22} />}
                   </button>
 
                   <button

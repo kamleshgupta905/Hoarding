@@ -6,10 +6,83 @@
  * Powered by Google Gemini 2.0/Flash with automatic fallback to Groq Llama 3.3.
  */
 
-import { callGeminiVision, safeJsonParse } from './geminiService.js';
+import { safeJsonParse, getGeminiApiKeys } from './geminiService.js';
 import { getGroqApiKey } from './groqService.js';
 
 const GROQ_ENDPOINT = 'https://api.groq.com/openai/v1/chat/completions';
+
+/**
+ * ⚡ Direct Google Gemini 3.8 Flash Engine with multi-key failover and multimodal audio support
+ */
+export const callGemini38Flash = async ({
+  prompt,
+  audioBase64 = null,
+  mimeType = 'audio/webm',
+  timeoutMs = 8000
+}) => {
+  const apiKeys = getGeminiApiKeys();
+  const models = ['gemini-3.8-flash', 'gemini-3.5-flash', 'gemini-3-flash-preview'];
+
+  const parts = [];
+  if (audioBase64) {
+    parts.push({
+      inlineData: {
+        mimeType: mimeType || 'audio/webm',
+        data: audioBase64
+      }
+    });
+  }
+  parts.push({ text: prompt });
+
+  const payload = {
+    contents: [{ role: 'user', parts }],
+    generationConfig: {
+      temperature: 0.1,
+      maxOutputTokens: 600,
+      responseMimeType: 'application/json'
+    }
+  };
+
+  for (const model of models) {
+    for (const apiKey of apiKeys) {
+      if (!apiKey) continue;
+      const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
+      try {
+        const response = await fetch(endpoint, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-goog-api-key': apiKey
+          },
+          body: JSON.stringify(payload),
+          signal: controller.signal
+        });
+
+        if (response.ok) {
+          const data = await response.json();
+          const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+          if (text) {
+            const parsed = safeJsonParse(text);
+            if (parsed) {
+              return { ...parsed, modelUsed: model };
+            }
+          }
+        } else {
+          continue;
+        }
+      } catch (err) {
+        continue;
+      } finally {
+        clearTimeout(timeoutId);
+      }
+    }
+  }
+
+  return null;
+};
 
 /**
  * 📅 Formats date helper for relative dates (e.g. today, tomorrow, next month)
@@ -335,30 +408,12 @@ RULES:
 
   // 1. Try Google Gemini first with fast voice timeout
   try {
-    const payload = {
-      contents: [
-        {
-          parts: [{ text: prompt }]
-        }
-      ],
-      generationConfig: {
-        temperature: 0.1,
-        maxOutputTokens: 600
-      }
-    };
-
-    const rawResponse = await Promise.race([
-      callGeminiVision(payload),
-      new Promise((_, reject) => setTimeout(() => reject(new Error('Gemini voice timeout')), 2500))
-    ]);
-    if (rawResponse) {
-      const parsed = safeJsonParse(rawResponse);
-      if (parsed && parsed.action) {
-        return parsed;
-      }
+    const geminiParsed = await callGemini38Flash({ prompt, timeoutMs: 7000 });
+    if (geminiParsed && geminiParsed.action) {
+      return geminiParsed;
     }
   } catch (geminiErr) {
-    console.warn('Gemini voice interpreter error, falling back to Groq/offline:', geminiErr?.message);
+    console.warn('Gemini 3.8 Flash voice interpreter notice, falling back to Groq/offline:', geminiErr?.message);
   }
 
   // 2. Try Groq Llama 3.1 8B Instant Fallback
@@ -407,12 +462,14 @@ RULES:
  */
 export const chatWithJarvis = async ({
   userText = '',
+  audioBase64 = null,
+  mimeType = 'audio/webm',
   history = [],
   hoardings = [],
   activeTab = 'inventory'
 }) => {
   const text = String(userText || '').trim();
-  if (!text) return { reply: "Haan ji, boliye main sun raha hoon." };
+  if (!text && !audioBase64) return { reply: "Haan ji, boliye main sun raha hoon." };
 
   const lower = text.toLowerCase();
 
@@ -452,85 +509,88 @@ export const chatWithJarvis = async ({
   const cities = [...new Set(hoardings.map(h => h.City).filter(Boolean))].slice(0, 8);
   const sampleLocations = hoardings.slice(0, 10).map(h => h['Location '] || h.Location).filter(Boolean).slice(0, 6);
 
-  // 4. Check Offline Local Matcher first for instant zero-latency action dispatch
-  const offlineMatch = parseOfflineVoiceCommand(text, { activeTab });
-  if (offlineMatch && offlineMatch.action) {
-    let successCard = null;
-    let reply = offlineMatch.speech || "Action execute kar diya hai.";
-    if (offlineMatch.action === 'QUICK_BOOK') {
-      successCard = {
-        title: "Booking Form Opened!",
-        items: [
-          { label: "Client", value: offlineMatch.clientName || "Valued Client" },
-          { label: "Site", value: offlineMatch.siteQuery || "Selected Hoarding" },
-          { label: "Mode", value: offlineMatch.isOverride ? `Override (${offlineMatch.overrideMode})` : "Standard" }
-        ]
-      };
-    } else if (offlineMatch.action === 'FILTER_INVENTORY') {
-      const parts = [];
-      if (offlineMatch.search && offlineMatch.search !== 'All') parts.push(offlineMatch.search);
-      if (offlineMatch.dimensions) parts.push(offlineMatch.dimensions);
-      if (offlineMatch.city) parts.push(offlineMatch.city);
-      reply = `${parts.join(' ') || 'Inventory'} hoardings screen par filter kar diye hain.`;
-      successCard = {
-        title: "Inventory Filtered!",
-        items: [
-          { label: "Search", value: offlineMatch.search || "All" },
-          { label: "Status", value: offlineMatch.status || "All" },
-          { label: "Size", value: offlineMatch.dimensions || "All Sizes" }
-        ]
-      };
-    } else if (offlineMatch.action === 'VIEW_DISPLACED') {
-      successCard = {
-        title: "Displaced Slots Loaded!",
-        items: [
-          { label: "Tab", value: "Clients & Booking" },
-          { label: "Filter", value: "Overridden / Displaced" }
-        ]
-      };
-    } else if (offlineMatch.action === 'RESET_FILTERS') {
-      successCard = {
-        title: "Filters Cleared",
-        items: [
-          { label: "Display", value: "All Hoardings" }
-        ]
-      };
-    } else if (offlineMatch.action === 'SWITCH_TAB') {
-      successCard = {
-        title: "Tab Switched",
-        items: [
-          { label: "Current View", value: offlineMatch.tab }
-        ]
-      };
-    } else if (offlineMatch.action === 'EXPORT_PPT') {
-      successCard = {
-        title: "PPT Proposal",
-        items: [
-          { label: "Status", value: "Exporting" }
-        ]
-      };
-    } else if (offlineMatch.action === 'EXPORT_EXCEL') {
-      successCard = {
-        title: "Excel Export",
-        items: [
-          { label: "Status", value: "Downloading" }
-        ]
+  // 4. Check Offline Local Matcher first for instant zero-latency text action dispatch
+  if (text) {
+    const offlineMatch = parseOfflineVoiceCommand(text, { activeTab });
+    if (offlineMatch && offlineMatch.action) {
+      let successCard = null;
+      let reply = offlineMatch.speech || "Action execute kar diya hai.";
+      if (offlineMatch.action === 'QUICK_BOOK') {
+        successCard = {
+          title: "Booking Form Opened!",
+          items: [
+            { label: "Client", value: offlineMatch.clientName || "Valued Client" },
+            { label: "Site", value: offlineMatch.siteQuery || "Selected Hoarding" },
+            { label: "Mode", value: offlineMatch.isOverride ? `Override (${offlineMatch.overrideMode})` : "Standard" }
+          ]
+        };
+      } else if (offlineMatch.action === 'FILTER_INVENTORY') {
+        const parts = [];
+        if (offlineMatch.search && offlineMatch.search !== 'All') parts.push(offlineMatch.search);
+        if (offlineMatch.dimensions) parts.push(offlineMatch.dimensions);
+        if (offlineMatch.city) parts.push(offlineMatch.city);
+        reply = `${parts.join(' ') || 'Inventory'} hoardings screen par filter kar diye hain.`;
+        successCard = {
+          title: "Inventory Filtered!",
+          items: [
+            { label: "Search", value: offlineMatch.search || "All" },
+            { label: "Status", value: offlineMatch.status || "All" },
+            { label: "Size", value: offlineMatch.dimensions || "All Sizes" }
+          ]
+        };
+      } else if (offlineMatch.action === 'VIEW_DISPLACED') {
+        successCard = {
+          title: "Displaced Slots Loaded!",
+          items: [
+            { label: "Tab", value: "Clients & Booking" },
+            { label: "Filter", value: "Overridden / Displaced" }
+          ]
+        };
+      } else if (offlineMatch.action === 'RESET_FILTERS') {
+        successCard = {
+          title: "Filters Cleared",
+          items: [
+            { label: "Display", value: "All Hoardings" }
+          ]
+        };
+      } else if (offlineMatch.action === 'SWITCH_TAB') {
+        successCard = {
+          title: "Tab Switched",
+          items: [
+            { label: "Current View", value: offlineMatch.tab }
+          ]
+        };
+      } else if (offlineMatch.action === 'EXPORT_PPT') {
+        successCard = {
+          title: "PPT Proposal",
+          items: [
+            { label: "Status", value: "Exporting" }
+          ]
+        };
+      } else if (offlineMatch.action === 'EXPORT_EXCEL') {
+        successCard = {
+          title: "Excel Export",
+          items: [
+            { label: "Status", value: "Downloading" }
+          ]
+        };
+      }
+
+      return {
+        transcript: text,
+        reply,
+        action: offlineMatch.action,
+        actionPayload: { ...offlineMatch, speech: reply },
+        successCard
       };
     }
-
-    return {
-      reply,
-      action: offlineMatch.action,
-      actionPayload: { ...offlineMatch, speech: reply },
-      successCard
-    };
   }
 
-  // 5. Try conversational AI with Gemini or Groq
+  // 5. ⚡ Google Gemini 3.8 Flash (Text & Multimodal Audio)
   const historyText = history.slice(-6).map(h => `${h.role === 'user' ? 'User' : 'Jarvis'}: ${h.text || h.content}`).join('\n');
   const todayStr = new Date().toISOString().split('T')[0];
 
-  const prompt = `You are Jarvis, an ultra-intelligent, energetic, and professional AI Copilot for Heera Advertising (OOH Billboard Management).
+  const prompt = `You are Jarvis, the ultra-intelligent, energetic, and professional AI Voice Copilot for Heera Advertising (OOH Billboard Management).
 Creator: If asked who made you, reply: "Mujhe Scallar IT Solution ke developer Kamlesh Gupta ji ne banaya hai."
 
 DASHBOARD CONTEXT:
@@ -543,24 +603,36 @@ DASHBOARD CONTEXT:
 CONVERSATION HISTORY:
 ${historyText || 'No prior turns.'}
 
-LATEST USER MESSAGE: "${text}"
+${audioBase64 ? 'USER SPOKE VIA MICROPHONE (Audio attached). Listen to what the user said, transcribe it into "transcript", formulate your friendly reply, and execute any requested dashboard action.' : `LATEST USER MESSAGE: "${text}"`}
 
 RULES:
 1. Speak in friendly, natural Hindi / Hinglish. Keep speech replies CONCISE (12-25 words), confident, and actionable.
 2. If the user wants to execute an action (filter inventory, search dimensions like 40*10, switch tab, book a hoarding, see displaced bookings, export PPT), return the structured action and parameters.
+Allowed actions:
+- FILTER_INVENTORY: { search: string, city: string, locality: string, status: "Available"|"Booked"|"All", dimensions: string }
+- RESET_FILTERS: {}
+- SWITCH_TAB: { tab: "dashboard"|"inventory"|"clients"|"sheet-editor"|"staff-review"|"guide" }
+- QUICK_BOOK: { siteQuery: string, clientName: string, startDate: "YYYY-MM-DD", endDate: "YYYY-MM-DD", isOverride: boolean, overrideMode: "trim"|"replace" }
+- VIEW_DISPLACED: {}
+- EXPORT_PPT: {}
+- EXPORT_EXCEL: {}
+- NONE: {}
 3. If the user is having a conversation or asking a question (e.g. rates, inventory status, GST, greeting), give a helpful conversational answer and set action to "NONE".
 
 Return ONLY valid JSON matching this schema:
 {
+  "transcript": "What user said",
   "reply": "Conversational Hindi speech to say back to user",
   "action": "FILTER_INVENTORY" | "RESET_FILTERS" | "SWITCH_TAB" | "QUICK_BOOK" | "VIEW_DISPLACED" | "EXPORT_PPT" | "EXPORT_EXCEL" | "NONE",
   "actionPayload": {
     "action": "FILTER_INVENTORY" | "RESET_FILTERS" | "SWITCH_TAB" | "QUICK_BOOK" | "VIEW_DISPLACED" | "EXPORT_PPT" | "EXPORT_EXCEL" | "NONE",
     "search": "...",
     "city": "...",
+    "locality": "...",
     "status": "Available" | "Occupied" | "All",
     "tab": "dashboard" | "inventory" | "clients" | "sheet-editor" | "guide",
     "clientName": "...",
+    "siteQuery": "...",
     "startDate": "YYYY-MM-DD",
     "endDate": "YYYY-MM-DD",
     "isOverride": false,
@@ -575,37 +647,41 @@ Return ONLY valid JSON matching this schema:
   }
 }`;
 
-  // Try Gemini with fast voice timeout
+  // Try Google Gemini 3.8 Flash
   try {
-    const geminiPayload = {
-      contents: [{ parts: [{ text: prompt }] }],
-      generationConfig: { temperature: 0.2, maxOutputTokens: 600 }
-    };
-    const rawRes = await Promise.race([
-      callGeminiVision(geminiPayload),
-      new Promise((_, reject) => setTimeout(() => reject(new Error('Gemini voice timeout')), 3000))
-    ]);
-    if (rawRes) {
-      const parsed = safeJsonParse(rawRes);
-      if (parsed && (parsed.reply || parsed.action)) {
-        return {
-          reply: parsed.reply || parsed.actionPayload?.speech || "Theek hai, action execute kar diya hai.",
-          action: parsed.action || 'NONE',
-          actionPayload: { ...parsed.actionPayload, action: parsed.action, speech: parsed.reply || parsed.actionPayload?.speech },
-          successCard: parsed.successCard || null
-        };
-      }
+    const geminiRes = await callGemini38Flash({
+      prompt,
+      audioBase64,
+      mimeType,
+      timeoutMs: 8000
+    });
+
+    if (geminiRes && (geminiRes.reply || geminiRes.action)) {
+      const reply = geminiRes.reply || geminiRes.actionPayload?.speech || "Theek hai, action execute kar diya hai.";
+      const action = geminiRes.action || 'NONE';
+      const actionPayload = geminiRes.actionPayload
+        ? { ...geminiRes.actionPayload, action, speech: reply }
+        : null;
+
+      return {
+        transcript: geminiRes.transcript || text,
+        reply,
+        action,
+        actionPayload,
+        successCard: geminiRes.successCard || null,
+        modelUsed: geminiRes.modelUsed || 'gemini-3.8-flash'
+      };
     }
   } catch (err) {
-    console.warn("Gemini chatWithJarvis notice:", err?.message);
+    console.warn("Gemini 3.8 Flash chatWithJarvis notice:", err?.message);
   }
 
-  // Try Groq with ultra-fast 8b instant model
+  // Fallback to Groq with ultra-fast 8b instant model
   const groqKey = getGroqApiKey();
   if (groqKey) {
     try {
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 3000);
+      const timeoutId = setTimeout(() => controller.abort(), 3500);
       const res = await fetch(GROQ_ENDPOINT, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${groqKey}` },
@@ -625,10 +701,12 @@ Return ONLY valid JSON matching this schema:
         const parsed = safeJsonParse(content);
         if (parsed && (parsed.reply || parsed.action)) {
           return {
+            transcript: parsed.transcript || text,
             reply: parsed.reply || parsed.actionPayload?.speech || "Theek hai, action execute ho gaya.",
             action: parsed.action || 'NONE',
             actionPayload: { ...parsed.actionPayload, action: parsed.action, speech: parsed.reply || parsed.actionPayload?.speech },
-            successCard: parsed.successCard || null
+            successCard: parsed.successCard || null,
+            modelUsed: 'llama-3.1-8b-instant'
           };
         }
       }
@@ -639,10 +717,12 @@ Return ONLY valid JSON matching this schema:
 
   // Conversational response fallback
   return {
+    transcript: text,
     reply: `Maine suna: "${text}". Aap hoardings search, booking ya PPT export ke liye bol sakte hain.`,
     action: 'NONE',
     actionPayload: null,
-    successCard: null
+    successCard: null,
+    modelUsed: 'fallback'
   };
 };
 
