@@ -600,7 +600,7 @@ export const parsePptx = async (arrayBuffer, sites = [], onProgress = null) => {
 
     // 2. Zero-Loss Guarantee: If all were filtered out but slide has images, pick the largest non-logo/non-repeated image
     if (validPhotos.length === 0 && slide.images.length > 0) {
-      const nonRepeatedNonLogo = slide.images.filter(img => !img.repeated && !hasLogoOrFlashKeyword && img.size >= 500);
+      const nonRepeatedNonLogo = slide.images.filter(img => !img.repeated && !img.logoCandidate && img.size >= 500);
       validPhotos = nonRepeatedNonLogo.length > 0 ? nonRepeatedNonLogo : slide.images;
     }
 

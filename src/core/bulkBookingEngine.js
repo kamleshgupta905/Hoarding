@@ -580,6 +580,7 @@ export const commitBulkBookings = async ({
     if (hasBookingSchedule && !shouldSkipBookingSlot) {
       let updatedSlots = [];
       let updatedSiteObj = null;
+      let liveStatus = null;
 
       if (isConflicted && allowOverride) {
         // ⚡ Run Override Engine for Conflicted Site
@@ -596,6 +597,7 @@ export const commitBulkBookings = async ({
         );
         updatedSlots = overrideRes.updatedSlots;
         updatedSiteObj = overrideRes.updatedSite;
+        liveStatus = resolveSiteLiveStatus({ ...targetSite, BookingSchedule: updatedSlots });
       } else {
         // Standard non-conflicted slot addition
         const currentSlots = getSiteBookingSlots(targetSite);
@@ -612,15 +614,15 @@ export const commitBulkBookings = async ({
         updatedSlots = [...currentSlots, newSlot].sort((a, b) => String(a.start).localeCompare(String(b.start)));
         saveSiteBookingSlots(targetSite, updatedSlots);
 
-        const liveStatus = resolveSiteLiveStatus({ ...targetSite, BookingSchedule: updatedSlots });
+        liveStatus = resolveSiteLiveStatus({ ...targetSite, BookingSchedule: updatedSlots });
 
         updatedSiteObj = {
           ...targetSite,
-          STATUS: liveStatus.status || 'Booked',
-          Status: liveStatus.status || 'Booked',
-          BookedBy: liveStatus.client || item.clientName,
-          BookingStart: liveStatus.slot?.start || item.startDate,
-          BookingEnd: liveStatus.slot?.end || item.endDate,
+          STATUS: liveStatus?.status || 'Booked',
+          Status: liveStatus?.status || 'Booked',
+          BookedBy: liveStatus?.client || item.clientName,
+          BookingStart: liveStatus?.slot?.start || item.startDate,
+          BookingEnd: liveStatus?.slot?.end || item.endDate,
           BookingSchedule: updatedSlots
         };
       }
@@ -632,16 +634,16 @@ export const commitBulkBookings = async ({
         sl: targetSite.SL || '',
         siteName: pLoc,
         facing: pFacing,
-        status: liveStatus.status || 'Booked',
+        status: liveStatus?.status || 'Booked',
         fields: {
-          STATUS: liveStatus.status || 'Booked',
-          Status: liveStatus.status || 'Booked',
-          BookedBy: liveStatus.client || item.clientName,
-          'Booked By': liveStatus.client || item.clientName,
-          BookingStart: liveStatus.slot?.start || item.startDate,
-          'Booking Start': liveStatus.slot?.start || item.startDate,
-          BookingEnd: liveStatus.slot?.end || item.endDate,
-          'Booking End': liveStatus.slot?.end || item.endDate,
+          STATUS: liveStatus?.status || 'Booked',
+          Status: liveStatus?.status || 'Booked',
+          BookedBy: liveStatus?.client || item.clientName,
+          'Booked By': liveStatus?.client || item.clientName,
+          BookingStart: liveStatus?.slot?.start || item.startDate,
+          'Booking Start': liveStatus?.slot?.start || item.startDate,
+          BookingEnd: liveStatus?.slot?.end || item.endDate,
+          'Booking End': liveStatus?.slot?.end || item.endDate,
           BookingSchedule: JSON.stringify(updatedSlots)
         }
       });
@@ -826,8 +828,8 @@ export const commitBulkBookings = async ({
               batchUpdates.push({
                 siteId: p.site._SiteID || '',
                 sl: p.site.SL || '',
-                siteName: pLoc,
-                facing: pFacing,
+                siteName: p.site['Location '] || p.site.Location || '',
+                facing: p.site.Facing || p.site['Traffic View'] || '',
                 status: p.site.STATUS || 'Available',
                 url: res.url,
                 fields: {
