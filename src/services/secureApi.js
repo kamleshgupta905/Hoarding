@@ -67,6 +67,20 @@ const postOpaque = async (payload) => {
 };
 
 export const postDirect = async (payload, timeoutMs = 60000) => {
+  if (typeof window !== 'undefined' && window.electronAPI?.postAppsScript) {
+    try {
+      const res = await window.electronAPI.postAppsScript({ url: APPS_SCRIPT_URL, payload, timeoutMs });
+      if (res && res.success) {
+        return res.data || { success: true };
+      }
+      if (res && res.error) {
+        throw new Error(res.error);
+      }
+    } catch (ipcErr) {
+      console.warn('Electron postAppsScript IPC error, falling back to fetch:', ipcErr.message || ipcErr);
+    }
+  }
+
   const response = await fetchWithTimeout(APPS_SCRIPT_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'text/plain' },
@@ -217,20 +231,22 @@ export const submitAdminOperation = async ({ type, payload = {}, siteId = '', ba
   }
 
   // 🚀 Fast-Path: Try postDirect first so Google Apps Script immediately returns result
-  let directAttempted = false;
+  let directSucceeded = false;
   try {
-    directAttempted = true;
     const directResult = await postDirect(combinedPayload, 35000);
     if (directResult && (directResult.success || directResult.status === 'COMPLETED' || directResult.imageUrl)) {
       console.log('⚡ [Fast-Sync] Direct Apps Script response received:', directResult);
       return { ...directResult, operationId, status: 'COMPLETED' };
     }
+    if (directResult) {
+      directSucceeded = true;
+    }
   } catch (directErr) {
-    console.log('ℹ️ Fast-path direct post falling back to status polling:', directErr.message || directErr);
+    console.log('ℹ️ Fast-path direct post falling back to opaque post:', directErr.message || directErr);
   }
 
-  // Only send opaque POST if direct path was NOT attempted (avoids duplicate writes)
-  if (!directAttempted) {
+  // Guaranteed delivery: send opaque POST if direct path did not succeed
+  if (!directSucceeded) {
     const postPromise = postOpaque(combinedPayload).catch(err => console.warn('Operation post warning:', err));
     await postPromise;
   }

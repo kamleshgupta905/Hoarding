@@ -118,18 +118,27 @@ export default function AIVoiceCopilot({
     const voices = window.speechSynthesis.getVoices();
     if (!voices || voices.length === 0) return null;
 
-    // 1. Preferred Hindi natural voices
+    // 1. Preferred Hindi male natural voices first
+    const hindiMale = voices.find(v =>
+      v.lang.startsWith('hi') && (v.name.includes('Madhur') || v.name.includes('Prabhat') || v.name.includes('Hemant') || v.name.toLowerCase().includes('male'))
+    );
+    if (hindiMale) return hindiMale;
+
+    // Preferred Hindi natural voices
     const hindiVoice = voices.find(v => 
       v.lang.startsWith('hi') && (v.name.includes('Google') || v.name.includes('Natural') || v.name.includes('Online'))
     ) || voices.find(v => v.lang.startsWith('hi'));
     if (hindiVoice) return hindiVoice;
 
-    // 2. High fidelity English natural voices (Indian or UK/US Neural)
-    const indianEn = voices.find(v => v.lang === 'en-IN' && (v.name.includes('Natural') || v.name.includes('Google') || v.name.includes('Neerja') || v.name.includes('Prabhat')));
+    // 2. High fidelity Indian English Male natural voices
+    const indianEnMale = voices.find(v => v.lang === 'en-IN' && (v.name.includes('Prabhat') || v.name.includes('Ravi') || v.name.toLowerCase().includes('male')));
+    if (indianEnMale) return indianEnMale;
+
+    const indianEn = voices.find(v => v.lang === 'en-IN' && (v.name.includes('Natural') || v.name.includes('Google') || v.name.includes('Prabhat')));
     if (indianEn) return indianEn;
 
-    const ukFemale = voices.find(v => v.name.includes('Google UK English Female') || (v.lang === 'en-GB' && v.name.includes('Natural')));
-    if (ukFemale) return ukFemale;
+    const naturalMaleEn = voices.find(v => (v.name.includes('Natural') || v.name.includes('Google')) && (v.name.toLowerCase().includes('male') || v.name.includes('David') || v.name.includes('George')));
+    if (naturalMaleEn) return naturalMaleEn;
 
     const naturalEn = voices.find(v => v.name.includes('Natural') || v.name.includes('Google'));
     if (naturalEn) return naturalEn;

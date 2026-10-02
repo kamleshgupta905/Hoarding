@@ -9,9 +9,9 @@
     "Large presentations parse without exhausting memory",
     "Over-the-air automatic updates for Desktop, Web, and Mobile apps"
   ],
-  "version": "1.8.23",
-  "buildTimestamp": 1790954131679,
-  "buildDate": "2026-10-02T15:15:31.679Z",
-  "releaseTag": "v1.8.23",
+  "version": "1.8.25",
+  "buildTimestamp": 1790960623130,
+  "buildDate": "2026-10-02T17:03:43.130Z",
+  "releaseTag": "v1.8.25",
   "apkUrl": "https://github.com/kamleshgupta905/Hoarding/releases/download/staff-apk-latest/heera-staff-camera.apk"
 }

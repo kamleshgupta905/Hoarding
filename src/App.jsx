@@ -382,6 +382,17 @@ function App() {
 
     const cleanData = sanitizeHoardings(data);
     if (!cleanData || cleanData.length === 0) {
+      // 🛡️ Guard against temporary network glitch or sheet cold-start returning empty array
+      const existingCache = typeof window !== 'undefined' ? localStorage.getItem('hoardings_cache') : null;
+      if (existingCache) {
+        try {
+          const parsed = JSON.parse(existingCache);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            console.warn('[App.jsx] Fresh data fetch returned empty; preserving existing cached hoardings to prevent 0-count flash.');
+            return;
+          }
+        } catch {}
+      }
       try {
         localStorage.removeItem('hoardings_cache');
         localStorage.removeItem('local_added_sites_cache');
@@ -579,7 +590,9 @@ function App() {
     try {
       const data = await fetchHoardings();
       lastFullRefreshRef.current = Date.now();
-      applyFreshHoardings(data || []);
+      if (Array.isArray(data) && data.length > 0) {
+        applyFreshHoardings(data);
+      }
     } catch (error) { console.warn('Auto-refresh:', error); }
   }, [applyFreshHoardings]);
 

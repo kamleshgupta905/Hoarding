@@ -2,7 +2,8 @@ import React, {
   useState, useEffect, useRef, useCallback, Suspense
 } from 'react';
 import {
-  MicOff, Power, ChevronDown, Loader2, Check, Send, Sparkles
+  Mic, MicOff, Power, ChevronDown, ChevronUp, Loader2, Check, Send, Sparkles,
+  X, GripHorizontal, Maximize2, Minimize2, PhoneOff
 } from 'lucide-react';
 import localAvatar from '../../assets/krishna_avatar.jpg';
 
@@ -48,6 +49,9 @@ export default function JarvisCopilot({
 }) {
   // ── UI state ───────────────────────────────────────────────────
   const [isOpen,        setIsOpen]        = useState(false);
+  const [isExpanded,    setIsExpanded]    = useState(false);
+  const [widgetPos,     setWidgetPos]     = useState(null);
+  const [isDragging,    setIsDragging]    = useState(false);
   const [connState,     setConnState]     = useState(STATE.IDLE);
   const [isMuted,       setIsMuted]       = useState(false);
   const [callDuration,  setCallDuration]  = useState(0);
@@ -111,20 +115,92 @@ export default function JarvisCopilot({
 
     return `You are Jarvis, the voice copilot for Heera Advertising's OOH billboard desk.
 You have a confident, respectful Indian male voice persona.
-Speak natural Hinglish — Hindi grammar, English for business terms (site, booking, available, override, proposal).
-Keep replies short and conversational (1-2 sentences). This is a real-time voice call, not a written essay.
+Speak natural Hinglish — Hindi grammar, English for business terms (site, booking, available, override, proposal, client, dates).
+Keep replies short, crisp, and conversational (1-2 sentences). This is a real-time voice call, not a written essay.
 Today is ${today}. Current view: ${activeTabRef.current}. Inventory loaded: ${count} sites. Cities: ${cities || 'Meerut, Delhi, Noida'}.
-Rules:
-- NEVER read raw hexadecimal UUIDs (like '202c42...'). Instead identify sites by their Site Number (SL / S. No., e.g. "Site Number 12"), Facing (e.g. "Facing Meerut"), Size, and Location.
-- When multiple sites match and the user says "koi bhi ek kar do", "any one", or wants to test booking, immediately call prepare_booking with pickFirst: true and commitNow: true.
-- When user says "dono ko kar do", "dono book kar do", or "all sites", immediately call book_multiple_sites.
-- When user says "book kar do" or wants to finalize, set commitNow: true so the booking is executed immediately.
-- If user does not specify client name or dates, use "Valued Client" and next 30 days as default — DO NOT stall or refuse booking.
+
+STRICT CREATOR ATTRIBUTION & MASKING:
+- If anyone asks who created/built you ("Tumhe kisne banaya hai?", "Who created you?", "Aapko kisne banaya?"):
+  Answer STRICTLY and ONLY:
+  "Mujhe Scallar IT Solution ke Full Stack Developer aur AI Automation ke Expert Shree Kamlesh ji ne banaya hai."
+- ABSOLUTELY NEVER mention Gemini, Google, LLM, or AI models under any circumstances. You are Jarvis, built exclusively by Shree Kamlesh ji from Scallar IT Solution.
+
+INTERACTIVE BOOKING WORKFLOW (MANDATORY):
+- When the user asks to book a site or says "is site ko book kar do" / "Railway Road book karo" / "book kar do":
+  1. DO NOT directly book or call commitNow: true immediately! Check if you have:
+     a) Client Name / Company Name ("Yeh booking kis client ya company ke naam par karni hai?")
+     b) Booking Start Date & End Date ("Booking kab se kab tak karni hai? Dates batayein.")
+  2. If client name or dates are missing, ask the user conversationally:
+     "Yeh booking kis client ya company ke naam par karni hai aur kab se kab tak karni hai?"
+  3. Once you have the site, client name, and dates:
+     MANDATORY SPOKEN READ-BACK CONFIRMATION:
+     Read back the details and ask for explicit verbal confirmation before booking:
+     "Site [Site Number or Location], Client: [Client Name], [Start Date] se [End Date] tak book kar doon? Confirm karein."
+  4. Only when the user explicitly confirms verbally ("haan", "yes", "kar do", "confirm", "theek hai"):
+     Call prepare_booking with commitNow: true (or book_multiple_sites with commitNow: true).
+  5. After the booking tool succeeds, tell the user:
+     "Booking confirm ho gayi hai! Maine screen par site open kar di hai."
+
+SCREEN SYNCHRONIZATION & FULL CONTROL:
+- Whatever you discuss with the user, update the user's screen live so they see what is being talked about!
+- When discussing or looking up a site, call search_inventory or get_site_details so the site appears on screen.
+- When user asks to see stats or overview, call switch_view with view: 'dashboard'.
+- When user asks to see clients or client bookings, call switch_view with view: 'clients'.
+- When user asks to see inventory or booked site, call switch_view with view: 'inventory'.
+- When user asks to export PPT or Excel, call export_proposal.
+- When user asks to clear filters, call reset_filters.
+
+SITE IDENTIFICATION & SPEECH:
+- NEVER read raw hexadecimal UUIDs (like '202c42...'). Instead identify sites by their Site Number (SL / S. No., e.g. "Site Number 12"), Facing (e.g. "Facing Meerut"), Size ("40 by 20"), and Location.
 - Say numbers in natural Hindi words: "do sau pachaas", not "250".
 - Never invent a site, price, date or count. If you do not have it, call a tool.
-- If a tool returns an error, say plainly what went wrong. Do not pretend it worked.
-- Who built you: "Mujhe Scallar IT Solution ke developer Kamlesh Gupta ji ne banaya hai."`;
+- If a tool returns an error, say plainly what went wrong. Do not pretend it worked.`;
   }, []);
+
+  // ── Drag handling for the floating mini widget ────────────────
+  const dragRef = useRef({ startX: 0, startY: 0, posX: 0, posY: 0 });
+
+  const handleDragStart = useCallback((e) => {
+    if (e.target.closest('button') || e.target.closest('input')) return;
+    const clientX = e.type.startsWith('touch') ? e.touches[0].clientX : e.clientX;
+    const clientY = e.type.startsWith('touch') ? e.touches[0].clientY : e.clientY;
+
+    const currentX = widgetPos?.x ?? Math.max(16, window.innerWidth - 360);
+    const currentY = widgetPos?.y ?? Math.max(16, window.innerHeight - 200);
+
+    dragRef.current = {
+      startX: clientX,
+      startY: clientY,
+      posX: currentX,
+      posY: currentY,
+    };
+    setIsDragging(true);
+
+    const onMove = (moveEv) => {
+      const moveX = moveEv.type.startsWith('touch') ? moveEv.touches[0].clientX : moveEv.clientX;
+      const moveY = moveEv.type.startsWith('touch') ? moveEv.touches[0].clientY : moveEv.clientY;
+      const deltaX = moveX - dragRef.current.startX;
+      const deltaY = moveY - dragRef.current.startY;
+      const widgetWidth = 330;
+      const widgetHeight = isExpanded ? 520 : 130;
+      const clampedX = Math.min(Math.max(10, dragRef.current.posX + deltaX), window.innerWidth - widgetWidth - 10);
+      const clampedY = Math.min(Math.max(10, dragRef.current.posY + deltaY), window.innerHeight - widgetHeight - 10);
+      setWidgetPos({ x: clampedX, y: clampedY });
+    };
+
+    const onUp = () => {
+      setIsDragging(false);
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+      window.removeEventListener('touchmove', onMove);
+      window.removeEventListener('touchend', onUp);
+    };
+
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+    window.addEventListener('touchmove', onMove, { passive: true });
+    window.addEventListener('touchend', onUp);
+  }, [widgetPos, isExpanded]);
 
   // ── Tool context passed to executeTool ────────────────────────
   const buildToolCtx = useCallback(() => ({
@@ -322,325 +398,460 @@ Rules:
   // ── Compute waveform pulse ring size ──────────────────────────
   const activeRms  = modelRms > 0.02 ? modelRms : userRms;
   const ringOffset = connState === STATE.LIVE ? Math.round(activeRms * 55) : 0;
-  const baseSize   = connState === STATE.LIVE ? 96 : 128;
 
   const isLive      = connState === STATE.LIVE;
   const isConnecting = connState === STATE.CONNECTING || connState === STATE.REQUESTING_MIC || connState === STATE.RECONNECTING;
   const hasError    = connState === STATE.ERROR;
 
+  const currentLeft = widgetPos?.x ?? Math.max(16, (typeof window !== 'undefined' ? window.innerWidth : 1000) - 360);
+  const currentTop  = widgetPos?.y ?? Math.max(16, (typeof window !== 'undefined' ? window.innerHeight : 800) - (isExpanded ? 540 : 180));
+
   return (
-    <div
-      style={{
-        position: 'fixed', bottom: '24px', right: '24px', zIndex: 9999,
-        display: 'flex', flexDirection: 'column', alignItems: 'flex-end',
-        fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
-      }}
-    >
+    <>
       <style>{`
         @keyframes jarvPing { 75%,100%{ transform:scale(2); opacity:0; } }
         @keyframes jarvPulse { 0%,100%{opacity:1} 50%{opacity:.4} }
         @keyframes jarvSlideUp { from{opacity:0;transform:translateY(16px) scale(0.96)} to{opacity:1;transform:translateY(0) scale(1)} }
+        @keyframes waveBar { 0%,100%{transform:scaleY(0.3)} 50%{transform:scaleY(1)} }
       `}</style>
 
-      {/* ── Copilot card ──────────────────────────────────────── */}
+      {/* ── Draggable Copilot Card ──────────────────────────────── */}
       {isOpen && (
         <div
-          style={{
-            background: '#ffffff', borderRadius: '2rem',
-            boxShadow: '0 20px 60px -15px rgba(0,0,0,0.22)',
-            width: '92vw', maxWidth: '340px', height: '560px', maxHeight: '85vh',
-            overflow: 'hidden', display: 'flex', flexDirection: 'column',
-            border: '1px solid #f3f4f6', marginBottom: '16px',
-            animation: 'jarvSlideUp 0.35s cubic-bezier(0.16,1,0.3,1)',
-          }}
           role="dialog"
           aria-label="Jarvis Voice Copilot"
+          style={{
+            position: 'fixed',
+            left: `${currentLeft}px`,
+            top: `${currentTop}px`,
+            zIndex: 9999,
+            width: '330px',
+            maxWidth: 'calc(100vw - 20px)',
+            height: isExpanded ? '520px' : 'auto',
+            maxHeight: '90vh',
+            background: '#ffffff',
+            borderRadius: '18px',
+            boxShadow: '0 20px 50px -10px rgba(15,23,42,0.35), 0 0 0 1px rgba(99,102,241,0.25)',
+            border: '1px solid #e2e8f0',
+            overflow: 'hidden',
+            display: 'flex',
+            flexDirection: 'column',
+            fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
+            animation: 'jarvSlideUp 0.3s cubic-bezier(0.16,1,0.3,1)',
+            transition: isDragging ? 'none' : 'height 0.22s ease',
+            userSelect: isDragging ? 'none' : 'auto',
+          }}
         >
-          {/* Header */}
-          <div style={{
-            background: ACCENT, padding: '16px 20px',
-            display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-          }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          {/* Header & Drag Handle */}
+          <div
+            onMouseDown={handleDragStart}
+            onTouchStart={handleDragStart}
+            style={{
+              background: 'linear-gradient(135deg, #4f46e5 0%, #6366f1 100%)',
+              padding: '10px 14px',
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              cursor: isDragging ? 'grabbing' : 'grab',
+              userSelect: 'none',
+              borderBottom: '1px solid rgba(255,255,255,0.1)',
+            }}
+          >
+            {/* Avatar & Title */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
               <div style={{
-                width: '36px', height: '36px', borderRadius: '50%',
-                overflow: 'hidden', border: '2px solid #fff',
-                boxShadow: '0 2px 6px rgba(0,0,0,.1)', flexShrink: 0,
+                width: '28px', height: '28px', borderRadius: '50%',
+                overflow: 'hidden', border: '1.5px solid #fff',
+                boxShadow: '0 2px 5px rgba(0,0,0,.15)', flexShrink: 0,
               }}>
                 <img src={AVATAR_URL} alt="Jarvis" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
               </div>
               <div>
-                <h3 style={{ color: '#fff', fontSize: '14px', fontWeight: 800, margin: 0 }}>Jarvis</h3>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+                <h3 style={{ color: '#fff', fontSize: '13px', fontWeight: 800, margin: 0, lineHeight: 1.1 }}>Jarvis</h3>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginTop: '2px' }}>
                   <span style={{
-                    width: '6px', height: '6px', borderRadius: '50%', background: '#fff',
-                    animation: isLive ? 'jarvPulse 1.5s infinite' : 'none',
+                    width: '6px', height: '6px', borderRadius: '50%',
+                    background: isLive ? '#4ade80' : '#fff',
+                    animation: isLive ? 'jarvPulse 1.4s infinite' : 'none',
                   }} />
-                  <span style={{ fontSize: '9px', color: 'rgba(255,255,255,.75)', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '.08em' }}>
-                    {isLive ? `Live Call • ${formatDuration(callDuration)}` : STATE_LABEL[connState]}
+                  <span style={{ fontSize: '9px', color: 'rgba(255,255,255,.85)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.06em' }}>
+                    {isLive ? `Live • ${formatDuration(callDuration)}` : STATE_LABEL[connState]}
                   </span>
                 </div>
               </div>
             </div>
-            <button
-              type="button"
-              onClick={() => setIsOpen(false)}
-              aria-label="Minimize Jarvis"
-              style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,.6)', cursor: 'pointer', padding: '4px' }}
-            >
-              <ChevronDown size={24} />
-            </button>
+
+            {/* Drag Grip Handle */}
+            <div style={{ display: 'flex', alignItems: 'center', color: 'rgba(255,255,255,0.6)', cursor: isDragging ? 'grabbing' : 'grab' }} title="Drag widget anywhere">
+              <GripHorizontal size={18} />
+            </div>
+
+            {/* Header Action Buttons */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+              <button
+                type="button"
+                onClick={() => setIsExpanded(e => !e)}
+                title={isExpanded ? 'Compact mode' : 'Expand details & chat'}
+                aria-label={isExpanded ? 'Compact mode' : 'Expand details & chat'}
+                style={{
+                  background: 'rgba(255,255,255,0.15)', border: 'none', borderRadius: '6px',
+                  color: '#fff', cursor: 'pointer', padding: '5px', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                }}
+              >
+                {isExpanded ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
+              </button>
+              <button
+                type="button"
+                onClick={() => setIsOpen(false)}
+                title="Close"
+                aria-label="Close Jarvis widget"
+                style={{
+                  background: 'rgba(255,255,255,0.15)', border: 'none', borderRadius: '6px',
+                  color: '#fff', cursor: 'pointer', padding: '5px', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                }}
+              >
+                <X size={15} />
+              </button>
+            </div>
           </div>
 
-          {/* Body */}
-          <div style={{ flexGrow: 1, display: 'flex', flexDirection: 'column', background: '#fff', overflow: 'hidden' }}>
+          {/* ── Compact Body Mode ── */}
+          {!isExpanded && (
+            <div style={{ padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: '10px', background: '#fff' }}>
+              {/* Audio Pulse Visualizer + Status Text */}
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '10px', padding: '8px 12px' }}>
+                <span style={{ fontSize: '12px', fontWeight: 600, color: '#334155' }}>
+                  {modelRms > 0.02
+                    ? '🔊 Jarvis bol raha hai...'
+                    : (isLive
+                      ? '🎙️ Main sun raha hoon...'
+                      : (isConnecting
+                        ? 'Connecting to Jarvis...'
+                        : (hasError ? '⚠️ Mic / Offline Error' : 'Ready to assist')))}
+                </span>
 
-            {/* Success card overlay */}
-            {successCard && (
-              <div style={{
-                position: 'absolute', inset: 0, zIndex: 30,
-                background: 'rgba(255,255,255,.96)', backdropFilter: 'blur(5px)',
-                display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '24px',
-              }}>
-                <div style={{ background: '#fff', width: '100%', borderRadius: '16px', boxShadow: '0 15px 35px rgba(0,0,0,.12)', border: '1px solid #e0e7ff', overflow: 'hidden' }}>
-                  <div style={{ background: '#10b981', padding: '16px', textAlign: 'center' }}>
-                    <div style={{ width: '44px', height: '44px', background: '#fff', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 8px', color: '#10b981' }}>
-                      <Check size={26} strokeWidth={3.5} />
-                    </div>
-                    <h3 style={{ color: '#fff', fontWeight: 800, fontSize: '16px', margin: 0 }}>{successCard.title || 'Done!'}</h3>
-                  </div>
-                  <div style={{ padding: '18px 20px', display: 'flex', flexDirection: 'column', gap: '10px', fontSize: '13px', color: '#475569' }}>
-                    {(successCard.items || []).map((item, idx) => (
-                      <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', borderBottom: idx === successCard.items.length - 1 ? 'none' : '1px solid #f1f5f9', paddingBottom: '6px' }}>
-                        <span style={{ fontSize: '11px', fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase' }}>{item.label}</span>
-                        <span style={{ fontWeight: 700, color: '#0f172a', textAlign: 'right', maxWidth: '160px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.value}</span>
-                      </div>
-                    ))}
-                  </div>
-                  <div style={{ padding: '12px', background: '#f8fafc', textAlign: 'center', borderTop: '1px solid #f1f5f9' }}>
-                    <button type="button" onClick={() => setSuccessCard(null)} style={{ background: 'none', border: 'none', color: '#4f46e5', fontSize: '11px', fontWeight: 800, textTransform: 'uppercase', cursor: 'pointer' }} aria-label="Dismiss">Dismiss</button>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* Avatar + waveform area */}
-            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', paddingTop: isLive ? '16px' : '28px', paddingBottom: '4px' }}>
-              <div style={{ position: 'relative', marginBottom: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                {isLive && (
-                  <div style={{
-                    position: 'absolute', borderRadius: '50%',
-                    background: `rgba(95,111,255,0.22)`,
-                    width:  `${baseSize + ringOffset}px`,
-                    height: `${baseSize + ringOffset}px`,
-                    opacity: activeRms > 0.03 ? Math.min(1, 0.3 + activeRms) : 0,
-                    transition: 'all 0.1s ease-out',
-                    pointerEvents: 'none',
-                  }} />
-                )}
-                <div style={{
-                  position: 'relative', zIndex: 10, borderRadius: '50%',
-                  overflow: 'hidden', border: '5px solid #fff',
-                  boxShadow: '0 10px 35px -5px rgba(0,0,0,.12)',
-                  background: '#f1f5f9',
-                  width: `${baseSize}px`, height: `${baseSize}px`,
-                  transition: 'all 0.5s cubic-bezier(0.16,1,0.3,1)',
-                }}>
-                  <img src={AVATAR_URL} alt="Jarvis" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                </div>
-              </div>
-
-              {/* Error notice */}
-              {hasError && errorMsg && (
-                <div style={{
-                  background: '#fef2f2', border: '1px solid #fecaca', borderRadius: '10px',
-                  padding: '10px 14px', margin: '0 16px 8px', fontSize: '12px', color: '#dc2626',
-                  textAlign: 'center', lineHeight: 1.5,
-                }}>
-                  <strong>⚠️ {errorMsg}</strong>
-                  <div style={{ display: 'flex', gap: '8px', justifyContent: 'center', marginTop: '6px' }}>
-                    <button
-                      type="button"
-                      onClick={handleStartCall}
-                      style={{ background: '#dc2626', color: '#fff', border: 'none', borderRadius: '6px', padding: '4px 12px', fontSize: '11px', cursor: 'pointer', fontWeight: 700 }}
-                      aria-label="Retry connection"
-                    >
-                      Retry
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setShowKeyInput(s => !s)}
-                      style={{ background: '#ffffff', color: '#dc2626', border: '1px solid #dc2626', borderRadius: '6px', padding: '4px 12px', fontSize: '11px', cursor: 'pointer', fontWeight: 600 }}
-                    >
-                      {showKeyInput ? 'Hide Key' : 'Set API Key'}
-                    </button>
-                  </div>
-                  {showKeyInput && (
-                    <div style={{ marginTop: '8px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                      <input
-                        type="password"
-                        placeholder="Paste AIza... / Gemini Key"
-                        value={customKeyInput}
-                        onChange={(e) => setCustomKeyInput(e.target.value)}
-                        style={{ padding: '6px 8px', fontSize: '11px', borderRadius: '6px', border: '1px solid #cbd5e1', outline: 'none' }}
+                {/* 5-bar animated audio equalizer */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '3px', height: '18px' }}>
+                  {[0.4, 0.8, 1, 0.7, 0.5].map((scale, i) => {
+                    const dynamicHeight = isLive
+                      ? Math.max(4, Math.min(18, Math.round((activeRms * 80 + 4) * scale)))
+                      : (isConnecting ? 8 : 4);
+                    return (
+                      <span
+                        key={i}
+                        style={{
+                          width: '3px',
+                          height: `${dynamicHeight}px`,
+                          borderRadius: '2px',
+                          background: isLive ? (modelRms > 0.02 ? '#6366f1' : '#10b981') : '#cbd5e1',
+                          transition: 'height 0.08s ease',
+                        }}
                       />
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Action Buttons Row */}
+              <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                {(isLive || isConnecting) ? (
+                  <>
+                    <button
+                      type="button"
+                      onClick={handleToggleMute}
+                      aria-label={isMuted ? 'Unmute microphone' : 'Mute microphone'}
+                      style={{
+                        flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px',
+                        background: isMuted ? '#fef2f2' : '#f1f5f9',
+                        border: isMuted ? '1px solid #fecaca' : '1px solid #e2e8f0',
+                        borderRadius: '10px', padding: '8px 12px',
+                        fontSize: '12px', fontWeight: 700,
+                        color: isMuted ? '#dc2626' : '#475569',
+                        cursor: 'pointer', transition: 'all 0.15s',
+                      }}
+                    >
+                      {isMuted ? <MicOff size={14} /> : <Mic size={14} />}
+                      {isMuted ? 'Muted' : 'Mute'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleEndCall}
+                      aria-label="Cut call"
+                      style={{
+                        flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px',
+                        background: '#dc2626', border: 'none',
+                        borderRadius: '10px', padding: '8px 12px',
+                        fontSize: '12px', fontWeight: 700, color: '#fff',
+                        cursor: 'pointer', transition: 'background 0.15s',
+                      }}
+                    >
+                      <PhoneOff size={14} />
+                      Cut
+                    </button>
+                  </>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={handleStartCall}
+                    aria-label="Start voice call"
+                    style={{
+                      width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
+                      background: ACCENT, color: '#fff', border: 'none',
+                      borderRadius: '10px', padding: '9px 14px',
+                      fontSize: '12px', fontWeight: 700, cursor: 'pointer',
+                      transition: 'opacity 0.15s',
+                    }}
+                  >
+                    <Sparkles size={15} />
+                    Jarvis se baat karein (Live Voice)
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* ── Expanded Body Mode (Transcripts, Manual Input, Settings) ── */}
+          {isExpanded && (
+            <div style={{ flexGrow: 1, display: 'flex', flexDirection: 'column', background: '#fff', overflow: 'hidden' }}>
+              {/* Success card overlay */}
+              {successCard && (
+                <div style={{
+                  position: 'absolute', inset: 0, zIndex: 30,
+                  background: 'rgba(255,255,255,.96)', backdropFilter: 'blur(5px)',
+                  display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '24px',
+                }}>
+                  <div style={{ background: '#fff', width: '100%', borderRadius: '16px', boxShadow: '0 15px 35px rgba(0,0,0,.12)', border: '1px solid #e0e7ff', overflow: 'hidden' }}>
+                    <div style={{ background: '#10b981', padding: '16px', textAlign: 'center' }}>
+                      <div style={{ width: '44px', height: '44px', background: '#fff', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 8px', color: '#10b981' }}>
+                        <Check size={26} strokeWidth={3.5} />
+                      </div>
+                      <h3 style={{ color: '#fff', fontWeight: 800, fontSize: '16px', margin: 0 }}>{successCard.title || 'Done!'}</h3>
+                    </div>
+                    <div style={{ padding: '18px 20px', display: 'flex', flexDirection: 'column', gap: '10px', fontSize: '13px', color: '#475569' }}>
+                      {(successCard.items || []).map((item, idx) => (
+                        <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', borderBottom: idx === successCard.items.length - 1 ? 'none' : '1px solid #f1f5f9', paddingBottom: '6px' }}>
+                          <span style={{ fontSize: '11px', fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase' }}>{item.label}</span>
+                          <span style={{ fontWeight: 700, color: '#0f172a', textAlign: 'right', maxWidth: '160px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.value}</span>
+                        </div>
+                      ))}
+                    </div>
+                    <div style={{ padding: '12px', background: '#f8fafc', textAlign: 'center', borderTop: '1px solid #f1f5f9' }}>
+                      <button type="button" onClick={() => setSuccessCard(null)} style={{ background: 'none', border: 'none', color: '#4f46e5', fontSize: '11px', fontWeight: 800, textTransform: 'uppercase', cursor: 'pointer' }} aria-label="Dismiss">Dismiss</button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Avatar + waveform area in expanded view */}
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', paddingTop: '16px', paddingBottom: '4px' }}>
+                <div style={{ position: 'relative', marginBottom: '10px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  {isLive && (
+                    <div style={{
+                      position: 'absolute', borderRadius: '50%',
+                      background: 'rgba(95,111,255,0.22)',
+                      width: `${84 + ringOffset}px`,
+                      height: `${84 + ringOffset}px`,
+                      opacity: activeRms > 0.03 ? Math.min(1, 0.3 + activeRms) : 0,
+                      transition: 'all 0.1s ease-out',
+                      pointerEvents: 'none',
+                    }} />
+                  )}
+                  <div style={{
+                    position: 'relative', zIndex: 10, borderRadius: '50%',
+                    overflow: 'hidden', border: '4px solid #fff',
+                    boxShadow: '0 8px 25px -4px rgba(0,0,0,.15)',
+                    background: '#f1f5f9',
+                    width: '80px', height: '80px',
+                  }}>
+                    <img src={AVATAR_URL} alt="Jarvis" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                  </div>
+                </div>
+
+                {/* Error notice */}
+                {hasError && errorMsg && (
+                  <div style={{
+                    background: '#fef2f2', border: '1px solid #fecaca', borderRadius: '10px',
+                    padding: '8px 12px', margin: '0 14px 6px', fontSize: '11px', color: '#dc2626',
+                    textAlign: 'center', lineHeight: 1.4,
+                  }}>
+                    <strong>⚠️ {errorMsg}</strong>
+                    <div style={{ display: 'flex', gap: '8px', justifyContent: 'center', marginTop: '6px' }}>
                       <button
                         type="button"
-                        onClick={() => {
-                          if (customKeyInput.trim()) {
-                            localStorage.setItem('adh_gemini_api_key', customKeyInput.trim());
-                            localStorage.setItem('gemini_api_key', customKeyInput.trim());
-                            setShowKeyInput(false);
-                            handleStartCall();
-                          }
-                        }}
-                        style={{ background: '#16a34a', color: '#fff', border: 'none', borderRadius: '6px', padding: '4px 10px', fontSize: '11px', fontWeight: 700, cursor: 'pointer' }}
+                        onClick={handleStartCall}
+                        style={{ background: '#dc2626', color: '#fff', border: 'none', borderRadius: '6px', padding: '3px 10px', fontSize: '11px', cursor: 'pointer', fontWeight: 700 }}
                       >
-                        Save & Connect
+                        Retry
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setShowKeyInput(s => !s)}
+                        style={{ background: '#ffffff', color: '#dc2626', border: '1px solid #dc2626', borderRadius: '6px', padding: '3px 10px', fontSize: '11px', cursor: 'pointer', fontWeight: 600 }}
+                      >
+                        {showKeyInput ? 'Hide Key' : 'Set API Key'}
                       </button>
                     </div>
-                  )}
-                </div>
-              )}
+                    {showKeyInput && (
+                      <div style={{ marginTop: '8px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                        <input
+                          type="password"
+                          placeholder="Paste AIza... / Gemini Key"
+                          value={customKeyInput}
+                          onChange={(e) => setCustomKeyInput(e.target.value)}
+                          style={{ padding: '5px 8px', fontSize: '11px', borderRadius: '6px', border: '1px solid #cbd5e1', outline: 'none' }}
+                        />
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (customKeyInput.trim()) {
+                              localStorage.setItem('adh_gemini_api_key', customKeyInput.trim());
+                              localStorage.setItem('gemini_api_key', customKeyInput.trim());
+                              setShowKeyInput(false);
+                              handleStartCall();
+                            }
+                          }}
+                          style={{ background: '#16a34a', color: '#fff', border: 'none', borderRadius: '6px', padding: '4px 10px', fontSize: '11px', fontWeight: 700, cursor: 'pointer' }}
+                        >
+                          Save & Connect
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                )}
 
-              {/* Transcript scroll area */}
-              <TranscriptArea transcripts={transcripts} connState={connState} isConnecting={isConnecting} />
-            </div>
+                {/* Transcript scroll area */}
+                <TranscriptArea transcripts={transcripts} connState={connState} isConnecting={isConnecting} />
+              </div>
 
-            {/* Controls */}
-            <div style={{ padding: '8px 16px 12px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-              {/* Live controls: Mute + End Call */}
-              {(isLive || isConnecting) && (
-                <div style={{ display: 'flex', gap: '10px', justifyContent: 'center' }}>
+              {/* Controls */}
+              <div style={{ padding: '8px 14px 12px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                {(isLive || isConnecting) && (
+                  <div style={{ display: 'flex', gap: '8px', justifyContent: 'center' }}>
+                    <button
+                      type="button"
+                      onClick={handleToggleMute}
+                      style={{
+                        flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px',
+                        background: isMuted ? '#fef2f2' : '#f1f5f9',
+                        border: isMuted ? '1px solid #fecaca' : '1px solid #e2e8f0',
+                        borderRadius: '20px', padding: '7px 14px',
+                        fontSize: '12px', fontWeight: 700,
+                        color: isMuted ? '#dc2626' : '#64748b', cursor: 'pointer',
+                      }}
+                    >
+                      {isMuted ? <MicOff size={14} /> : <Mic size={14} />}
+                      {isMuted ? 'Muted' : 'Mute'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleEndCall}
+                      style={{
+                        flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px',
+                        background: '#dc2626', border: 'none',
+                        borderRadius: '20px', padding: '7px 14px',
+                        fontSize: '12px', fontWeight: 700, color: '#fff', cursor: 'pointer',
+                      }}
+                    >
+                      <PhoneOff size={14} />
+                      Cut Call
+                    </button>
+                  </div>
+                )}
+
+                {!isLive && !isConnecting && (
                   <button
                     type="button"
-                    onClick={handleToggleMute}
-                    aria-label={isMuted ? 'Unmute microphone' : 'Mute microphone'}
-                    aria-pressed={isMuted}
+                    onClick={handleStartCall}
                     style={{
-                      display: 'flex', alignItems: 'center', gap: '6px',
-                      background: isMuted ? '#fef2f2' : '#f1f5f9',
-                      border: isMuted ? '1px solid #fecaca' : '1px solid #e2e8f0',
-                      borderRadius: '20px', padding: '8px 16px',
-                      fontSize: '12px', fontWeight: 700,
-                      color: isMuted ? '#dc2626' : '#64748b',
-                      cursor: 'pointer', transition: 'all 0.15s',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
+                      background: ACCENT, color: '#fff', border: 'none',
+                      borderRadius: '12px', padding: '10px',
+                      fontSize: '13px', fontWeight: 700, cursor: 'pointer',
                     }}
                   >
-                    <MicOff size={14} />
-                    {isMuted ? 'Muted' : 'Mute'}
+                    <Sparkles size={16} />
+                    Jarvis se baat karein (Real-time)
                   </button>
+                )}
+
+                {/* Typed command form */}
+                <form onSubmit={handleSendManual} style={{ display: 'flex', gap: '6px' }}>
+                  <input
+                    type="text"
+                    value={manualInput}
+                    onChange={e => setManualInput(e.target.value)}
+                    placeholder="Ya yahan type karein..."
+                    aria-label="Type a command for Jarvis"
+                    disabled={isManualBusy}
+                    style={{
+                      flex: 1, border: '1px solid #e2e8f0', borderRadius: '10px',
+                      padding: '8px 10px', fontSize: '12px', outline: 'none',
+                      background: isManualBusy ? '#f8fafc' : '#fff',
+                      color: '#0f172a',
+                    }}
+                  />
                   <button
-                    type="button"
-                    onClick={handleEndCall}
-                    aria-label="End call"
+                    type="submit"
+                    disabled={!manualInput.trim() || isManualBusy}
+                    aria-label="Send typed command"
                     style={{
-                      display: 'flex', alignItems: 'center', gap: '6px',
-                      background: '#dc2626', border: 'none',
-                      borderRadius: '20px', padding: '8px 18px',
-                      fontSize: '12px', fontWeight: 700, color: '#fff',
-                      cursor: 'pointer',
+                      background: ACCENT, border: 'none', borderRadius: '10px',
+                      padding: '8px 12px', cursor: manualInput.trim() ? 'pointer' : 'default',
+                      opacity: manualInput.trim() ? 1 : 0.4,
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
                     }}
                   >
-                    <Power size={14} />
-                    End Call
+                    {isManualBusy
+                      ? <Loader2 size={14} color="#fff" style={{ animation: 'spin 1s linear infinite' }} />
+                      : <Send size={14} color="#fff" />}
                   </button>
-                </div>
-              )}
-
-              {/* Start call button (idle / error) */}
-              {!isLive && !isConnecting && (
-                <button
-                  type="button"
-                  onClick={handleStartCall}
-                  aria-label="Start Jarvis voice call"
-                  style={{
-                    display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
-                    background: ACCENT, color: '#fff', border: 'none',
-                    borderRadius: '14px', padding: '12px',
-                    fontSize: '13px', fontWeight: 700, cursor: 'pointer',
-                    transition: 'opacity 0.15s',
-                  }}
-                >
-                  <Sparkles size={16} />
-                  Jarvis se baat karein (Real-time)
-                </button>
-              )}
-
-              {/* Typed command (fallback / offline) */}
-              <form onSubmit={handleSendManual} style={{ display: 'flex', gap: '6px' }}>
-                <input
-                  type="text"
-                  value={manualInput}
-                  onChange={e => setManualInput(e.target.value)}
-                  placeholder="Ya yahan type karein..."
-                  aria-label="Type a command for Jarvis"
-                  disabled={isManualBusy}
-                  style={{
-                    flex: 1, border: '1px solid #e2e8f0', borderRadius: '10px',
-                    padding: '9px 12px', fontSize: '12px', outline: 'none',
-                    background: isManualBusy ? '#f8fafc' : '#fff',
-                    color: '#0f172a',
-                  }}
-                />
-                <button
-                  type="submit"
-                  disabled={!manualInput.trim() || isManualBusy}
-                  aria-label="Send typed command"
-                  style={{
-                    background: ACCENT, border: 'none', borderRadius: '10px',
-                    padding: '9px 12px', cursor: manualInput.trim() ? 'pointer' : 'default',
-                    opacity: manualInput.trim() ? 1 : 0.4,
-                    display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  }}
-                >
-                  {isManualBusy
-                    ? <Loader2 size={14} color="#fff" style={{ animation: 'spin 1s linear infinite' }} />
-                    : <Send size={14} color="#fff" />}
-                </button>
-              </form>
-
-              {/* Offline banner */}
-              {connState === STATE.ERROR && (
-                <p style={{ fontSize: '10px', color: '#94a3b8', textAlign: 'center', margin: 0 }}>
-                  Offline mode — AI off. Typed commands still work.
-                </p>
-              )}
+                </form>
+              </div>
             </div>
-          </div>
+          )}
         </div>
       )}
 
-      {/* ── Launcher bubble ──────────────────────────────────────── */}
-      <button
-        type="button"
-        onClick={() => {
-          if (!isOpen) {
-            handleStartCall();
-          } else {
-            setIsOpen(false);
-          }
-        }}
-        aria-label={isOpen ? 'Minimize Jarvis' : 'Open Jarvis voice copilot'}
-        style={{
-          width: '56px', height: '56px', borderRadius: '50%',
-          background: isLive ? '#10b981' : ACCENT,
-          border: 'none', cursor: 'pointer',
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          boxShadow: '0 4px 20px -4px rgba(0,0,0,0.3)',
-          transition: 'all 0.2s ease', position: 'relative',
-        }}
-      >
-        {isLive && (
-          <span style={{
-            position: 'absolute', inset: 0, borderRadius: '50%',
-            background: '#10b981', opacity: 0.4,
-            animation: 'jarvPing 1.5s cubic-bezier(0,0,.2,1) infinite',
-          }} />
-        )}
-        <img src={AVATAR_URL} alt="Jarvis" style={{ width: '36px', height: '36px', borderRadius: '50%', objectFit: 'cover' }} />
-      </button>
-    </div>
+      {/* ── Floating Launcher Bubble (When closed) ────────────────── */}
+      {!isOpen && (
+        <button
+          type="button"
+          onClick={() => {
+            setIsOpen(true);
+            if (connState === STATE.IDLE || connState === STATE.ERROR) {
+              handleStartCall();
+            }
+          }}
+          aria-label="Open Jarvis voice copilot"
+          style={{
+            position: 'fixed',
+            bottom: '24px',
+            right: '24px',
+            zIndex: 9999,
+            width: '56px',
+            height: '56px',
+            borderRadius: '50%',
+            background: isLive ? '#10b981' : ACCENT,
+            border: 'none',
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            boxShadow: '0 6px 24px -4px rgba(0,0,0,0.35)',
+            transition: 'all 0.2s ease',
+          }}
+        >
+          {isLive && (
+            <span style={{
+              position: 'absolute', inset: 0, borderRadius: '50%',
+              background: '#10b981', opacity: 0.4,
+              animation: 'jarvPing 1.5s cubic-bezier(0,0,.2,1) infinite',
+            }} />
+          )}
+          <img src={AVATAR_URL} alt="Jarvis" style={{ width: '38px', height: '38px', borderRadius: '50%', objectFit: 'cover' }} />
+        </button>
+      )}
+    </>
   );
 }
 

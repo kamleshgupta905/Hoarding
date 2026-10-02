@@ -361,6 +361,33 @@ ipcMain.handle('open-log-folder', async () => {
     }
 });
 
+// 📡 Google Apps Script proxy — bypasses renderer CORS redirects cleanly in Node.js
+ipcMain.handle('post-apps-script', async (event, { url, payload, timeoutMs = 60000 }) => {
+    const targetUrl = url || 'https://script.google.com/macros/s/AKfycbwmtW7Y71md_XoIk8A0JWrsWKSN-YuFgCcdahe5R56mADlGtH-t9Pj98YhPt3-Z1DoI5g/exec';
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+        const response = await fetch(targetUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'text/plain' },
+            body: JSON.stringify(payload),
+            redirect: 'follow',
+            signal: controller.signal
+        });
+        clearTimeout(timer);
+        const text = await response.text();
+        try {
+            const data = JSON.parse(text);
+            return { success: true, data };
+        } catch {
+            return { success: response.ok, rawText: text };
+        }
+    } catch (err) {
+        clearTimeout(timer);
+        return { success: false, error: err.message || String(err) };
+    }
+});
+
 ipcMain.on('log-jarvis-event', (event, { level, message, meta }) => {
     logToFile(level || 'INFO', message || '', meta);
 });

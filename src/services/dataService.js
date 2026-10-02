@@ -2311,7 +2311,7 @@ const escapeHtml = (value) => String(value ?? '')
   .replace(/"/g, '&quot;');
 
 export const PROPOSAL_COLUMNS = [
-  ['SL', (site, index) => site.SL || index + 1],
+  ['SL', (site, index) => index + 1],
   ['City', site => site.City || 'Meerut'],
   ['Media', site => site.Media || site['Type of Site (Unipole/Billboard)'] || 'Unipole'],
   ['Area', site => site.Area || site.Locality || ''],

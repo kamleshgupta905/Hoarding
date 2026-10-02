@@ -171,6 +171,22 @@ export const generateMasterMediaPlanPptx = async (sites = [], options = {}) => {
       });
     }
 
+    // 2b. Top-Right Serial Number Badge: strictly starts from 1 to total (1 to N)
+    slide.addText(`Site #${i + 1} of ${total}`, {
+      x: 8.20,
+      y: 0.02,
+      w: 1.80,
+      h: 0.40,
+      fontSize: 10.5,
+      fontFace: 'Arial',
+      color: '000000',
+      bold: true,
+      fill: { color: 'FFFFFF' },
+      line: { color: '888888', width: 0.75 },
+      align: 'center',
+      valign: 'middle'
+    });
+
     // 3. Bottom Information Table (2 Rows x 4 Columns)
     // Column widths in inches matching master PPT: [1.77, 4.49, 2.52, 1.22] = 10.00 inches
     const city = site.City || 'Meerut';
@@ -182,7 +198,7 @@ export const generateMasterMediaPlanPptx = async (sites = [], options = {}) => {
 
     const tableRows = [
       [
-        { text: `City: ${city}`, options: { fontSize: 10, fontFace: 'Calibri', bold: true, color: '000000', fill: { color: 'FFFFFF' } } },
+        { text: `S.No: ${i + 1} | ${city}`, options: { fontSize: 10, fontFace: 'Calibri', bold: true, color: '000000', fill: { color: 'FFFFFF' } } },
         { text: `Location: ${location}`, options: { fontSize: 10, fontFace: 'Calibri', bold: true, color: '000000', fill: { color: 'FFFFFF' } } },
         { text: `Facing: ${facing}`, options: { fontSize: 10, fontFace: 'Calibri', bold: true, color: '000000', fill: { color: 'FFFFFF' } } },
         { text: '', options: { fill: { color: 'FFFFFF' } } } // Column 4 reserved for Heera Logo

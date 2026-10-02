@@ -399,6 +399,13 @@ export const executeTool = async (toolName, args, ctx) => {
         if (matched.length === 0) return { found: false, candidates: [] };
         if (matched.length === 1) {
           const site = matched[0];
+          const sId = site._SiteID || site.UniqueID || site.ID;
+          if (sId && setters.setAiHighlightedSiteId) {
+            setters.setAiHighlightedSiteId(sId);
+          }
+          if (setters.setActiveTab) {
+            setters.setActiveTab('inventory');
+          }
           const slots = dataService.getSiteBookingSlots ? dataService.getSiteBookingSlots(site) : [];
           return {
             found: true,
@@ -497,6 +504,13 @@ export const executeTool = async (toolName, args, ctx) => {
             overrideMode: args.overrideMode || 'trim',
             overrideReason: args.overrideReason || 'Booked via AI Copilot'
           });
+          const targetSiteId = site._SiteID || site.UniqueID || site.ID;
+          if (targetSiteId && setters.setAiHighlightedSiteId) {
+            setters.setAiHighlightedSiteId(targetSiteId);
+          }
+          if (setters.setActiveTab) {
+            setters.setActiveTab('inventory');
+          }
           return {
             prepared: true,
             committed: true,
@@ -514,6 +528,14 @@ export const executeTool = async (toolName, args, ctx) => {
         }
 
         // Open the existing booking modal (human clicks Confirm)
+        const targetSiteId = site._SiteID || site.UniqueID || site.ID;
+        if (targetSiteId && setters.setAiHighlightedSiteId) {
+          setters.setAiHighlightedSiteId(targetSiteId);
+        }
+        if (setters.setActiveTab) {
+          setters.setActiveTab('inventory');
+        }
+
         if (setters.setQuickBookingTarget) {
           setters.setQuickBookingTarget({
             site,
@@ -575,6 +597,13 @@ export const executeTool = async (toolName, args, ctx) => {
             endDate,
             isOverride: Boolean(args.isOverride),
           });
+          const firstSiteId = matched[0]?._SiteID || matched[0]?.UniqueID || matched[0]?.ID;
+          if (firstSiteId && setters.setAiHighlightedSiteId) {
+            setters.setAiHighlightedSiteId(firstSiteId);
+          }
+          if (setters.setActiveTab) {
+            setters.setActiveTab('inventory');
+          }
           return {
             booked: true,
             count: matched.length,
