@@ -4617,25 +4617,26 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                         const bookedBy = String(h.BookedBy || h.ClientName || h["Client Name"] || h.Customer || "");
                         const trafficFrom = String(h["Traffic From"] || "");
                         const trafficTo = String(h["Traffic To"] || "");
-                        const media = String(h.Media || h["Media Format"] || h.Type || "");
+                        const media = String(h["Media Format (Front Lit / Back Lit / Non Lit)"] || h["Media Format"] || h.Media || h.Type || "");
                         const status = String(h.STATUS || h.Status || "");
                         const sl = String(h.SL || h["S. No."] || h["SL NO"] || "");
                         const dimensions = `${h.Width || ''} ${h.Height || ''} ${h["Total SQ.ft"] || ''} ${h.Size || ''}`;
                         const price = String(h["Rental Per Month"] || h["Avg Monthly Cost (INR)"] || "");
 
-                        const allFieldValues = Object.entries(h)
-                            .filter(([k]) => !k.startsWith('_') && k !== 'ImageURL' && k !== 'driveUrl')
-                            .map(([, v]) => String(v || ''))
-                            .join(' ');
-
-                        targetText = `${allFieldValues} ${siteTitle} ${siteLocality} ${city} ${facing} ${bookedBy} ${trafficFrom} ${trafficTo} ${media} ${status} ${sl} ${dimensions} ${price}`;
+                        targetText = `${siteTitle} ${siteLocality} ${city} ${facing} ${bookedBy} ${trafficFrom} ${trafficTo} ${media} ${status} ${sl} ${dimensions} ${price}`;
                     } else {
                         targetText = inventorySearchCategories.map(cat => getCategoryFieldText(cat)).join(' ');
                     }
 
                     const lowerTarget = targetText.toLowerCase();
-                    // All typed keywords must match somewhere in the selected target text
-                    matchSearch = searchKeywords.every(keyword => lowerTarget.includes(keyword));
+                    const lowerTargetCompact = lowerTarget.replace(/[\s\-_,.]+/g, '');
+
+                    // Match either normal substring or space/punctuation-stripped substring
+                    matchSearch = searchKeywords.every(keyword => {
+                        const kw = keyword.toLowerCase();
+                        const kwCompact = kw.replace(/[\s\-_,.]+/g, '');
+                        return lowerTarget.includes(kw) || (kwCompact && lowerTargetCompact.includes(kwCompact));
+                    });
                 }
             }
             if (!matchSearch) return false;
@@ -9748,7 +9749,55 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                         </tr>
                                     </thead>
                                     <tbody>
-                                        {filteredInventory.map((h, i) => {
+                                        {filteredInventory.length === 0 ? (
+                                            <tr>
+                                                <td colSpan={8} style={{ textAlign: 'center', padding: '48px 24px', backgroundColor: '#f8fafc' }}>
+                                                    <div style={{ maxWidth: '440px', margin: '0 auto', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '12px' }}>
+                                                        <div style={{ width: '48px', height: '48px', borderRadius: '50%', backgroundColor: '#e2e8f0', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#64748b' }}>
+                                                            <Search size={24} />
+                                                        </div>
+                                                        <h4 style={{ margin: 0, fontSize: '16px', fontWeight: 600, color: '#1e293b' }}>
+                                                            {searchTerm ? `No hoarding sites match "${searchTerm}"` : 'No hoarding sites match the selected filters'}
+                                                        </h4>
+                                                        <p style={{ margin: 0, fontSize: '13px', color: '#64748b', lineHeight: 1.5 }}>
+                                                            Total {hoardings.length} hoarding sites available in database. Try clearing your search query or resetting filters.
+                                                        </p>
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => {
+                                                                setSearchTerm('');
+                                                                setInventoryCityFilter(['All']);
+                                                                setInventoryStatusFilter('All');
+                                                                setFilterStartDate('');
+                                                                setFilterEndDate('');
+                                                                setInventoryLocalityFilter(['All']);
+                                                                setInventoryMediaFilter(['All']);
+                                                                setInventorySizeFilter(['All']);
+                                                                setInventoryCategoryFilter(['All']);
+                                                                setInventoryPriceFilter('All');
+                                                                setInventorySearchCategories(['all']);
+                                                                if (typeof setShowOnlyStarred === 'function') setShowOnlyStarred(false);
+                                                            }}
+                                                            style={{
+                                                                marginTop: '8px',
+                                                                padding: '8px 18px',
+                                                                backgroundColor: '#2563eb',
+                                                                color: '#ffffff',
+                                                                border: 'none',
+                                                                borderRadius: '6px',
+                                                                fontSize: '13px',
+                                                                fontWeight: 600,
+                                                                cursor: 'pointer',
+                                                                boxShadow: '0 2px 6px rgba(37, 99, 235, 0.2)'
+                                                            }}
+                                                        >
+                                                            Clear Search & Reset Filters
+                                                        </button>
+                                                    </div>
+                                                </td>
+                                            </tr>
+                                        ) : (
+                                            filteredInventory.map((h, i) => {
                                             const sKey = getProposalKey(h) || i;
                                             const isAiHighlighted = Boolean(aiHighlightedSiteId && (
                                                 h._SiteID === aiHighlightedSiteId || 
@@ -10001,7 +10050,8 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                                 </td>
                                             </tr>
                                         );
-                                    })}
+                                    })
+                                )}
                                     </tbody>
                                 </table>
                             </div>
