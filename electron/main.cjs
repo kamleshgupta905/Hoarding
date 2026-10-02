@@ -365,12 +365,45 @@ ipcMain.on('log-jarvis-event', (event, { level, message, meta }) => {
     logToFile(level || 'INFO', message || '', meta);
 });
 
+// Also load .env.local if present on disk
+function loadLocalEnvIfPresent() {
+    const candidates = [
+        path.join(__dirname, '..', '.env.local'),
+        path.join(__dirname, '.env.local'),
+        path.join(process.cwd(), '.env.local'),
+        path.join(app.getPath('userData'), '.env.local')
+    ];
+    for (const p of candidates) {
+        try {
+            if (fs.existsSync(p)) {
+                const content = fs.readFileSync(p, 'utf8');
+                content.split('\n').forEach(line => {
+                    const match = line.match(/^\s*([A-Za-z0-9_]+)\s*=\s*(.*)?\s*$/);
+                    if (match && !process.env[match[1]]) {
+                        process.env[match[1]] = match[2]?.trim().replace(/^['"]|['"]$/g, '') || '';
+                    }
+                });
+                break;
+            }
+        } catch (e) {}
+    }
+}
+loadLocalEnvIfPresent();
+
 // 🔑 Jarvis Live API token proxy — API key NEVER reaches the renderer bundle.
-// Main process reads from process.env and returns only what the renderer needs.
-ipcMain.handle('jarvis:get-live-token', async () => {
-    const key = process.env.GEMINI_API_KEY || process.env.VITE_GEMINI_LIVE_KEY || '';
+// Main process reads from process.env (or client fallback) and returns only what the renderer needs.
+ipcMain.handle('jarvis:get-live-token', async (event, clientFallbackKey) => {
+    const key = process.env.GEMINI_API_KEY ||
+                process.env.VITE_GEMINI_LIVE_KEY ||
+                process.env.VITE_GEMINI_API_KEY ||
+                process.env.VITE_GEMINI_API_KEY_1 ||
+                process.env.VITE_GEMINI_API_KEY_2 ||
+                process.env.VITE_GEMINI_API_KEY_3 ||
+                process.env.VITE_GEMINI_API_KEY_4 ||
+                clientFallbackKey ||
+                '';
     if (!key) {
-        throw new Error('GEMINI_API_KEY not set in environment. Please set it in your .env.local or system environment.');
+        throw new Error('GEMINI_API_KEY not found. Please set your Gemini API key in app Settings or .env.local.');
     }
 
     // Attempt to get an ephemeral token (reduces key exposure lifetime to 10 min)

@@ -58,6 +58,8 @@ export default function JarvisCopilot({
   const [errorMsg,      setErrorMsg]      = useState(null);
   const [manualInput,   setManualInput]   = useState('');
   const [isManualBusy,  setIsManualBusy]  = useState(false);
+  const [customKeyInput, setCustomKeyInput] = useState('');
+  const [showKeyInput,  setShowKeyInput]  = useState(false);
 
   // ── Refs (stable across renders, no stale closures) ───────────
   const sessionRef        = useRef(null);
@@ -425,14 +427,48 @@ Rules:
                   textAlign: 'center', lineHeight: 1.5,
                 }}>
                   <strong>⚠️ {errorMsg}</strong>
-                  <button
-                    type="button"
-                    onClick={handleStartCall}
-                    style={{ display: 'block', margin: '6px auto 0', background: '#dc2626', color: '#fff', border: 'none', borderRadius: '6px', padding: '4px 12px', fontSize: '11px', cursor: 'pointer', fontWeight: 700 }}
-                    aria-label="Retry connection"
-                  >
-                    Retry
-                  </button>
+                  <div style={{ display: 'flex', gap: '8px', justifyContent: 'center', marginTop: '6px' }}>
+                    <button
+                      type="button"
+                      onClick={handleStartCall}
+                      style={{ background: '#dc2626', color: '#fff', border: 'none', borderRadius: '6px', padding: '4px 12px', fontSize: '11px', cursor: 'pointer', fontWeight: 700 }}
+                      aria-label="Retry connection"
+                    >
+                      Retry
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setShowKeyInput(s => !s)}
+                      style={{ background: '#ffffff', color: '#dc2626', border: '1px solid #dc2626', borderRadius: '6px', padding: '4px 12px', fontSize: '11px', cursor: 'pointer', fontWeight: 600 }}
+                    >
+                      {showKeyInput ? 'Hide Key' : 'Set API Key'}
+                    </button>
+                  </div>
+                  {showKeyInput && (
+                    <div style={{ marginTop: '8px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                      <input
+                        type="password"
+                        placeholder="Paste AIza... / Gemini Key"
+                        value={customKeyInput}
+                        onChange={(e) => setCustomKeyInput(e.target.value)}
+                        style={{ padding: '6px 8px', fontSize: '11px', borderRadius: '6px', border: '1px solid #cbd5e1', outline: 'none' }}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (customKeyInput.trim()) {
+                            localStorage.setItem('adh_gemini_api_key', customKeyInput.trim());
+                            localStorage.setItem('gemini_api_key', customKeyInput.trim());
+                            setShowKeyInput(false);
+                            handleStartCall();
+                          }
+                        }}
+                        style={{ background: '#16a34a', color: '#fff', border: 'none', borderRadius: '6px', padding: '4px 10px', fontSize: '11px', fontWeight: 700, cursor: 'pointer' }}
+                      >
+                        Save & Connect
+                      </button>
+                    </div>
+                  )}
                 </div>
               )}
 

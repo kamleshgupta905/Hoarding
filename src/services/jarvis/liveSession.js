@@ -85,14 +85,21 @@ export class LiveSession {
   async _openSocket() {
     // Resolve API key / ephemeral token
     let key = '';
+    const fallbackKey = (typeof window !== 'undefined' && (
+      window.localStorage?.getItem('adh_gemini_api_key') ||
+      window.localStorage?.getItem('gemini_api_key')
+    )) ||
+    import.meta.env?.VITE_GEMINI_LIVE_KEY ||
+    import.meta.env?.VITE_GEMINI_API_KEY ||
+    import.meta.env?.VITE_GEMINI_API_KEY_1 ||
+    import.meta.env?.VITE_GEMINI_API_KEY_2 ||
+    '';
+
     try {
       if (window.electronAPI?.getJarvisLiveToken) {
-        key = await window.electronAPI.getJarvisLiveToken();
+        key = await window.electronAPI.getJarvisLiveToken(fallbackKey);
       } else {
-        key = import.meta.env?.VITE_GEMINI_LIVE_KEY ||
-              localStorage.getItem('adh_gemini_api_key') ||
-              localStorage.getItem('gemini_api_key') ||
-              '';
+        key = fallbackKey;
         if (!key) {
           this._h.onError(
             'Gemini Live API key nahi mili. Settings me VITE_GEMINI_LIVE_KEY set karein ya admin settings me key paste karein.'

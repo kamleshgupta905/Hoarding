@@ -38,5 +38,5 @@ contextBridge.exposeInMainWorld('electronAPI', {
     },
     openLogFolder: () => ipcRenderer.invoke('open-log-folder'),
     logEvent: (level, message, meta) => ipcRenderer.send('log-jarvis-event', { level, message, meta }),
-    getJarvisLiveToken: () => ipcRenderer.invoke('jarvis:get-live-token'),
+    getJarvisLiveToken: (fallbackKey) => ipcRenderer.invoke('jarvis:get-live-token', fallbackKey),
 });
