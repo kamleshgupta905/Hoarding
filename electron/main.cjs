@@ -365,6 +365,52 @@ ipcMain.on('log-jarvis-event', (event, { level, message, meta }) => {
     logToFile(level || 'INFO', message || '', meta);
 });
 
+// 🔑 Jarvis Live API token proxy — API key NEVER reaches the renderer bundle.
+// Main process reads from process.env and returns only what the renderer needs.
+ipcMain.handle('jarvis:get-live-token', async () => {
+    const key = process.env.GEMINI_API_KEY || process.env.VITE_GEMINI_LIVE_KEY || '';
+    if (!key) {
+        throw new Error('GEMINI_API_KEY not set in environment. Please set it in your .env.local or system environment.');
+    }
+
+    // Attempt to get an ephemeral token (reduces key exposure lifetime to 10 min)
+    try {
+        const expireTime = new Date(Date.now() + 10 * 60 * 1000).toISOString();
+        const tokenRes = await fetch(
+            'https://generativelanguage.googleapis.com/v1beta/auth_tokens',
+            {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'x-goog-api-key': key,
+                },
+                body: JSON.stringify({
+                    uses: 1,
+                    expireTime,
+                    liveConnectConstraints: {
+                        model: 'models/gemini-2.0-flash-live-001',
+                        config: {
+                            responseModalities: ['AUDIO'],
+                            inputAudioTranscription:  {},
+                            outputAudioTranscription: {},
+                        },
+                    },
+                }),
+            }
+        );
+        if (tokenRes.ok) {
+            const json = await tokenRes.json();
+            if (json.token) return json.token;
+        }
+    } catch (e) {
+        logToFile('WARN', 'Ephemeral token fetch failed, falling back to API key', e.message);
+    }
+
+    // Ephemeral token not available — return raw key (still safer than hardcoding in renderer)
+    return key;
+});
+
+
 app.whenReady().then(() => {
     // 🎙️ Explicit media & microphone permissions for Jarvis Voice Copilot
     session.defaultSession.setPermissionRequestHandler((webContents, permission, callback) => {
@@ -386,7 +432,7 @@ app.whenReady().then(() => {
         const responseHeaders = Object.assign({}, details.responseHeaders);
         const csp = [
             "default-src 'self' 'unsafe-inline' 'unsafe-eval' data: blob: file: http://localhost:*",
-            "connect-src 'self' https://generativelanguage.googleapis.com https://api.groq.com https://*.googleapis.com https://sheets.googleapis.com https://*.supabase.co https://api.github.com ws://localhost:* http://localhost:* data: blob:",
+            "connect-src 'self' https://generativelanguage.googleapis.com wss://generativelanguage.googleapis.com https://api.groq.com https://*.googleapis.com https://sheets.googleapis.com https://*.supabase.co https://api.github.com ws://localhost:* http://localhost:* data: blob:",
             "media-src 'self' blob: data: mediastream:",
             "img-src 'self' data: blob: https: http:",
             "font-src 'self' data: https:",

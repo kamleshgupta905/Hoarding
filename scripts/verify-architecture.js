@@ -1,6 +1,71 @@
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
 import { calculateDistance, filterSitesWithinRadius, findNearestSite } from '../src/services/geoService.js';
 import { useInventoryStore } from '../src/stores/inventoryStore.js';
 import { useBookingStore } from '../src/stores/bookingStore.js';
+
+// ── Key-leak detector ────────────────────────────────────────────────────────
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const PROJECT_ROOT = path.resolve(__dirname, '..');
+
+const LEAK_PATTERNS = [
+  /AQ\.[A-Za-z0-9_-]{30,}/,
+  /AIza[0-9A-Za-z_-]{35}/,
+];
+
+const SCAN_DIRS = ['src', 'electron'];
+const SCAN_EXTS = new Set(['.js', '.jsx', '.cjs', '.ts', '.tsx']);
+
+/**
+ * Recursively collect all source files under a directory.
+ * Skips node_modules and .git folders.
+ */
+function collectFiles(dir, results = []) {
+  if (!fs.existsSync(dir)) return results;
+  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+    if (entry.name === 'node_modules' || entry.name === '.git') continue;
+    const full = path.join(dir, entry.name);
+    if (entry.isDirectory()) {
+      collectFiles(full, results);
+    } else if (SCAN_EXTS.has(path.extname(entry.name))) {
+      results.push(full);
+    }
+  }
+  return results;
+}
+
+/**
+ * Scans src/ and electron/ for hardcoded API key patterns.
+ * Exits with code 1 if any match is found.
+ */
+function checkForLeakedKeys() {
+  const files = SCAN_DIRS.flatMap(d => collectFiles(path.join(PROJECT_ROOT, d)));
+  let leaked = false;
+
+  for (const file of files) {
+    const lines = fs.readFileSync(file, 'utf8').split('\n');
+    lines.forEach((line, idx) => {
+      for (const pattern of LEAK_PATTERNS) {
+        if (pattern.test(line)) {
+          console.error(`❌ Hardcoded API key found: ${file}:${idx + 1}`);
+          console.error(`   ${line.trim()}`);
+          leaked = true;
+        }
+      }
+    });
+  }
+
+  if (leaked) {
+    process.exit(1);
+  }
+  console.log('✅ No hardcoded API keys found');
+}
+
+checkForLeakedKeys();
+
+// ── Architecture tests ───────────────────────────────────────────────────────
 
 console.log('🧪 VERIFYING MODERN ARCHITECTURE...\n');
 

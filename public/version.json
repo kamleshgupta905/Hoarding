@@ -1,16 +1,17 @@
 {
   "features": [
+    "Gemini Live API real-time bi-directional voice copilot with native barge-in & zero-latency audio worklet",
+    "Autonomous dashboard automation via structured tool-calling (search, filter, tab switch, proposal export)",
     "Site photos load reliably from Google Drive, with automatic fallbacks",
-    "Production-ready Jarvis Voice & Desktop Copilot with sub-second action execution and crash fixes",
     "Google Sheet is the single record — stale browser copies no longer reappear",
     "Bulk campaign artwork and booking details now save to the sheet correctly",
     "Upload an Excel sheet and a PPT deck together in one step",
     "Large presentations parse without exhausting memory",
     "Over-the-air automatic updates for Desktop, Web, and Mobile apps"
   ],
-  "version": "1.8.11",
-  "buildTimestamp": 1790898822598,
-  "buildDate": "2026-10-01T23:53:42.598Z",
-  "releaseTag": "v1.8.11",
+  "version": "1.8.12",
+  "buildTimestamp": 1790939644389,
+  "buildDate": "2026-10-02T11:14:04.389Z",
+  "releaseTag": "v1.8.12",
   "apkUrl": "https://github.com/kamleshgupta905/Hoarding/releases/download/staff-apk-latest/heera-staff-camera.apk"
 }

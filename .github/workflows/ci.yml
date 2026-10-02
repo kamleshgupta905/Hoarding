@@ -1,0 +1,34 @@
+name: CI — Lint & Test
+
+on:
+  push:
+    branches: [ main, arena/*, develop ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  lint-and-test:
+    name: ESLint + Vitest
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run ESLint (must be 0 errors)
+        run: npm run lint
+
+      - name: Run Vitest (must be all green, no network tests)
+        run: npm test
+        env:
+          # REAL_NETWORK is intentionally not set here, so live-network tests are skipped
+          VITE_GEMINI_API_KEY: ${{ secrets.VITE_GEMINI_API_KEY }}

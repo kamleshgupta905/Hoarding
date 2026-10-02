@@ -580,6 +580,8 @@ export const commitBulkBookings = async ({
     if (hasBookingSchedule && !shouldSkipBookingSlot) {
       let updatedSlots = [];
       let updatedSiteObj = null;
+      // Hoist liveStatus so it is accessible after the if/else block
+      let liveStatus = { status: 'Booked', client: null, slot: null };
 
       if (isConflicted && allowOverride) {
         // ⚡ Run Override Engine for Conflicted Site
@@ -596,6 +598,8 @@ export const commitBulkBookings = async ({
         );
         updatedSlots = overrideRes.updatedSlots;
         updatedSiteObj = overrideRes.updatedSite;
+        // Compute liveStatus for override path too
+        liveStatus = resolveSiteLiveStatus({ ...targetSite, BookingSchedule: updatedSlots }) || liveStatus;
       } else {
         // Standard non-conflicted slot addition
         const currentSlots = getSiteBookingSlots(targetSite);
@@ -612,12 +616,12 @@ export const commitBulkBookings = async ({
         updatedSlots = [...currentSlots, newSlot].sort((a, b) => String(a.start).localeCompare(String(b.start)));
         saveSiteBookingSlots(targetSite, updatedSlots);
 
-        const liveStatus = resolveSiteLiveStatus({ ...targetSite, BookingSchedule: updatedSlots });
+        liveStatus = resolveSiteLiveStatus({ ...targetSite, BookingSchedule: updatedSlots }) || liveStatus;
 
         updatedSiteObj = {
           ...targetSite,
-          STATUS: liveStatus.status || 'Booked',
-          Status: liveStatus.status || 'Booked',
+          STATUS: liveStatus?.status || 'Booked',
+          Status: liveStatus?.status || 'Booked',
           BookedBy: liveStatus.client || item.clientName,
           BookingStart: liveStatus.slot?.start || item.startDate,
           BookingEnd: liveStatus.slot?.end || item.endDate,
@@ -826,8 +830,8 @@ export const commitBulkBookings = async ({
               batchUpdates.push({
                 siteId: p.site._SiteID || '',
                 sl: p.site.SL || '',
-                siteName: pLoc,
-                facing: pFacing,
+                siteName: p.site['Location '] || p.site.Location || '',
+                facing: p.site.Facing || '',
                 status: p.site.STATUS || 'Available',
                 url: res.url,
                 fields: {

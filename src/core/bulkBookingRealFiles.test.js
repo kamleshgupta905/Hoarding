@@ -113,7 +113,13 @@ describe('Real Desktop Files Verification', () => {
     expect(matchedItems.length).toBeGreaterThan(0);
   });
 
+  // I5 fix: Gate live network tests behind REAL_NETWORK=1 env flag.
+  // Run with: REAL_NETWORK=1 npx vitest run src/core/bulkBookingRealFiles.test.js
   it('should inspect live Google Sheet inventory for Begum Bridge sites', async () => {
+    if (!process.env.REAL_NETWORK) {
+      console.log('[SKIP] Set REAL_NETWORK=1 to run live Google Sheet tests');
+      return;
+    }
     const csvRes = await fetch('https://docs.google.com/spreadsheets/d/1DBGLmkjT_7v-xqdomp8x9SogVFEa5iHhrx5Qrhl-ih0/gviz/tq?tqx=out:csv&sheet=Hoardings_Master');
     const csvText = await csvRes.text();
     const lines = csvText.split('\n');
@@ -152,6 +158,10 @@ describe('Real Desktop Files Verification', () => {
     const grid = sheets[sheetNames[0]] || [];
 
     const csvRes = await fetch('https://docs.google.com/spreadsheets/d/1DBGLmkjT_7v-xqdomp8x9SogVFEa5iHhrx5Qrhl-ih0/gviz/tq?tqx=out:csv&sheet=Hoardings_Master');
+    if (!process.env.REAL_NETWORK) {
+      console.log('[SKIP] Set REAL_NETWORK=1 to run live Google Sheet tests');
+      return;
+    }
     const csvText = await csvRes.text();
     const parsedData = Papa.parse(csvText, { header: true }).data;
     let parsedHoardings = parsedData.map(normalizeHoarding).filter(h => h && (h['Location '] || h.Location));

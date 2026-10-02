@@ -24,7 +24,8 @@ import HeaderSitesUploadModal from '../components/HeaderSitesUploadModal';
 import StarredBulkBookingModal from '../components/StarredBulkBookingModal';
 import SlotEditModal from '../components/SlotEditModal';
 import ShiftSlotModal from '../components/ShiftSlotModal';
-import AIVoiceCopilot from '../components/AIVoiceCopilot';
+// JarvisCopilot is lazy-loaded to keep the AdminDashboard chunk < 1 MB
+const JarvisCopilot = React.lazy(() => import('../components/jarvis/JarvisCopilot'));
 import { appConfirm, appToast } from '../components/ToastContext';
 import { clearAdminSession, getAdminSession, getStaffUploadLink, postDirect } from '../services/secureApi';
 import { isInternalHeader } from '../core/hoardingSchema';
@@ -11554,12 +11555,16 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                     }}
                 />
 
-                {/* 🎙️ Live AI Voice Copilot Widget */}
-                <AIVoiceCopilot
+                {/* 🎙️ Jarvis Real-time Voice Copilot (Gemini Live API) */}
+                <React.Suspense fallback={null}>
+                  <JarvisCopilot
                     hoardings={hoardings}
                     activeTab={activeTab}
                     onExecuteAction={handleExecuteAIAction}
-                />
+                    dataService={{ resolveSiteLiveStatus, getSiteBookingSlots, checkBookingConflict }}
+                    setters={{ setQuickBookingTarget, setAiHighlightedSiteId, setSearchTerm, setInventoryCityFilter, setInventoryLocalityFilter, setInventoryMediaFilter, setInventorySizeFilter, setInventoryStatusFilter, setFilterStartDate, setFilterEndDate, setClientStatusFilter, setActiveTab }}
+                  />
+                </React.Suspense>
 
                 {/* 🔮 Live AI Spotlight Action Notification */}
                 {aiActionNotice && (
