@@ -11,7 +11,7 @@
 import { TOOL_DECLARATIONS, JARVIS_VOICE_NAME, executeTool } from './tools.js';
 
 const LIVE_WS_BASE = 'wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent';
-const MODEL        = 'models/gemini-2.0-flash-live-001';
+const MODEL        = 'models/gemini-3.8-live';
 
 const MAX_RECONNECT_ATTEMPTS = 5;
 const RECONNECT_BASE_MS      = 1000;
@@ -258,7 +258,8 @@ export class LiveSession {
     }
     // Fatal codes
     if (code === 1008 || code === 4001) {
-      this._h.onError('API key invalid ya expired. Keys revoke/refresh karein.');
+      const msg = ev.reason ? `Connection error: ${ev.reason}` : 'API key invalid ya expired. Keys revoke/refresh karein.';
+      this._h.onError(msg);
       this._h.onStateChange('error');
       return;
     }
