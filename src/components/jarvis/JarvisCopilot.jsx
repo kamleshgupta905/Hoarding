@@ -22,12 +22,12 @@ const STATE = {
 };
 
 const STATE_LABEL = {
-  [STATE.IDLE]:           'Online',
+  [STATE.IDLE]:           'Standby',
   [STATE.REQUESTING_MIC]: 'Mic Permission...',
   [STATE.CONNECTING]:     'Connecting...',
-  [STATE.LIVE]:           'Live',
+  [STATE.LIVE]:           'Live Call',
   [STATE.RECONNECTING]:   'Reconnecting...',
-  [STATE.ERROR]:          'Error',
+  [STATE.ERROR]:          'Offline / Error',
 };
 
 // ─── Constants ───────────────────────────────────────────────────────────────
@@ -72,36 +72,16 @@ export default function JarvisCopilot({
   const connStateRef      = useRef(STATE.IDLE);
   const manualBusyRef     = useRef(false);
 
+  const isOpenRef         = useRef(isOpen);
   useEffect(() => { hoardingsRef.current   = hoardings;  }, [hoardings]);
   useEffect(() => { activeTabRef.current   = activeTab;  }, [activeTab]);
   useEffect(() => { isMutedRef.current     = isMuted;    }, [isMuted]);
   useEffect(() => { connStateRef.current   = connState;  }, [connState]);
-
-  // ── Ctrl+Shift+J + Electron IPC ───────────────────────────────
-  useEffect(() => {
-    const onKey = (e) => {
-      if ((e.ctrlKey || e.metaKey) && e.shiftKey && (e.key === 'J' || e.key === 'j')) {
-        e.preventDefault();
-        setIsOpen(prev => !prev);
-      }
-    };
-    window.addEventListener('keydown', onKey);
-
-    let unsub = null;
-    if (window.electronAPI?.onToggleJarvis) {
-      unsub = window.electronAPI.onToggleJarvis(() => setIsOpen(prev => !prev));
-    }
-
-    return () => {
-      window.removeEventListener('keydown', onKey);
-      if (typeof unsub === 'function') unsub();
-    };
-  }, []);
+  useEffect(() => { isOpenRef.current      = isOpen;     }, [isOpen]);
 
   // ── Call duration timer ───────────────────────────────────────
   useEffect(() => {
     if (connState === STATE.LIVE) {
-      setCallDuration(0);
       timerRef.current = setInterval(() => setCallDuration(d => d + 1), 1000);
     } else {
       clearInterval(timerRef.current);
@@ -153,12 +133,13 @@ Rules:
 
   // ── Start live session ────────────────────────────────────────
   const handleStartCall = useCallback(async () => {
-    if (!isOpen) { setIsOpen(true); return; }
-    if (connState !== STATE.IDLE && connState !== STATE.ERROR) return;
+    setIsOpen(true);
+    if (connStateRef.current !== STATE.IDLE && connStateRef.current !== STATE.ERROR) return;
 
     setErrorMsg(null);
     setSuccessCard(null);
     setTranscripts([]);
+    connStateRef.current = STATE.REQUESTING_MIC;
     setConnState(STATE.REQUESTING_MIC);
 
     // Lazy-load modules
@@ -171,6 +152,7 @@ Rules:
     // Playback (model → speaker)
     const playback = new AudioPlayback({ onRms: (rms) => setModelRms(rms) });
     playbackRef.current = playback;
+    await playback.resume();
 
     // Capture (mic → model)
     const capture = new AudioCapture();
@@ -192,6 +174,7 @@ Rules:
           error:         STATE.ERROR,
           idle:          STATE.IDLE,
         }[s] || s;
+        connStateRef.current = mapped;
         setConnState(mapped);
       },
       onError: (msg) => {
@@ -211,6 +194,7 @@ Rules:
       onRms:   (rms) => setUserRms(rms),
       onError: (err) => {
         setErrorMsg(err.message);
+        connStateRef.current = STATE.ERROR;
         setConnState(STATE.ERROR);
         window.electronAPI?.logEvent?.('ERROR', 'Jarvis mic error', err.message);
       },
@@ -221,7 +205,38 @@ Rules:
     // Connect WebSocket
     await session.connect();
     window.electronAPI?.logEvent?.('INFO', 'Jarvis Live API session started');
-  }, [isOpen, connState, getSystemInstruction, buildToolCtx, appendTranscript]);
+  }, [getSystemInstruction, buildToolCtx, appendTranscript]);
+
+  // ── Ctrl+Shift+J + Electron IPC ───────────────────────────────
+  useEffect(() => {
+    const onKey = (e) => {
+      if ((e.ctrlKey || e.metaKey) && e.shiftKey && (e.key === 'J' || e.key === 'j')) {
+        e.preventDefault();
+        if (!isOpenRef.current) {
+          handleStartCall();
+        } else {
+          setIsOpen(false);
+        }
+      }
+    };
+    window.addEventListener('keydown', onKey);
+
+    let unsub = null;
+    if (window.electronAPI?.onToggleJarvis) {
+      unsub = window.electronAPI.onToggleJarvis(() => {
+        if (!isOpenRef.current) {
+          handleStartCall();
+        } else {
+          setIsOpen(false);
+        }
+      });
+    }
+
+    return () => {
+      window.removeEventListener('keydown', onKey);
+      if (typeof unsub === 'function') unsub();
+    };
+  }, [handleStartCall]);
 
   // ── End call ──────────────────────────────────────────────────
   const handleEndCall = useCallback(() => {
@@ -246,7 +261,7 @@ Rules:
     setIsMuted(m => !m);
   }, []);
 
-  // ── Manual typed command (offline fallback) ───────────────────
+  // ── Manual typed command (live session or offline fallback) ───
   const handleSendManual = useCallback(async (e) => {
     e?.preventDefault?.();
     const cmd = manualInput.trim();
@@ -255,6 +270,19 @@ Rules:
     manualBusyRef.current = true;
     setIsManualBusy(true);
     appendTranscript('user', cmd);
+
+    // If live call is connected, stream user prompt directly over the Live session
+    if (sessionRef.current && connStateRef.current === STATE.LIVE) {
+      try {
+        sessionRef.current.sendText(cmd);
+      } catch (err) {
+        console.warn('sendText live error:', err);
+      } finally {
+        manualBusyRef.current = false;
+        setIsManualBusy(false);
+      }
+      return;
+    }
 
     try {
       const { chatWithJarvis } = await import('../../services/voiceActionEngine.js');
@@ -270,7 +298,7 @@ Rules:
         }
         if (res.successCard) setSuccessCard(res.successCard);
       }
-    } catch (err) {
+    } catch {
       appendTranscript('jarvis', 'Network error. Typed commands still work offline.');
     } finally {
       manualBusyRef.current = false;
@@ -583,7 +611,13 @@ Rules:
       {/* ── Launcher bubble ──────────────────────────────────────── */}
       <button
         type="button"
-        onClick={() => setIsOpen(prev => !prev)}
+        onClick={() => {
+          if (!isOpen) {
+            handleStartCall();
+          } else {
+            setIsOpen(false);
+          }
+        }}
         aria-label={isOpen ? 'Minimize Jarvis' : 'Open Jarvis voice copilot'}
         style={{
           width: '56px', height: '56px', borderRadius: '50%',
@@ -630,10 +664,10 @@ function TranscriptArea({ transcripts, connState, isConnecting }) {
       {transcripts.length === 0 && (
         <p style={{ textAlign: 'center', fontSize: '12px', color: '#94a3b8', margin: '8px 0' }}>
           {isConnecting
-            ? 'Connecting...'
+            ? 'Jarvis se connect ho raha hai...'
             : connState === STATE.LIVE
-              ? 'Boliye — main sun raha hoon...'
-              : 'Real-time voice ke liye "Jarvis se baat karein" dababein.'}
+              ? '🎙️ Boliye — main sun raha hoon...'
+              : 'Voice call ke liye "Jarvis se baat karein" dabayein ya niche type karein.'}
         </p>
       )}
       {transcripts.map((t, i) => (

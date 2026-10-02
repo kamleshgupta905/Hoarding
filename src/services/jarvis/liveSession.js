@@ -67,6 +67,21 @@ export class LiveSession {
     this._send(msg);
   }
 
+  /** Send typed user prompt over the live session */
+  sendText(text) {
+    if (!this._isOpen() || !text?.trim()) return;
+    const msg = {
+      clientContent: {
+        turns: [{
+          role: 'user',
+          parts: [{ text: text.trim() }],
+        }],
+        turnComplete: true,
+      },
+    };
+    this._send(msg);
+  }
+
   /** Gracefully close the session */
   close() {
     this._closed = true;

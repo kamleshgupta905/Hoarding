@@ -19,6 +19,7 @@ export class AudioPlayback {
     /** @type {GainNode|null} */
     this._gain        = null;
     this._onRms       = onRms || null;
+    /** @type {AnalyserNode|null} */
     this._analyser    = null;
     this._rmsFrame    = null;
     this._active      = false;
@@ -27,10 +28,10 @@ export class AudioPlayback {
   _ensureContext() {
     if (this._ctx && this._ctx.state !== 'closed') return;
 
-    this._ctx   = new (window.AudioContext || window.webkitAudioContext)({
-      sampleRate: PLAYBACK_SAMPLE_RATE,
-    });
+    const AudioCtx = window.AudioContext || window.webkitAudioContext;
+    this._ctx   = new AudioCtx({ sampleRate: PLAYBACK_SAMPLE_RATE });
     this._gain  = this._ctx.createGain();
+    this._gain.gain.value = 1.0;
 
     if (this._onRms) {
       this._analyser = this._ctx.createAnalyser();
@@ -44,6 +45,20 @@ export class AudioPlayback {
 
     this._nextTime = this._ctx.currentTime + 0.05; // small initial buffer
     this._active   = true;
+  }
+
+  /**
+   * Explicitly unlock/resume the AudioContext via a user click gesture.
+   */
+  async resume() {
+    this._ensureContext();
+    if (this._ctx && this._ctx.state === 'suspended') {
+      try {
+        await this._ctx.resume();
+      } catch (e) {
+        console.warn('[AudioPlayback] resume failed:', e);
+      }
+    }
   }
 
   _startRmsLoop() {
@@ -71,6 +86,10 @@ export class AudioPlayback {
     if (!base64) return;
     this._ensureContext();
 
+    if (this._ctx && this._ctx.state === 'suspended') {
+      this._ctx.resume().catch(() => {});
+    }
+
     const int16 = base64ToInt16(base64);
     if (!int16 || int16.length === 0) return;
 
@@ -87,7 +106,8 @@ export class AudioPlayback {
     source.buffer = buffer;
     source.connect(this._gain);
 
-    const startAt = Math.max(this._ctx.currentTime + 0.01, this._nextTime);
+    const currentTime = this._ctx.currentTime;
+    const startAt = Math.max(currentTime + 0.01, this._nextTime);
     source.start(startAt);
     this._nextTime = startAt + buffer.duration;
 
