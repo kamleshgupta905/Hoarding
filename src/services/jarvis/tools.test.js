@@ -14,6 +14,8 @@ import {
   validateSwitchView,
   validateSearchInventory,
   executeTool,
+  findMatchingSites,
+  JARVIS_VOICE_NAME,
   TOOL_DECLARATIONS,
 } from './tools.js';
 
@@ -338,3 +340,77 @@ describe('I3 — B6 sentences resolve correctly through tool args', () => {
     expect(Array.isArray(result.validViews)).toBe(true);
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// I4: Enhanced Voice, Robust Matching & Direct Booking Execution
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('I4 — Voice, Matching & Direct Booking Execution', () => {
+  it('JARVIS_VOICE_NAME is Puck (male voice)', () => {
+    expect(JARVIS_VOICE_NAME).toBe('Puck');
+  });
+
+  it('findMatchingSites matches by siteId or SL or facing', () => {
+    const byId = findMatchingSites(MOCK_HOARDINGS, { siteId: 'S002' });
+    expect(byId.length).toBe(1);
+    expect(byId[0]._SiteID).toBe('S002');
+
+    const byQuery = findMatchingSites(MOCK_HOARDINGS, { siteQuery: 'Delhi Road' });
+    expect(byQuery.length).toBe(2); // S001 and S003 both mention Delhi Road
+  });
+
+  it('prepare_booking with pickFirst:true auto-selects first match without asking for clarification', async () => {
+    const setQBT = vi.fn();
+    const result = await executeTool('prepare_booking', {
+      siteQuery: 'Begum Bridge',
+      clientName: 'Test Client',
+      pickFirst: true,
+    }, {
+      hoardings: MOCK_HOARDINGS,
+      setters: { setQuickBookingTarget: setQBT },
+    });
+
+    expect(result.prepared).toBe(true);
+    expect(result.needsClarification).toBeUndefined();
+    expect(setQBT).toHaveBeenCalledOnce();
+    expect(result.siteId).toBe('S001');
+  });
+
+  it('prepare_booking with commitNow:true commits directly through handleExecuteAIAction', async () => {
+    const mockAction = vi.fn(async () => ({ success: true }));
+    const result = await executeTool('prepare_booking', {
+      siteQuery: 'Shastri Nagar',
+      clientName: 'Direct Booking Client',
+      commitNow: true,
+    }, {
+      hoardings: MOCK_HOARDINGS,
+      handleExecuteAIAction: mockAction,
+    });
+
+    expect(result.committed).toBe(true);
+    expect(mockAction).toHaveBeenCalledOnce();
+    const payload = mockAction.mock.calls[0][0];
+    expect(payload.action).toBe('QUICK_BOOK');
+    expect(payload.commitNow).toBe(true);
+    expect(payload.clientName).toBe('Direct Booking Client');
+  });
+
+  it('book_multiple_sites books all matching sites at once', async () => {
+    const mockAction = vi.fn(async () => ({ success: true, bookedCount: 2 }));
+    const result = await executeTool('book_multiple_sites', {
+      siteQuery: 'Begum Bridge',
+      clientName: 'Multi Client',
+    }, {
+      hoardings: MOCK_HOARDINGS,
+      handleExecuteAIAction: mockAction,
+    });
+
+    expect(result.booked).toBe(true);
+    expect(result.count).toBe(2);
+    expect(mockAction).toHaveBeenCalledOnce();
+    const payload = mockAction.mock.calls[0][0];
+    expect(payload.action).toBe('BOOK_MULTIPLE_SITES');
+    expect(payload.siteIds).toEqual(['S001', 'S002']);
+  });
+});
+

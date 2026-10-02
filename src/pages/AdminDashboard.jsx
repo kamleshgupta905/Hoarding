@@ -3321,7 +3321,152 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
         setHoardings(prev => [...prev]);
     };
 
-    const handleExecuteAIAction = (actionPayload) => {
+    const commitSiteBooking = async (targetSite, {
+        clientName = 'Valued Client',
+        startDate,
+        endDate,
+        isOverride = false,
+        overrideMode = 'trim',
+        overrideReason = 'Booked via AI Copilot'
+    } = {}) => {
+        if (!targetSite) return { success: false, error: 'No site provided' };
+        const client = String(clientName || 'Valued Client').trim();
+        const start = startDate || new Date().toISOString().split('T')[0];
+        const end = endDate || (() => {
+            const d = new Date(start);
+            d.setDate(d.getDate() + 30);
+            return d.toISOString().split('T')[0];
+        })();
+
+        const existingSlots = getSiteBookingSlots(targetSite);
+        const conflict = checkBookingConflict(existingSlots, start, end);
+        if (conflict.conflict && !isOverride) {
+            showToast(`Cannot book: ${conflict.reason}. Enable Override to proceed.`, "error");
+            return { success: false, error: conflict.reason, conflict: true };
+        }
+
+        const targetSL = targetSite.SL || targetSite["S. No."] || targetSite["SL NO"];
+        const targetId = targetSite.UniqueID || targetSite["Unique ID"] || targetSite.ID || targetSite._SiteID;
+        const targetLoc = String(targetSite["Locality Site Location"] || targetSite["Location "] || targetSite.Location || '').trim().toLowerCase();
+        const targetFacing = String(targetSite.Facing || targetSite["Traffic View"] || '').trim().toLowerCase();
+        const targetLat = String(targetSite.Latitude || '').trim();
+        const targetLng = String(targetSite.Longitude || '').trim();
+
+        let updatedSlots = [];
+        let bookingUpdates = null;
+
+        if (conflict.conflict && isOverride) {
+            const overrideRes = overrideSiteBookingSlot(
+                targetSite,
+                {
+                    client,
+                    start,
+                    end,
+                    monthlyRent: targetSite['Rental Per Month'] || targetSite['Avg Monthly Cost (INR)'] || 0
+                },
+                overrideMode || 'trim',
+                overrideReason || 'AI Booking Override'
+            );
+            updatedSlots = overrideRes.updatedSlots;
+            bookingUpdates = {
+                STATUS: overrideRes.updatedSite.STATUS,
+                status: overrideRes.updatedSite.STATUS,
+                Status: overrideRes.updatedSite.STATUS,
+                BookedBy: overrideRes.updatedSite.BookedBy,
+                BookingStart: overrideRes.updatedSite.BookingStart,
+                BookingEnd: overrideRes.updatedSite.BookingEnd,
+                BookingSchedule: updatedSlots
+            };
+        } else {
+            const proRata = calculateProRataRental(targetSite['Rental Per Month'] || targetSite['Avg Monthly Cost (INR)'] || 0, start, end);
+            const newSlot = {
+                id: 'slot-' + Date.now() + '-' + Math.random().toString(36).substring(2, 6),
+                client,
+                start,
+                end,
+                days: proRata.days,
+                amount: proRata.total,
+                status: 'Booked',
+                createdAt: new Date().toISOString()
+            };
+
+            updatedSlots = [...existingSlots, newSlot].sort((a, b) => a.start.localeCompare(b.start));
+            saveSiteBookingSlots(targetSite, updatedSlots);
+
+            const liveStatus = resolveSiteLiveStatus({ ...targetSite, BookingSchedule: updatedSlots });
+            const primarySlot = liveStatus.slot || updatedSlots[0];
+
+            bookingUpdates = {
+                STATUS: liveStatus.status === 'Available' ? 'Available' : 'Booked',
+                status: liveStatus.status === 'Available' ? 'Available' : 'Booked',
+                Status: liveStatus.status === 'Available' ? 'Available' : 'Booked',
+                BookedBy: primarySlot ? primarySlot.client : '',
+                BookingStart: primarySlot ? primarySlot.start : '',
+                BookingEnd: primarySlot ? primarySlot.end : '',
+                BookingSchedule: updatedSlots
+            };
+        }
+
+        // 1. Instantly update React state & cache with precision targeting
+        setHoardings(prev => {
+            const next = prev.map(h => {
+                let isMatch = (h === targetSite);
+                if (!isMatch && targetId && (h.UniqueID || h["Unique ID"] || h.ID || h._SiteID)) {
+                    isMatch = String(h.UniqueID || h["Unique ID"] || h.ID || h._SiteID).trim().toLowerCase() === String(targetId).trim().toLowerCase();
+                }
+                if (!isMatch && targetSL && (h.SL || h["S. No."] || h["SL NO"])) {
+                    isMatch = String(h.SL || h["S. No."] || h["SL NO"]).trim() === String(targetSL).trim();
+                }
+                if (!isMatch && targetLoc && targetFacing) {
+                    const hLoc = String(h["Locality Site Location"] || h["Location "] || h.Location || '').trim().toLowerCase();
+                    const hFacing = String(h.Facing || h["Traffic View"] || '').trim().toLowerCase();
+                    const hLat = String(h.Latitude || '').trim();
+                    const hLng = String(h.Longitude || '').trim();
+                    
+                    isMatch = (hLoc === targetLoc) && 
+                              (hFacing === targetFacing) && 
+                              (!targetLat || hLat === targetLat) && 
+                              (!targetLng || hLng === targetLng);
+                }
+
+                return isMatch ? { ...h, ...bookingUpdates } : h;
+            });
+
+            try {
+                localStorage.setItem('hoardings_cache', JSON.stringify(next));
+                localStorage.setItem('last_hoardings_update', Date.now().toString());
+            } catch {}
+            return next;
+        });
+
+        // 2. Background sync to Google Sheet
+        syncToGoogleSheet({
+            action: 'updateHoarding',
+            siteName: targetSite["Locality Site Location"] || targetSite["Location "] || targetSite.Location,
+            siteId: targetId || '',
+            sl: targetSL || '',
+            fields: {
+                ...targetSite,
+                ...bookingUpdates,
+                BookingSchedule: JSON.stringify(updatedSlots),
+                SL: targetSL || targetSite.SL || '',
+                _SiteID: targetId || targetSite._SiteID || '',
+                status: bookingUpdates.STATUS,
+                Status: bookingUpdates.STATUS,
+                STATUS: bookingUpdates.STATUS
+            }
+        }).then(() => {
+            if (typeof window !== 'undefined') {
+                window.dispatchEvent(new CustomEvent('hoardings:sync-requested'));
+            }
+        }).catch(err => console.warn("Booking background sync:", err));
+
+        const loc = targetSite["Locality Site Location"] || targetSite["Location "] || targetSite.Location || 'Site';
+        showToast(`Booked ${loc} for ${client}! (${start} → ${end})`, "success");
+        return { success: true, siteId: targetId, location: loc, startDate: start, endDate: end, clientName: client };
+    };
+
+    const handleExecuteAIAction = async (actionPayload) => {
         if (!actionPayload || !actionPayload.action) return { success: false, error: 'No action payload' };
 
         setAiActionNotice({
@@ -3334,26 +3479,35 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
         switch (actionPayload.action) {
             case 'FILTER_INVENTORY': {
                 setActiveTab('inventory');
-                if (actionPayload.city) {
-                    const cityVal = actionPayload.city === 'All' ? ['All'] : (Array.isArray(actionPayload.city) ? actionPayload.city : [actionPayload.city]);
+                const cityParam = actionPayload.city || actionPayload.inventoryCityFilter;
+                if (cityParam) {
+                    const cityVal = cityParam === 'All' ? ['All'] : (Array.isArray(cityParam) ? cityParam : [cityParam]);
                     setInventoryCityFilter(cityVal);
                 }
-                if (actionPayload.locality || actionPayload.area) {
-                    const locVal = (actionPayload.locality || actionPayload.area) === 'All' ? ['All'] : (Array.isArray(actionPayload.locality || actionPayload.area) ? (actionPayload.locality || actionPayload.area) : [actionPayload.locality || actionPayload.area]);
+                const locParam = actionPayload.locality || actionPayload.area || actionPayload.inventoryLocalityFilter;
+                if (locParam) {
+                    const locVal = locParam === 'All' ? ['All'] : (Array.isArray(locParam) ? locParam : [locParam]);
                     setInventoryLocalityFilter(locVal);
                 }
-                if (actionPayload.media) {
-                    const mediaVal = actionPayload.media === 'All' ? ['All'] : (Array.isArray(actionPayload.media) ? actionPayload.media : [actionPayload.media]);
+                const mediaParam = actionPayload.media || actionPayload.inventoryMediaFilter;
+                if (mediaParam) {
+                    const mediaVal = mediaParam === 'All' ? ['All'] : (Array.isArray(mediaParam) ? mediaParam : [mediaParam]);
                     setInventoryMediaFilter(mediaVal);
                 }
-                if (actionPayload.dimensions) {
-                    const dimVal = actionPayload.dimensions === 'All' ? ['All'] : (Array.isArray(actionPayload.dimensions) ? actionPayload.dimensions : [actionPayload.dimensions]);
+                const dimParam = actionPayload.dimensions || actionPayload.inventorySizeFilter;
+                if (dimParam) {
+                    const rawDims = Array.isArray(dimParam) ? dimParam : [dimParam];
+                    const formattedDims = rawDims.map(d => {
+                        if (d === 'All') return 'All';
+                        return String(d).trim().replace(/\s+/g, '').replace('*', 'x').toLowerCase();
+                    });
                     if (typeof setInventorySizeFilter === 'function') {
-                        setInventorySizeFilter(dimVal);
+                        setInventorySizeFilter(formattedDims);
                     }
                 }
-                if (actionPayload.status) {
-                    const rawStatus = String(actionPayload.status).trim();
+                const statusParam = actionPayload.status || actionPayload.inventoryStatusFilter;
+                if (statusParam) {
+                    const rawStatus = String(statusParam).trim();
                     if (/^avail/i.test(rawStatus)) {
                         setInventoryStatusFilter('Available');
                     } else if (/^book/i.test(rawStatus) || /^active/i.test(rawStatus) || /^occup/i.test(rawStatus)) {
@@ -3365,13 +3519,21 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                     }
                 }
                 if (actionPayload.search) {
-                    setSearchTerm(String(actionPayload.search).trim());
+                    let cleanSearch = String(actionPayload.search).trim();
+                    if (dimParam) {
+                        cleanSearch = cleanSearch.replace(/\b\d+\s*[*xX×byBY]\s*\d+\b/g, '').trim();
+                    }
+                    setSearchTerm(cleanSearch);
+                } else if (dimParam) {
+                    setSearchTerm('');
                 }
-                if (actionPayload.availableFrom && typeof setFilterStartDate === 'function') {
-                    setFilterStartDate(actionPayload.availableFrom);
+                const startParam = actionPayload.availableFrom || actionPayload.filterStartDate;
+                if (startParam && typeof setFilterStartDate === 'function') {
+                    setFilterStartDate(startParam);
                 }
-                if (actionPayload.availableTo && typeof setFilterEndDate === 'function') {
-                    setFilterEndDate(actionPayload.availableTo);
+                const endParam = actionPayload.availableTo || actionPayload.filterEndDate;
+                if (endParam && typeof setFilterEndDate === 'function') {
+                    setFilterEndDate(endParam);
                 }
 
                 const matched = hoardings.find(h => {
@@ -3419,55 +3581,145 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
             case 'QUICK_BOOK': {
                 setActiveTab('inventory');
                 const rawQ = String(actionPayload.siteQuery || '').trim().toLowerCase();
+                const rawId = String(actionPayload.siteId || '').trim().toLowerCase();
+                const rawNo = String(actionPayload.siteNo || '').trim().toLowerCase();
+                const rawFacing = String(actionPayload.facing || '').trim().toLowerCase();
                 
                 const candidates = hoardings.filter(h => {
-                    if (!rawQ) return false;
+                    const hId = String(h._SiteID || h.UniqueID || h['Unique ID'] || h.ID || '').trim().toLowerCase();
+                    const sl = String(h.SL || h['S. No.'] || h['SL NO'] || '').trim().toLowerCase();
                     const loc = String(h['Location '] || h.Location || h['Locality Site Location'] || '').toLowerCase();
                     const area = String(h.Area || h['Area '] || h.Locality || '').toLowerCase();
                     const city = String(h.City || '').toLowerCase();
-                    const sl = String(h.SL || h['S. No.'] || h['SL NO'] || '');
-                    return loc.includes(rawQ) || area.includes(rawQ) || sl === rawQ || (city.includes(rawQ) && rawQ.length > 3);
+                    const facing = String(h.Facing || h['Traffic View'] || '').toLowerCase();
+
+                    if (rawId && (hId === rawId || (hId.length > 6 && rawId.length > 6 && (hId.includes(rawId) || rawId.includes(hId))))) return true;
+                    if (rawNo && sl === rawNo) return true;
+                    if (rawFacing && !facing.includes(rawFacing)) return false;
+
+                    if (rawQ) {
+                        const idMatch = hId && (hId === rawQ || (hId.length > 6 && (hId.includes(rawQ) || rawQ.includes(hId))));
+                        const slMatch = sl === rawQ || rawQ === `site ${sl}` || rawQ === `site no ${sl}`;
+                        const locMatch = loc.includes(rawQ) || area.includes(rawQ) || (city.includes(rawQ) && rawQ.length > 3);
+                        return idMatch || slMatch || locMatch;
+                    }
+                    return Boolean(rawId || rawNo);
                 });
 
                 if (candidates.length === 0) {
-                    showToast(`Site nahi mila: "${actionPayload.siteQuery || 'Unknown'}". Kripya sahi site batayein.`, 'error');
+                    showToast(`Site nahi mila: "${actionPayload.siteQuery || actionPayload.siteId || 'Unknown'}". Kripya sahi site batayein.`, 'error');
                     return { success: false, error: 'site_not_found', siteQuery: actionPayload.siteQuery };
                 }
 
+                let targetSite = null;
                 if (candidates.length > 1) {
-                    showToast(`"${actionPayload.siteQuery}" ke ${candidates.length} sites mile hain. Kripya specific site chuniye.`, 'info');
-                    return {
-                        success: false,
-                        needsClarification: true,
-                        candidates: candidates.slice(0, 5).map(c => ({
-                            siteId: c._SiteID || c.UniqueID,
-                            location: c['Location '] || c.Location,
-                            city: c.City
-                        }))
-                    };
+                    if (actionPayload.pickFirst || actionPayload.anyOne) {
+                        targetSite = candidates[0];
+                    } else {
+                        showToast(`"${actionPayload.siteQuery}" ke ${candidates.length} sites mile hain. Kripya specific site chuniye.`, 'info');
+                        return {
+                            success: false,
+                            needsClarification: true,
+                            candidates: candidates.slice(0, 5).map(c => ({
+                                siteId: c._SiteID || c.UniqueID,
+                                siteNo: c.SL || c['S. No.'],
+                                facing: c.Facing || c['Traffic View'],
+                                location: c['Location '] || c.Location,
+                                city: c.City
+                            }))
+                        };
+                    }
+                } else {
+                    targetSite = candidates[0];
                 }
 
-                const targetSite = candidates[0];
                 const startDate = actionPayload.startDate || new Date().toISOString().split('T')[0];
-                const endDate = actionPayload.endDate || '';
+                const endDate = actionPayload.endDate || (() => {
+                    const d = new Date(startDate);
+                    d.setDate(d.getDate() + 30);
+                    return d.toISOString().split('T')[0];
+                })();
+                const clientName = actionPayload.clientName || 'Valued Client';
 
                 if (targetSite) {
-                    setQuickBookingTarget({
-                        site: targetSite,
-                        clientName: actionPayload.clientName || 'Valued Client',
+                    const sId = targetSite._SiteID || targetSite.UniqueID || targetSite.ID;
+                    setAiHighlightedSiteId(sId);
+                    setTimeout(() => setAiHighlightedSiteId(null), 4000);
+
+                    if (actionPayload.commitNow) {
+                        const bookRes = await commitSiteBooking(targetSite, {
+                            clientName,
+                            startDate,
+                            endDate,
+                            isOverride: Boolean(actionPayload.isOverride),
+                            overrideMode: actionPayload.overrideMode || 'trim',
+                            overrideReason: actionPayload.overrideReason || 'Booked via AI Copilot'
+                        });
+                        return bookRes;
+                    } else {
+                        setQuickBookingTarget({
+                            site: targetSite,
+                            clientName,
+                            startDate,
+                            endDate,
+                            isOverride: Boolean(actionPayload.isOverride),
+                            overrideMode: actionPayload.overrideMode || 'trim',
+                            overrideReason: 'Booked via AI Copilot'
+                        });
+                        showToast(`Opening booking for ${clientName}`, 'info');
+                        return { success: true, siteId: sId, prepared: true };
+                    }
+                }
+                break;
+            }
+
+            case 'BOOK_MULTIPLE_SITES': {
+                setActiveTab('inventory');
+                const rawQ = String(actionPayload.siteQuery || '').trim().toLowerCase();
+                const siteIds = Array.isArray(actionPayload.siteIds) ? actionPayload.siteIds.map(s => String(s).toLowerCase()) : [];
+
+                const targets = hoardings.filter(h => {
+                    const hId = String(h._SiteID || h.UniqueID || h['Unique ID'] || h.ID || '').trim().toLowerCase();
+                    const sl = String(h.SL || h['S. No.'] || h['SL NO'] || '').trim().toLowerCase();
+                    const loc = String(h['Location '] || h.Location || h['Locality Site Location'] || '').toLowerCase();
+                    if (siteIds.length > 0) {
+                        return siteIds.some(id => hId === id || (hId.length > 6 && id.length > 6 && (hId.includes(id) || id.includes(hId))) || sl === id);
+                    }
+                    if (rawQ) {
+                        return loc.includes(rawQ) || sl === rawQ;
+                    }
+                    return false;
+                });
+
+                if (targets.length === 0) {
+                    showToast(`Koi site nahi mila booking ke liye.`, 'error');
+                    return { success: false, error: 'no_sites_found' };
+                }
+
+                const startDate = actionPayload.startDate || new Date().toISOString().split('T')[0];
+                const endDate = actionPayload.endDate || (() => {
+                    const d = new Date(startDate);
+                    d.setDate(d.getDate() + 30);
+                    return d.toISOString().split('T')[0];
+                })();
+                const clientName = actionPayload.clientName || 'Valued Client';
+
+                const results = [];
+                for (const site of targets) {
+                    const r = await commitSiteBooking(site, {
+                        clientName,
                         startDate,
                         endDate,
                         isOverride: Boolean(actionPayload.isOverride),
                         overrideMode: actionPayload.overrideMode || 'trim',
-                        overrideReason: 'Booked via AI Copilot'
+                        overrideReason: 'Bulk booked via AI Copilot'
                     });
-                    const sId = targetSite._SiteID || targetSite.UniqueID || targetSite.ID;
-                    setAiHighlightedSiteId(sId);
-                    setTimeout(() => setAiHighlightedSiteId(null), 4000);
-                    showToast(`Opening booking for ${actionPayload.clientName || 'client'}`, 'info');
-                    return { success: true, siteId: sId };
+                    results.push(r);
                 }
-                break;
+
+                const successCount = results.filter(r => r.success).length;
+                showToast(`${successCount} out of ${targets.length} sites successfully booked!`, 'success');
+                return { success: true, bookedCount: successCount, total: targets.length, results };
             }
 
             case 'VIEW_DISPLACED': {
@@ -3519,8 +3771,8 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
         e.preventDefault();
         if (!quickBookingTarget) return;
 
-        const { site, clientName, startDate, endDate } = quickBookingTarget;
-        if (!clientName.trim()) {
+        const { site, clientName, startDate, endDate, isOverride, overrideMode, overrideReason } = quickBookingTarget;
+        if (!clientName?.trim()) {
             showToast("Please enter client name", "error");
             return;
         }
@@ -3529,135 +3781,18 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
             return;
         }
 
-        const existingSlots = getSiteBookingSlots(site);
-        const conflict = checkBookingConflict(existingSlots, startDate, endDate);
-        if (conflict.conflict && !quickBookingTarget.isOverride) {
-            showToast(`Cannot book: ${conflict.reason}. Enable Override to proceed.`, "error");
-            return;
-        }
-
-        const targetSite = site;
-        const targetSL = targetSite.SL || targetSite["S. No."] || targetSite["SL NO"];
-        const targetId = targetSite.UniqueID || targetSite["Unique ID"] || targetSite.ID || targetSite._SiteID;
-        const targetLoc = String(targetSite["Locality Site Location"] || targetSite["Location "] || targetSite.Location || '').trim().toLowerCase();
-        const targetFacing = String(targetSite.Facing || targetSite["Traffic View"] || '').trim().toLowerCase();
-        const targetLat = String(targetSite.Latitude || '').trim();
-        const targetLng = String(targetSite.Longitude || '').trim();
-
-        let updatedSlots = [];
-        let bookingUpdates = null;
-
-        if (conflict.conflict && quickBookingTarget.isOverride) {
-            // ⚡ Execute Override Engine
-            const overrideRes = overrideSiteBookingSlot(
-                targetSite,
-                {
-                    client: clientName.trim(),
-                    start: startDate,
-                    end: endDate,
-                    monthlyRent: targetSite['Rental Per Month'] || targetSite['Avg Monthly Cost (INR)'] || 0
-                },
-                quickBookingTarget.overrideMode || 'trim',
-                quickBookingTarget.overrideReason || 'Quick Booking Override'
-            );
-            updatedSlots = overrideRes.updatedSlots;
-            bookingUpdates = {
-                STATUS: overrideRes.updatedSite.STATUS,
-                status: overrideRes.updatedSite.STATUS,
-                Status: overrideRes.updatedSite.STATUS,
-                BookedBy: overrideRes.updatedSite.BookedBy,
-                BookingStart: overrideRes.updatedSite.BookingStart,
-                BookingEnd: overrideRes.updatedSite.BookingEnd,
-                BookingSchedule: updatedSlots
-            };
-        } else {
-            const proRata = calculateProRataRental(targetSite['Rental Per Month'] || targetSite['Avg Monthly Cost (INR)'] || 0, startDate, endDate);
-
-            const newSlot = {
-                id: 'slot-' + Date.now(),
-                client: clientName.trim(),
-                start: startDate,
-                end: endDate,
-                days: proRata.days,
-                amount: proRata.total,
-                status: 'Booked',
-                createdAt: new Date().toISOString()
-            };
-
-            updatedSlots = [...existingSlots, newSlot].sort((a, b) => a.start.localeCompare(b.start));
-
-            saveSiteBookingSlots(targetSite, updatedSlots);
-
-            const liveStatus = resolveSiteLiveStatus({ ...targetSite, BookingSchedule: updatedSlots });
-            const primarySlot = liveStatus.slot || updatedSlots[0];
-
-            bookingUpdates = {
-                STATUS: liveStatus.status === 'Available' ? 'Available' : 'Booked',
-                status: liveStatus.status === 'Available' ? 'Available' : 'Booked',
-                Status: liveStatus.status === 'Available' ? 'Available' : 'Booked',
-                BookedBy: primarySlot ? primarySlot.client : '',
-                BookingStart: primarySlot ? primarySlot.start : '',
-                BookingEnd: primarySlot ? primarySlot.end : '',
-                BookingSchedule: updatedSlots
-            };
-        }
-
-        // 1. Instantly update React state & cache with precision targeting
-        setHoardings(prev => {
-            const next = prev.map(h => {
-                let isMatch = (h === targetSite);
-                if (!isMatch && targetId && (h.UniqueID || h["Unique ID"] || h.ID || h._SiteID)) {
-                    isMatch = String(h.UniqueID || h["Unique ID"] || h.ID || h._SiteID).trim().toLowerCase() === String(targetId).trim().toLowerCase();
-                }
-                if (!isMatch && targetSL && (h.SL || h["S. No."] || h["SL NO"])) {
-                    isMatch = String(h.SL || h["S. No."] || h["SL NO"]).trim() === String(targetSL).trim();
-                }
-                if (!isMatch && targetLoc && targetFacing) {
-                    const hLoc = String(h["Locality Site Location"] || h["Location "] || h.Location || '').trim().toLowerCase();
-                    const hFacing = String(h.Facing || h["Traffic View"] || '').trim().toLowerCase();
-                    const hLat = String(h.Latitude || '').trim();
-                    const hLng = String(h.Longitude || '').trim();
-                    
-                    isMatch = (hLoc === targetLoc) && 
-                              (hFacing === targetFacing) && 
-                              (!targetLat || hLat === targetLat) && 
-                              (!targetLng || hLng === targetLng);
-                }
-
-                return isMatch ? { ...h, ...bookingUpdates } : h;
-            });
-
-            try {
-                localStorage.setItem('hoardings_cache', JSON.stringify(next));
-                localStorage.setItem('last_hoardings_update', Date.now().toString());
-            } catch {}
-            return next;
+        const res = await commitSiteBooking(site, {
+            clientName,
+            startDate,
+            endDate,
+            isOverride,
+            overrideMode,
+            overrideReason
         });
 
-        setQuickBookingTarget(null);
-        showToast(`Site Booked for ${clientName}! (${startDate} → ${endDate})`, "success");
-
-        // 2. Background sync to Google Sheet
-        syncToGoogleSheet({
-            action: 'updateHoarding',
-            siteName: targetSite["Locality Site Location"] || targetSite["Location "] || targetSite.Location,
-            siteId: targetId || '',
-            sl: targetSL || '',
-            fields: {
-                ...targetSite,
-                ...bookingUpdates,
-                BookingSchedule: JSON.stringify(updatedSlots),
-                SL: targetSL || targetSite.SL || '',
-                _SiteID: targetId || targetSite._SiteID || '',
-                status: bookingUpdates.STATUS,
-                Status: bookingUpdates.STATUS,
-                STATUS: bookingUpdates.STATUS
-            }
-        }).then(() => {
-            if (typeof window !== 'undefined') {
-                window.dispatchEvent(new CustomEvent('hoardings:sync-requested'));
-            }
-        }).catch(err => console.warn("Booking background sync:", err));
+        if (res?.success) {
+            setQuickBookingTarget(null);
+        }
     };
 
     const toggleStatusToAvailable = (targetSite) => {
@@ -4558,16 +4693,20 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
             }
 
             const hSize1 = String(h["Size (Large/Medium/Small)"] || h["Size (Large/ Medium/ Small)"] || h["Size"] || '').trim().toLowerCase();
-            const hDim = (h.Width && h.Height ? `${h.Width}x${h.Height}` : '').trim().toLowerCase();
+            const hSizeNorm = hSize1.replace(/\s+/g, '').replace(/[*×]/g, 'x');
+            const hDim = (h.Width && h.Height ? `${h.Width}x${h.Height}` : '').trim().toLowerCase().replace(/\s+/g, '').replace(/[*×]/g, 'x');
             const isAllSize = !inventorySizeFilter || (Array.isArray(inventorySizeFilter) ? inventorySizeFilter.includes('All') : String(inventorySizeFilter).toLowerCase() === 'all');
             if (!isAllSize) {
                 if (Array.isArray(inventorySizeFilter) && inventorySizeFilter.length === 0) return false;
                 const matchSize = Array.isArray(inventorySizeFilter) 
                     ? inventorySizeFilter.some(s => {
-                        const sLower = String(s).trim().toLowerCase();
-                        return sLower === hSize1 || sLower === hDim || (hSize1 && hSize1.includes(sLower));
+                        const sClean = String(s).trim().toLowerCase().replace(/\s+/g, '').replace(/[*×]/g, 'x');
+                        return sClean === hDim || sClean === hSizeNorm || sClean === hSize1 || (hSizeNorm && hSizeNorm.includes(sClean));
                     })
-                    : (String(inventorySizeFilter).trim().toLowerCase() === hSize1 || String(inventorySizeFilter).trim().toLowerCase() === hDim);
+                    : (() => {
+                        const sClean = String(inventorySizeFilter).trim().toLowerCase().replace(/\s+/g, '').replace(/[*×]/g, 'x');
+                        return sClean === hDim || sClean === hSizeNorm || sClean === hSize1;
+                    })();
                 if (!matchSize) return false;
             }
 

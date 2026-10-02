@@ -14,8 +14,8 @@ import { resolveRelativeDates } from '../voiceActionEngine.js';
 // 1.  TOOL DECLARATIONS  (sent in the Live API setup message)
 // ─────────────────────────────────────────────────────────────────
 
-/** Voice name constant — swap here to change Jarvis's built-in voice */
-export const JARVIS_VOICE_NAME = 'Aoede';
+/** Voice name constant — swap here to change Jarvis's built-in voice (Puck is natural, expressive male) */
+export const JARVIS_VOICE_NAME = 'Puck';
 
 export const TOOL_DECLARATIONS = [
   {
@@ -49,29 +49,50 @@ export const TOOL_DECLARATIONS = [
   },
   {
     name: 'get_site_details',
-    description: 'Look up a single site. Returns bookingSlots and candidates if ambiguous.',
+    description: 'Look up a single site by location text, Site # (SL), or site ID. Returns site details with siteNo, facing, size, and bookingSlots.',
     parameters: {
       type: 'object',
-      required: ['siteQuery'],
       properties: {
-        siteQuery: { type: 'string', description: 'Location text to search for' },
+        siteQuery: { type: 'string', description: 'Location text or site name' },
+        siteId:    { type: 'string', description: 'Unique site ID / UUID if known' },
+        siteNo:    { type: 'string', description: 'Site number / Serial Number (SL) e.g. "12"' },
       },
     },
   },
   {
     name: 'prepare_booking',
-    description: 'PREPARE ONLY — opens the existing booking modal pre-filled. Never commits a booking.',
+    description: 'Prepare or commit a booking for a hoarding. Supports siteQuery, siteId, siteNo (SL), pickFirst (if user says "koi bhi ek" or "any one"), and commitNow (if user says "book kar do" or wants to finalize booking directly).',
     parameters: {
       type: 'object',
-      required: ['siteQuery', 'clientName', 'startDate', 'endDate'],
       properties: {
-        siteQuery:      { type: 'string' },
-        clientName:     { type: 'string' },
-        startDate:      { type: 'string', description: 'YYYY-MM-DD' },
-        endDate:        { type: 'string', description: 'YYYY-MM-DD' },
-        isOverride:     { type: 'boolean' },
+        siteQuery:      { type: 'string', description: 'Location text or site name' },
+        siteId:         { type: 'string', description: 'Unique site ID / UUID if known' },
+        siteNo:         { type: 'string', description: 'Site number / Serial Number (SL) e.g. "12"' },
+        facing:         { type: 'string', description: 'Facing direction e.g. towards Delhi / Meerut' },
+        clientName:     { type: 'string', description: 'Client name, defaults to Valued Client if not specified' },
+        startDate:      { type: 'string', description: 'YYYY-MM-DD, defaults to today' },
+        endDate:        { type: 'string', description: 'YYYY-MM-DD, defaults to 30 days from start' },
+        pickFirst:      { type: 'boolean', description: 'Set to true if user says "koi bhi ek", "any one", or wants to pick the first available candidate' },
+        commitNow:      { type: 'boolean', description: 'Set to true if user explicitly says "book kar do", "booking confirm karo", or wants to finalize booking directly' },
+        isOverride:     { type: 'boolean', description: 'Set to true to override existing booking' },
         overrideMode:   { type: 'string', enum: ['trim', 'replace', 'force'] },
         overrideReason: { type: 'string' },
+      },
+    },
+  },
+  {
+    name: 'book_multiple_sites',
+    description: 'Book multiple sites at once (e.g. when user says "dono ko kar do", "sab book kar do", "both sites").',
+    parameters: {
+      type: 'object',
+      properties: {
+        siteQuery:      { type: 'string', description: 'Location text matching multiple sites' },
+        siteIds:        { type: 'array', items: { type: 'string' }, description: 'List of site IDs or Site numbers' },
+        clientName:     { type: 'string', description: 'Client name, defaults to Valued Client' },
+        startDate:      { type: 'string', description: 'YYYY-MM-DD' },
+        endDate:        { type: 'string', description: 'YYYY-MM-DD' },
+        commitNow:      { type: 'boolean', description: 'Default true to commit bookings directly' },
+        isOverride:     { type: 'boolean' },
       },
     },
   },
@@ -182,6 +203,54 @@ export const validateSearchInventory = (args) => {
   return { valid: true };
 };
 
+/**
+ * Match hoardings based on siteQuery, siteId, siteNo (SL), facing, size.
+ * Handles hex UUIDs, human serial numbers (SL), and location keywords without failing.
+ */
+export const findMatchingSites = (hoardings = [], args = {}) => {
+  const q = String(args.siteQuery || '').trim().toLowerCase();
+  const sId = String(args.siteId || '').trim().toLowerCase();
+  const sNo = String(args.siteNo || '').trim().toLowerCase();
+  const f = String(args.facing || '').trim().toLowerCase();
+
+  if (!q && !sId && !sNo && !f) return [];
+
+  return hoardings.filter(h => {
+    const hId = String(h._SiteID || h.UniqueID || h['Unique ID'] || h.ID || '').trim().toLowerCase();
+    const hSl = String(h.SL || h['S. No.'] || h['SL NO'] || '').trim().toLowerCase();
+    const hLoc = String(h['Location '] || h.Location || h['Locality Site Location'] || '').trim().toLowerCase();
+    const hArea = String(h.Area || h['Area '] || h.Locality || '').trim().toLowerCase();
+    const hCity = String(h.City || '').trim().toLowerCase();
+    const hFacing = String(h.Facing || h['Traffic View'] || '').trim().toLowerCase();
+
+    // If sId is specified, it MUST match
+    if (sId) {
+      const idMatch = (hId === sId) || (hId.length > 6 && sId.length > 6 && (hId.includes(sId) || sId.includes(hId)));
+      if (!idMatch) return false;
+    }
+
+    // If sNo is specified, it MUST match
+    if (sNo) {
+      if (hSl !== sNo) return false;
+    }
+
+    // If facing is specified, it MUST match
+    if (f) {
+      if (!hFacing.includes(f)) return false;
+    }
+
+    // If text query is specified, it must match location, area, city, SL, or ID
+    if (q) {
+      const idMatch = hId && (hId === q || (hId.length > 6 && (hId.includes(q) || q.includes(hId))));
+      const slMatch = hSl === q || q === `site ${hSl}` || q === `site no ${hSl}` || q === `site number ${hSl}`;
+      const textMatch = hLoc.includes(q) || hArea.includes(q) || (hCity.includes(q) && q.length > 3);
+      if (!idMatch && !slMatch && !textMatch) return false;
+    }
+
+    return true;
+  });
+};
+
 // ─────────────────────────────────────────────────────────────────
 // 3.  TOOL EXECUTOR
 // ─────────────────────────────────────────────────────────────────
@@ -218,16 +287,29 @@ export const executeTool = async (toolName, args, ctx) => {
           ? [`${args.widthFt}x${args.heightFt}`]
           : null;
 
+        // Strip dimension tokens from query so they don't pollute keyword search
+        let cleanQuery = args.query || '';
+        if (sizeArr) {
+          cleanQuery = cleanQuery.replace(/\b\d+\s*[*xX×]\s*\d+\b/g, '').trim();
+        }
+
         const payload = {
           action: 'FILTER_INVENTORY',
-          search:                 args.query    || '',
+          search:                 cleanQuery,
+          city:                   cityArr,
+          locality:               localityArr,
+          media:                  mediaArr,
+          dimensions:             sizeArr,
           inventoryCityFilter:    cityArr,
           inventoryLocalityFilter: localityArr,
           inventoryMediaFilter:   mediaArr,
           inventorySizeFilter:    sizeArr,
           inventoryStatusFilter:  args.status   || 'All',
+          status:                 args.status   || 'All',
           filterStartDate:        args.availableFrom || null,
           filterEndDate:          args.availableTo   || null,
+          availableFrom:          args.availableFrom || null,
+          availableTo:            args.availableTo   || null,
         };
 
         if (handleExecuteAIAction) {
@@ -244,7 +326,7 @@ export const executeTool = async (toolName, args, ctx) => {
           const media   = String(h['Media Format (Front Lit / Back Lit / Non Lit)'] || h.Media || '').toLowerCase();
 
           let ok = true;
-          if (args.query)     ok = ok && (loc.includes(args.query.toLowerCase()) || locality.includes(args.query.toLowerCase()));
+          if (cleanQuery)     ok = ok && (loc.includes(cleanQuery.toLowerCase()) || locality.includes(cleanQuery.toLowerCase()));
           if (args.city)      ok = ok && city.includes(args.city.toLowerCase());
           if (args.locality)  ok = ok && locality.includes(args.locality.toLowerCase());
           if (args.mediaType) ok = ok && media.includes(args.mediaType.toLowerCase());
@@ -263,6 +345,8 @@ export const executeTool = async (toolName, args, ctx) => {
           matchCount: matches.length,
           topMatches: matches.slice(0, 8).map(h => ({
             siteId:      h._SiteID || '',
+            siteNo:      h.SL || h['S. No.'] || '',
+            facing:      h.Facing || h['Traffic View'] || '',
             location:    h['Location '] || h.Location || '',
             city:        h.City || '',
             size:        `${h.Width || ''}x${h.Height || ''}`,
@@ -310,13 +394,7 @@ export const executeTool = async (toolName, args, ctx) => {
 
       // ── get_site_details ──────────────────────────────────────
       case 'get_site_details': {
-        const q = String(args.siteQuery || '').toLowerCase().trim();
-        if (!q) return { found: false, error: 'siteQuery missing' };
-
-        const matched = hoardings.filter(h => {
-          const loc = String(h['Location '] || h.Location || h.Locality || '').toLowerCase();
-          return loc.includes(q);
-        });
+        const matched = findMatchingSites(hoardings, args);
 
         if (matched.length === 0) return { found: false, candidates: [] };
         if (matched.length === 1) {
@@ -325,7 +403,9 @@ export const executeTool = async (toolName, args, ctx) => {
           return {
             found: true,
             site: {
-              siteId:   site._SiteID || '',
+              siteId:   site._SiteID || site.UniqueID || '',
+              siteNo:   site.SL || site['S. No.'] || '',
+              facing:   site.Facing || site['Traffic View'] || '',
               location: site['Location '] || site.Location || '',
               city:     site.City || '',
               size:     `${site.Width || ''}x${site.Height || ''}`,
@@ -338,11 +418,13 @@ export const executeTool = async (toolName, args, ctx) => {
           };
         }
 
-        // Ambiguous — return candidates, don't pick one
+        // Ambiguous — return candidates with human-readable siteNo and facing
         return {
           found: false,
           candidates: matched.slice(0, 8).map(h => ({
-            siteId:   h._SiteID || '',
+            siteId:   h._SiteID || h.UniqueID || '',
+            siteNo:   h.SL || h['S. No.'] || '',
+            facing:   h.Facing || h['Traffic View'] || '',
             location: h['Location '] || h.Location || '',
             city:     h.City || '',
             size:     `${h.Width || ''}x${h.Height || ''}`,
@@ -354,53 +436,88 @@ export const executeTool = async (toolName, args, ctx) => {
 
       // ── prepare_booking ───────────────────────────────────────
       case 'prepare_booking': {
-        const q = String(args.siteQuery || '').toLowerCase().trim();
-        const matched = hoardings.filter(h => {
-          const loc = String(h['Location '] || h.Location || '').toLowerCase();
-          return loc.includes(q);
-        });
+        const matched = findMatchingSites(hoardings, args);
 
         if (matched.length === 0) {
-          return { prepared: false, error: 'Site not found', siteQuery: args.siteQuery };
+          return { prepared: false, error: 'Site not found', siteQuery: args.siteQuery || args.siteId || args.siteNo };
         }
 
-        if (matched.length > 1) {
+        if (matched.length > 1 && !args.pickFirst && !args.anyOne) {
           return {
             prepared: false,
             needsClarification: true,
             candidates: matched.slice(0, 8).map(h => ({
-              siteId: h._SiteID || '', location: h['Location '] || h.Location || '',
-              city: h.City || '', size: `${h.Width || ''}x${h.Height || ''}`,
+              siteId:   h._SiteID || h.UniqueID || '',
+              siteNo:   h.SL || h['S. No.'] || '',
+              facing:   h.Facing || h['Traffic View'] || '',
+              location: h['Location '] || h.Location || '',
+              city:     h.City || '',
+              size:     `${h.Width || ''}x${h.Height || ''}`,
+              status:   h.STATUS || h.Status || '',
             })),
           };
         }
 
         const site = matched[0];
-        const { startDate, endDate } = args.startDate && args.endDate
+        const { startDate, endDate } = (args.startDate && args.endDate)
           ? { startDate: args.startDate, endDate: args.endDate }
-          : resolveRelativeDates('', '');
+          : resolveRelativeDates(args.startDate || '', args.endDate || '');
+
+        const clientName = args.clientName || 'Valued Client';
 
         // Check for conflicts
         let conflict = false;
         if (dataService.checkBookingConflict && dataService.getSiteBookingSlots) {
           try {
             const slots = dataService.getSiteBookingSlots(site);
-            conflict = dataService.checkBookingConflict(slots, startDate, endDate);
+            const confRes = dataService.checkBookingConflict(slots, startDate, endDate);
+            conflict = Boolean(confRes?.conflict || confRes === true);
           } catch { /* noop */ }
         }
 
         // Calculate nights / estimated cost
-        const nights = Math.ceil(
+        const nights = Math.max(1, Math.ceil(
           (new Date(endDate) - new Date(startDate)) / (1000 * 60 * 60 * 24)
-        );
+        ));
         const monthly = parseFloat(site['Avg Monthly Cost (INR)'] || site.Rate || 0);
         const estimatedCost = Math.round((monthly / 30) * nights);
+
+        // Direct commit if user asked or requested commitNow
+        if (args.commitNow && handleExecuteAIAction) {
+          const actionRes = await handleExecuteAIAction({
+            action: 'QUICK_BOOK',
+            siteQuery: site['Location '] || site.Location,
+            siteId: site._SiteID || site.UniqueID,
+            siteNo: site.SL || site['S. No.'],
+            clientName,
+            startDate,
+            endDate,
+            commitNow: true,
+            isOverride: Boolean(args.isOverride),
+            overrideMode: args.overrideMode || 'trim',
+            overrideReason: args.overrideReason || 'Booked via AI Copilot'
+          });
+          return {
+            prepared: true,
+            committed: true,
+            success: actionRes?.success !== false,
+            siteId: site._SiteID || '',
+            siteNo: site.SL || site['S. No.'] || '',
+            location: site['Location '] || site.Location || '',
+            clientName,
+            startDate,
+            endDate,
+            nights,
+            estimatedCost,
+            conflict,
+          };
+        }
 
         // Open the existing booking modal (human clicks Confirm)
         if (setters.setQuickBookingTarget) {
           setters.setQuickBookingTarget({
             site,
-            clientName:     args.clientName || '',
+            clientName,
             startDate,
             endDate,
             isOverride:     args.isOverride  || false,
@@ -413,14 +530,66 @@ export const executeTool = async (toolName, args, ctx) => {
           prepared: true,
           requiresHumanConfirm: true,
           siteId:       site._SiteID || '',
+          siteNo:       site.SL || site['S. No.'] || '',
           location:     site['Location '] || site.Location || '',
-          clientName:   args.clientName,
+          clientName,
           startDate,
           endDate,
           nights,
           estimatedCost,
           conflict,
         };
+      }
+
+      // ── book_multiple_sites ───────────────────────────────────
+      case 'book_multiple_sites': {
+        const query = args.siteQuery || '';
+        const siteIds = Array.isArray(args.siteIds) ? args.siteIds : [];
+        let matched = [];
+
+        if (siteIds.length > 0) {
+          matched = hoardings.filter(h => {
+            const hId = String(h._SiteID || h.UniqueID || h['Unique ID'] || h.ID || '').toLowerCase();
+            const sl = String(h.SL || h['S. No.'] || '').toLowerCase();
+            return siteIds.some(id => hId === id.toLowerCase() || sl === id.toLowerCase());
+          });
+        } else if (query) {
+          matched = findMatchingSites(hoardings, { siteQuery: query });
+        }
+
+        if (matched.length === 0) {
+          return { error: 'No matching sites found for bulk booking', query };
+        }
+
+        const clientName = args.clientName || 'Valued Client';
+        const { startDate, endDate } = (args.startDate && args.endDate)
+          ? { startDate: args.startDate, endDate: args.endDate }
+          : resolveRelativeDates(args.startDate || '', args.endDate || '');
+
+        if (handleExecuteAIAction) {
+          const actionRes = await handleExecuteAIAction({
+            action: 'BOOK_MULTIPLE_SITES',
+            siteIds: matched.map(m => m._SiteID || m.UniqueID),
+            clientName,
+            startDate,
+            endDate,
+            isOverride: Boolean(args.isOverride),
+          });
+          return {
+            booked: true,
+            count: matched.length,
+            sites: matched.map(m => ({
+              siteNo: m.SL || m['S. No.'],
+              location: m['Location '] || m.Location,
+            })),
+            clientName,
+            startDate,
+            endDate,
+            actionResult: actionRes,
+          };
+        }
+
+        return { prepared: true, count: matched.length };
       }
 
       // ── confirm_destructive_action ────────────────────────────

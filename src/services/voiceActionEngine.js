@@ -278,8 +278,8 @@ export const parseOfflineVoiceCommand = (rawText = '', _context = {}) => {
   if (text.includes('available') || text.includes('khali') || text.includes('free')) status = 'Available';
   if (text.includes('booked') || text.includes('bhari') || text.includes('occupied')) status = 'Booked';
 
-  const dimMatch = text.match(/\b(\d{1,3}\s*[*xX×]\s*\d{1,3})\b/);
-  const dimensions = dimMatch ? dimMatch[1].replace(/\s+/g, '') : null;
+  const dimMatch = text.match(/\b(\d{1,3})\s*(?:[*xX×]|by)\s*(\d{1,3})\b/i);
+  const dimensions = dimMatch ? `${dimMatch[1]}x${dimMatch[2]}` : null;
 
   let city = null;
   const knownCities = ['meerut', 'delhi', 'noida', 'ghaziabad', 'hapur', 'muzaffarnagar', 'modinagar', 'dehradun'];
@@ -299,10 +299,13 @@ export const parseOfflineVoiceCommand = (rawText = '', _context = {}) => {
                            text.includes('show') || text.includes('dikhayein') || text.includes('dhoondo');
 
   if (isExplicitSearch && (Boolean(dimensions) || Boolean(city) || status !== 'All' || Boolean(media) || text.includes('site') || text.includes('hoarding'))) {
-    const rawSearch = siteQueryExtract(text);
+    let cleanSearch = siteQueryExtract(text) || '';
+    if (dimensions) {
+      cleanSearch = cleanSearch.replace(/\b\d+\s*[*xX×byBY]\s*\d+\b/g, '').trim();
+    }
     return {
       action: 'FILTER_INVENTORY',
-      search: rawSearch || dimensions || '',
+      search: cleanSearch,
       city,
       dimensions,
       status,
