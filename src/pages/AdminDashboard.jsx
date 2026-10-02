@@ -3407,6 +3407,17 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
             };
         }
 
+        // Authoritatively save local booking so background sheet refreshes never overwrite it
+        if (bookingUpdates) {
+            saveLocalBooking(targetSite, {
+                STATUS: bookingUpdates.STATUS || 'Booked',
+                BookedBy: bookingUpdates.BookedBy || client,
+                BookingStart: bookingUpdates.BookingStart || start,
+                BookingEnd: bookingUpdates.BookingEnd || end,
+                BookingSchedule: updatedSlots
+            });
+        }
+
         // 1. Instantly update React state & cache with precision targeting
         setHoardings(prev => {
             const next = prev.map(h => {
@@ -3760,6 +3771,328 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
             case 'ANSWER_QUERY': {
                 showToast(actionPayload.answer || actionPayload.speech, 'info');
                 return { success: true, answer: actionPayload.answer || actionPayload.speech };
+            }
+
+            case 'DELETE_SITES':
+            case 'DELETE_SITE': {
+                setActiveTab('inventory');
+                const siteNos = Array.isArray(actionPayload.siteNos) ? actionPayload.siteNos.map(s => String(s).trim().toLowerCase()) : (actionPayload.siteNo ? [String(actionPayload.siteNo).trim().toLowerCase()] : []);
+                const siteIds = Array.isArray(actionPayload.siteIds) ? actionPayload.siteIds.map(s => String(s).trim().toLowerCase()) : (actionPayload.siteId ? [String(actionPayload.siteId).trim().toLowerCase()] : []);
+                const siteQuery = String(actionPayload.siteQuery || '').trim().toLowerCase();
+                const city = String(actionPayload.city || '').trim().toLowerCase();
+
+                const toDelete = hoardings.filter(h => {
+                    const hId = String(h._SiteID || h.UniqueID || h['Unique ID'] || h.ID || '').trim().toLowerCase();
+                    const hSL = String(h.SL || h['S. No.'] || h['SL NO'] || '').trim().toLowerCase();
+                    const hLoc = String(h['Location '] || h.Location || h['Locality Site Location'] || '').toLowerCase();
+                    const hCity = String(h.City || '').trim().toLowerCase();
+
+                    if (siteNos.length > 0 && siteNos.includes(hSL)) return true;
+                    if (siteIds.length > 0 && siteIds.some(id => hId === id || (hId.length > 6 && (hId.includes(id) || id.includes(hId))))) return true;
+                    if (city && hCity === city) return true;
+                    if (siteQuery && (hLoc.includes(siteQuery) || hSL === siteQuery)) return true;
+                    return false;
+                });
+
+                if (toDelete.length === 0) {
+                    showToast('Koi site nahi mili delete karne ke liye.', 'error');
+                    return { success: false, error: 'no_matching_sites' };
+                }
+
+                // Register tombstones
+                const allTombstones = [];
+                toDelete.forEach(h => {
+                    const hId = String(h._SiteID || h.UniqueID || h['Unique ID'] || h.ID || '').trim().toLowerCase();
+                    const hSL = String(h.SL || h['S. No.'] || h['SL NO'] || '').trim().toLowerCase();
+                    const hLoc = String(h['Location '] || h.Location || h['Locality Site Location'] || '').trim().toLowerCase();
+                    const hFacing = String(h.Facing || h['Traffic View'] || '').trim().toLowerCase();
+                    const hCity = String(h.City || '').trim().toLowerCase();
+                    if (hId) allTombstones.push(hId);
+                    if (hSL) allTombstones.push(`sl_${hSL}`);
+                    if (hCity && hLoc && hFacing) allTombstones.push(`${hCity}_${hLoc}_${hFacing}`);
+                    if (hLoc && hFacing) allTombstones.push(`${hLoc}_${hFacing}`);
+                });
+                addDeletedSites(allTombstones);
+
+                // Update React state & cache
+                const deletedIds = new Set(toDelete.map(h => h._SiteID || h.UniqueID || h.ID));
+                setHoardings(prev => {
+                    const next = prev.filter(h => !deletedIds.has(h._SiteID || h.UniqueID || h.ID));
+                    try {
+                        localStorage.setItem('hoardings_cache', JSON.stringify(next));
+                    } catch {}
+                    return next;
+                });
+
+                // Background sync to Google Cloud database
+                for (const site of toDelete) {
+                    const targetId = site.UniqueID || site["Unique ID"] || site.ID || site._SiteID;
+                    const targetSL = site.SL || site['S. No.'] || site['SL NO'] || '';
+                    syncToGoogleSheet({
+                        action: 'deleteHoarding',
+                        siteId: targetId,
+                        sl: targetSL,
+                        facing: site.Facing || site['Traffic View'] || '',
+                        siteName: site['Location '] || site.Location || 'Hoarding Site',
+                        city: site.City || '',
+                        locality: site.Locality || site.Area || ''
+                    }).catch(err => console.warn('Delete sync error:', err));
+                }
+
+                showToast(`${toDelete.length} site(s) Google Cloud database se delete ho gayi hain!`, 'success');
+                window.dispatchEvent(new CustomEvent('hoardings:sync-requested'));
+                return { success: true, count: toDelete.length, deletedSites: toDelete.map(h => ({ siteNo: h.SL, location: h['Location '] || h.Location })) };
+            }
+
+            case 'UPDATE_CLIENT_NAME': {
+                setActiveTab('inventory');
+                const newClient = String(actionPayload.newClientName || '').trim();
+                if (!newClient) {
+                    showToast('Naya client name batayein.', 'error');
+                    return { success: false, error: 'missing_client_name' };
+                }
+
+                const oldClient = String(actionPayload.oldClientName || '').trim().toLowerCase();
+                const siteNos = Array.isArray(actionPayload.siteNos) ? actionPayload.siteNos.map(s => String(s).trim().toLowerCase()) : (actionPayload.siteNo ? [String(actionPayload.siteNo).trim().toLowerCase()] : []);
+                const siteIds = Array.isArray(actionPayload.siteIds) ? actionPayload.siteIds.map(s => String(s).trim().toLowerCase()) : (actionPayload.siteId ? [String(actionPayload.siteId).trim().toLowerCase()] : []);
+                const siteQuery = String(actionPayload.siteQuery || '').trim().toLowerCase();
+
+                const toUpdate = hoardings.filter(h => {
+                    const hId = String(h._SiteID || h.UniqueID || h['Unique ID'] || h.ID || '').trim().toLowerCase();
+                    const hSL = String(h.SL || h['S. No.'] || h['SL NO'] || '').trim().toLowerCase();
+                    const hLoc = String(h['Location '] || h.Location || h['Locality Site Location'] || '').toLowerCase();
+                    const currentClient = String(h.BookedBy || h.ClientName || h['Client Name'] || '').trim().toLowerCase();
+
+                    if (oldClient && !currentClient.includes(oldClient)) return false;
+                    if (siteNos.length > 0 && siteNos.includes(hSL)) return true;
+                    if (siteIds.length > 0 && siteIds.some(id => hId === id || (hId.length > 6 && (hId.includes(id) || id.includes(hId))))) return true;
+                    if (siteQuery && (hLoc.includes(siteQuery) || hSL === siteQuery)) return true;
+                    if (oldClient && currentClient.includes(oldClient)) return true;
+                    return false;
+                });
+
+                if (toUpdate.length === 0) {
+                    showToast(`Koi site nahi mili client update karne ke liye.`, 'error');
+                    return { success: false, error: 'no_matching_sites' };
+                }
+
+                const updatedMap = new Map();
+                toUpdate.forEach(site => {
+                    const existingSlots = getSiteBookingSlots(site);
+                    let updatedSlots = existingSlots.map(slot => {
+                        if (!oldClient || (slot.client && slot.client.toLowerCase().includes(oldClient))) {
+                            return { ...slot, client: newClient };
+                        }
+                        return slot;
+                    });
+                    if (updatedSlots.length === 0) {
+                        const today = new Date().toISOString().split('T')[0];
+                        const nextMonth = new Date(Date.now() + 30 * 86400000).toISOString().split('T')[0];
+                        updatedSlots = [{
+                            id: 'slot-' + Date.now() + '-' + Math.random().toString(36).substring(2, 6),
+                            client: newClient,
+                            start: site.BookingStart || today,
+                            end: site.BookingEnd || nextMonth,
+                            status: 'Booked',
+                            createdAt: new Date().toISOString()
+                        }];
+                    }
+
+                    saveSiteBookingSlots(site, updatedSlots);
+                    saveLocalBooking(site, {
+                        STATUS: 'Booked',
+                        BookedBy: newClient,
+                        BookingStart: updatedSlots[0]?.start || site.BookingStart,
+                        BookingEnd: updatedSlots[0]?.end || site.BookingEnd,
+                        BookingSchedule: updatedSlots
+                    });
+
+                    const patch = {
+                        BookedBy: newClient,
+                        ClientName: newClient,
+                        'Client Name': newClient,
+                        BookingSchedule: updatedSlots,
+                        STATUS: 'Booked',
+                        status: 'Booked',
+                        Status: 'Booked'
+                    };
+                    updatedMap.set(site._SiteID || site.UniqueID || site.ID, patch);
+
+                    syncToGoogleSheet({
+                        action: 'updateHoarding',
+                        siteName: site['Location '] || site.Location || 'Hoarding Site',
+                        siteId: site.UniqueID || site._SiteID || '',
+                        sl: site.SL || '',
+                        fields: {
+                            ...site,
+                            ...patch
+                        }
+                    }).catch(err => console.warn('Update client sync error:', err));
+                });
+
+                setHoardings(prev => {
+                    const next = prev.map(h => {
+                        const id = h._SiteID || h.UniqueID || h.ID;
+                        if (updatedMap.has(id)) {
+                            return { ...h, ...updatedMap.get(id) };
+                        }
+                        return h;
+                    });
+                    try {
+                        localStorage.setItem('hoardings_cache', JSON.stringify(next));
+                    } catch {}
+                    return next;
+                });
+
+                showToast(`${toUpdate.length} site(s) par client "${newClient}" Google Cloud database mein update ho gaya!`, 'success');
+                window.dispatchEvent(new CustomEvent('hoardings:sync-requested'));
+                return { success: true, count: toUpdate.length, newClientName: newClient };
+            }
+
+            case 'RELEASE_BOOKING': {
+                setActiveTab('inventory');
+                const siteNos = Array.isArray(actionPayload.siteNos) ? actionPayload.siteNos.map(s => String(s).trim().toLowerCase()) : (actionPayload.siteNo ? [String(actionPayload.siteNo).trim().toLowerCase()] : []);
+                const siteIds = Array.isArray(actionPayload.siteIds) ? actionPayload.siteIds.map(s => String(s).trim().toLowerCase()) : (actionPayload.siteId ? [String(actionPayload.siteId).trim().toLowerCase()] : []);
+                const siteQuery = String(actionPayload.siteQuery || '').trim().toLowerCase();
+
+                const toRelease = hoardings.filter(h => {
+                    const hId = String(h._SiteID || h.UniqueID || h['Unique ID'] || h.ID || '').trim().toLowerCase();
+                    const hSL = String(h.SL || h['S. No.'] || h['SL NO'] || '').trim().toLowerCase();
+                    const hLoc = String(h['Location '] || h.Location || h['Locality Site Location'] || '').toLowerCase();
+                    if (siteNos.length > 0 && siteNos.includes(hSL)) return true;
+                    if (siteIds.length > 0 && siteIds.some(id => hId === id || (hId.length > 6 && (hId.includes(id) || id.includes(hId))))) return true;
+                    if (siteQuery && (hLoc.includes(siteQuery) || hSL === siteQuery)) return true;
+                    return false;
+                });
+
+                if (toRelease.length === 0) {
+                    showToast('Koi site release karne ke liye nahi mili.', 'error');
+                    return { success: false, error: 'no_matching_sites' };
+                }
+
+                const releasedMap = new Map();
+                toRelease.forEach(site => {
+                    saveSiteBookingSlots(site, []);
+                    saveLocalBooking(site, {
+                        STATUS: 'Available',
+                        BookedBy: '',
+                        BookingStart: '',
+                        BookingEnd: '',
+                        BookingSchedule: []
+                    });
+
+                    const patch = {
+                        BookedBy: '',
+                        ClientName: '',
+                        'Client Name': '',
+                        BookingStart: '',
+                        BookingEnd: '',
+                        BookingSchedule: [],
+                        STATUS: 'Available',
+                        status: 'Available',
+                        Status: 'Available'
+                    };
+                    releasedMap.set(site._SiteID || site.UniqueID || site.ID, patch);
+
+                    syncToGoogleSheet({
+                        action: 'updateHoarding',
+                        siteName: site['Location '] || site.Location || 'Hoarding Site',
+                        siteId: site.UniqueID || site._SiteID || '',
+                        sl: site.SL || '',
+                        fields: {
+                            ...site,
+                            ...patch
+                        }
+                    }).catch(err => console.warn('Release booking sync error:', err));
+                });
+
+                setHoardings(prev => {
+                    const next = prev.map(h => {
+                        const id = h._SiteID || h.UniqueID || h.ID;
+                        if (releasedMap.has(id)) {
+                            return { ...h, ...releasedMap.get(id) };
+                        }
+                        return h;
+                    });
+                    try {
+                        localStorage.setItem('hoardings_cache', JSON.stringify(next));
+                    } catch {}
+                    return next;
+                });
+
+                showToast(`${toRelease.length} site(s) release ho gayi hain aur Google Cloud database mein Available ho gayi hain!`, 'success');
+                window.dispatchEvent(new CustomEvent('hoardings:sync-requested'));
+                return { success: true, count: toRelease.length };
+            }
+
+            case 'UPDATE_SITE_DETAILS': {
+                setActiveTab('inventory');
+                const siteNo = String(actionPayload.siteNo || '').trim().toLowerCase();
+                const siteId = String(actionPayload.siteId || '').trim().toLowerCase();
+                const siteQuery = String(actionPayload.siteQuery || '').trim().toLowerCase();
+
+                const targetSite = hoardings.find(h => {
+                    const hId = String(h._SiteID || h.UniqueID || h['Unique ID'] || h.ID || '').trim().toLowerCase();
+                    const hSL = String(h.SL || h['S. No.'] || h['SL NO'] || '').trim().toLowerCase();
+                    const hLoc = String(h['Location '] || h.Location || h['Locality Site Location'] || '').toLowerCase();
+                    if (siteNo && hSL === siteNo) return true;
+                    if (siteId && (hId === siteId || (hId.length > 6 && (hId.includes(siteId) || siteId.includes(hId))))) return true;
+                    if (siteQuery && (hLoc.includes(siteQuery) || hSL === siteQuery)) return true;
+                    return false;
+                });
+
+                if (!targetSite) {
+                    showToast('Site nahi mili update karne ke liye.', 'error');
+                    return { success: false, error: 'site_not_found' };
+                }
+
+                const patch = {};
+                if (actionPayload.monthlyCost) {
+                    patch['Rental Per Month'] = actionPayload.monthlyCost;
+                    patch['Avg Monthly Cost (INR)'] = actionPayload.monthlyCost;
+                    patch.Rate = actionPayload.monthlyCost;
+                }
+                if (actionPayload.mediaFormat) {
+                    patch['Media Format (Front Lit / Back Lit / Non Lit)'] = actionPayload.mediaFormat;
+                    patch.Media = actionPayload.mediaFormat;
+                }
+                if (actionPayload.facing) {
+                    patch.Facing = actionPayload.facing;
+                    patch['Traffic View'] = actionPayload.facing;
+                }
+                if (actionPayload.status) {
+                    patch.STATUS = actionPayload.status;
+                    patch.status = actionPayload.status;
+                    patch.Status = actionPayload.status;
+                }
+
+                setHoardings(prev => {
+                    const next = prev.map(h => {
+                        if (h === targetSite || (targetSite._SiteID && h._SiteID === targetSite._SiteID)) {
+                            return { ...h, ...patch };
+                        }
+                        return h;
+                    });
+                    try {
+                        localStorage.setItem('hoardings_cache', JSON.stringify(next));
+                    } catch {}
+                    return next;
+                });
+
+                syncToGoogleSheet({
+                    action: 'updateHoarding',
+                    siteName: targetSite['Location '] || targetSite.Location || 'Hoarding Site',
+                    siteId: targetSite.UniqueID || targetSite._SiteID || '',
+                    sl: targetSite.SL || '',
+                    fields: {
+                        ...targetSite,
+                        ...patch
+                    }
+                }).catch(err => console.warn('Update site details sync error:', err));
+
+                showToast(`Site details Google Cloud database mein update ho gayi hain!`, 'success');
+                window.dispatchEvent(new CustomEvent('hoardings:sync-requested'));
+                return { success: true, updatedSite: targetSite.SL || targetSite['Location '] };
             }
 
             default:
@@ -11750,7 +12083,7 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                     hoardings={hoardings}
                     activeTab={activeTab}
                     onExecuteAction={handleExecuteAIAction}
-                    dataService={{ resolveSiteLiveStatus, getSiteBookingSlots, checkBookingConflict }}
+                    dataService={{ resolveSiteLiveStatus, getSiteBookingSlots, checkBookingConflict, saveSiteBookingSlots, saveLocalBooking, syncToGoogleSheet }}
                     setters={{ setQuickBookingTarget, setAiHighlightedSiteId, setSearchTerm, setInventoryCityFilter, setInventoryLocalityFilter, setInventoryMediaFilter, setInventorySizeFilter, setInventoryStatusFilter, setFilterStartDate, setFilterEndDate, setClientStatusFilter, setActiveTab }}
                   />
                 </React.Suspense>

@@ -588,7 +588,7 @@ function App() {
     const isTyping = document.activeElement && (document.activeElement.tagName === 'INPUT' || document.activeElement.tagName === 'TEXTAREA' || document.activeElement.isContentEditable);
     if (isTyping && !force) return;
     try {
-      const data = await fetchHoardings();
+      const data = await fetchHoardings(force);
       lastFullRefreshRef.current = Date.now();
       if (Array.isArray(data) && data.length > 0) {
         applyFreshHoardings(data);
@@ -599,21 +599,28 @@ function App() {
   useEffect(() => {
     let focusTimer = null;
     let syncTimer = null;
-    const scheduleRefresh = () => { if (focusTimer) clearTimeout(focusTimer); focusTimer = setTimeout(refreshHoardings, 2000); };
+    const scheduleRefresh = () => { if (focusTimer) clearTimeout(focusTimer); focusTimer = setTimeout(() => refreshHoardings(true), 1500); };
     const scheduleSyncRefresh = () => {
       // Allow Google Apps Script enough time to persist changes before re-fetching
       if (syncTimer) clearTimeout(syncTimer);
-      syncTimer = setTimeout(() => refreshHoardings(true), 4000);
+      syncTimer = setTimeout(() => refreshHoardings(true), 3000);
     };
     const intervalId = setInterval(refreshHoardings, LIVE_REFRESH_INTERVAL_MS);
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        scheduleRefresh();
+      }
+    };
     window.addEventListener('hoardings:sync-requested', scheduleSyncRefresh);
     window.addEventListener('focus', scheduleRefresh);
+    document.addEventListener('visibilitychange', onVisibilityChange);
     return () => {
       clearInterval(intervalId);
       if (focusTimer) clearTimeout(focusTimer);
       if (syncTimer) clearTimeout(syncTimer);
       window.removeEventListener('hoardings:sync-requested', scheduleSyncRefresh);
       window.removeEventListener('focus', scheduleRefresh);
+      document.removeEventListener('visibilitychange', onVisibilityChange);
     };
   }, [refreshHoardings]);
 

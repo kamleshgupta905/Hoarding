@@ -412,5 +412,102 @@ describe('I4 — Voice, Matching & Direct Booking Execution', () => {
     expect(payload.action).toBe('BOOK_MULTIPLE_SITES');
     expect(payload.siteIds).toEqual(['S001', 'S002']);
   });
+
+  it('get_booked_sites returns booked sites without mutating screen filter', async () => {
+    const mockAction = vi.fn(async () => {});
+    const mockResolve = vi.fn((site) => ({
+      status: site.STATUS === 'Booked' ? 'Booked' : 'Available',
+      client: site.STATUS === 'Booked' ? 'Patanjali' : ''
+    }));
+
+    const result = await executeTool('get_booked_sites', {}, {
+      hoardings: MOCK_HOARDINGS,
+      handleExecuteAIAction: mockAction,
+      dataService: {
+        resolveSiteLiveStatus: mockResolve,
+        getSiteBookingSlots: () => []
+      }
+    });
+
+    expect(result.totalBookedCount).toBe(1);
+    expect(result.bookedSites[0].siteId).toBe('S002');
+    expect(result.bookedSites[0].client).toBe('Patanjali');
+    // Crucial: UI filter action was NEVER dispatched!
+    expect(mockAction).not.toHaveBeenCalled();
+  });
+
+  it('delete_sites requires confirmed: true and invokes DELETE_SITES', async () => {
+    const mockAction = vi.fn(async () => ({ success: true, count: 1 }));
+
+    // Without confirmation
+    const unconfirmed = await executeTool('delete_sites', {
+      siteNos: ['12'],
+      confirmed: false
+    }, {
+      hoardings: MOCK_HOARDINGS,
+      handleExecuteAIAction: mockAction
+    });
+    expect(unconfirmed.needsConfirmation).toBe(true);
+    expect(mockAction).not.toHaveBeenCalled();
+
+    // With confirmation
+    const confirmed = await executeTool('delete_sites', {
+      siteNos: ['12'],
+      confirmed: true
+    }, {
+      hoardings: MOCK_HOARDINGS,
+      handleExecuteAIAction: mockAction
+    });
+    expect(confirmed.success).toBe(true);
+    expect(mockAction).toHaveBeenCalledOnce();
+    expect(mockAction.mock.calls[0][0].action).toBe('DELETE_SITES');
+  });
+
+  it('update_client_name invokes UPDATE_CLIENT_NAME in Google Cloud', async () => {
+    const mockAction = vi.fn(async () => ({ success: true, count: 2 }));
+    const result = await executeTool('update_client_name', {
+      newClientName: 'Tata Motors',
+      oldClientName: 'Patanjali'
+    }, {
+      hoardings: MOCK_HOARDINGS,
+      handleExecuteAIAction: mockAction
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.newClientName).toBe('Tata Motors');
+    expect(mockAction).toHaveBeenCalledOnce();
+    expect(mockAction.mock.calls[0][0].action).toBe('UPDATE_CLIENT_NAME');
+  });
+
+  it('update_site_details invokes UPDATE_SITE_DETAILS in Google Cloud', async () => {
+    const mockAction = vi.fn(async () => ({ success: true, updatedSite: 'S001' }));
+    const result = await executeTool('update_site_details', {
+      siteId: 'S001',
+      monthlyCost: 55000,
+      mediaFormat: 'Front Lit'
+    }, {
+      hoardings: MOCK_HOARDINGS,
+      handleExecuteAIAction: mockAction
+    });
+
+    expect(result.success).toBe(true);
+    expect(mockAction).toHaveBeenCalledOnce();
+    expect(mockAction.mock.calls[0][0].action).toBe('UPDATE_SITE_DETAILS');
+    expect(mockAction.mock.calls[0][0].monthlyCost).toBe(55000);
+  });
+
+  it('release_booking invokes RELEASE_BOOKING to free site', async () => {
+    const mockAction = vi.fn(async () => ({ success: true, count: 1 }));
+    const result = await executeTool('release_booking', {
+      siteNo: '2'
+    }, {
+      hoardings: MOCK_HOARDINGS,
+      handleExecuteAIAction: mockAction
+    });
+
+    expect(result.success).toBe(true);
+    expect(mockAction).toHaveBeenCalledOnce();
+    expect(mockAction.mock.calls[0][0].action).toBe('RELEASE_BOOKING');
+  });
 });
 

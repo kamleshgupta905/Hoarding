@@ -160,6 +160,76 @@ export const TOOL_DECLARATIONS = [
       },
     },
   },
+  {
+    name: 'get_booked_sites',
+    description: 'Get all currently booked or upcoming booked sites from Google Cloud database. Does NOT alter or collapse the UI screen. Returns list of sites with client, location, SL, dates.',
+    parameters: {
+      type: 'object',
+      properties: {
+        city:       { type: 'string', description: 'Filter by city if specified' },
+        clientName: { type: 'string', description: 'Filter by client name if specified' },
+        status:     { type: 'string', enum: ['all', 'active', 'upcoming'], description: 'Booking status filter' },
+      },
+    },
+  },
+  {
+    name: 'delete_sites',
+    description: 'Delete one or more hoarding sites from Google Cloud database. Supports single SL/ID, list of IDs/SLs, or location/city query. Model MUST ask for spoken confirmation before calling with confirmed: true.',
+    parameters: {
+      type: 'object',
+      required: ['confirmed'],
+      properties: {
+        siteNos:   { type: 'array', items: { type: 'string' }, description: 'Array of site SL / Serial numbers e.g. ["12", "15"]' },
+        siteIds:   { type: 'array', items: { type: 'string' }, description: 'Array of site unique IDs' },
+        siteQuery: { type: 'string', description: 'Location text matching site(s)' },
+        city:      { type: 'string', description: 'City name if deleting by city' },
+        confirmed: { type: 'boolean', description: 'Must be true only after user verbally confirmed deletion' },
+      },
+    },
+  },
+  {
+    name: 'update_client_name',
+    description: 'Update client name for one or multiple hoarding sites in Google Cloud database. Can change client name for a specific site or bulk replace old client name with new client name across all sites.',
+    parameters: {
+      type: 'object',
+      required: ['newClientName'],
+      properties: {
+        newClientName: { type: 'string', description: 'The new client name / company name' },
+        oldClientName: { type: 'string', description: 'Optional old client name to replace in bulk' },
+        siteNos:       { type: 'array', items: { type: 'string' }, description: 'Array of site SL numbers e.g. ["12"]' },
+        siteIds:       { type: 'array', items: { type: 'string' }, description: 'Array of site unique IDs' },
+        siteQuery:     { type: 'string', description: 'Location text matching site(s)' },
+      },
+    },
+  },
+  {
+    name: 'update_site_details',
+    description: 'Update site details (monthly rental rate, media format, facing, status) in Google Cloud database.',
+    parameters: {
+      type: 'object',
+      properties: {
+        siteNo:      { type: 'string', description: 'Site SL number e.g. "5"' },
+        siteId:      { type: 'string', description: 'Unique site ID' },
+        siteQuery:   { type: 'string', description: 'Location name' },
+        monthlyCost: { type: 'number', description: 'New monthly rental rate in INR' },
+        mediaFormat: { type: 'string', description: 'Front Lit, Back Lit, or Non Lit' },
+        facing:      { type: 'string', description: 'Facing direction' },
+        status:      { type: 'string', enum: ['Available', 'Booked', 'Under Maintenance'] },
+      },
+    },
+  },
+  {
+    name: 'release_booking',
+    description: 'Cancel an active booking slot and release site(s) back to Available status in Google Cloud database.',
+    parameters: {
+      type: 'object',
+      properties: {
+        siteNo:    { type: 'string', description: 'Site SL number e.g. "8"' },
+        siteId:    { type: 'string', description: 'Unique site ID' },
+        siteQuery: { type: 'string', description: 'Location name' },
+      },
+    },
+  },
 ];
 
 // ─────────────────────────────────────────────────────────────────
@@ -212,8 +282,11 @@ export const findMatchingSites = (hoardings = [], args = {}) => {
   const sId = String(args.siteId || '').trim().toLowerCase();
   const sNo = String(args.siteNo || '').trim().toLowerCase();
   const f = String(args.facing || '').trim().toLowerCase();
+  const c = String(args.city || '').trim().toLowerCase();
+  const sNos = Array.isArray(args.siteNos) ? args.siteNos.map(n => String(n).trim().toLowerCase()) : [];
+  const sIds = Array.isArray(args.siteIds) ? args.siteIds.map(i => String(i).trim().toLowerCase()) : [];
 
-  if (!q && !sId && !sNo && !f) return [];
+  if (!q && !sId && !sNo && !f && !c && sNos.length === 0 && sIds.length === 0) return [];
 
   return hoardings.filter(h => {
     const hId = String(h._SiteID || h.UniqueID || h['Unique ID'] || h.ID || '').trim().toLowerCase();
@@ -222,6 +295,22 @@ export const findMatchingSites = (hoardings = [], args = {}) => {
     const hArea = String(h.Area || h['Area '] || h.Locality || '').trim().toLowerCase();
     const hCity = String(h.City || '').trim().toLowerCase();
     const hFacing = String(h.Facing || h['Traffic View'] || '').trim().toLowerCase();
+
+    // If siteNos array is provided, hSl must match one of them
+    if (sNos.length > 0) {
+      if (!sNos.includes(hSl)) return false;
+    }
+
+    // If siteIds array is provided, hId must match one of them
+    if (sIds.length > 0) {
+      const idMatch = sIds.some(id => hId === id || (hId.length > 6 && (hId.includes(id) || id.includes(hId))));
+      if (!idMatch) return false;
+    }
+
+    // If city is specified, it MUST match
+    if (c) {
+      if (!hCity.includes(c)) return false;
+    }
 
     // If sId is specified, it MUST match
     if (sId) {
@@ -331,7 +420,9 @@ export const executeTool = async (toolName, args, ctx) => {
           if (args.locality)  ok = ok && locality.includes(args.locality.toLowerCase());
           if (args.mediaType) ok = ok && media.includes(args.mediaType.toLowerCase());
           if (statusNorm && statusNorm !== 'all') {
-            ok = ok && (hStatus.includes(statusNorm) || hStatus === statusNorm);
+            const live = dataService.resolveSiteLiveStatus ? dataService.resolveSiteLiveStatus(h) : null;
+            const effectiveStatus = String(live?.status || hStatus).toLowerCase();
+            ok = ok && (effectiveStatus.includes(statusNorm) || effectiveStatus === statusNorm);
           }
           if (args.widthFt && args.heightFt) {
             const w = parseFloat(h.Width  || h['Width (Ft)']  || 0);
@@ -680,6 +771,147 @@ export const executeTool = async (toolName, args, ctx) => {
           if (Array.isArray(result?.expiringSites)) expiringSites = result.expiringSites;
         }
         return { withinDays: days, count: expiringSites.length, sites: expiringSites.slice(0, 10) };
+      }
+
+      // ── get_booked_sites ──────────────────────────────────────
+      case 'get_booked_sites': {
+        const resolve = dataService.resolveSiteLiveStatus;
+        const getSlots = dataService.getSiteBookingSlots;
+        const today = new Date().toISOString().split('T')[0];
+        const bookedList = [];
+
+        hoardings.forEach(h => {
+          if (args.city && String(h.City || '').toLowerCase() !== String(args.city).toLowerCase()) return;
+          const slots = getSlots ? getSlots(h) : [];
+          const live = resolve ? resolve(h) : { status: h.STATUS || 'Available' };
+          const activeSlot = slots.find(s => s.start && s.end && today >= s.start && today <= s.end);
+          const futureSlots = slots.filter(s => s.start && s.start > today);
+
+          const isBooked = live?.status === 'Booked' || Boolean(activeSlot) || String(h.STATUS || '').toLowerCase() === 'booked';
+          const isUpcoming = live?.status === 'Upcoming' || futureSlots.length > 0;
+
+          if (args.status === 'active' && !isBooked) return;
+          if (args.status === 'upcoming' && !isUpcoming) return;
+          if (!isBooked && !isUpcoming) return;
+
+          const client = activeSlot?.client || live?.client || h.BookedBy || (futureSlots[0]?.client) || 'Client';
+          if (args.clientName && !client.toLowerCase().includes(String(args.clientName).toLowerCase())) return;
+
+          bookedList.push({
+            siteId: h._SiteID || h.UniqueID || '',
+            siteNo: h.SL || h['S. No.'] || '',
+            location: h['Location '] || h.Location || '',
+            city: h.City || '',
+            client,
+            status: isBooked ? 'Active Booked' : 'Upcoming Booked',
+            startDate: activeSlot?.start || futureSlots[0]?.start || '',
+            endDate: activeSlot?.end || futureSlots[0]?.end || '',
+            facing: h.Facing || h['Traffic View'] || '',
+            size: `${h.Width || ''}x${h.Height || ''}`
+          });
+        });
+
+        return {
+          totalBookedCount: bookedList.length,
+          bookedSites: bookedList.slice(0, 15),
+          storageSource: 'Google Cloud database',
+          message: bookedList.length > 0
+            ? `Total ${bookedList.length} sites Google Cloud database mein booked hain.`
+            : 'Google Cloud database mein abhi koi site book nahi hai.'
+        };
+      }
+
+      // ── delete_sites ──────────────────────────────────────────
+      case 'delete_sites': {
+        if (!args.confirmed) {
+          return {
+            confirmed: false,
+            needsConfirmation: true,
+            message: 'Deletion se pehle user confirmation lena anivarya hai. Pehle puchein kya aap sach me delete karna chahte hain.'
+          };
+        }
+
+        if (handleExecuteAIAction) {
+          const actionRes = await handleExecuteAIAction({
+            action: 'DELETE_SITES',
+            siteNos: args.siteNos,
+            siteIds: args.siteIds,
+            siteQuery: args.siteQuery,
+            city: args.city,
+          });
+          return {
+            success: actionRes?.success !== false,
+            deletedCount: actionRes?.count || 0,
+            deletedSites: actionRes?.deletedSites || [],
+            storageSource: 'Google Cloud database'
+          };
+        }
+        return { success: false, error: 'AI action handler unavailable' };
+      }
+
+      // ── update_client_name ────────────────────────────────────
+      case 'update_client_name': {
+        if (!args.newClientName) {
+          return { success: false, error: 'newClientName is required' };
+        }
+
+        if (handleExecuteAIAction) {
+          const actionRes = await handleExecuteAIAction({
+            action: 'UPDATE_CLIENT_NAME',
+            newClientName: args.newClientName,
+            oldClientName: args.oldClientName,
+            siteNos: args.siteNos,
+            siteIds: args.siteIds,
+            siteQuery: args.siteQuery,
+          });
+          return {
+            success: actionRes?.success !== false,
+            updatedCount: actionRes?.count || 0,
+            newClientName: args.newClientName,
+            storageSource: 'Google Cloud database'
+          };
+        }
+        return { success: false, error: 'AI action handler unavailable' };
+      }
+
+      // ── update_site_details ───────────────────────────────────
+      case 'update_site_details': {
+        if (handleExecuteAIAction) {
+          const actionRes = await handleExecuteAIAction({
+            action: 'UPDATE_SITE_DETAILS',
+            siteNo: args.siteNo,
+            siteId: args.siteId,
+            siteQuery: args.siteQuery,
+            monthlyCost: args.monthlyCost,
+            mediaFormat: args.mediaFormat,
+            facing: args.facing,
+            status: args.status,
+          });
+          return {
+            success: actionRes?.success !== false,
+            updatedSite: actionRes?.updatedSite || '',
+            storageSource: 'Google Cloud database'
+          };
+        }
+        return { success: false, error: 'AI action handler unavailable' };
+      }
+
+      // ── release_booking ───────────────────────────────────────
+      case 'release_booking': {
+        if (handleExecuteAIAction) {
+          const actionRes = await handleExecuteAIAction({
+            action: 'RELEASE_BOOKING',
+            siteNo: args.siteNo,
+            siteId: args.siteId,
+            siteQuery: args.siteQuery,
+          });
+          return {
+            success: actionRes?.success !== false,
+            releasedCount: actionRes?.count || 0,
+            storageSource: 'Google Cloud database'
+          };
+        }
+        return { success: false, error: 'AI action handler unavailable' };
       }
 
       default:

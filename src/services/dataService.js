@@ -1889,22 +1889,43 @@ export const pruneLocalAddedSites = (maxAgeMs = 24 * 60 * 60 * 1000) => {
   }
 };
 
-export const fetchHoardings = async () => {
+export const fetchHoardings = async (forceFresh = false) => {
   let parsedData = [];
   let isLoaded = false;
   const deletedSet = getDeletedSites();
 
-  // Tier 1: Google Visualization API (Direct CORS-enabled CSV - Super Fast & No Quota)
-  try {
-    const fetchUrl = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:csv&sheet=${SHEET_NAME}&_t=${Date.now()}`;
-    const rawData = await requestText(fetchUrl, { credentials: 'omit' }, 12000);
-    const parsed = Papa.parse(rawData, { header: true, skipEmptyLines: true });
-    if (parsed.data && parsed.data.length > 0) {
-      parsedData = parsed.data;
-      isLoaded = true;
+  // Tier 0: When forceFresh is requested, query Google Cloud Apps Script directly (0 edge-cache lag)
+  if (forceFresh) {
+    try {
+      const fetchUrl = `${STAFF_SCRIPT_URL}?action=pullChanges&_t=${Date.now()}`;
+      const response = await requestJson(fetchUrl, { credentials: 'omit' }, 20000);
+      if (response && response.success && response.rows && response.rows.length > 0) {
+        const headers = response.headers;
+        parsedData = response.rows.map(row => {
+          const obj = {};
+          headers.forEach((h, i) => obj[h] = row[i]);
+          return obj;
+        });
+        isLoaded = true;
+      }
+    } catch (errForce) {
+      console.warn("Direct Apps Script forceFresh fetch failed, trying GViz fallback:", errForce.message);
     }
-  } catch (errGviz) {
-    console.warn("GViz spreadsheet fetch failed, trying Apps Script:", errGviz.message);
+  }
+
+  // Tier 1: Google Visualization API (Direct CORS-enabled CSV - Super Fast & No Quota)
+  if (!isLoaded || parsedData.length === 0) {
+    try {
+      const fetchUrl = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:csv&sheet=${SHEET_NAME}&_t=${Date.now()}`;
+      const rawData = await requestText(fetchUrl, { credentials: 'omit' }, 12000);
+      const parsed = Papa.parse(rawData, { header: true, skipEmptyLines: true });
+      if (parsed.data && parsed.data.length > 0) {
+        parsedData = parsed.data;
+        isLoaded = true;
+      }
+    } catch (errGviz) {
+      console.warn("GViz spreadsheet fetch failed, trying Apps Script:", errGviz.message);
+    }
   }
 
   // Tier 2: Secure Apps Script Backend (Bypasses multiple-account CORS bugs)
