@@ -27,7 +27,8 @@ function MapBoundsUpdater({ bounds }) {
 }
 
 // 📍 Custom High-Contrast Leaflet DivIcon for Starred Hoardings
-const createStarredPinIcon = (index) => {
+const createStarredPinIcon = (index, facing = '') => {
+    const cleanFacing = String(facing || '').trim();
     return L.divIcon({
         className: 'starred-leaflet-pin-wrapper',
         html: `
@@ -43,13 +44,14 @@ const createStarredPinIcon = (index) => {
                 box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35);
                 display: inline-flex;
                 align-items: center;
-                gap: 3px;
+                gap: 4px;
                 white-space: nowrap;
                 transform: translate(-50%, -100%);
                 cursor: pointer;
             ">
                 <span style="font-size: 10px;">⭐</span>
                 <span>#${index + 1}</span>
+                ${cleanFacing ? `<span style="font-size: 9.5px; opacity: 0.95; font-weight: 600; background: rgba(0,0,0,0.28); padding: 1px 5px; border-radius: 6px;">${cleanFacing}</span>` : ''}
             </div>
         `,
         iconSize: [0, 0],
@@ -61,7 +63,7 @@ const createStarredPinIcon = (index) => {
 export default function StarredMapModal({ isOpen, onClose, starredSites = [] }) {
     const [copiedLink, setCopiedLink] = useState(false);
 
-    // 📍 Parse real GPS coordinates for each starred site
+    // 📍 Parse real GPS coordinates and fan out identical/shared-pole coordinates
     const { validSites, invalidSites, bounds, center } = useMemo(() => {
         const valid = [];
         const invalid = [];
@@ -80,18 +82,54 @@ export default function StarredMapModal({ isOpen, onClose, starredSites = [] }) 
             }
         });
 
+        // 🎯 Group identical or near-identical coordinates (e.g. multi-faced unipoles at same pole)
+        const coordGroups = new Map();
+        valid.forEach(item => {
+            const key = `${item.lat.toFixed(5)},${item.lng.toFixed(5)}`;
+            if (!coordGroups.has(key)) coordGroups.set(key, []);
+            coordGroups.get(key).push(item);
+        });
+
+        const offsetSites = [];
+        valid.forEach(item => {
+            const key = `${item.lat.toFixed(5)},${item.lng.toFixed(5)}`;
+            const group = coordGroups.get(key) || [];
+            const groupCount = group.length;
+            const groupIndex = group.indexOf(item);
+
+            let displayLat = item.lat;
+            let displayLng = item.lng;
+
+            if (groupCount > 1) {
+                // Fan out in a small circle (~18 meters) so every face/structure pin is individually visible and clickable
+                const angle = (2 * Math.PI / groupCount) * groupIndex;
+                const radiusDegrees = 0.00018; // ~20 meters
+                displayLat = item.lat + Math.sin(angle) * radiusDegrees;
+                displayLng = item.lng + (Math.cos(angle) * radiusDegrees) / Math.cos(item.lat * Math.PI / 180);
+            }
+
+            offsetSites.push({
+                ...item,
+                displayLat,
+                displayLng,
+                isSharedLocation: groupCount > 1,
+                faceNumber: groupIndex + 1,
+                totalFacesAtLoc: groupCount
+            });
+        });
+
         let calculatedBounds = [];
         let calculatedCenter = [28.9845, 77.7064]; // Meerut fallback master center
 
-        if (valid.length > 0) {
-            calculatedBounds = valid.map(item => [item.lat, item.lng]);
-            const avgLat = valid.reduce((sum, item) => sum + item.lat, 0) / valid.length;
-            const avgLng = valid.reduce((sum, item) => sum + item.lng, 0) / valid.length;
+        if (offsetSites.length > 0) {
+            calculatedBounds = offsetSites.map(item => [item.displayLat, item.displayLng]);
+            const avgLat = offsetSites.reduce((sum, item) => sum + item.lat, 0) / offsetSites.length;
+            const avgLng = offsetSites.reduce((sum, item) => sum + item.lng, 0) / offsetSites.length;
             calculatedCenter = [avgLat, avgLng];
         }
 
         return {
-            validSites: valid,
+            validSites: offsetSites,
             invalidSites: invalid,
             bounds: calculatedBounds,
             center: calculatedCenter
@@ -363,7 +401,8 @@ ${placemarks}
                             />
                             <MapBoundsUpdater bounds={bounds} />
 
-                            {validSites.map(({ site, originalIndex, lat, lng }) => {
+                            {validSites.map((item) => {
+                                const { site, originalIndex, lat, lng, displayLat, displayLng, isSharedLocation, faceNumber, totalFacesAtLoc } = item;
                                 const locName = site['Location '] || site.Location || site['Locality Site Location'] || `Hoarding #${originalIndex + 1}`;
                                 const city = site.City || '';
                                 const size = site['Size (WxH)'] || site.Size || '';
@@ -373,9 +412,9 @@ ${placemarks}
 
                                 return (
                                     <Marker
-                                        key={`starred-pin-${originalIndex}-${lat}-${lng}`}
-                                        position={[lat, lng]}
-                                        icon={createStarredPinIcon(originalIndex)}
+                                        key={`starred-pin-${originalIndex}-${lat}-${lng}-${faceNumber || 1}`}
+                                        position={[displayLat || lat, displayLng || lng]}
+                                        icon={createStarredPinIcon(originalIndex, facing)}
                                     >
                                         <Popup>
                                             <div style={{ minWidth: '220px', maxWidth: '280px', fontFamily: 'sans-serif' }}>
@@ -386,6 +425,24 @@ ${placemarks}
                                                             alt={locName}
                                                             style={{ width: '100%', height: '100%', objectFit: 'cover' }}
                                                         />
+                                                    </div>
+                                                )}
+                                                {isSharedLocation && (
+                                                    <div style={{
+                                                        background: '#eff6ff',
+                                                        border: '1px solid #bfdbfe',
+                                                        color: '#1d4ed8',
+                                                        fontSize: '0.7rem',
+                                                        padding: '3px 8px',
+                                                        borderRadius: '6px',
+                                                        marginBottom: '6px',
+                                                        fontWeight: 700,
+                                                        display: 'flex',
+                                                        alignItems: 'center',
+                                                        gap: '4px'
+                                                    }}>
+                                                        <span>🏢</span>
+                                                        <span>Double-Sided Pole (Face {faceNumber} of {totalFacesAtLoc})</span>
                                                     </div>
                                                 )}
                                                 <div style={{ fontWeight: 800, fontSize: '0.9rem', color: '#0f172a', marginBottom: '4px' }}>
