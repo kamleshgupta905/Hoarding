@@ -14,6 +14,13 @@ export const getGeminiApiKeys = () => {
 
   const nodeEnv = (typeof process !== 'undefined' && process.env) || {};
 
+  const embeddedFallbacks = [
+    'AQ.Ab8RN6JX5X6bvAY9y-iBaVbdO_nAC49puDmbVyvGDZCkhGHHxQ',
+    'AQ.Ab8RN6JloH5_7Hu50bxb4ODlyw0sG07RmWtNE57_JlGI09tPAw',
+    'AQ.Ab8RN6KKuExOPSzweXaW0-4rEziM3GmonFb3-rvxHDc-ohOBcQ',
+    'AQ.Ab8RN6KpJdKYy-63CLrqiPDSuEP8LW2Q2ioYPDLIIs5IdA560g'
+  ];
+
   return [
     customKey,
     import.meta.env?.VITE_GEMINI_API_KEY || nodeEnv.VITE_GEMINI_API_KEY,
@@ -21,19 +28,20 @@ export const getGeminiApiKeys = () => {
     import.meta.env?.VITE_GEMINI_API_KEY_2 || nodeEnv.VITE_GEMINI_API_KEY_2,
     import.meta.env?.VITE_GEMINI_API_KEY_3 || nodeEnv.VITE_GEMINI_API_KEY_3,
     import.meta.env?.VITE_GEMINI_API_KEY_4 || nodeEnv.VITE_GEMINI_API_KEY_4,
+    ...embeddedFallbacks
   ].filter(Boolean);
 };
 
 export const GEMINI_MODELS = [
-  'gemini-3.8-flash',
-  'gemini-3.6-flash',
-  'gemini-3.7-flash',
-  'gemini-3-flash-preview',
-  'gemini-3.5-flash',
   'gemini-flash-latest',
+  'gemini-flash-lite-latest',
+  'gemini-3.8-flash',
+  'gemini-3.7-flash',
+  'gemini-3.6-flash',
+  'gemini-3.5-flash',
   'gemini-3.5-flash-lite',
   'gemini-3.1-flash-lite',
-  'gemini-flash-lite-latest',
+  'gemini-3-flash-preview',
   'gemini-3.1-pro-preview'
 ];
 
@@ -523,8 +531,35 @@ Return ONLY a single valid JSON object (no markdown, no backticks):
 export const generateVisualLandmarksWithGemini = async (imageBase64, siteInfo = {}) => {
   if (!imageBase64) return '';
 
-  const parsed = parseBase64(imageBase64);
+  let pureBase64 = imageBase64;
+  let mimeType = 'image/jpeg';
+
+  if (typeof imageBase64 === 'string' && (imageBase64.startsWith('http://') || imageBase64.startsWith('https://'))) {
+    try {
+      const resp = await fetch(imageBase64);
+      if (resp.ok) {
+        const blob = await resp.blob();
+        mimeType = blob.type || 'image/jpeg';
+        if (typeof FileReader !== 'undefined') {
+          pureBase64 = await new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onloadend = () => {
+              const res = reader.result;
+              resolve(typeof res === 'string' ? (res.split(',')[1] || '') : '');
+            };
+            reader.onerror = reject;
+            reader.readAsDataURL(blob);
+          });
+        }
+      }
+    } catch (e) {
+      console.warn('[Gemini Landmark Image Fetch Failed]:', e);
+    }
+  }
+
+  const parsed = parseBase64(pureBase64);
   if (!parsed) return '';
+  if (mimeType && mimeType !== 'image/jpeg') parsed.mimeType = mimeType;
 
   const siteName = siteInfo['Locality Site Location'] || siteInfo['Location '] || siteInfo.Location || siteInfo.siteName || '';
   const facing = siteInfo.Facing || siteInfo['Traffic View'] || siteInfo.facing || '';

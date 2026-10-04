@@ -5,9 +5,9 @@
     "Full sequential 1-to-1 site matching and clean data synchronization",
     "Phonetic fuzzy search and voice copilot enhancements"
   ],
-  "version": "1.8.33",
-  "buildTimestamp": 1791122263816,
-  "buildDate": "2026-10-04T13:57:43.816Z",
-  "releaseTag": "v1.8.33",
+  "version": "1.8.34",
+  "buildTimestamp": 1791127463959,
+  "buildDate": "2026-10-04T15:24:23.959Z",
+  "releaseTag": "v1.8.34",
   "apkUrl": "https://github.com/kamleshgupta905/Hoarding/releases/download/staff-apk-latest/heera-staff-camera.apk"
 }

@@ -515,6 +515,8 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
     };
 
     const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+    const [isGeneratingLandmarks, setIsGeneratingLandmarks] = useState(false);
+    const [landmarkProgress, setLandmarkProgress] = useState({ current: 0, total: 0 });
 
     // 🛡️ Type-safe helper: check if a value is a valid non-blob URL
     const isNonBlobUrl = (val) => {
@@ -1957,13 +1959,43 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
         if (batchUpdates.length > 0) {
             updateFileProcessing({ phase: 'Syncing re-uploaded photos to Google Cloud...', progress: 95 });
             try {
-                await postDirect({
+                const batchRes = await postDirect({
                     action: 'batchUpdateSheet',
                     sessionToken: getAdminSession(),
                     updates: batchUpdates
                 });
+                if (!batchRes || batchRes.success !== true) {
+                    const chunkSize = 5;
+                    for (let i = 0; i < batchUpdates.length; i += chunkSize) {
+                        const chunk = batchUpdates.slice(i, i + chunkSize);
+                        await Promise.allSettled(chunk.map(up => postDirect({
+                            action: 'updateHoarding',
+                            sessionToken: getAdminSession(),
+                            siteName: up.siteName,
+                            sl: up.sl,
+                            siteId: up.siteId,
+                            facing: up.facing,
+                            status: up.status,
+                            fields: up.fields
+                        })));
+                    }
+                }
             } catch (err) {
-                console.warn('[Re-sync batch update error]:', err);
+                console.warn('[Re-sync batch update error, falling back to direct sync]:', err);
+                const chunkSize = 5;
+                for (let i = 0; i < batchUpdates.length; i += chunkSize) {
+                    const chunk = batchUpdates.slice(i, i + chunkSize);
+                    await Promise.allSettled(chunk.map(up => postDirect({
+                        action: 'updateHoarding',
+                        sessionToken: getAdminSession(),
+                        siteName: up.siteName,
+                        sl: up.sl,
+                        siteId: up.siteId,
+                        facing: up.facing,
+                        status: up.status,
+                        fields: up.fields
+                    })));
+                }
             }
         }
 
@@ -2587,8 +2619,39 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                             updates: batchUpdates
                         });
                         console.log('[Batch Sync Result]:', batchRes);
+                        if (!batchRes || batchRes.success !== true) {
+                            console.warn('[Batch Sync Incomplete/Failed, running parallel individual sync]:', batchRes?.error);
+                            const chunkSize = 5;
+                            for (let i = 0; i < batchUpdates.length; i += chunkSize) {
+                                const chunk = batchUpdates.slice(i, i + chunkSize);
+                                await Promise.allSettled(chunk.map(up => postDirect({
+                                    action: 'updateHoarding',
+                                    sessionToken: getAdminSession(),
+                                    siteName: up.siteName,
+                                    sl: up.sl,
+                                    siteId: up.siteId,
+                                    facing: up.facing,
+                                    status: up.status,
+                                    fields: up.fields
+                                })));
+                            }
+                        }
                     } catch (batchErr) {
-                        console.error('[Batch Sync Failed]:', batchErr);
+                        console.error('[Batch Sync Failed, running parallel individual sync]:', batchErr);
+                        const chunkSize = 5;
+                        for (let i = 0; i < batchUpdates.length; i += chunkSize) {
+                            const chunk = batchUpdates.slice(i, i + chunkSize);
+                            await Promise.allSettled(chunk.map(up => postDirect({
+                                action: 'updateHoarding',
+                                sessionToken: getAdminSession(),
+                                siteName: up.siteName,
+                                sl: up.sl,
+                                siteId: up.siteId,
+                                facing: up.facing,
+                                status: up.status,
+                                fields: up.fields
+                            })));
+                        }
                     }
                 }
 
@@ -3128,6 +3191,74 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
             setDailyImages(prev => prev.map((img, idx) => 
                 (img.id === itemIdOrIndex || idx === itemIdOrIndex) ? { ...img, uploading: false } : img
             ));
+        }
+    };
+
+    const handleBatchGenerateVisualLandmarks = async () => {
+        const sitesNeeding = hoardings.filter(h => {
+            const hasLandmark = Boolean((h.Visual_Landmarks || h['Visual Landmarks'] || h.Structure_Notes || '').trim());
+            const hasPhoto = Boolean(h.ImageURL || h['IMAGE 1'] || h['Image URL']);
+            return !hasLandmark && hasPhoto;
+        });
+
+        if (sitesNeeding.length === 0) {
+            showToast('All inventory sites with photos already have Visual Landmarks!', 'info');
+            return;
+        }
+
+        const confirmed = await appConfirm({
+            title: 'Auto-Generate Visual Landmarks?',
+            message: `Gemini AI will analyze photos and generate rich civil engineering landmarks for ${sitesNeeding.length} sites.`,
+            bullets: [
+                'Identifies mounting type, road carriage-way, traffic grade, and permanent civil anchors.',
+                'Updates both your local dashboard and Google Cloud database.',
+                'Strictly preserves neutral OOH physical features without brand names.'
+            ],
+            confirmText: `Generate for ${sitesNeeding.length} Sites`,
+            cancelText: 'Cancel',
+            type: 'info'
+        });
+        if (!confirmed) return;
+
+        setIsGeneratingLandmarks(true);
+        setLandmarkProgress({ current: 0, total: sitesNeeding.length });
+        showToast(`Starting Gemini Vision scan for ${sitesNeeding.length} sites...`, 'info');
+
+        let successCount = 0;
+        try {
+            for (let i = 0; i < sitesNeeding.length; i++) {
+                const site = sitesNeeding[i];
+                setLandmarkProgress({ current: i + 1, total: sitesNeeding.length });
+                const photoUrl = site.ImageURL || site['IMAGE 1'] || site['Image URL'];
+                const siteName = site['Locality Site Location'] || site['Location '] || site.Location || `Site #${site.SL}`;
+                
+                try {
+                    const landmarkDesc = await generateVisualLandmarksWithGemini(photoUrl, site);
+                    if (landmarkDesc) {
+                        site.Visual_Landmarks = landmarkDesc;
+                        site['Visual Landmarks'] = landmarkDesc;
+                        await postDirect({
+                            action: 'updateHoarding',
+                            sessionToken: getAdminSession(),
+                            siteName: siteName,
+                            sl: site.SL,
+                            siteId: site._SiteID,
+                            fields: { Visual_Landmarks: landmarkDesc }
+                        });
+                        successCount++;
+                    }
+                } catch (e) {
+                    console.warn(`[Landmark generation failed for SL #${site.SL}]:`, e);
+                }
+            }
+            showToast(`✅ Generated Visual Landmarks for ${successCount} sites!`, 'success');
+            const fresh = await fetchHoardings(true);
+            if (fresh?.length) setHoardings(fresh);
+        } catch (err) {
+            showToast(`Visual Landmark generation stopped: ${err.message}`, 'error');
+        } finally {
+            setIsGeneratingLandmarks(false);
+            setLandmarkProgress({ current: 0, total: 0 });
         }
     };
 
@@ -9662,6 +9793,16 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                             setIsAddModalOpen(true); 
                                         }}>
                                             <Plus size={14} /> Add New Asset
+                                        </button>
+                                        <button 
+                                            className="qm-btn-secondary qm-btn-sm" 
+                                            style={{ borderColor: '#6366f1', color: '#4f46e5', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: '5px' }}
+                                            onClick={handleBatchGenerateVisualLandmarks} 
+                                            disabled={isGeneratingLandmarks}
+                                            title="Auto-generate physical Visual Landmarks with Gemini AI for sites missing them"
+                                        >
+                                            <Sparkles size={14} className={isGeneratingLandmarks ? 'animate-spin' : ''} />
+                                            {isGeneratingLandmarks ? `Scanning (${landmarkProgress.current}/${landmarkProgress.total})...` : '⚡ Auto-Landmarks'}
                                         </button>
                                         <button className="btn-icon qm-btn-icon-sm" title="Export Full Inventory" onClick={() => exportProposalExcel(hoardings)}>
                                             <Download size={14} />
