@@ -44,7 +44,7 @@ import './AdminDashboard.css';
 import GeoRadiusSelector from '../components/dashboard/GeoRadiusSelector';
 import { useInventoryStore } from '../stores/inventoryStore';
 import { calculateDistance } from '../services/geoService';
-import { matchesAllKeywordsFuzzy } from '../core/fuzzySearch';
+import { matchesAllKeywordsFuzzy, matchesKeywordFuzzy } from '../core/fuzzySearch';
 import { APP_VERSION, APP_BUILD_DATE } from '../version';
 import { checkForAppUpdates } from '../services/appUpdater';
 
