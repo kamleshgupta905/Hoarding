@@ -74,7 +74,7 @@ const ClientReport = ({ hoardings }) => {
                         <div className="header-actions">
                             <button className="glass-btn" onClick={() => {
                                 navigator.clipboard.writeText(window.location.href);
-                                appToast.success("🚀 Report Link Copied! You can now share it on WhatsApp.");
+                                appToast.success("🚀 Report Link Copied to clipboard!");
                             }}>
                                 <Share2 size={18} /> Share Report
                             </button>

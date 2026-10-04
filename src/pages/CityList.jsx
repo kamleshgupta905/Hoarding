@@ -6,7 +6,7 @@ import L from 'leaflet';
 import { Helmet } from 'react-helmet-async';
 import HoardingCard from '../components/HoardingCard';
 import DriveImage from '../components/DriveImage';
-import { getImageUrl, getSiteOccupancyStatus, generateWhatsAppRenewalMessage } from '../services/dataService';
+import { getImageUrl, getSiteOccupancyStatus } from '../services/dataService';
 import './CityList.css';
 
 // Fix for default marker icon in Leaflet
@@ -555,27 +555,6 @@ const CityList = ({ hoardings }) => {
                                                         )}
 
                                                         <div className="popup-cta-row">
-                                                            {occupancy.isExpiringSoon || occupancy.status === 'BOOKED' ? (
-                                                                <a
-                                                                    href={`https://wa.me/?text=${encodeURIComponent(generateWhatsAppRenewalMessage(h, occupancy.daysLeft))}`}
-                                                                    target="_blank"
-                                                                    rel="noopener noreferrer"
-                                                                    className="popup-action-btn popup-btn-wa"
-                                                                    title="Send 1-click renewal pitch to client"
-                                                                >
-                                                                    💬 WhatsApp Pitch
-                                                                </a>
-                                                            ) : (
-                                                                <a
-                                                                    href={`https://wa.me/?text=${encodeURIComponent(`Hi Heera Advertising, I am interested in booking your hoarding at ${locName} (${h.City}). Please share details.`)}`}
-                                                                    target="_blank"
-                                                                    rel="noopener noreferrer"
-                                                                    className="popup-action-btn popup-btn-wa"
-                                                                    title="Inquire on WhatsApp"
-                                                                >
-                                                                    💬 WhatsApp Inquiry
-                                                                </a>
-                                                            )}
                                                             <Link 
                                                                 to={`/${h.City}/${encodeURIComponent(locName)}`} 
                                                                 className="popup-action-btn popup-btn-details"

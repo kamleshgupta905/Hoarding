@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState, lazy, Suspense } from 'react';
-import { BrowserRouter, HashRouter, Routes, Route, useLocation } from 'react-router-dom';
+import { BrowserRouter, HashRouter, Routes, Route, useLocation, Navigate } from 'react-router-dom';
 import { HelmetProvider } from 'react-helmet-async';
 import ErrorBoundary from './components/ErrorBoundary';
 import { ToastProvider } from './components/ToastContext';
@@ -8,6 +8,7 @@ import Navbar from './components/Navbar';
 import Footer from './components/Footer';
 import AdminLogin from './pages/AdminLogin';
 import AppAutoUpdater from './components/AppAutoUpdater';
+import { getAdminSession } from './services/secureApi';
 import { fetchHoardings, getLocalBookings, getLocalSchedules, getSiteBookingKeys, getLocalHistory, resolveSiteLiveStatus, pruneLocalHistory, pruneLocalAddedSites, getDeletedSites } from './services/dataService';
 
 // Helper to auto-recover dynamic imports when a new build is deployed on Vercel
@@ -319,6 +320,14 @@ function AppContent({ hoardings, setHoardings }) {
     );
   }
 
+  const ProtectedAdminRoute = ({ children }) => {
+    const session = getAdminSession();
+    if (!session) {
+      return <Navigate to="/admin/login" replace />;
+    }
+    return children;
+  };
+
   return (
     <div className="app-container">
       <AppAutoUpdater />
@@ -328,9 +337,9 @@ function AppContent({ hoardings, setHoardings }) {
       <main>
         <Suspense fallback={<PageLoader />}>
           <Routes>
-            <Route path="/admin" element={<AdminDashboard hoardings={hoardings || []} setHoardings={setHoardings} />} />
+            <Route path="/admin" element={<ProtectedAdminRoute><AdminDashboard hoardings={hoardings || []} setHoardings={setHoardings} /></ProtectedAdminRoute>} />
             <Route path="/admin/login" element={<AdminLogin />} />
-            <Route path="/admin/dashboard" element={<AdminDashboard hoardings={hoardings || []} setHoardings={setHoardings} />} />
+            <Route path="/admin/dashboard" element={<ProtectedAdminRoute><AdminDashboard hoardings={hoardings || []} setHoardings={setHoardings} /></ProtectedAdminRoute>} />
             <Route path="/guide" element={<SystemGuide />} />
             <Route path="/system-guide" element={<SystemGuide />} />
             <Route path="/" element={<Home hoardings={publicHoardings} />} />
@@ -695,6 +704,18 @@ function App() {
         localStorage.setItem('hoardings_cache', JSON.stringify(sanitized));
       } catch (err) {
         console.warn('Could not safely save hoardings_cache to localStorage:', err);
+        if (err?.name === 'QuotaExceededError' || String(err).toLowerCase().includes('quota')) {
+          try {
+            const compact = Array.isArray(sanitized) ? sanitized.map(h => ({
+              ...h,
+              History: [],
+              ExecutionHistory: ''
+            })) : [];
+            localStorage.setItem('hoardings_cache', JSON.stringify(compact));
+          } catch (compactErr) {
+            try { localStorage.removeItem('hoardings_cache'); } catch {}
+          }
+        }
       }
     };
 

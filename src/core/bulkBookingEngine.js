@@ -677,7 +677,7 @@ export const commitBulkBookings = async ({
 
         const res = await postDirect({
           action: 'pureUpload',
-          sessionToken: getAdminSession() || 'adm_session_master_authorized',
+          sessionToken: getAdminSession(),
           fileName,
           fileData: pureBase64,
           mimeType: 'image/jpeg'
@@ -883,7 +883,7 @@ export const commitBulkBookings = async ({
   try {
     await postDirect({
       action: 'batchUpdateSheet',
-      sessionToken: getAdminSession() || 'adm_session_master_authorized',
+      sessionToken: getAdminSession(),
       updates: batchUpdates
     });
   } catch (sheetErr) {

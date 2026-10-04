@@ -366,7 +366,7 @@ export const StarredBulkBookingModal = ({
       try {
         await postDirect({
           action: 'batchUpdateSheet',
-          sessionToken: getAdminSession() || 'adm_session_master_authorized',
+          sessionToken: getAdminSession(),
           updates: batchUpdates
         });
       } catch (cloudErr) {

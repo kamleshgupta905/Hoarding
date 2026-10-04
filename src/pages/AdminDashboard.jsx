@@ -8,13 +8,13 @@ import {
     Bell, HelpCircle, Plus, Filter, Download,
     MessageSquare, Mail, User, Users, Package, ShoppingBag, BarChart2, FolderTree, Calendar, CheckSquare,
     MoreVertical, ExternalLink, ShieldCheck, Menu, X, UploadCloud, RefreshCw, XCircle, Share2, Trash2, Camera, Table2, Save, Undo2, Redo2, FileDown, Copy, Timer, Clock, Clock3, PanelLeftClose, PanelLeftOpen, Maximize2, Minimize2,
-    BarChart3, PieChart, Activity, Sparkles, ArrowUpRight, Layers, Compass, DollarSign, Award, Flame, Check, ChevronRight, ChevronDown, Monitor, QrCode, Printer, BookOpen,
+    BarChart3, PieChart, Activity, Sparkles, ArrowUpRight, Layers, Compass, DollarSign, Award, Flame, Check, ChevronRight, ChevronDown, ChevronUp, Monitor, QrCode, Printer, BookOpen,
     Radio, Signal, Globe, Crosshair, CheckCircle2, Navigation,
     Star, FileSpreadsheet, Presentation, Loader2, AlertTriangle, Info, ArrowUpCircle,
     Edit3, ArrowRightLeft, RotateCcw
 } from 'lucide-react';
 import { analyzeHoardingImage, extractSiteCoordinates, generateVisualLandmarksWithGemini } from '../services/aiService';
-import { fetchHoardings, compressImage, syncToGoogleSheet, exportProposalExcel, PROPOSAL_COLUMNS, getImageUrl, downloadHoardingImage, fetchStaffUploads, reviewStaffPhoto, detectStaffPhotoOrientation, fetchSheetGrid, saveSheetGrid, addDeletedSite, addDeletedSites, parseHistoryString, saveLocalBooking, clearLocalBooking, recordSiteBooking, removeSiteBooking, getSiteBookingSlots, checkBookingConflict, calculateProRataRental, resolveSiteLiveStatus, saveSiteBookingSlots, recordSiteHistory, getLocalHistory, getDirectDriveLink, parseCellImageUrls, addDeletedHistoryUrl, isHistoryUrlDeleted, removeSiteHistory, getExpiringSites, clearAllLocalBookingsAndCaches, clearLocalBookingsForCity, clearLocalBookingsForSite, normalizeCityName, overrideSiteBookingSlot, getDisplacedBookingSlots, saveDisplacedBookingSlots, removeDisplacedSlot, updateSiteBookingSlot, shiftBookingSlotToSite, restoreOverriddenSlot } from '../services/dataService';
+import { fetchHoardings, compressImage, syncToGoogleSheet, exportProposalExcel, PROPOSAL_COLUMNS, getImageUrl, downloadHoardingImage, fetchStaffUploads, reviewStaffPhoto, detectStaffPhotoOrientation, fetchSheetGrid, saveSheetGrid, addDeletedSite, addDeletedSites, parseHistoryString, saveLocalBooking, clearLocalBooking, recordSiteBooking, removeSiteBooking, getSiteBookingSlots, checkBookingConflict, calculateProRataRental, resolveSiteLiveStatus, saveSiteBookingSlots, recordSiteHistory, getLocalHistory, getDirectDriveLink, parseCellImageUrls, addDeletedHistoryUrl, isHistoryUrlDeleted, removeSiteHistory, getExpiringSites, parseBookingDate, clearAllLocalBookingsAndCaches, clearLocalBookingsForCity, clearLocalBookingsForSite, normalizeCityName, overrideSiteBookingSlot, getDisplacedBookingSlots, saveDisplacedBookingSlots, removeDisplacedSlot, updateSiteBookingSlot, shiftBookingSlotToSite, restoreOverriddenSlot } from '../services/dataService';
 import { generateMasterMediaPlanPptx } from '../services/presentationService';
 import ImageLightbox from '../components/ImageLightbox';
 import DriveImage from '../components/DriveImage';
@@ -22,6 +22,7 @@ import RenewalAlertRadar from '../components/RenewalAlertRadar';
 import BulkBookingWizard from '../components/BulkBookingWizard';
 import HeaderSitesUploadModal from '../components/HeaderSitesUploadModal';
 import StarredBulkBookingModal from '../components/StarredBulkBookingModal';
+import StarredMapModal from '../components/StarredMapModal';
 import SlotEditModal from '../components/SlotEditModal';
 import ShiftSlotModal from '../components/ShiftSlotModal';
 import { appConfirm, appToast } from '../components/ToastContext';
@@ -1465,6 +1466,8 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
     });
     const [showOnlyStarred, setShowOnlyStarred] = useState(false);
     const [isStarredBookingModalOpen, setIsStarredBookingModalOpen] = useState(false);
+    const [isStarredMapModalOpen, setIsStarredMapModalOpen] = useState(false);
+    const [isFieldAuditCollapsed, setIsFieldAuditCollapsed] = useState(false);
     const [isPptGenerating, setIsPptGenerating] = useState(false);
     const [pptProgressText, setPptProgressText] = useState('');
     const isDesktopApp = Boolean(typeof window !== 'undefined' && window.electronAPI?.isElectron);
@@ -7169,8 +7172,33 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                         >
                                             <ExternalLink size={13} /> Viewfinder
                                         </button>
+
+                                        <button 
+                                            type="button"
+                                            onClick={() => setIsFieldAuditCollapsed(prev => !prev)}
+                                            style={{
+                                                background: '#f8fafc',
+                                                color: '#475569',
+                                                border: '1px solid #e2e8f0',
+                                                padding: '8px 12px',
+                                                borderRadius: '10px',
+                                                fontSize: '0.8rem',
+                                                fontWeight: 700,
+                                                display: 'inline-flex',
+                                                alignItems: 'center',
+                                                gap: '6px',
+                                                cursor: 'pointer'
+                                            }}
+                                            title={isFieldAuditCollapsed ? "Expand Telemetry details" : "Collapse Telemetry to save vertical screen space"}
+                                        >
+                                            {isFieldAuditCollapsed ? <ChevronDown size={13} /> : <ChevronUp size={13} />}
+                                            <span>{isFieldAuditCollapsed ? 'Expand' : 'Collapse'}</span>
+                                        </button>
                                     </div>
                                 </div>
+
+                                {!isFieldAuditCollapsed && (
+                                    <>
 
                                 {/* 📊 Micro-Telemetry Status Bar */}
                                 <div style={{ 
@@ -7468,86 +7496,46 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                             })}
                                         </div>
                                     ) : (
-                                        /* 📡 State-of-the-art Live Telemetry Radar Empty State */
+                                        /* 📡 Streamlined Live Telemetry Status Bar */
                                         <div style={{ 
                                             background: '#f8fafc', 
-                                            borderRadius: '18px', 
+                                            borderRadius: '14px', 
                                             border: '1px solid #e2e8f0', 
-                                            padding: '36px 24px', 
-                                            textAlign: 'center',
-                                            display: 'flex',
-                                            flexDirection: 'column',
-                                            alignItems: 'center',
-                                            position: 'relative',
-                                            overflow: 'hidden'
+                                            padding: '16px 20px', 
+                                            display: 'flex', 
+                                            alignItems: 'center', 
+                                            justifyContent: 'space-between', 
+                                            flexWrap: 'wrap', 
+                                            gap: '12px' 
                                         }}>
-                                            {/* Glowing Geofence Radar Graphic */}
-                                            <div style={{ 
-                                                width: '72px', 
-                                                height: '72px', 
-                                                borderRadius: '50%', 
-                                                background: '#ecfdf5', 
-                                                border: '2px solid #a7f3d0', 
-                                                display: 'flex', 
-                                                alignItems: 'center', 
-                                                justifyContent: 'center',
-                                                color: '#059669',
-                                                marginBottom: '16px',
-                                                boxShadow: '0 0 0 8px rgba(16, 185, 129, 0.1), 0 0 0 16px rgba(16, 185, 129, 0.05)'
-                                            }}>
-                                                <Radio size={32} />
-                                            </div>
-
-                                            <h4 style={{ margin: '0 0 8px 0', fontSize: '1.15rem', fontWeight: 800, color: '#0f172a', letterSpacing: '-0.01em' }}>
-                                                Geofence Telemetry & Radar Ready
-                                            </h4>
-                                            <p style={{ margin: '0 0 24px 0', fontSize: '0.84rem', color: '#64748b', maxWidth: '580px', lineHeight: '1.55' }}>
-                                                When on-ground staff captures billboard photos from the <strong>Android APK</strong> or <strong>Mobile Camera Viewfinder</strong>, our 50m GPS geofencing & Claude Vision AI automatically verify and attach high-res photos to billboard history without manual review.
-                                            </p>
-
-                                            {/* 3 Interactive Capability Tiles */}
-                                            <div style={{ 
-                                                display: 'grid', 
-                                                gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))', 
-                                                gap: '12px', 
-                                                width: '100%', 
-                                                maxWidth: '720px', 
-                                                marginBottom: '24px',
-                                                textAlign: 'left' 
-                                            }}>
-                                                <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '14px' }}>
-                                                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#059669', fontWeight: 700, fontSize: '0.82rem', marginBottom: '4px' }}>
-                                                        <Crosshair size={15} />
-                                                        <span>50m Geofence Engine</span>
-                                                    </div>
-                                                    <p style={{ margin: 0, fontSize: '0.74rem', color: '#64748b', lineHeight: '1.4' }}>
-                                                        Computes exact great-circle distance against master coordinates in &lt;100ms.
-                                                    </p>
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                                                <div style={{ 
+                                                    width: '36px', 
+                                                    height: '36px', 
+                                                    borderRadius: '50%', 
+                                                    background: '#ecfdf5', 
+                                                    border: '1.5px solid #a7f3d0', 
+                                                    display: 'flex', 
+                                                    alignItems: 'center', 
+                                                    justifyContent: 'center', 
+                                                    color: '#059669',
+                                                    flexShrink: 0
+                                                }}>
+                                                    <Radio size={18} />
                                                 </div>
-
-                                                <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '14px' }}>
-                                                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#d97757', fontWeight: 700, fontSize: '0.82rem', marginBottom: '4px' }}>
-                                                        <Sparkles size={15} />
-                                                        <span>Claude Vision AI</span>
+                                                <div>
+                                                    <div style={{ fontSize: '0.88rem', fontWeight: 800, color: '#0f172a', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                                        <span>Geofence Telemetry & Radar Ready</span>
+                                                        <span style={{ fontSize: '0.72rem', background: '#ecfdf5', color: '#059669', padding: '2px 8px', borderRadius: '12px', fontWeight: 700 }}>50m GPS Auto-Match Active</span>
                                                     </div>
-                                                    <p style={{ margin: 0, fontSize: '0.74rem', color: '#64748b', lineHeight: '1.4' }}>
-                                                        Detects lighting, nighttime illumination, clarity, and obstruction parameters.
-                                                    </p>
-                                                </div>
-
-                                                <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '14px' }}>
-                                                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#059669', fontWeight: 700, fontSize: '0.82rem', marginBottom: '4px' }}>
-                                                        <Smartphone size={15} />
-                                                        <span>Instant Camera Feed</span>
-                                                    </div>
-                                                    <p style={{ margin: 0, fontSize: '0.74rem', color: '#64748b', lineHeight: '1.4' }}>
-                                                        Zero viewfinder delay with offline queue and automatic background synchronization.
+                                                    <p style={{ margin: '2px 0 0 0', fontSize: '0.78rem', color: '#64748b' }}>
+                                                        Ground staff captures from Mobile Camera or APK auto-verify against hoarding coordinates. 0 pending reviews.
                                                     </p>
                                                 </div>
                                             </div>
 
-                                            {/* Quick Action Buttons */}
-                                            <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', justifyContent: 'center' }}>
+                                            {/* Compact Action Buttons */}
+                                            <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
                                                 <button 
                                                     type="button"
                                                     onClick={() => window.open('/staff/upload', '_blank')}
@@ -7555,18 +7543,17 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                                         background: '#059669',
                                                         color: '#ffffff',
                                                         border: 'none',
-                                                        padding: '10px 18px',
-                                                        borderRadius: '12px',
-                                                        fontSize: '0.82rem',
+                                                        padding: '7px 14px',
+                                                        borderRadius: '9px',
+                                                        fontSize: '0.78rem',
                                                         fontWeight: 700,
                                                         display: 'inline-flex',
                                                         alignItems: 'center',
-                                                        gap: '8px',
-                                                        cursor: 'pointer',
-                                                        boxShadow: '0 2px 8px rgba(5, 150, 105, 0.25)'
+                                                        gap: '6px',
+                                                        cursor: 'pointer'
                                                     }}
                                                 >
-                                                    <Camera size={15} /> Launch Mobile Camera
+                                                    <Camera size={13} /> Launch Camera
                                                 </button>
 
                                                 <button 
@@ -7576,17 +7563,17 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                                         background: '#ffffff',
                                                         color: '#0f172a',
                                                         border: '1px solid #cbd5e1',
-                                                        padding: '10px 18px',
-                                                        borderRadius: '12px',
-                                                        fontSize: '0.82rem',
+                                                        padding: '7px 14px',
+                                                        borderRadius: '9px',
+                                                        fontSize: '0.78rem',
                                                         fontWeight: 700,
                                                         display: 'inline-flex',
                                                         alignItems: 'center',
-                                                        gap: '8px',
+                                                        gap: '6px',
                                                         cursor: 'pointer'
                                                     }}
                                                 >
-                                                    <Download size={15} /> Download Staff Mobile APK
+                                                    <Download size={13} /> Staff APK
                                                 </button>
                                             </div>
                                         </div>
@@ -7715,6 +7702,8 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                             </p>
                                         </div>
                                     )
+                                )}
+                                    </>
                                 )}
                             </motion.div>
 
@@ -9132,16 +9121,6 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                         }}>
                                             <Plus size={14} /> Add New Asset
                                         </button>
-                                        <button 
-                                            className="qm-btn-secondary qm-btn-sm" 
-                                            style={{ borderColor: '#6366f1', color: '#4f46e5', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: '5px' }}
-                                            onClick={handleBatchGenerateVisualLandmarks} 
-                                            disabled={isGeneratingLandmarks}
-                                            title="Auto-generate physical Visual Landmarks with Gemini AI for sites missing them"
-                                        >
-                                            <Sparkles size={14} className={isGeneratingLandmarks ? 'animate-spin' : ''} />
-                                            {isGeneratingLandmarks ? `Scanning (${landmarkProgress.current}/${landmarkProgress.total})...` : '⚡ Auto-Landmarks'}
-                                        </button>
                                         <button className="btn-icon qm-btn-icon-sm" title="Export Full Inventory" onClick={() => exportProposalExcel(hoardings)}>
                                             <Download size={14} />
                                         </button>
@@ -9189,6 +9168,31 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                         >
                                             {isPptGenerating ? <Loader2 size={14} className="spin-animate" /> : <Presentation size={14} />}
                                             <span>{isPptGenerating ? (pptProgressText || 'Packaging...') : `PPT (${starredSites.length})`}</span>
+                                        </button>
+
+                                        {/* 🗺️ Google Map Icon for Starred Sites (ICON button as specifically requested) */}
+                                        <button
+                                            className="btn-icon qm-btn-icon-sm"
+                                            disabled={starredSites.length === 0}
+                                            onClick={() => setIsStarredMapModalOpen(true)}
+                                            title={starredSites.length === 0 ? "Star some sites first to view on Google Map" : `View ${starredSites.length} Starred Sites on Real GPS Google Map & Download`}
+                                            style={{ 
+                                                background: '#ffffff', 
+                                                border: '1.5px solid #4285f4', 
+                                                borderRadius: '8px', 
+                                                padding: '5px 7px',
+                                                display: 'inline-flex',
+                                                alignItems: 'center',
+                                                justifyContent: 'center',
+                                                cursor: starredSites.length === 0 ? 'not-allowed' : 'pointer',
+                                                opacity: starredSites.length === 0 ? 0.4 : 1,
+                                                transition: 'all 0.15s ease'
+                                            }}
+                                        >
+                                            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                                <path d="M12 2C8.13 2 5 5.13 5 9C5 14.25 12 22 12 22C12 22 19 14.25 19 9C19 5.13 15.87 2 12 2Z" fill="#EA4335"/>
+                                                <circle cx="12" cy="9" r="3" fill="#FFFFFF"/>
+                                            </svg>
                                         </button>
                                     </div>
                                 </div>
@@ -10065,6 +10069,52 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                 slot.start,
                                 slot.end
                             );
+                            const parsedStart = parseBookingDate(slot.start);
+                            const parsedEnd = parseBookingDate(slot.end);
+                            const now = new Date();
+                            const todayZero = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+
+                            let daysRemaining = null;
+                            let isTodayActive = false;
+                            let isUpcoming = false;
+                            let isCompleted = false;
+                            let isExpiringSoon = false;
+                            let isCritical = false;
+                            let isOverdue = false;
+
+                            if (parsedEnd) {
+                                const endZero = new Date(parsedEnd.getFullYear(), parsedEnd.getMonth(), parsedEnd.getDate()).getTime();
+                                daysRemaining = Math.round((endZero - todayZero) / (1000 * 60 * 60 * 24));
+                            }
+
+                            if (parsedStart && parsedEnd) {
+                                const startZero = new Date(parsedStart.getFullYear(), parsedStart.getMonth(), parsedStart.getDate()).getTime();
+                                const endZero = new Date(parsedEnd.getFullYear(), parsedEnd.getMonth(), parsedEnd.getDate()).getTime();
+                                if (todayZero >= startZero && todayZero <= endZero) {
+                                    isTodayActive = true;
+                                    if (daysRemaining !== null) {
+                                        if (daysRemaining <= 5) isCritical = true;
+                                        if (daysRemaining <= 15) isExpiringSoon = true;
+                                    }
+                                } else if (todayZero < startZero) {
+                                    isUpcoming = true;
+                                } else if (todayZero > endZero) {
+                                    isCompleted = true;
+                                }
+                            } else if (parsedEnd) {
+                                if (daysRemaining !== null && daysRemaining >= 0) {
+                                    isTodayActive = true;
+                                    if (daysRemaining <= 5) isCritical = true;
+                                    if (daysRemaining <= 15) isExpiringSoon = true;
+                                } else if (daysRemaining !== null && daysRemaining < 0) {
+                                    isCompleted = true;
+                                }
+                            } else {
+                                isTodayActive = Boolean(slot.start && slot.end && slot.start <= todayStr && slot.end >= todayStr);
+                                isUpcoming = Boolean(slot.start && slot.start > todayStr);
+                                isCompleted = Boolean(slot.end && slot.end < todayStr);
+                            }
+
                             allBookings.push({
                                 site: h,
                                 slot: slot,
@@ -10081,9 +10131,15 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                 proRataDays: slot.days || proRata.days,
                                 start: slot.start,
                                 end: slot.end,
-                                isTodayActive: Boolean(slot.start && slot.end && slot.start <= todayStr && slot.end >= todayStr),
-                                isUpcoming: Boolean(slot.start && slot.start > todayStr),
-                                isCompleted: Boolean(slot.end && slot.end < todayStr)
+                                parsedStart,
+                                parsedEnd,
+                                daysRemaining,
+                                isTodayActive,
+                                isUpcoming,
+                                isCompleted,
+                                isExpiringSoon,
+                                isCritical,
+                                isOverdue
                             });
                         });
                     });
@@ -10135,12 +10191,17 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                             end: disp.end || disp.originalEnd,
                             isTodayActive: false,
                             isUpcoming: false,
-                            isCompleted: false
+                            isCompleted: false,
+                            isExpiringSoon: false,
+                            isCritical: false,
+                            isOverdue: false,
+                            daysRemaining: null
                         });
                     });
 
                     const totalBookingsCount = allBookings.length;
                     const activeBookingsCount = allBookings.filter(b => b.isTodayActive && !b.isDisplaced).length;
+                    const expiringBookingsCount = allBookings.filter(b => b.isExpiringSoon && !b.isDisplaced).length;
                     const upcomingBookingsCount = allBookings.filter(b => b.isUpcoming && !b.isDisplaced).length;
                     const completedBookingsCount = allBookings.filter(b => b.isCompleted && !b.isDisplaced).length;
                     const displacedBookingsCount = allBookings.filter(b => b.isDisplaced).length;
@@ -10148,6 +10209,7 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                     // Search & Slot Status filter
                     const filteredBookings = allBookings.filter(b => {
                         if (clientStatusFilter === 'active' && (!b.isTodayActive || b.isDisplaced)) return false;
+                        if (clientStatusFilter === 'expiring' && (!b.isExpiringSoon || b.isDisplaced)) return false;
                         if (clientStatusFilter === 'upcoming' && (!b.isUpcoming || b.isDisplaced)) return false;
                         if (clientStatusFilter === 'completed' && (!b.isCompleted || b.isDisplaced)) return false;
                         if (clientStatusFilter === 'displaced' && !b.isDisplaced) return false;
@@ -10298,6 +10360,35 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                             padding: '2px 7px', 
                                             borderRadius: '10px' 
                                         }}>{activeBookingsCount}</span>
+                                    </button>
+
+                                    <button
+                                        type="button"
+                                        onClick={() => setClientStatusFilter('expiring')}
+                                        style={{
+                                            padding: '7px 14px',
+                                            borderRadius: '20px',
+                                            fontSize: '0.8rem',
+                                            fontWeight: 600,
+                                            border: clientStatusFilter === 'expiring' ? '1px solid #d97706' : '1px solid #fef3c7',
+                                            cursor: 'pointer',
+                                            background: clientStatusFilter === 'expiring' ? '#f59e0b' : '#fffbeb',
+                                            color: clientStatusFilter === 'expiring' ? '#ffffff' : '#b45309',
+                                            display: 'inline-flex',
+                                            alignItems: 'center',
+                                            gap: '7px',
+                                            transition: 'all 0.15s ease'
+                                        }}
+                                        title="View bookings expiring within the next 15 days"
+                                    >
+                                        <span>⚠️</span>
+                                        <span>Expiring Soon (≤15d)</span>
+                                        <span style={{ 
+                                            fontSize: '0.7rem', 
+                                            background: clientStatusFilter === 'expiring' ? 'rgba(255,255,255,0.2)' : '#fef3c7',
+                                            padding: '2px 7px', 
+                                            borderRadius: '10px' 
+                                        }}>{expiringBookingsCount}</span>
                                     </button>
 
                                     <button
@@ -10577,17 +10668,41 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                                                     <span style={{ fontSize: '0.68rem', padding: '2px 7px', background: '#ede9fe', color: '#6d28d9', borderRadius: '4px', fontWeight: 700, border: '1px solid #ddd6fe', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
                                                                         ⚡ Displaced ({b.displacedData?.status || 'Overridden'})
                                                                     </span>
-                                                                ) : isCurrent ? (
-                                                                    <span style={{ fontSize: '0.68rem', padding: '1px 6px', background: '#fee2e2', color: '#b91c1c', borderRadius: '4px', fontWeight: 700 }}>
-                                                                        ● Active Today
-                                                                    </span>
-                                                                ) : isFuture ? (
-                                                                    <span style={{ fontSize: '0.68rem', padding: '1px 6px', background: '#fef3c7', color: '#b45309', borderRadius: '4px', fontWeight: 700 }}>
+                                                                ) : b.isTodayActive ? (
+                                                                    b.daysRemaining !== null ? (
+                                                                        b.daysRemaining <= 0 ? (
+                                                                            <span style={{ fontSize: '0.68rem', padding: '2px 8px', background: '#fee2e2', color: '#991b1b', borderRadius: '4px', fontWeight: 800, border: '1px solid #fca5a5', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                                                                                🔴 Expires Today!
+                                                                            </span>
+                                                                        ) : b.daysRemaining === 1 ? (
+                                                                            <span style={{ fontSize: '0.68rem', padding: '2px 8px', background: '#fee2e2', color: '#991b1b', borderRadius: '4px', fontWeight: 800, border: '1px solid #fca5a5', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                                                                                🔴 Expires Tomorrow!
+                                                                            </span>
+                                                                        ) : b.daysRemaining <= 5 ? (
+                                                                            <span style={{ fontSize: '0.68rem', padding: '2px 8px', background: '#fee2e2', color: '#b91c1c', borderRadius: '4px', fontWeight: 800, border: '1px solid #fca5a5', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                                                                                🔴 Critical: {b.daysRemaining}d left
+                                                                            </span>
+                                                                        ) : b.daysRemaining <= 15 ? (
+                                                                            <span style={{ fontSize: '0.68rem', padding: '2px 8px', background: '#fef3c7', color: '#92400e', borderRadius: '4px', fontWeight: 700, border: '1px solid #fde68a', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                                                                                🟡 Expiring in {b.daysRemaining}d
+                                                                            </span>
+                                                                        ) : (
+                                                                            <span style={{ fontSize: '0.68rem', padding: '2px 8px', background: '#dcfce7', color: '#166534', borderRadius: '4px', fontWeight: 700, border: '1px solid #bbf7d0', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                                                                                ● Active ({b.daysRemaining}d left)
+                                                                            </span>
+                                                                        )
+                                                                    ) : (
+                                                                        <span style={{ fontSize: '0.68rem', padding: '2px 8px', background: '#fee2e2', color: '#b91c1c', borderRadius: '4px', fontWeight: 700 }}>
+                                                                            ● Active Today
+                                                                        </span>
+                                                                    )
+                                                                ) : b.isUpcoming ? (
+                                                                    <span style={{ fontSize: '0.68rem', padding: '2px 8px', background: '#fef3c7', color: '#b45309', borderRadius: '4px', fontWeight: 700 }}>
                                                                         ⏳ Upcoming Slot
                                                                     </span>
                                                                 ) : (
-                                                                    <span style={{ fontSize: '0.68rem', padding: '1px 6px', background: '#f1f5f9', color: '#64748b', borderRadius: '4px', fontWeight: 600 }}>
-                                                                        Completed
+                                                                    <span style={{ fontSize: '0.68rem', padding: '2px 8px', background: '#f1f5f9', color: '#64748b', borderRadius: '4px', fontWeight: 600 }}>
+                                                                        🏁 Completed
                                                                     </span>
                                                                 )}
                                                             </div>
@@ -10910,7 +11025,7 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                             style={{
                                 background: '#ffffff',
                                 borderRadius: '24px',
-                                maxWidth: '780px',
+                                maxWidth: '460px',
                                 width: '100%',
                                 overflow: 'hidden',
                                 boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25), 0 0 0 1px rgba(0, 0, 0, 0.05)',
@@ -10926,21 +11041,21 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                         width: '40px', 
                                         height: '40px', 
                                         borderRadius: '12px', 
-                                        background: '#0f172a', 
+                                        background: '#10b981', 
                                         color: '#ffffff', 
                                         display: 'flex', 
                                         alignItems: 'center', 
                                         justifyContent: 'center',
-                                        boxShadow: '0 4px 12px rgba(15, 23, 42, 0.25)'
+                                        boxShadow: '0 4px 12px rgba(16, 185, 129, 0.25)'
                                     }}>
-                                        <Download size={20} />
+                                        <Smartphone size={20} />
                                     </div>
                                     <div>
-                                        <h2 style={{ margin: 0, fontSize: '1.25rem', fontWeight: 700, color: '#1d1d1f', letterSpacing: '-0.02em' }}>
-                                            Get Official Applications
+                                        <h2 style={{ margin: 0, fontSize: '1.2rem', fontWeight: 800, color: '#1d1d1f', letterSpacing: '-0.02em' }}>
+                                            Staff Mobile Camera App
                                         </h2>
-                                        <p style={{ margin: 0, color: '#86868b', fontSize: '0.82rem' }}>
-                                            Ultra-fast native clients for on-ground field audits and desktop administration
+                                        <p style={{ margin: 0, color: '#86868b', fontSize: '0.8rem' }}>
+                                            Official Android APK for field audits & GPS photo verification
                                         </p>
                                     </div>
                                 </div>
@@ -10967,295 +11082,141 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                 </button>
                             </div>
 
-                            {/* Two App Cards Grid */}
-                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '20px' }}>
-                                
-                                {/* 📱 Card 1: Staff Camera Android APK */}
-                                <div style={{ 
-                                    background: '#fbfbfd', 
-                                    border: '1px solid #e5e5ea', 
-                                    borderRadius: '18px', 
-                                    padding: '18px', 
-                                    display: 'flex', 
-                                    flexDirection: 'column',
-                                    justifyContent: 'space-between'
-                                }}>
-                                    <div>
-                                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px' }}>
-                                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                                <div style={{ 
-                                                    width: '32px', 
-                                                    height: '32px', 
-                                                    borderRadius: '9px', 
-                                                    background: '#34c759', 
-                                                    color: '#ffffff', 
-                                                    display: 'flex', 
-                                                    alignItems: 'center', 
-                                                    justifyContent: 'center' 
-                                                }}>
-                                                    <Smartphone size={18} />
-                                                </div>
-                                                <div>
-                                                    <h3 style={{ margin: 0, fontSize: '0.96rem', fontWeight: 700, color: '#1d1d1f' }}>Heera Staff Camera</h3>
-                                                    <span style={{ fontSize: '0.72rem', color: '#86868b' }}>Android APK v{APP_VERSION}</span>
-                                                </div>
-                                            </div>
-                                            <span style={{ 
-                                                background: '#e8f8ed', 
-                                                color: '#248a3d', 
-                                                fontSize: '0.7rem', 
-                                                fontWeight: 700, 
-                                                padding: '3px 8px', 
-                                                borderRadius: '20px' 
-                                            }}>
-                                                15 MB
-                                            </span>
-                                        </div>
-
+                            {/* 📱 Staff Camera Android APK Card */}
+                            <div style={{ 
+                                background: '#fbfbfd', 
+                                border: '1px solid #e5e5ea', 
+                                borderRadius: '18px', 
+                                padding: '18px', 
+                                display: 'flex', 
+                                flexDirection: 'column',
+                                gap: '14px',
+                                marginBottom: '20px'
+                            }}>
+                                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                                         <div style={{ 
-                                            display: 'flex', 
-                                            flexDirection: 'column', 
-                                            gap: '5px', 
-                                            color: '#515154', 
-                                            fontSize: '0.78rem',
-                                            marginBottom: '12px'
-                                        }}>
-                                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                                <Check size={13} color="#34c759" /> <span>0s Instant Viewfinder</span>
-                                            </div>
-                                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                                <Check size={13} color="#34c759" /> <span>50m Geofenced GPS Matching</span>
-                                            </div>
-                                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                                <Check size={13} color="#34c759" /> <span>Offline Queue & Auto-Sync</span>
-                                            </div>
-                                        </div>
-
-                                        {/* QR Code Card */}
-                                        <div style={{ 
-                                            background: '#ffffff', 
-                                            border: '1px solid #e5e5ea', 
-                                            borderRadius: '12px', 
-                                            padding: '10px 12px', 
+                                            width: '32px', 
+                                            height: '32px', 
+                                            borderRadius: '9px', 
+                                            background: '#34c759', 
+                                            color: '#ffffff', 
                                             display: 'flex', 
                                             alignItems: 'center', 
-                                            gap: '12px',
-                                            marginBottom: '14px'
+                                            justifyContent: 'center' 
                                         }}>
-                                            <img 
-                                                src="https://api.qrserver.com/v1/create-qr-code/?size=100x100&data=https%3A%2F%2Fgithub.com%2Fkamleshgupta905%2FHoarding%2Freleases%2Fdownload%2Fstaff-apk-latest%2Fheera-staff-camera.apk" 
-                                                alt="Scan to Download APK" 
-                                                style={{ width: '64px', height: '64px', borderRadius: '8px', border: '1px solid #e5e5ea', flexShrink: 0 }}
-                                            />
-                                            <div style={{ fontSize: '0.74rem', color: '#6e6e73' }}>
-                                                <div style={{ fontWeight: 600, color: '#1d1d1f', marginBottom: '2px', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                                                    <QrCode size={13} color="#34c759" /> Scan with Phone
-                                                </div>
-                                                Direct download & install APK on Android.
-                                            </div>
+                                            <Smartphone size={18} />
+                                        </div>
+                                        <div>
+                                            <h3 style={{ margin: 0, fontSize: '0.96rem', fontWeight: 700, color: '#1d1d1f' }}>Heera Staff Camera</h3>
+                                            <span style={{ fontSize: '0.72rem', color: '#86868b' }}>Android APK v{APP_VERSION}</span>
                                         </div>
                                     </div>
+                                    <span style={{ 
+                                        background: '#e8f8ed', 
+                                        color: '#248a3d', 
+                                        fontSize: '0.7rem', 
+                                        fontWeight: 700, 
+                                        padding: '3px 8px', 
+                                        borderRadius: '20px' 
+                                    }}>
+                                        15 MB
+                                    </span>
+                                </div>
 
-                                    <div style={{ display: 'flex', gap: '8px' }}>
-                                        <a 
-                                            href="https://github.com/kamleshgupta905/Hoarding/releases/download/staff-apk-latest/heera-staff-camera.apk" 
-                                            target="_blank" 
-                                            rel="noopener noreferrer"
-                                            style={{
-                                                flex: 1,
-                                                background: '#34c759',
-                                                color: '#ffffff',
-                                                padding: '9px 12px',
-                                                borderRadius: '10px',
-                                                fontWeight: 600,
-                                                fontSize: '0.82rem',
-                                                textDecoration: 'none',
-                                                display: 'flex',
-                                                alignItems: 'center',
-                                                justifyContent: 'center',
-                                                gap: '6px',
-                                                transition: 'opacity 0.15s ease'
-                                            }}
-                                            onMouseEnter={e => e.currentTarget.style.opacity = '0.9'}
-                                            onMouseLeave={e => e.currentTarget.style.opacity = '1'}
-                                        >
-                                            <Download size={14} /> Download APK
-                                        </a>
-                                        <button 
-                                            type="button"
-                                            onClick={() => {
-                                                if (navigator.clipboard) {
-                                                    navigator.clipboard.writeText('https://github.com/kamleshgupta905/Hoarding/releases/download/staff-apk-latest/heera-staff-camera.apk');
-                                                    setApkCopied(true);
-                                                    setTimeout(() => setApkCopied(false), 2000);
-                                                }
-                                            }}
-                                            style={{ 
-                                                background: apkCopied ? '#e8f8ed' : '#ffffff', 
-                                                border: `1px solid ${apkCopied ? '#34c759' : '#d2d2d7'}`, 
-                                                color: apkCopied ? '#248a3d' : '#1d1d1f', 
-                                                padding: '9px 12px', 
-                                                borderRadius: '10px', 
-                                                fontSize: '0.78rem', 
-                                                fontWeight: 600, 
-                                                cursor: 'pointer',
-                                                display: 'flex',
-                                                alignItems: 'center',
-                                                gap: '4px'
-                                            }}
-                                        >
-                                            {apkCopied ? <Check size={13} /> : <Share2 size={13} />}
-                                            <span>{apkCopied ? 'Copied' : 'Copy'}</span>
-                                        </button>
+                                <div style={{ 
+                                    display: 'flex', 
+                                    flexDirection: 'column', 
+                                    gap: '5px', 
+                                    color: '#515154', 
+                                    fontSize: '0.78rem'
+                                }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                        <Check size={13} color="#34c759" /> <span>0s Instant Viewfinder</span>
+                                    </div>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                        <Check size={13} color="#34c759" /> <span>50m Geofenced GPS Matching</span>
+                                    </div>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                        <Check size={13} color="#34c759" /> <span>Offline Queue & Auto-Sync</span>
                                     </div>
                                 </div>
 
-                                {/* 💻 Card 2: Windows Desktop App (.exe) */}
+                                {/* QR Code Card */}
                                 <div style={{ 
-                                    background: '#fbfbfd', 
+                                    background: '#ffffff', 
                                     border: '1px solid #e5e5ea', 
-                                    borderRadius: '18px', 
-                                    padding: '18px', 
+                                    borderRadius: '12px', 
+                                    padding: '10px 12px', 
                                     display: 'flex', 
-                                    flexDirection: 'column',
-                                    justifyContent: 'space-between'
+                                    alignItems: 'center', 
+                                    gap: '12px'
                                 }}>
-                                    <div>
-                                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px' }}>
-                                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                                <div style={{ 
-                                                    width: '32px', 
-                                                    height: '32px', 
-                                                    borderRadius: '9px', 
-                                                    background: '#0f172a', 
-                                                    color: '#ffffff', 
-                                                    display: 'flex', 
-                                                    alignItems: 'center', 
-                                                    justifyContent: 'center' 
-                                                }}>
-                                                    <Monitor size={18} />
-                                                </div>
-                                                <div>
-                                                    <h3 style={{ margin: 0, fontSize: '0.96rem', fontWeight: 700, color: '#1d1d1f' }}>Heera Hoardings PC</h3>
-                                                    <span style={{ fontSize: '0.72rem', color: '#86868b' }}>Windows Setup (.exe) • {latestDesktopRelease?.tag || `v${APP_VERSION}`}</span>
-                                                </div>
-                                            </div>
-                                            <span style={{ 
-                                                background: '#f1f5f9', 
-                                                color: '#334155', 
-                                                fontSize: '0.7rem', 
-                                                fontWeight: 700, 
-                                                padding: '3px 8px', 
-                                                borderRadius: '20px' 
-                                            }}>
-                                                64-bit
-                                            </span>
+                                    <img 
+                                        src="https://api.qrserver.com/v1/create-qr-code/?size=100x100&data=https%3A%2F%2Fgithub.com%2Fkamleshgupta905%2FHoarding%2Freleases%2Fdownload%2Fstaff-apk-latest%2Fheera-staff-camera.apk" 
+                                        alt="Scan to Download APK" 
+                                        style={{ width: '64px', height: '64px', borderRadius: '8px', border: '1px solid #e5e5ea', flexShrink: 0 }}
+                                    />
+                                    <div style={{ fontSize: '0.74rem', color: '#6e6e73' }}>
+                                        <div style={{ fontWeight: 600, color: '#1d1d1f', marginBottom: '2px', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                            <QrCode size={13} color="#34c759" /> Scan with Phone
                                         </div>
-
-                                        <div style={{ 
-                                            display: 'flex', 
-                                            flexDirection: 'column', 
-                                            gap: '5px', 
-                                            color: '#515154', 
-                                            fontSize: '0.78rem',
-                                            marginBottom: '12px'
-                                        }}>
-                                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                                <Check size={13} color="#0f172a" /> <span>60 FPS Native Performance</span>
-                                            </div>
-                                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                                <Check size={13} color="#0f172a" /> <span>Full Excel Sheet & Audit Sync</span>
-                                            </div>
-                                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                                <Check size={13} color="#0f172a" /> <span>Desktop Notifications & Alerts</span>
-                                            </div>
-                                        </div>
-
-                                        {/* Desktop Info Box */}
-                                        <div style={{ 
-                                            background: '#ffffff', 
-                                            border: '1px solid #e5e5ea', 
-                                            borderRadius: '12px', 
-                                            padding: '10px 12px', 
-                                            display: 'flex', 
-                                            alignItems: 'center', 
-                                            gap: '12px',
-                                            marginBottom: '14px'
-                                        }}>
-                                            <div style={{ 
-                                                width: '38px', 
-                                                height: '38px', 
-                                                borderRadius: '10px', 
-                                                background: '#f8fafc', 
-                                                display: 'flex', 
-                                                alignItems: 'center', 
-                                                justifyContent: 'center', 
-                                                color: '#0f172a',
-                                                flexShrink: 0 
-                                            }}>
-                                                <Sparkles size={18} />
-                                            </div>
-                                            <div style={{ fontSize: '0.74rem', color: '#6e6e73' }}>
-                                                <div style={{ fontWeight: 600, color: '#1d1d1f', marginBottom: '2px' }}>
-                                                    Standalone Desktop Client
-                                                </div>
-                                                Zero browser overhead with automated updates.
-                                            </div>
-                                        </div>
-                                    </div>
-
-                                    <div style={{ display: 'flex', gap: '8px' }}>
-                                        <a 
-                                            href={latestDesktopRelease?.setupUrl || "https://github.com/kamleshgupta905/hoarding-desktop-releases/releases/latest"} 
-                                            target="_blank" 
-                                            rel="noopener noreferrer"
-                                            style={{
-                                                flex: 1,
-                                                background: '#0f172a',
-                                                color: '#ffffff',
-                                                padding: '9px 12px',
-                                                borderRadius: '10px',
-                                                fontWeight: 600,
-                                                fontSize: '0.82rem',
-                                                textDecoration: 'none',
-                                                display: 'flex',
-                                                alignItems: 'center',
-                                                justifyContent: 'center',
-                                                gap: '6px',
-                                                transition: 'opacity 0.15s ease'
-                                            }}
-                                            onMouseEnter={e => e.currentTarget.style.opacity = '0.9'}
-                                            onMouseLeave={e => e.currentTarget.style.opacity = '1'}
-                                        >
-                                            <Download size={14} /> Desktop Releases
-                                        </a>
-                                        <button 
-                                            type="button"
-                                            onClick={() => {
-                                                setIsAppDownloadModalOpen(false);
-                                                setActiveTab('guide');
-                                            }}
-                                            style={{ 
-                                                background: '#ffffff', 
-                                                border: '1px solid #d2d2d7', 
-                                                color: '#1d1d1f', 
-                                                padding: '9px 12px', 
-                                                borderRadius: '10px', 
-                                                fontSize: '0.78rem', 
-                                                fontWeight: 600, 
-                                                cursor: 'pointer',
-                                                display: 'flex',
-                                                alignItems: 'center',
-                                                gap: '4px'
-                                            }}
-                                            title="View System Guide"
-                                        >
-                                            <BookOpen size={13} />
-                                            <span>Guide</span>
-                                        </button>
+                                        Direct download & install APK on Android.
                                     </div>
                                 </div>
 
+                                <div style={{ display: 'flex', gap: '8px' }}>
+                                    <a 
+                                        href="https://github.com/kamleshgupta905/Hoarding/releases/download/staff-apk-latest/heera-staff-camera.apk" 
+                                        target="_blank" 
+                                        rel="noopener noreferrer"
+                                        style={{
+                                            flex: 1,
+                                            background: '#34c759',
+                                            color: '#ffffff',
+                                            padding: '9px 12px',
+                                            borderRadius: '10px',
+                                            fontWeight: 600,
+                                            fontSize: '0.82rem',
+                                            textDecoration: 'none',
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            justifyContent: 'center',
+                                            gap: '6px',
+                                            transition: 'opacity 0.15s ease'
+                                        }}
+                                        onMouseEnter={e => e.currentTarget.style.opacity = '0.9'}
+                                        onMouseLeave={e => e.currentTarget.style.opacity = '1'}
+                                    >
+                                        <Download size={14} /> Download APK
+                                    </a>
+                                    <button 
+                                        type="button"
+                                        onClick={() => {
+                                            if (navigator.clipboard) {
+                                                navigator.clipboard.writeText('https://github.com/kamleshgupta905/Hoarding/releases/download/staff-apk-latest/heera-staff-camera.apk');
+                                                setApkCopied(true);
+                                                setTimeout(() => setApkCopied(false), 2000);
+                                            }
+                                        }}
+                                        style={{ 
+                                            background: apkCopied ? '#e8f8ed' : '#ffffff', 
+                                            border: `1px solid ${apkCopied ? '#34c759' : '#d2d2d7'}`, 
+                                            color: apkCopied ? '#248a3d' : '#1d1d1f', 
+                                            padding: '9px 12px', 
+                                            borderRadius: '10px', 
+                                            fontSize: '0.78rem', 
+                                            fontWeight: 600, 
+                                            cursor: 'pointer',
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            gap: '4px'
+                                        }}
+                                    >
+                                        {apkCopied ? <Check size={13} /> : <Share2 size={13} />}
+                                        <span>{apkCopied ? 'Copied' : 'Copy'}</span>
+                                    </button>
+                                </div>
                             </div>
 
                             {/* Modal Footer */}
@@ -11623,6 +11584,15 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                             });
                         }}
                         showToast={showToast}
+                    />
+                )}
+
+                {/* 🗺️ Starred Sites Real GPS Google Map Modal */}
+                {isStarredMapModalOpen && (
+                    <StarredMapModal
+                        isOpen={isStarredMapModalOpen}
+                        onClose={() => setIsStarredMapModalOpen(false)}
+                        starredSites={starredSites}
                     />
                 )}
 

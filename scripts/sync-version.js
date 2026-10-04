@@ -16,10 +16,11 @@ const iso = new Date(now).toISOString();
 const publicVersionPath = path.join(rootDir, 'public', 'version.json');
 let publicVersionData = {
   features: [
-    "Occupancy Heatmap & 15-Days Renewal Predictor with visual radar alerts",
-    "Bulk Multi-Client Campaign Onboarding Wizard (Excel & PPT Auto-Matcher)",
-    "Automated Inventory Conflict Radar & Overlap Prevention Engine",
-    "Over-the-air automatic updates for Desktop, Web, and Mobile apps"
+    "Custom Renewal Horizon (7d-60d) & Dynamic Expiry Countdown Badges",
+    "Starred Google Maps Navigation, Live Route Map & KML/CSV Export",
+    "Clean Client Proposal Excel Export without Image Link Column",
+    "Compact Live Telemetry Radar with Quick Accordion Toggle",
+    "Direct Phone Call & Audit Verification Portal (WhatsApp Purged)"
   ]
 };
 

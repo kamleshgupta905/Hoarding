@@ -9,9 +9,10 @@ export default function RenewalAlertRadar({
   onOpenBookingModal = null,
   onReleaseSite = null 
 }) {
+  const [thresholdDays, setThresholdDays] = useState(15);
   const [activeFilter, setActiveFilter] = useState('all'); // 'all', 'critical', 'overdue', 'standard'
   const [searchTerm, setSearchTerm] = useState('');
-  const [dismissedSiteIds, setDismissedSiteIds] = useState(() => {
+  const [dismissedKeys, setDismissedKeys] = useState(() => {
     try {
       return new Set(JSON.parse(localStorage.getItem('adh_dismissed_renewal_alerts') || '[]'));
     } catch {
@@ -19,10 +20,10 @@ export default function RenewalAlertRadar({
     }
   });
 
-  // Calculate live expiring list (<= 15 days or overdue)
+  // Calculate live expiring list (<= thresholdDays or overdue)
   const expiringItems = useMemo(() => {
-    return getExpiringSites(hoardings, 15);
-  }, [hoardings]);
+    return getExpiringSites(hoardings, thresholdDays);
+  }, [hoardings, thresholdDays]);
 
   // Aggregate stats
   const stats = useMemo(() => {
@@ -33,7 +34,8 @@ export default function RenewalAlertRadar({
 
     expiringItems.forEach(({ site, occupancy }) => {
       const siteId = site._SiteID || site.UniqueID || site.SL || site.Location || '';
-      if (dismissedSiteIds.has(siteId)) return;
+      const dismissalKey = `${siteId}_${occupancy.formattedEndDate || 'current'}`;
+      if (dismissedKeys.has(dismissalKey) || dismissedKeys.has(siteId)) return;
 
       if (occupancy.isOverdue) overdueCount++;
       else if (occupancy.statusTier === 'critical') criticalCount++;
@@ -53,13 +55,14 @@ export default function RenewalAlertRadar({
       standard: standardCount,
       totalRevenueRisk
     };
-  }, [expiringItems, dismissedSiteIds]);
+  }, [expiringItems, dismissedKeys]);
 
   // Filtered list
   const filteredItems = useMemo(() => {
     return expiringItems.filter(({ site, occupancy }) => {
       const siteId = site._SiteID || site.UniqueID || site.SL || site.Location || '';
-      if (dismissedSiteIds.has(siteId)) return false;
+      const dismissalKey = `${siteId}_${occupancy.formattedEndDate || 'current'}`;
+      if (dismissedKeys.has(dismissalKey) || dismissedKeys.has(siteId)) return false;
 
       if (activeFilter === 'critical' && occupancy.statusTier !== 'critical') return false;
       if (activeFilter === 'overdue' && !occupancy.isOverdue) return false;
@@ -75,13 +78,14 @@ export default function RenewalAlertRadar({
 
       return true;
     });
-  }, [expiringItems, activeFilter, searchTerm, dismissedSiteIds]);
+  }, [expiringItems, activeFilter, searchTerm, dismissedKeys]);
 
-  const handleDismiss = (siteId, e) => {
+  const handleDismiss = (siteId, formattedEndDate, e) => {
     e.stopPropagation();
-    setDismissedSiteIds(prev => {
+    const dismissalKey = `${siteId}_${formattedEndDate || 'current'}`;
+    setDismissedKeys(prev => {
       const next = new Set(prev);
-      next.add(siteId);
+      next.add(dismissalKey);
       try {
         localStorage.setItem('adh_dismissed_renewal_alerts', JSON.stringify([...next]));
       } catch {}
@@ -89,15 +93,68 @@ export default function RenewalAlertRadar({
     });
   };
 
+  const handleResetDismissed = () => {
+    setDismissedKeys(new Set());
+    try {
+      localStorage.removeItem('adh_dismissed_renewal_alerts');
+    } catch {}
+  };
+
   if (stats.total === 0) {
     return (
-      <div className="renewal-radar-panel renewal-radar-empty">
-        <div className="radar-empty-badge">
-          <CheckCircle size={24} className="text-emerald-400" />
+      <div className="renewal-radar-panel renewal-radar-empty" style={{ flexWrap: 'wrap', gap: '14px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '14px', flex: '1 1 320px' }}>
+          <div className="radar-empty-badge">
+            <CheckCircle size={24} className="text-emerald-400" />
+          </div>
+          <div className="radar-empty-content">
+            <h4>All Hoardings Secure</h4>
+            <p>No hoardings are expiring in the next <strong>{thresholdDays} days</strong>. All active campaign bookings are retained.</p>
+          </div>
         </div>
-        <div className="radar-empty-content">
-          <h4>All Hoardings Secure</h4>
-          <p>No hoardings are expiring in the next 15 days. All active campaign bookings are fully retained.</p>
+
+        {/* Quick Horizon Selector */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginLeft: 'auto', flexWrap: 'wrap' }}>
+          <span style={{ fontSize: '0.75rem', fontWeight: 600, color: '#047857', marginRight: '2px' }}>Check Window:</span>
+          {[7, 15, 30, 45, 60].map(days => (
+            <button
+              key={days}
+              type="button"
+              onClick={() => setThresholdDays(days)}
+              style={{
+                padding: '4px 10px',
+                borderRadius: '6px',
+                fontSize: '0.75rem',
+                fontWeight: thresholdDays === days ? 700 : 500,
+                border: thresholdDays === days ? '1px solid #059669' : '1px solid #a7f3d0',
+                background: thresholdDays === days ? '#059669' : '#ffffff',
+                color: thresholdDays === days ? '#ffffff' : '#065f46',
+                cursor: 'pointer',
+                transition: 'all 0.15s ease'
+              }}
+            >
+              {days}d
+            </button>
+          ))}
+          {dismissedKeys.size > 0 && (
+            <button
+              type="button"
+              onClick={handleResetDismissed}
+              style={{
+                padding: '4px 8px',
+                borderRadius: '6px',
+                fontSize: '0.7rem',
+                border: '1px solid #d1d5db',
+                background: '#ffffff',
+                color: '#6b7280',
+                cursor: 'pointer',
+                marginLeft: '4px'
+              }}
+              title="Unhide previously dismissed alerts"
+            >
+              Reset Dismissed
+            </button>
+          )}
         </div>
       </div>
     );
@@ -114,13 +171,57 @@ export default function RenewalAlertRadar({
             <div className="radar-title-row">
               <h3>Expiring Bookings</h3>
               <span className="radar-pulse-badge">
-                {stats.total} in the next 15 days
+                {stats.total} in next {thresholdDays} days
               </span>
             </div>
             <p className="radar-subtitle">
               Renew or release these sites before they go vacant.
             </p>
           </div>
+        </div>
+
+        {/* Horizon selector on top right */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+          <span style={{ fontSize: '0.75rem', fontWeight: 600, color: '#64748b', marginRight: '2px' }}>Horizon:</span>
+          {[7, 15, 30, 45, 60].map(days => (
+            <button
+              key={days}
+              type="button"
+              onClick={() => setThresholdDays(days)}
+              style={{
+                padding: '4px 9px',
+                borderRadius: '6px',
+                fontSize: '0.75rem',
+                fontWeight: thresholdDays === days ? 700 : 500,
+                border: thresholdDays === days ? '1px solid #d97706' : '1px solid #e2e8f0',
+                background: thresholdDays === days ? '#fef3c7' : '#ffffff',
+                color: thresholdDays === days ? '#92400e' : '#64748b',
+                cursor: 'pointer',
+                transition: 'all 0.15s ease'
+              }}
+            >
+              {days}d
+            </button>
+          ))}
+          {dismissedKeys.size > 0 && (
+            <button
+              type="button"
+              onClick={handleResetDismissed}
+              style={{
+                padding: '4px 8px',
+                borderRadius: '6px',
+                fontSize: '0.7rem',
+                border: '1px solid #e2e8f0',
+                background: '#f8fafc',
+                color: '#64748b',
+                cursor: 'pointer',
+                marginLeft: '4px'
+              }}
+              title="Unhide previously dismissed alerts"
+            >
+              Reset Dismissed
+            </button>
+          )}
         </div>
       </div>
 
@@ -162,7 +263,7 @@ export default function RenewalAlertRadar({
           onClick={() => setActiveFilter('standard')}
         >
           <span className="metric-dot standard"></span>
-          <span className="metric-name">5 - 15 Days</span>
+          <span className="metric-name">5 - {thresholdDays} Days</span>
           <span className="metric-count">{stats.standardCount}</span>
         </button>
       </div>
@@ -206,7 +307,7 @@ export default function RenewalAlertRadar({
                 className="radar-card-dismiss-btn"
                 title="Dismiss alert"
                 aria-label="Dismiss alert"
-                onClick={(e) => handleDismiss(siteId || siteLoc, e)}
+                onClick={(e) => handleDismiss(siteId || siteLoc, occupancy.formattedEndDate, e)}
               >
                 ×
               </button>

@@ -558,14 +558,6 @@ const HoardingDetail = ({ hoardings, setHoardings }) => {
         }
     };
 
-    const handleShareAudit = () => {
-        const cityStr = String(hoarding.City || hoarding.city || 'all').toLowerCase();
-        const siteLoc = hoarding["Location "] || hoarding.Location || hoarding["Locality Site Location"] || decodedSiteName || 'Site';
-        const auditLink = `${window.location.origin}/audit/${cityStr}/${encodeURIComponent(siteLoc)}`;
-        const message = `👋 *Audit Required*\n\nSite: *${siteLoc}*\nCity: *${hoarding.City || hoarding.city || 'Meerut'}*\n\nPlease click the link below to take a live site photo for verification:\n\n🔗 ${auditLink}`;
-        window.open(`https://wa.me/?text=${encodeURIComponent(message)}`, '_blank');
-    };
-
     const handleCopyLink = () => {
         const cityStr = String(hoarding.City || hoarding.city || 'all').toLowerCase();
         const siteLoc = hoarding["Location "] || hoarding.Location || hoarding["Locality Site Location"] || decodedSiteName || 'Site';
@@ -1061,12 +1053,12 @@ const HoardingDetail = ({ hoardings, setHoardings }) => {
                             </div>
 
                             <div className="booking-actions">
-                                <button
-                                    className="whatsapp-btn-large"
-                                    onClick={() => window.open(`https://wa.me/919569528771?text=Hi, I am interested in booking the hoarding site: ${encodeURIComponent(hoarding["Location "])} in ${hoarding.City}. Please share more details.`, '_blank')}
+                                <a
+                                    href="tel:+919569528771"
+                                    className="call-enquiry-btn-large"
                                 >
-                                    <Phone size={20} fill="currentColor" /> Book via WhatsApp
-                                </button>
+                                    <Phone size={20} fill="currentColor" /> Call for Booking & Rates
+                                </a>
 
                                 <label className="audit-upload-btn-sidebar">
                                     <Camera size={18} /> Add Site Audit Photo(s)
@@ -1084,15 +1076,13 @@ const HoardingDetail = ({ hoardings, setHoardings }) => {
                                     <MapPin size={18} /> View Accurate Map Location
                                 </button>
                                 <div className="share-actions-group">
-                                    <button className="location-btn-large share" style={{ background: '#25D366', borderColor: '#25D366', color: 'white' }} onClick={handleShareAudit}>
-                                        <Send size={18} /> WhatsApp Link
-                                    </button>
                                     <button 
                                         className={`location-btn-large copy ${copySuccess ? 'success' : ''}`} 
                                         onClick={handleCopyLink}
+                                        style={{ width: '100%' }}
                                     >
                                         {copySuccess ? <Check size={18} /> : <Copy size={18} />}
-                                        {copySuccess ? 'Copied!' : 'Copy Link'}
+                                        {copySuccess ? 'Audit Link Copied!' : 'Copy Site Audit Link'}
                                     </button>
                                 </div>
                             </div>

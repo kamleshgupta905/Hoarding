@@ -459,7 +459,7 @@ const requestGps = () => new Promise((resolve) => {
             else if (err.code === 3) errorMsg = 'GPS signal dhoondh raha hai. Dobara try karein.';
             resolve({ latitude: null, longitude: null, accuracy: null, capturedAt: new Date().toISOString(), error: errorMsg, code: err.code });
         },
-        { enableHighAccuracy: true, timeout: 12000, maximumAge: 0 }
+        { enableHighAccuracy: true, timeout: 25000, maximumAge: 0 }
     );
 });
 
@@ -935,6 +935,9 @@ const StaffUpload = () => {
         unlockAudio();
         if (!videoRef.current || !cameraReady || isCapturing) return;
 
+        // 🛡️ Immediately lock shutter to prevent double-click / duplicate captures
+        setIsCapturing(true);
+
         // Play crisp shutter snap sound immediately
         playChime('shutter');
 
@@ -950,6 +953,7 @@ const StaffUpload = () => {
                 setGpsError(null);
                 setIsGpsPromptOpen(false);
             } else {
+                setIsCapturing(false);
                 setGpsError(freshGps.error || 'Photo lene se pehle phone ki Location ON karein.');
                 setIsGpsPromptOpen(true);
                 playChime('gps');
@@ -958,7 +962,6 @@ const StaffUpload = () => {
             }
         }
 
-        setIsCapturing(true);
         setIsAiMatching(true);
 
 
@@ -1290,7 +1293,7 @@ const StaffUpload = () => {
                     <div className="guard-actions">
                         <button type="button" className="guard-copy-btn" onClick={handleCopyLink}>
                             {copiedLink ? <Check size={16} /> : <Share2 size={16} />}
-                            <span>{copiedLink ? 'Link Copied! WhatsApp pe share karein' : 'Copy Link for WhatsApp'}</span>
+                            <span>{copiedLink ? 'Link Copied!' : 'Copy Portal Link'}</span>
                         </button>
                         <a href="/admin" className="guard-admin-btn">
                             <span>Open Admin Dashboard</span>
@@ -1483,10 +1486,10 @@ const StaffUpload = () => {
                     <strong>{uploadedCount}</strong>
                     <span>Uploaded</span>
                 </div>
-                <div>
-                    <RefreshCw size={18} className={isUploading || isAiMatching ? 'spin' : ''} />
+                <div style={pendingCount > 0 ? { borderColor: 'rgba(245, 158, 11, 0.6)', background: 'rgba(245, 158, 11, 0.2)' } : {}}>
+                    <RefreshCw size={18} className={isUploading || isAiMatching ? 'spin' : ''} style={pendingCount > 0 ? { color: '#f59e0b' } : {}} />
                     <strong>{pendingCount}</strong>
-                    <span>{isAiMatching ? 'Matching...' : 'Pending'}</span>
+                    <span>{isAiMatching ? 'Matching...' : isUploading ? 'Syncing...' : pendingCount > 0 ? 'Queued' : 'Synced'}</span>
                 </div>
             </div>
 

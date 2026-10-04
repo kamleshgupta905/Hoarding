@@ -36,15 +36,6 @@ const Footer = () => {
                         across India's most strategic transit corridors.
                     </p>
                     <div className="social-row">
-                        <a
-                            href={`https://wa.me/${CONTACT_PHONE_DIGITS}`}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="social-pill"
-                            aria-label="Chat with us on WhatsApp"
-                        >
-                            <MessageCircle size={18} />
-                        </a>
                         <a href={`mailto:${CONTACT_EMAIL}`} className="social-pill" aria-label="Email our media desk">
                             <Mail size={18} />
                         </a>
@@ -67,13 +58,8 @@ const Footer = () => {
                 <div className="footer-links-group">
                     <h4>Get in Touch</h4>
                     <ul>
-                        <li>
-                            <a href={`https://wa.me/${CONTACT_PHONE_DIGITS}`} target="_blank" rel="noopener noreferrer">
-                                WhatsApp Enquiry
-                            </a>
-                        </li>
-                        <li><a href={`mailto:${CONTACT_EMAIL}`}>Send us a Brief</a></li>
-                        <li><a href={`tel:+${CONTACT_PHONE_DIGITS}`}>Call Media Desk</a></li>
+                        <li><a href={`tel:+${CONTACT_PHONE_DIGITS}`}>Call Media Desk: +{CONTACT_PHONE_DIGITS}</a></li>
+                        <li><a href={`mailto:${CONTACT_EMAIL}`}>Send us a Brief: {CONTACT_EMAIL}</a></li>
                         <li><Link to="/all">Request a Quote</Link></li>
                     </ul>
                 </div>

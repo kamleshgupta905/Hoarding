@@ -328,10 +328,10 @@
     margin-bottom: 32px;
 }
 
-.whatsapp-btn-large {
+.call-enquiry-btn-large {
     width: 100%;
     padding: 16px;
-    background: #25D366; /* WhatsApp Green */
+    background: #111827;
     color: white;
     border: none;
     border-radius: 16px;
@@ -342,14 +342,16 @@
     justify-content: center;
     gap: 12px;
     cursor: pointer;
-    box-shadow: 0 10px 20px rgba(37, 211, 102, 0.2);
+    box-shadow: 0 10px 20px rgba(17, 24, 39, 0.15);
     transition: all 0.3s ease;
+    text-decoration: none;
 }
 
-.whatsapp-btn-large:hover {
-    background: #20BA5A;
+.call-enquiry-btn-large:hover {
+    background: #1f2937;
     transform: translateY(-2px);
-    box-shadow: 0 15px 25px rgba(37, 211, 102, 0.3);
+    box-shadow: 0 15px 25px rgba(17, 24, 39, 0.25);
+    color: white;
 }
 
 .audit-upload-btn-sidebar {

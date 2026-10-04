@@ -92,7 +92,7 @@ const EnquiryForm = ({ siteName, city }) => {
             <button type="submit" disabled={loading} className="submit-enquiry-btn">
                 {loading ? 'Sending...' : <><Send size={18} /> Send Enquiry</>}
             </button>
-            <p className="form-footer">You will receive a quote via Phone/WhatsApp.</p>
+            <p className="form-footer">You will receive a quote via Phone / Email.</p>
         </form>
     );
 };

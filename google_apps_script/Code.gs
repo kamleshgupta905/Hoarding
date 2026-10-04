@@ -126,6 +126,8 @@ function doPost(e) {
     if (p.action === 'refreshSession') return refreshAdminSession_(p);
     if (p.action === 'changeAdminPassword') return changeAdminPassword_(p);
     if (p.action === 'setGroqFallbackKey') return setGroqFallbackKey_(p);
+    if (p.action === 'setGeminiApiKey') return setGeminiApiKey_(p);
+    if (p.action === 'geminiVision') return callGeminiVisionProxy_(p);
     if (p.action === 'previewExcelImport') return previewExcelImport(p);
     if (p.action === 'approveExcelImport') return approveExcelImport(p);
     if (p.action === 'uploadPptAndProcess') return uploadPptAndProcess_(p);
@@ -466,6 +468,42 @@ function setGroqFallbackKey_(data) {
   return res({ success: true });
 }
 
+function setGeminiApiKey_(data) {
+  if (!isValidAdminSession_(data.sessionToken)) return res({ success: false, error: 'Authentication required.' });
+  var key = String(data.key || '').trim();
+  if (!key) return res({ success: false, error: 'API key is required.' });
+  PropertiesService.getScriptProperties().setProperty('GEMINI_API_KEY', key);
+  return res({ success: true });
+}
+
+function callGeminiVisionProxy_(data) {
+  var properties = PropertiesService.getScriptProperties();
+  var apiKey = properties.getProperty('GEMINI_API_KEY') || properties.getProperty('ADH_GEMINI_API_KEY');
+  if (!apiKey) {
+    return res({ success: false, error: 'GEMINI_API_KEY not configured in Apps Script properties.' });
+  }
+  var model = data.model || 'gemini-flash-latest';
+  var endpoint = 'https://generativelanguage.googleapis.com/v1beta/models/' + model + ':generateContent?key=' + apiKey;
+
+  try {
+    var response = UrlFetchApp.fetch(endpoint, {
+      method: 'post',
+      contentType: 'application/json',
+      payload: JSON.stringify(data.payload),
+      muteHttpExceptions: true
+    });
+    var code = response.getResponseCode();
+    var content = response.getContentText();
+    if (code >= 200 && code < 300) {
+      return res({ success: true, text: content });
+    } else {
+      return res({ success: false, status: code, error: content });
+    }
+  } catch (err) {
+    return res({ success: false, error: err.toString() });
+  }
+}
+
 function requestAdminLogin_(data) {
   var requestId = String(data.requestId || Utilities.getUuid());
   var properties = PropertiesService.getScriptProperties();
@@ -503,8 +541,6 @@ function getLoginStatus_(requestId) {
 function isValidAdminSession_(token) {
   if (!token) return false;
   var str = String(token).trim();
-  if (str === 'adm_session_master_authorized') return true;
-  if (str.indexOf('auth_') === 0 || str.indexOf('adm_') === 0 || /^[a-f0-9]{24,64}$/i.test(str)) return true;
   return !!CacheService.getScriptCache().get('session:' + str);
 }
 

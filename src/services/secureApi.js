@@ -179,12 +179,14 @@ export const pullAdminChanges = async (since = -1) => {
 };
 
 export const getOperationStatus = async (operationId) => {
-  const sessionToken = getAdminSession() || 'adm_session_master_authorized';
+  const sessionToken = getAdminSession();
+  if (!sessionToken) throw new Error('Admin session required.');
   return getJson({ action: 'operationStatus', operationId, sessionToken }, 30000);
 };
 
 export const submitAdminOperation = async ({ type, payload = {}, siteId = '', baseVersion = null, operationId = createOperationId() }, options = {}) => {
-  const sessionToken = getAdminSession() || 'adm_session_master_authorized';
+  const sessionToken = getAdminSession();
+  if (!sessionToken) throw new Error('Admin session required.');
 
   // Combined payload compatible with all Google Apps Script deployment versions
   const combinedPayload = {

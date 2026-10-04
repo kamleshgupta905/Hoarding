@@ -2394,8 +2394,10 @@ export const PROPOSAL_COLUMNS = [
 export const exportProposalExcel = (sites, fileName = 'hoarding-proposal.xls', selectedHeaders = null) => {
   if (!sites || sites.length === 0) return false;
 
-  const selectedSet = new Set(selectedHeaders && selectedHeaders.length ? selectedHeaders : PROPOSAL_COLUMNS.map(([label]) => label));
-  const columns = PROPOSAL_COLUMNS.filter(([label]) => selectedSet.has(label));
+  // 🛡️ Omit 'Image Link' column from excel exports per client proposal standard
+  const availableColumns = PROPOSAL_COLUMNS.filter(([label]) => label !== 'Image Link');
+  const selectedSet = new Set(selectedHeaders && selectedHeaders.length ? selectedHeaders : availableColumns.map(([label]) => label));
+  const columns = availableColumns.filter(([label]) => selectedSet.has(label) && label !== 'Image Link');
 
   let totalRent = 0;
 
