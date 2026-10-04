@@ -1919,7 +1919,7 @@ export const fetchHoardings = async (forceFresh = false) => {
       const fetchUrl = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:csv&sheet=${SHEET_NAME}&_t=${Date.now()}`;
       const rawData = await requestText(fetchUrl, { credentials: 'omit' }, 12000);
       const parsed = Papa.parse(rawData, { header: true, skipEmptyLines: true });
-      if (parsed.data && parsed.data.length > 0) {
+      if (parsed.data) {
         parsedData = parsed.data;
         isLoaded = true;
       }
@@ -1929,12 +1929,12 @@ export const fetchHoardings = async (forceFresh = false) => {
   }
 
   // Tier 2: Secure Apps Script Backend (Bypasses multiple-account CORS bugs)
-  if (!isLoaded || parsedData.length === 0) {
+  if (!isLoaded) {
     try {
       const fetchUrl = `${STAFF_SCRIPT_URL}?action=pullChanges&_t=${Date.now()}`;
       const response = await requestJson(fetchUrl, { credentials: 'omit' }, 30000);
-      if (response && response.success && response.rows && response.rows.length > 0) {
-        const headers = response.headers;
+      if (response && response.success && Array.isArray(response.rows)) {
+        const headers = response.headers || [];
         parsedData = response.rows.map(row => {
           const obj = {};
           headers.forEach((h, i) => obj[h] = row[i]);
@@ -1948,12 +1948,12 @@ export const fetchHoardings = async (forceFresh = false) => {
   }
 
   // Tier 3: Direct CSV Export Fallback
-  if (!isLoaded || parsedData.length === 0) {
+  if (!isLoaded) {
     try {
       const fetchUrl = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/export?format=csv&sheet=${SHEET_NAME}&_t=${Date.now()}`;
       const rawData = await requestText(fetchUrl, { credentials: 'omit' }, 12000);
       const parsed = Papa.parse(rawData, { header: true, skipEmptyLines: true });
-      if (parsed.data && parsed.data.length > 0) {
+      if (parsed.data) {
         parsedData = parsed.data;
         isLoaded = true;
       }
@@ -1962,8 +1962,20 @@ export const fetchHoardings = async (forceFresh = false) => {
     }
   }
 
-  // If live network succeeded, filter, normalize, cache and return
-  if (isLoaded && parsedData.length > 0) {
+  // If live network succeeded, handle empty sheet or normalize and cache
+  if (isLoaded) {
+    if (parsedData.length === 0) {
+      // 🛡️ Legitimate empty sheet: wipe local caches so deleted data is never resurrected
+      if (typeof window !== 'undefined') {
+        try {
+          localStorage.removeItem('hoardings_cache');
+          localStorage.removeItem('local_added_sites_cache');
+          localStorage.removeItem('deleted_sites_cache');
+        } catch {}
+      }
+      return [];
+    }
+
     try {
       // 🛡️ Reconcile tombstones against the RAW live sheet rows before filtering
       const rawSheetKeys = [];
@@ -2021,7 +2033,7 @@ export const fetchHoardings = async (forceFresh = false) => {
     }
   }
 
-  // Tier 4: Offline / Cache Fallback (Ensures zero downtime or crashes)
+  // Tier 4: Offline / Cache Fallback (Ensures zero downtime or crashes when offline)
   if (typeof window !== 'undefined') {
     try {
       const cached = localStorage.getItem('hoardings_cache');

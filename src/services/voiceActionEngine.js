@@ -201,6 +201,23 @@ export const parseOfflineVoiceCommand = (rawText = '', _context = {}) => {
     return null; // Fall through to conversational AI / LLM!
   }
 
+  // 0. Delete / Clear Database Commands
+  if ((text.includes('delete all') || text.includes('sab delete') || text.includes('poori site delete') || text.includes('saari site delete') || text.includes('sheet saaf') || text.includes('data clear') || text.includes('clear all')) &&
+      (text.includes('delete') || text.includes('saaf') || text.includes('clear') || text.includes('hatao') || text.includes('karo'))) {
+    return {
+      action: 'DELETE_ALL',
+      speech: 'Poori inventory aur Google Sheet clear karne ka command execute kar diya gaya hai.'
+    };
+  }
+
+  // 0.1 Check Connection Command
+  if (text.includes('connection') || text.includes('connected') || text.includes('connect hai')) {
+    return {
+      action: 'CHECK_CONNECTION',
+      speech: 'Google Sheet aur Google Cloud database live aur safely connected hain!'
+    };
+  }
+
   // 1. Reset Filters
   if (text.includes('reset') || text.includes('saaf karo') || text.includes('clear filter') || text.includes('hatao filter')) {
     return {

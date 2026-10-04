@@ -448,7 +448,7 @@ ipcMain.handle('jarvis:get-live-token', async (event, clientFallbackKey) => {
                     uses: 1,
                     expireTime,
                     liveConnectConstraints: {
-                        model: 'models/gemini-3.8-live',
+                        model: 'models/gemini-2.0-flash-exp',
                         config: {
                             responseModalities: ['AUDIO'],
                             inputAudioTranscription:  {},

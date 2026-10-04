@@ -371,29 +371,34 @@ function App() {
   const lastFullRefreshRef = useRef(0);
 
   const applyFreshHoardings = useCallback((data) => {
-    // 🛡️ If a "Delete All" is in progress, suppress incoming data for up to 30 seconds
-    // so the background poll doesn't restore sites before the sheet catches up.
+    // 🛡️ If a "Delete All" is in progress, enforce 0 sites and clear cache
     try {
       const deleteAllUntil = parseInt(localStorage.getItem('deleteAll_until') || '0', 10);
       if (deleteAllUntil > Date.now()) {
-        return; // still within suppression window — skip this refresh
+        try {
+          localStorage.removeItem('hoardings_cache');
+          localStorage.removeItem('local_added_sites_cache');
+        } catch {}
+        setHoardings([]);
+        return;
       } else if (deleteAllUntil > 0) {
-        localStorage.removeItem('deleteAll_until'); // expired — clean up
+        localStorage.removeItem('deleteAll_until');
       }
     } catch {}
 
     const cleanData = sanitizeHoardings(data);
     if (!cleanData || cleanData.length === 0) {
-      // 🛡️ Guard against temporary network glitch or sheet cold-start returning empty array
-      const existingCache = typeof window !== 'undefined' ? localStorage.getItem('hoardings_cache') : null;
-      if (existingCache) {
-        try {
-          const parsed = JSON.parse(existingCache);
-          if (Array.isArray(parsed) && parsed.length > 0) {
-            console.warn('[App.jsx] Fresh data fetch returned empty; preserving existing cached hoardings to prevent 0-count flash.');
-            return;
-          }
-        } catch {}
+      // 🛡️ Only preserve offline cache if data fetch failed completely (null/undefined)
+      if (data === null || data === undefined) {
+        const existingCache = typeof window !== 'undefined' ? localStorage.getItem('hoardings_cache') : null;
+        if (existingCache) {
+          try {
+            const parsed = JSON.parse(existingCache);
+            if (Array.isArray(parsed) && parsed.length > 0) {
+              return;
+            }
+          } catch {}
+        }
       }
       try {
         localStorage.removeItem('hoardings_cache');

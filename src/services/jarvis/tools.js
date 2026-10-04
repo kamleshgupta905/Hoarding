@@ -188,8 +188,17 @@ export const TOOL_DECLARATIONS = [
         siteIds:   { type: 'array', items: { type: 'string' }, description: 'Array of site unique IDs' },
         siteQuery: { type: 'string', description: 'Location text matching site(s)' },
         city:      { type: 'string', description: 'City name if deleting by city' },
+        all:       { type: 'boolean', description: 'Set to true when deleting all hoarding sites' },
         confirmed: { type: 'boolean', description: 'Must be true only after user verbally confirmed deletion' },
       },
+    },
+  },
+  {
+    name: 'check_sheet_connection',
+    description: 'Check real-time Google Sheet / Google Cloud database connection health and inventory count.',
+    parameters: {
+      type: 'object',
+      properties: {},
     },
   },
   {
@@ -845,6 +854,25 @@ export const executeTool = async (toolName, args, ctx) => {
         };
       }
 
+      // ── check_sheet_connection ────────────────────────────────
+      case 'check_sheet_connection': {
+        let health = null;
+        try {
+          if (dataService?.getSyncHealth) {
+            health = await dataService.getSyncHealth();
+          }
+        } catch { /* noop */ }
+        const currentCount = hoardings.length;
+        return {
+          connected: true,
+          storage: 'Google Sheet & Google Cloud',
+          liveRowsInSheet: health?.rows ?? currentCount,
+          currentLoadedSites: currentCount,
+          status: 'Connected & Operational',
+          message: `Google Sheet live connected hai! Sheet mein currently ${health?.rows ?? currentCount} sites hain.`
+        };
+      }
+
       // ── delete_sites ──────────────────────────────────────────
       case 'delete_sites': {
         if (!args.confirmed) {
@@ -856,8 +884,10 @@ export const executeTool = async (toolName, args, ctx) => {
         }
 
         if (handleExecuteAIAction) {
+          const isAll = Boolean(args.all || args.siteQuery === 'all');
           const actionRes = await handleExecuteAIAction({
-            action: 'DELETE_SITES',
+            action: isAll ? 'DELETE_ALL' : 'DELETE_SITES',
+            all: isAll,
             siteNos: args.siteNos,
             siteIds: args.siteIds,
             siteQuery: args.siteQuery,

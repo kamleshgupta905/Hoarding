@@ -3813,9 +3813,38 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                 return { success: true, answer: actionPayload.answer || actionPayload.speech };
             }
 
+            case 'DELETE_ALL': {
+                setActiveTab('inventory');
+                setHoardings([]);
+                clearAllLocalBookingsAndCaches();
+                try {
+                    localStorage.setItem('deleteAll_until', String(Date.now() + 30000));
+                    localStorage.removeItem('hoardings_cache');
+                    localStorage.removeItem('local_added_sites_cache');
+                    localStorage.removeItem('deleted_sites_cache');
+                } catch {}
+                syncToGoogleSheet({ action: 'deleteAllHoardings', confirmation: 'DELETE ALL' }).catch(err => console.warn('Delete all sync warning:', err));
+                showToast('All site data deleted from Google Cloud.', 'info');
+                return { success: true, count: 'all', message: 'All sites permanently deleted from Google Cloud' };
+            }
+
             case 'DELETE_SITES':
             case 'DELETE_SITE': {
                 setActiveTab('inventory');
+                if (actionPayload.all || actionPayload.siteQuery === 'all' || actionPayload.siteQuery === 'poori site' || actionPayload.siteQuery === 'sab site') {
+                    setHoardings([]);
+                    clearAllLocalBookingsAndCaches();
+                    try {
+                        localStorage.setItem('deleteAll_until', String(Date.now() + 30000));
+                        localStorage.removeItem('hoardings_cache');
+                        localStorage.removeItem('local_added_sites_cache');
+                        localStorage.removeItem('deleted_sites_cache');
+                    } catch {}
+                    syncToGoogleSheet({ action: 'deleteAllHoardings', confirmation: 'DELETE ALL' }).catch(err => console.warn('Delete all sync warning:', err));
+                    showToast('All site data deleted from Google Cloud.', 'info');
+                    return { success: true, count: 'all', message: 'All sites permanently deleted' };
+                }
+
                 const siteNos = Array.isArray(actionPayload.siteNos) ? actionPayload.siteNos.map(s => String(s).trim().toLowerCase()) : (actionPayload.siteNo ? [String(actionPayload.siteNo).trim().toLowerCase()] : []);
                 const siteIds = Array.isArray(actionPayload.siteIds) ? actionPayload.siteIds.map(s => String(s).trim().toLowerCase()) : (actionPayload.siteId ? [String(actionPayload.siteId).trim().toLowerCase()] : []);
                 const siteQuery = String(actionPayload.siteQuery || '').trim().toLowerCase();
@@ -3880,7 +3909,7 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                 }
 
                 showToast(`${toDelete.length} site(s) Google Cloud database se delete ho gayi hain!`, 'success');
-                window.dispatchEvent(new CustomEvent('hoardings:sync-requested'));
+                // 🛡️ Note: Do not dispatch hoardings:sync-requested immediately to avoid restoring before sheet catches up
                 return { success: true, count: toDelete.length, deletedSites: toDelete.map(h => ({ siteNo: h.SL, location: h['Location '] || h.Location })) };
             }
 

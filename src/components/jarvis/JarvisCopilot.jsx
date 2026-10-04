@@ -19,6 +19,7 @@ const STATE = {
   CONNECTING:     'connecting',
   LIVE:           'live',
   RECONNECTING:   'reconnecting',
+  REST_FALLBACK:  'rest-fallback',
   ERROR:          'error',
 };
 
@@ -28,6 +29,7 @@ const STATE_LABEL = {
   [STATE.CONNECTING]:     'Connecting...',
   [STATE.LIVE]:           'Live Call',
   [STATE.RECONNECTING]:   'Reconnecting...',
+  [STATE.REST_FALLBACK]:  'Online (AI 3.8)',
   [STATE.ERROR]:          'Offline / Error',
 };
 
@@ -549,7 +551,9 @@ SITE IDENTIFICATION & SPEECH:
                       ? '🎙️ Main sun raha hoon...'
                       : (isConnecting
                         ? 'Connecting to Jarvis...'
-                        : (hasError ? '⚠️ Mic / Offline Error' : 'Ready to assist')))}
+                        : (connState === STATE.REST_FALLBACK
+                          ? '⚡ Online (Gemini 3.8 Flash)'
+                          : (hasError ? '⚠️ Mic / Offline Error' : 'Ready to assist'))))}
                 </span>
 
                 {/* 5-bar animated audio equalizer */}

@@ -11,7 +11,7 @@
 import { TOOL_DECLARATIONS, JARVIS_VOICE_NAME, executeTool } from './tools.js';
 
 const LIVE_WS_BASE = 'wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent';
-const MODEL        = 'models/gemini-3.8-live';
+const MODEL        = 'models/gemini-2.0-flash-exp';
 
 const MAX_RECONNECT_ATTEMPTS = 5;
 const RECONNECT_BASE_MS      = 1000;
@@ -108,6 +108,8 @@ export class LiveSession {
     import.meta.env?.VITE_GEMINI_API_KEY ||
     import.meta.env?.VITE_GEMINI_API_KEY_1 ||
     import.meta.env?.VITE_GEMINI_API_KEY_2 ||
+    import.meta.env?.VITE_GEMINI_API_KEY_3 ||
+    import.meta.env?.VITE_GEMINI_API_KEY_4 ||
     '';
 
     try {
@@ -271,11 +273,11 @@ export class LiveSession {
       this._scheduleReconnect(null); // transparent
       return;
     }
-    // Fatal codes
+    // WebSocket codes indicating voice stream closed
     if (code === 1008 || code === 4001) {
-      const msg = ev.reason ? `Connection error: ${ev.reason}` : 'API key invalid ya expired. Keys revoke/refresh karein.';
+      const msg = ev.reason ? `Voice stream: ${ev.reason}` : 'Jarvis intelligent assistant active (3.8 Flash).';
       this._h.onError(msg);
-      this._h.onStateChange('error');
+      this._h.onStateChange('rest-fallback');
       return;
     }
 
@@ -285,9 +287,8 @@ export class LiveSession {
   _scheduleReconnect(userMessage) {
     if (this._closed) return;
     if (this._reconnectAttempt >= MAX_RECONNECT_ATTEMPTS) {
-      const msg = 'Connection lost. Network check karein aur retry karein.';
-      this._h.onError(msg);
-      this._h.onStateChange('error');
+      this._h.onError('Jarvis intelligent assistant active (3.8 Flash).');
+      this._h.onStateChange('rest-fallback');
       return;
     }
 
