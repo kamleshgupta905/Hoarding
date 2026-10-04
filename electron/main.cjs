@@ -25,7 +25,7 @@ function getLogFile() {
         if (!fs.existsSync(logDir)) {
             fs.mkdirSync(logDir, { recursive: true });
         }
-        return path.join(logDir, 'jarvis.log');
+        return path.join(logDir, 'app.log');
     } catch (e) {
         return null;
     }
@@ -388,7 +388,7 @@ ipcMain.handle('post-apps-script', async (event, { url, payload, timeoutMs = 600
     }
 });
 
-ipcMain.on('log-jarvis-event', (event, { level, message, meta }) => {
+ipcMain.on('log-app-event', (event, { level, message, meta }) => {
     logToFile(level || 'INFO', message || '', meta);
 });
 
@@ -417,62 +417,9 @@ function loadLocalEnvIfPresent() {
 }
 loadLocalEnvIfPresent();
 
-// 🔑 Jarvis Live API token proxy — API key NEVER reaches the renderer bundle.
-// Main process reads from process.env (or client fallback) and returns only what the renderer needs.
-ipcMain.handle('jarvis:get-live-token', async (event, clientFallbackKey) => {
-    const key = process.env.GEMINI_API_KEY ||
-                process.env.VITE_GEMINI_LIVE_KEY ||
-                process.env.VITE_GEMINI_API_KEY ||
-                process.env.VITE_GEMINI_API_KEY_1 ||
-                process.env.VITE_GEMINI_API_KEY_2 ||
-                process.env.VITE_GEMINI_API_KEY_3 ||
-                process.env.VITE_GEMINI_API_KEY_4 ||
-                clientFallbackKey ||
-                '';
-    if (!key) {
-        throw new Error('GEMINI_API_KEY not found. Please set your Gemini API key in app Settings or .env.local.');
-    }
-
-    // Attempt to get an ephemeral token (reduces key exposure lifetime to 10 min)
-    try {
-        const expireTime = new Date(Date.now() + 10 * 60 * 1000).toISOString();
-        const tokenRes = await fetch(
-            'https://generativelanguage.googleapis.com/v1beta/auth_tokens',
-            {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'x-goog-api-key': key,
-                },
-                body: JSON.stringify({
-                    uses: 1,
-                    expireTime,
-                    liveConnectConstraints: {
-                        model: 'models/gemini-2.0-flash-exp',
-                        config: {
-                            responseModalities: ['AUDIO'],
-                            inputAudioTranscription:  {},
-                            outputAudioTranscription: {},
-                        },
-                    },
-                }),
-            }
-        );
-        if (tokenRes.ok) {
-            const json = await tokenRes.json();
-            if (json.token) return json.token;
-        }
-    } catch (e) {
-        logToFile('WARN', 'Ephemeral token fetch failed, falling back to API key', e.message);
-    }
-
-    // Ephemeral token not available — return raw key (still safer than hardcoding in renderer)
-    return key;
-});
-
 
 app.whenReady().then(() => {
-    // 🎙️ Explicit media & microphone permissions for Jarvis Voice Copilot
+    // Media & audio permissions
     session.defaultSession.setPermissionRequestHandler((webContents, permission, callback) => {
         const allowedPermissions = ['media', 'audioCapture', 'mediaKeySystem'];
         if (allowedPermissions.includes(permission)) {
@@ -504,17 +451,6 @@ app.whenReady().then(() => {
     });
 
     createWindow();
-
-    // Register global shortcut: CmdOrCtrl+Shift+J to toggle Jarvis Voice Copilot
-    try {
-        globalShortcut.register('CommandOrControl+Shift+J', () => {
-            if (mainWindow && !mainWindow.isDestroyed()) {
-                mainWindow.webContents.send('toggle-jarvis');
-            }
-        });
-    } catch (err) {
-        logToFile('WARN', 'Global shortcut registration failed', err?.message || String(err));
-    }
 });
 
 app.on('will-quit', () => {

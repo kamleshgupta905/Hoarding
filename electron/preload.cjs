@@ -31,13 +31,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
         ipcRenderer.on('pptx-progress', handler);
         return () => ipcRenderer.removeListener('pptx-progress', handler);
     },
-    onToggleJarvis: (callback) => {
-        const handler = () => callback();
-        ipcRenderer.on('toggle-jarvis', handler);
-        return () => ipcRenderer.removeListener('toggle-jarvis', handler);
-    },
     openLogFolder: () => ipcRenderer.invoke('open-log-folder'),
-    logEvent: (level, message, meta) => ipcRenderer.send('log-jarvis-event', { level, message, meta }),
-    getJarvisLiveToken: (fallbackKey) => ipcRenderer.invoke('jarvis:get-live-token', fallbackKey),
+    logEvent: (level, message, meta) => ipcRenderer.send('log-app-event', { level, message, meta }),
     postAppsScript: (params) => ipcRenderer.invoke('post-apps-script', params),
 });

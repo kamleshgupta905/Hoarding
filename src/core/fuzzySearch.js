@@ -3,7 +3,7 @@
  * 
  * Provides robust phonetic normalization (Indian English transliteration),
  * alias expansion (Begam ⇄ Begum, Dehli ⇄ Delhi), and Levenshtein edit distance
- * so users and Jarvis voice queries never return 0 results due to minor spelling differences.
+ * so users and search queries never return 0 results due to minor spelling differences.
  */
 
 /**
