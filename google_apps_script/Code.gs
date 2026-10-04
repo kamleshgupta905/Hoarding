@@ -1721,13 +1721,19 @@ function uploadImageToDrive(data) {
     var cleanName = rawName.replace(/[/\\?%*:|"<>]/g, '-').trim();
     if (!/\.(jpg|jpeg|png|webp)$/i.test(cleanName)) cleanName += '.jpg';
 
-    // 🛡️ Deduplication Guard: Check if file with exact cleanName already exists in Drive
+    // 🛡️ Deduplication Guard: Check if file with exact cleanName already exists in Drive (unless overwrite requested)
     if (folder) {
       try {
         var existingFiles = folder.getFilesByName(cleanName);
         if (existingFiles.hasNext()) {
-          var existingFile = existingFiles.next();
-          return "https://lh3.googleusercontent.com/d/" + existingFile.getId();
+          if (data.overwrite) {
+            while (existingFiles.hasNext()) {
+              try { existingFiles.next().setTrashed(true); } catch(tErr) {}
+            }
+          } else {
+            var existingFile = existingFiles.next();
+            return "https://lh3.googleusercontent.com/d/" + existingFile.getId();
+          }
         }
       } catch(dedupErr) {}
     }

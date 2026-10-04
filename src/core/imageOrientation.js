@@ -121,15 +121,13 @@ export function stampRedBracketsOnCanvas(ctx, width, height, brackets) {
     const frameW = Math.round(relW * width);
     const frameH = Math.round(relH * height);
 
-    const minArmW = Math.max(16, Math.round(frameW * 0.12));
-    const minArmH = Math.max(16, Math.round(frameH * 0.22));
+    // Exact vector shape arm lengths from PowerPoint or proportional fallback
+    const armW1 = typeof brackets.armW1 === 'number' ? Math.max(8, Math.round(brackets.armW1 * width)) : Math.max(16, Math.round(frameW * 0.12));
+    const armH1 = typeof brackets.armH1 === 'number' ? Math.max(8, Math.round(brackets.armH1 * height)) : Math.max(16, Math.round(frameH * 0.22));
+    const armW2 = typeof brackets.armW2 === 'number' ? Math.max(8, Math.round(brackets.armW2 * width)) : Math.max(16, Math.round(frameW * 0.12));
+    const armH2 = typeof brackets.armH2 === 'number' ? Math.max(8, Math.round(brackets.armH2 * height)) : Math.max(16, Math.round(frameH * 0.22));
 
-    const armW1 = Math.max(minArmW, Math.round((brackets.armW1 ?? 0.03) * width));
-    const armH1 = Math.max(minArmH, Math.round((brackets.armH1 ?? 0.05) * height));
-    const armW2 = Math.max(minArmW, Math.round((brackets.armW2 ?? 0.03) * width));
-    const armH2 = Math.max(minArmH, Math.round((brackets.armH2 ?? 0.05) * height));
-
-    const lineWidth = Math.max(4, Math.round(width * 0.005));
+    const lineWidth = Math.max(4, Math.round(width * 0.0055));
 
     ctx.save();
     ctx.strokeStyle = '#ef4444'; // Bright OOH Inspection Red

@@ -1912,7 +1912,8 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                         sessionToken: getAdminSession(),
                         fileName: item.descriptiveFileName,
                         fileData: item.pureBase64,
-                        mimeType: item.mimeType || 'image/jpeg'
+                        mimeType: item.mimeType || 'image/jpeg',
+                        overwrite: true
                     });
 
                     if (res && res.success && res.url) {
@@ -2367,7 +2368,8 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                     if (!coordPart) {
                         coordPart = `Slide_${slide.number}`;
                     }
-                    const descriptiveFileName = `${city}_${loc}_${facingPart}_${coordPart}.jpg`;
+                    const fileTimestamp = Date.now();
+                    const descriptiveFileName = `${city}_${loc}_${facingPart}_${coordPart}_${fileTimestamp}.jpg`;
 
                     const brackets = photoCandidate.brackets || slide.brackets || null;
                     let pureBase64 = '';
@@ -2422,7 +2424,8 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                 sessionToken: getAdminSession(),
                                 fileName: descriptiveFileName,
                                 fileData: pureBase64,
-                                mimeType: photoCandidate.mimeType || 'image/jpeg'
+                                mimeType: photoCandidate.mimeType || 'image/jpeg',
+                                overwrite: true
                             });
 
                             if (res && res.success && res.url) {
