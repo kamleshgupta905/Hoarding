@@ -7,7 +7,7 @@ const INSTALLED_VERSION_KEY = 'adh_installed_version';
  * Checks if a newer version of the web app or APK is available.
  */
 export const checkForAppUpdates = async () => {
-  if (typeof navigator !== 'undefined' && !navigator.onLine) {
+  if (typeof navigator !== 'undefined' && navigator.onLine === false) {
     return { hasUpdate: false, offline: true };
   }
 

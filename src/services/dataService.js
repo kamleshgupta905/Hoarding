@@ -1,6 +1,6 @@
 import Papa from 'papaparse';
 import { getAdminSession, postStaffPhoto, submitAdminOperation } from './secureApi';
-import { ensureUprightDataUrl } from '../core/imageOrientation';
+import { ensureUprightDataUrl, stampRedBracketsOnCanvas } from '../core/imageOrientation';
 
 const fetchWithTimeout = async (url, options = {}, timeoutMs = 35000) => {
   const controller = new AbortController();
@@ -2044,9 +2044,9 @@ export const fetchHoardings = async (forceFresh = false) => {
  * ⚡ FAST UPRIGHT IMAGE COMPRESSION
  * Ensures all images uploaded to Google Drive are 100% Upright (Seedha, 0° EXIF) and optimized.
  */
-export const compressImage = async (file, maxWidth = 1440, quality = 0.78) => {
+export const compressImage = async (file, maxWidth = 1440, quality = 0.78, brackets = null) => {
     try {
-        return await ensureUprightDataUrl(file, maxWidth, quality);
+        return await ensureUprightDataUrl(file, maxWidth, quality, brackets);
     } catch (err) {
         console.warn('Advanced upright compression fallback:', err);
         return new Promise((resolve) => {
@@ -2069,6 +2069,9 @@ export const compressImage = async (file, maxWidth = 1440, quality = 0.78) => {
                     canvas.height = height;
                     const ctx = canvas.getContext('2d');
                     ctx.drawImage(img, 0, 0, width, height);
+                    if (brackets) {
+                        stampRedBracketsOnCanvas(ctx, width, height, brackets);
+                    }
                     resolve(canvas.toDataURL('image/jpeg', quality));
                 };
             };

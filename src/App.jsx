@@ -7,6 +7,7 @@ import CommandPalette from './components/CommandPalette';
 import Navbar from './components/Navbar';
 import Footer from './components/Footer';
 import AdminLogin from './pages/AdminLogin';
+import AppAutoUpdater from './components/AppAutoUpdater';
 import { fetchHoardings, getLocalBookings, getLocalSchedules, getSiteBookingKeys, getLocalHistory, resolveSiteLiveStatus, pruneLocalHistory, pruneLocalAddedSites, getDeletedSites } from './services/dataService';
 
 // Helper to auto-recover dynamic imports when a new build is deployed on Vercel
@@ -320,6 +321,7 @@ function AppContent({ hoardings, setHoardings }) {
 
   return (
     <div className="app-container">
+      <AppAutoUpdater />
       <AutoUpdateBar />
       <CommandPalette />
       {!hideNav && <Navbar />}

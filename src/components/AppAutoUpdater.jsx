@@ -1,12 +1,11 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Sparkles, RefreshCw, CheckCircle2, ArrowUpCircle, ShieldCheck } from 'lucide-react';
+import { Sparkles, RefreshCw, CheckCircle2, ArrowUpCircle, ShieldCheck, X } from 'lucide-react';
 import { checkForAppUpdates, performLiveAppUpdate } from '../services/appUpdater';
 import { appToast } from './ToastContext';
 import './AppAutoUpdater.css';
 
 export default function AppAutoUpdater() {
   const isElectron = typeof window !== 'undefined' && Boolean(window.electronAPI?.isElectron);
-  const isNativeApp = typeof window !== 'undefined' && Boolean(window.Capacitor?.isNativePlatform?.());
 
   const [updateInfo, setUpdateInfo] = useState(null);
   const [isUpdating, setIsUpdating] = useState(false);
@@ -14,27 +13,82 @@ export default function AppAutoUpdater() {
   const [autoCountdown, setAutoCountdown] = useState(4);
   const countdownTimerRef = useRef(null);
 
+  // 1. Electron Native Auto-Updater Listeners (Windows Desktop .exe)
   useEffect(() => {
-    // 🛡️ Web browsers and Desktop apps MUST NEVER show this screen.
-    // Web automatically gets the latest code on page load/refresh from Vercel.
-    if (isElectron || !isNativeApp) return;
+    if (!isElectron || !window.electronAPI) return;
+
+    window.electronAPI.onUpdateAvailable?.((info) => {
+      setUpdateInfo({
+        hasUpdate: true,
+        isElectron: true,
+        latestVersion: info?.version || 'Latest',
+        features: [
+          'Windows Desktop auto-sync enabled',
+          'Fast native PPTX & Red Bracket extraction',
+          'Latest UI improvements & bug fixes'
+        ]
+      });
+      setIsUpdating(true);
+      setProgress({ percent: 0, status: 'Downloading update from GitHub...' });
+    });
+
+    window.electronAPI.onUpdateProgress?.((p) => {
+      const pct = Math.min(100, Math.round(p?.percent || 0));
+      const transMB = ((p?.transferred || 0) / (1024 * 1024)).toFixed(1);
+      const totalMB = ((p?.total || 0) / (1024 * 1024)).toFixed(1);
+      setProgress({
+        percent: pct,
+        status: totalMB > 0 ? `Downloading update (${transMB} MB / ${totalMB} MB)...` : `Downloading update... ${pct}%`
+      });
+    });
+
+    window.electronAPI.onUpdateDownloaded?.((info) => {
+      setProgress({
+        percent: 100,
+        status: 'Update downloaded! Restarting to install...'
+      });
+      setIsUpdating(true);
+      let count = 4;
+      setAutoCountdown(count);
+      if (countdownTimerRef.current) clearInterval(countdownTimerRef.current);
+      countdownTimerRef.current = setInterval(() => {
+        count -= 1;
+        setAutoCountdown(count);
+        if (count <= 0) {
+          clearInterval(countdownTimerRef.current);
+          window.electronAPI?.installUpdate?.();
+        }
+      }, 1000);
+    });
+
+    window.electronAPI.onUpdateError?.((err) => {
+      console.warn('[Electron AutoUpdater notice]:', err);
+    });
+
+    return () => {
+      if (countdownTimerRef.current) clearInterval(countdownTimerRef.current);
+    };
+  }, [isElectron]);
+
+  // 2. Web / PWA / Mobile Staff App Auto-Updater Check
+  useEffect(() => {
+    if (isElectron) return;
 
     const runCheck = async () => {
       if (typeof navigator !== 'undefined' && !navigator.onLine) return;
       const res = await checkForAppUpdates();
-      if (res.hasUpdate) {
-        setUpdateInfo(res);
+      if (res && res.hasUpdate) {
+        setUpdateInfo({
+          ...res,
+          isElectron: false
+        });
       }
     };
 
-    // Initial check after 2 seconds of launch
     const t = setTimeout(runCheck, 2000);
-    // Recurring check every 60 seconds
-    const interval = setInterval(runCheck, 60000);
+    const interval = setInterval(runCheck, 45000);
 
-    const onOnline = () => {
-      runCheck();
-    };
+    const onOnline = () => runCheck();
     window.addEventListener('online', onOnline);
 
     return () => {
@@ -42,10 +96,16 @@ export default function AppAutoUpdater() {
       clearInterval(interval);
       window.removeEventListener('online', onOnline);
     };
-  }, [isElectron, isNativeApp]);
+  }, [isElectron]);
 
   const handleStartUpdate = React.useCallback(async () => {
     if (countdownTimerRef.current) clearInterval(countdownTimerRef.current);
+
+    if (updateInfo?.isElectron) {
+      window.electronAPI?.installUpdate?.();
+      return;
+    }
+
     setIsUpdating(true);
     try {
       await performLiveAppUpdate(updateInfo?.remoteInfo, (p) => {
@@ -57,9 +117,9 @@ export default function AppAutoUpdater() {
     }
   }, [updateInfo]);
 
-  // Automatic countdown to trigger update without manual click
+  // Automatic countdown for Web / Mobile OTA update
   useEffect(() => {
-    if (!updateInfo || isUpdating) return;
+    if (!updateInfo || isUpdating || updateInfo.isElectron) return;
 
     countdownTimerRef.current = setInterval(() => {
       setAutoCountdown(prev => {
@@ -77,11 +137,21 @@ export default function AppAutoUpdater() {
     };
   }, [updateInfo, isUpdating, handleStartUpdate]);
 
-  if (isElectron || !isNativeApp || !updateInfo) return null;
+  if (!updateInfo) return null;
 
   return (
     <div className="app-auto-updater-overlay">
       <div className="app-auto-updater-card animate-pop">
+        <button 
+          className="updater-close-btn"
+          onClick={() => {
+            if (countdownTimerRef.current) clearInterval(countdownTimerRef.current);
+            setUpdateInfo(null);
+          }}
+          title="Dismiss"
+        >
+          <X size={18} />
+        </button>
         <div className="updater-glow-ring"></div>
         
         <div className="updater-icon-header">
@@ -125,6 +195,18 @@ export default function AppAutoUpdater() {
                 <span className="progress-status-text">{progress.status || 'Updating app...'}</span>
                 <span className="progress-percent-val">{progress.percent}%</span>
               </div>
+              {updateInfo.isElectron && progress.percent === 100 && (
+                <div style={{ marginTop: '10px' }}>
+                  <button 
+                    type="button" 
+                    className="updater-btn-primary"
+                    onClick={() => window.electronAPI?.installUpdate?.()}
+                  >
+                    <RefreshCw size={17} className="btn-icon" />
+                    <span>Abhi Restart Karein {autoCountdown > 0 ? `(${autoCountdown}s)` : ''}</span>
+                  </button>
+                </div>
+              )}
             </div>
           ) : (
             <div className="updater-actions">

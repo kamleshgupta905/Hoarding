@@ -2369,10 +2369,13 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                     }
                     const descriptiveFileName = `${city}_${loc}_${facingPart}_${coordPart}.jpg`;
 
-                    let pureBase64 = photoCandidate.base64 || '';
-                    if (!pureBase64 && photoCandidate.blob) {
+                    const brackets = photoCandidate.brackets || slide.brackets || null;
+                    let pureBase64 = '';
+
+                    // 1. If photo has a Blob, compress and burn authentic red corner target brackets (┌ ┘)
+                    if (photoCandidate.blob) {
                         try {
-                            const compressedDataUrl = await compressImage(photoCandidate.blob, 1280, 960, 0.78);
+                            const compressedDataUrl = await compressImage(photoCandidate.blob, 1280, 960, 0.78, brackets);
                             pureBase64 = compressedDataUrl ? compressedDataUrl.replace(/^data:image\/[a-z0-9+-]+;base64,/, '') : '';
                         } catch (compErr) {
                             console.warn(`[Compression Fallback] Slide ${slide.number}:`, compErr);
@@ -2387,6 +2390,26 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                             } catch (fallbackErr) {
                                 console.warn(`[Direct Base64 Fallback] Slide ${slide.number}:`, fallbackErr);
                             }
+                        }
+                    } else if (photoCandidate.base64) {
+                        // 2. Native Electron base64: if brackets exist, burn them onto canvas
+                        const cleanRawB64 = photoCandidate.base64.replace(/^data:image\/[a-z0-9+-]+;base64,/, '');
+                        if (brackets) {
+                            try {
+                                const byteCharacters = atob(cleanRawB64);
+                                const byteNumbers = new Uint8Array(byteCharacters.length);
+                                for (let bi = 0; bi < byteCharacters.length; bi++) {
+                                    byteNumbers[bi] = byteCharacters.charCodeAt(bi);
+                                }
+                                const blobFromB64 = new Blob([byteNumbers], { type: photoCandidate.mimeType || 'image/jpeg' });
+                                const compressedDataUrl = await compressImage(blobFromB64, 1280, 960, 0.78, brackets);
+                                pureBase64 = compressedDataUrl ? compressedDataUrl.replace(/^data:image\/[a-z0-9+-]+;base64,/, '') : cleanRawB64;
+                            } catch (b64BracketErr) {
+                                console.warn(`[Base64 Bracket Stamping Notice] Slide ${slide.number}:`, b64BracketErr);
+                                pureBase64 = cleanRawB64;
+                            }
+                        } else {
+                            pureBase64 = cleanRawB64;
                         }
                     }
 
@@ -2430,16 +2453,21 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                         status: ai.status || matchedSite?.STATUS || 'Available',
                                         fields: {
                                             ExecutionHistory: stamped,
-                                            ...(landmarkDesc ? { Visual_Landmarks: landmarkDesc, 'Visual Landmarks': landmarkDesc } : {})
+                                            ...(landmarkDesc ? { Visual_Landmarks: landmarkDesc, 'Visual Landmarks': landmarkDesc } : {}),
+                                            ...(brackets ? { Bounding_Brackets: JSON.stringify(brackets) } : {})
                                         },
                                         newSiteData: !matchedSite ? {
                                             siteName: siteName,
                                             facing: facingValue,
                                             latLong: lat && lng ? `${lat},${lng}` : (ai.gpsStamp || ''),
-                                            ...(landmarkDesc ? { Visual_Landmarks: landmarkDesc, 'Visual Landmarks': landmarkDesc } : {})
+                                            ...(landmarkDesc ? { Visual_Landmarks: landmarkDesc, 'Visual Landmarks': landmarkDesc } : {}),
+                                            ...(brackets ? { Bounding_Brackets: JSON.stringify(brackets) } : {})
                                         } : undefined
                                     });
                                     if (matchedSite) {
+                                        if (brackets && !matchedSite.boundingBrackets) {
+                                            matchedSite.boundingBrackets = brackets;
+                                        }
                                         if (landmarkDesc && !matchedSite.Visual_Landmarks) {
                                             matchedSite.Visual_Landmarks = landmarkDesc;
                                             matchedSite['Visual Landmarks'] = landmarkDesc;
@@ -2466,16 +2494,21 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                             ImageURL: res.url,
                                             'IMAGE 1': res.url,
                                             ExecutionHistory: stamped,
-                                            ...(landmarkDesc ? { Visual_Landmarks: landmarkDesc, 'Visual Landmarks': landmarkDesc } : {})
+                                            ...(landmarkDesc ? { Visual_Landmarks: landmarkDesc, 'Visual Landmarks': landmarkDesc } : {}),
+                                            ...(brackets ? { Bounding_Brackets: JSON.stringify(brackets) } : {})
                                         },
                                         newSiteData: !matchedSite ? {
                                             siteName: siteName,
                                             facing: facingValue,
                                             latLong: lat && lng ? `${lat},${lng}` : (ai.gpsStamp || ''),
-                                            ...(landmarkDesc ? { Visual_Landmarks: landmarkDesc, 'Visual Landmarks': landmarkDesc } : {})
+                                            ...(landmarkDesc ? { Visual_Landmarks: landmarkDesc, 'Visual Landmarks': landmarkDesc } : {}),
+                                            ...(brackets ? { Bounding_Brackets: JSON.stringify(brackets) } : {})
                                         } : undefined
                                     });
                                     if (matchedSite) {
+                                        if (brackets && !matchedSite.boundingBrackets) {
+                                            matchedSite.boundingBrackets = brackets;
+                                        }
                                         if (landmarkDesc && !matchedSite.Visual_Landmarks) {
                                             matchedSite.Visual_Landmarks = landmarkDesc;
                                             matchedSite['Visual Landmarks'] = landmarkDesc;

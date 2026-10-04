@@ -103,10 +103,57 @@ export const blobToDataUrl = (blob) => new Promise((resolve, reject) => {
 });
 
 /**
+ * 🎯 Stamps authentic OOH Red Corner Target Brackets (┌ ┘) on the canvas
+ * matching master PowerPoint proposal vector shapes and Slide 2 standards.
+ */
+export function stampRedBracketsOnCanvas(ctx, width, height, brackets) {
+    if (!brackets || !ctx || width <= 0 || height <= 0) return;
+
+    const frameX = Math.round((brackets.relX ?? 0.25) * width);
+    const frameY = Math.round((brackets.relY ?? 0.25) * height);
+    const frameW = Math.round((brackets.relW ?? 0.5) * width);
+    const frameH = Math.round((brackets.relH ?? 0.35) * height);
+
+    const minArmW = Math.max(20, Math.round(frameW * 0.12));
+    const minArmH = Math.max(20, Math.round(frameH * 0.22));
+
+    const armW1 = Math.max(minArmW, Math.round((brackets.armW1 ?? 0.03) * width));
+    const armH1 = Math.max(minArmH, Math.round((brackets.armH1 ?? 0.05) * height));
+    const armW2 = Math.max(minArmW, Math.round((brackets.armW2 ?? 0.03) * width));
+    const armH2 = Math.max(minArmH, Math.round((brackets.armH2 ?? 0.05) * height));
+
+    const lineWidth = Math.max(4, Math.round(width * 0.005));
+
+    ctx.save();
+    ctx.strokeStyle = '#ef4444'; // Bright OOH Inspection Red
+    ctx.lineWidth = lineWidth;
+    ctx.lineCap = 'square';
+    ctx.lineJoin = 'miter';
+    ctx.shadowColor = 'rgba(0, 0, 0, 0.75)';
+    ctx.shadowBlur = Math.max(3, lineWidth);
+
+    // Top-Left L-bracket: ┌
+    ctx.beginPath();
+    ctx.moveTo(frameX, frameY + armH1);
+    ctx.lineTo(frameX, frameY);
+    ctx.lineTo(frameX + armW1, frameY);
+    ctx.stroke();
+
+    // Bottom-Right L-bracket: ┘
+    ctx.beginPath();
+    ctx.moveTo(frameX + frameW, frameY + frameH - armH2);
+    ctx.lineTo(frameX + frameW, frameY + frameH);
+    ctx.lineTo(frameX + frameW - armW2, frameY + frameH);
+    ctx.stroke();
+
+    ctx.restore();
+}
+
+/**
  * 🛡️ Bakes raw image pixels into physically Upright (0° Seedha) orientation
  * Resolves all EXIF rotation issues before uploading to Google Drive so no rotation is ever needed.
  */
-export const ensureUprightBlob = async (fileOrBlob, maxWidth = 1600, quality = 0.82) => {
+export const ensureUprightBlob = async (fileOrBlob, maxWidth = 1600, quality = 0.82, brackets = null) => {
     if (!fileOrBlob) throw new Error('No file or blob provided');
     let blob = fileOrBlob;
     let exifRotation = 0;
@@ -173,6 +220,10 @@ export const ensureUprightBlob = async (fileOrBlob, maxWidth = 1600, quality = 0
         ctx.drawImage(bitmapOrImg, 0, 0, finalWidth, finalHeight);
     }
 
+    if (brackets) {
+        stampRedBracketsOnCanvas(ctx, finalWidth, finalHeight, brackets);
+    }
+
     bitmapOrImg.close?.();
 
     return new Promise((resolve, reject) => {
@@ -186,8 +237,8 @@ export const ensureUprightBlob = async (fileOrBlob, maxWidth = 1600, quality = 0
 /**
  * ⚡ Converts any file to an Upright Compressed Base64 Data URL for Google Drive
  */
-export const ensureUprightDataUrl = async (fileOrBlob, maxWidth = 1600, quality = 0.82) => {
-    const uprightBlob = await ensureUprightBlob(fileOrBlob, maxWidth, quality);
+export const ensureUprightDataUrl = async (fileOrBlob, maxWidth = 1600, quality = 0.82, brackets = null) => {
+    const uprightBlob = await ensureUprightBlob(fileOrBlob, maxWidth, quality, brackets);
     return blobToDataUrl(uprightBlob);
 };
 

@@ -395,6 +395,106 @@ export const scoreSite = (text, site, slideNumber = 0, siteIndex = -1) => {
 };
 
 /**
+ * 🎯 Extracts Authentic Red Corner Target Brackets (Half Frame vector shapes)
+ * from slide XML relative to the main billboard photo.
+ */
+export const extractSlideBrackets = (slideRawXml) => {
+  if (!slideRawXml) return null;
+
+  // 1. Find main picture bounds (largest cx * cy)
+  const picMatches = slideRawXml.match(/<p:pic>[\s\S]*?<\/p:pic>/g) || [];
+  let mainPic = null;
+  let maxArea = 0;
+
+  for (const pic of picMatches) {
+    const off = pic.match(/<a:off\s+x="([^"]+)"\s+y="([^"]+)"/);
+    const ext = pic.match(/<a:ext\s+cx="([^"]+)"\s+cy="([^"]+)"/);
+    if (off && ext) {
+      const x = parseInt(off[1], 10);
+      const y = parseInt(off[2], 10);
+      const cx = parseInt(ext[1], 10);
+      const cy = parseInt(ext[2], 10);
+      const area = cx * cy;
+      if (area > maxArea) {
+        maxArea = area;
+        mainPic = { x, y, cx, cy };
+      }
+    }
+  }
+
+  if (!mainPic || mainPic.cx <= 0 || mainPic.cy <= 0) return null;
+
+  // 2. Find red Half Frame shapes or red outline shapes
+  const spMatches = slideRawXml.match(/<p:sp>[\s\S]*?<\/p:sp>/g) || [];
+  const frames = [];
+
+  for (const sp of spMatches) {
+    const isHalfFrame = /name="[^"]*Half Frame[^"]*"/i.test(sp);
+    const hasRedColor = /val="(?:FF0000|red|EF4444)"/i.test(sp);
+
+    if (isHalfFrame || hasRedColor) {
+      const off = sp.match(/<a:off\s+x="([^"]+)"\s+y="([^"]+)"/);
+      const ext = sp.match(/<a:ext\s+cx="([^"]+)"\s+cy="([^"]+)"/);
+      if (off && ext) {
+        const x = parseInt(off[1], 10);
+        const y = parseInt(off[2], 10);
+        const cx = parseInt(ext[1], 10);
+        const cy = parseInt(ext[2], 10);
+        const flipH = /flipH="1"/.test(sp);
+        const flipV = /flipV="1"/.test(sp);
+        frames.push({ x, y, cx, cy, flipH, flipV });
+      }
+    }
+  }
+
+  if (frames.length === 0) return null;
+
+  // Classify frames: Top-Left (not flipped) and Bottom-Right (flipH=1 & flipV=1)
+  let tl = frames.find(f => !f.flipH && !f.flipV);
+  let br = frames.find(f => f.flipH && f.flipV);
+
+  if (!tl && !br && frames.length >= 2) {
+    frames.sort((a, b) => (a.x + a.y) - (b.x + b.y));
+    tl = frames[0];
+    br = frames[frames.length - 1];
+  } else if (!tl && frames.length === 1) {
+    tl = frames[0];
+  }
+
+  let box = null;
+  if (tl && br) {
+    const x0 = Math.min(tl.x, br.x);
+    const y0 = Math.min(tl.y, br.y);
+    const x1 = Math.max(tl.x + tl.cx, br.x + br.cx);
+    const y1 = Math.max(tl.y + tl.cy, br.y + br.cy);
+
+    box = {
+      relX: Math.max(0, Math.min(1, (x0 - mainPic.x) / mainPic.cx)),
+      relY: Math.max(0, Math.min(1, (y0 - mainPic.y) / mainPic.cy)),
+      relW: Math.max(0.02, Math.min(1, (x1 - x0) / mainPic.cx)),
+      relH: Math.max(0.02, Math.min(1, (y1 - y0) / mainPic.cy)),
+      armW1: Math.max(0.01, tl.cx / mainPic.cx),
+      armH1: Math.max(0.01, tl.cy / mainPic.cy),
+      armW2: Math.max(0.01, br.cx / mainPic.cx),
+      armH2: Math.max(0.01, br.cy / mainPic.cy),
+    };
+  } else if (tl) {
+    box = {
+      relX: Math.max(0, Math.min(1, (tl.x - mainPic.x) / mainPic.cx)),
+      relY: Math.max(0, Math.min(1, (tl.y - mainPic.y) / mainPic.cy)),
+      relW: Math.max(0.05, Math.min(1, tl.cx / mainPic.cx)),
+      relH: Math.max(0.05, Math.min(1, tl.cy / mainPic.cy)),
+      armW1: Math.max(0.01, tl.cx / mainPic.cx),
+      armH1: Math.max(0.01, tl.cy / mainPic.cy),
+      armW2: Math.max(0.01, tl.cx / mainPic.cx),
+      armH2: Math.max(0.01, tl.cy / mainPic.cy),
+    };
+  }
+
+  return box;
+};
+
+/**
  * 📦 PARSE PPTX PRESENTATIONS WITH ZERO-LOSS EXTRACTION & GEMINI 3.7 FLASH
  */
 export const parsePptx = async (arrayBuffer, sites = [], onProgress = null) => {
@@ -440,7 +540,9 @@ export const parsePptx = async (arrayBuffer, sites = [], onProgress = null) => {
     }
 
     const number = slideNumber(slidePath);
-    const xml = xmlParser.parse(await zip.file(slidePath).async('text'));
+    const slideRawXml = await zip.file(slidePath).async('text');
+    const xml = xmlParser.parse(slideRawXml);
+    const brackets = extractSlideBrackets(slideRawXml);
     const text = collectXmlNodes(xml, 't').map(xmlText).join(' ').trim();
 
     const relationshipPath = `ppt/slides/_rels/slide${number}.xml.rels`;
@@ -521,7 +623,7 @@ export const parsePptx = async (arrayBuffer, sites = [], onProgress = null) => {
       .sort((left, right) => right.score - left.score)
       .slice(0, 8);
 
-    slides.push({ number, text, images, candidates });
+    slides.push({ number, text, images, candidates, brackets });
   }
 
   if (onProgress) onProgress(55, `Processing unlinked media files...`);
@@ -611,6 +713,9 @@ export const parsePptx = async (arrayBuffer, sites = [], onProgress = null) => {
         const areaB = (b.width || 0) * (b.height || 0);
         return (areaB - areaA) || (b.size - a.size);
       });
+      if (slide.brackets) {
+        validPhotos[0].brackets = slide.brackets;
+      }
       slide.photoCandidates = [validPhotos[0]];
     } else {
       slide.photoCandidates = [];
