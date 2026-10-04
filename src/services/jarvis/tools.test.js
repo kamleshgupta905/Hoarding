@@ -509,5 +509,36 @@ describe('I4 — Voice, Matching & Direct Booking Execution', () => {
     expect(mockAction).toHaveBeenCalledOnce();
     expect(mockAction.mock.calls[0][0].action).toBe('RELEASE_BOOKING');
   });
+
+  describe('Fuzzy / Phonetic Search & Full Filter Support', () => {
+    it('findMatchingSites matches "begam" to "Begum Bridge"', () => {
+      const matches = findMatchingSites(MOCK_HOARDINGS, { siteQuery: 'begam' });
+      expect(matches.length).toBeGreaterThanOrEqual(2);
+      expect(matches[0]._SiteID).toBe('S001');
+    });
+
+    it('search_inventory matches "begam" query phonetically and passes full filters to handleExecuteAIAction', async () => {
+      const mockAction = vi.fn(async () => ({ success: true }));
+      const result = await executeTool('search_inventory', {
+        query: 'begam',
+        facing: 'Delhi',
+        priceRange: '0-25k',
+        starredOnly: false
+      }, {
+        hoardings: MOCK_HOARDINGS,
+        handleExecuteAIAction: mockAction,
+        dataService: {}
+      });
+
+      expect(result.matchCount).toBeGreaterThanOrEqual(1);
+      expect(mockAction).toHaveBeenCalledOnce();
+      const payload = mockAction.mock.calls[0][0];
+      expect(payload.action).toBe('FILTER_INVENTORY');
+      expect(payload.search).toBe('begam');
+      expect(payload.facing).toBe('Delhi');
+      expect(payload.priceRange).toBe('0-25k');
+    });
+  });
 });
+
 

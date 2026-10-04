@@ -64,6 +64,39 @@ const stampGpsWatermarkOnBlob = (blob, gpsData, siteInfo = {}) => new Promise((r
             const cardY = canvas.height - cardHeight - (22 * scale);
             const radius = 14 * scale;
 
+            // 🎯 2.5 Authentic OOH Red Corner Target Brackets (┌ ┘)
+            // Stamped with bright inspection red matching master PPT proposal standards
+            const brackets = siteInfo.boundingBrackets || {};
+            const frameW = Math.round(brackets.width || Math.min(canvas.width * 0.52, 680 * scale));
+            const frameH = Math.round(brackets.height || (frameW * 0.36));
+            const frameX = Math.round(brackets.x ?? ((canvas.width - frameW) / 2));
+            const frameY = Math.round(brackets.y ?? Math.min(canvas.height * 0.28, Math.max(30 * scale, canvas.height - cardHeight - frameH - (40 * scale))));
+            const armLength = Math.max(24, Math.round(frameW * 0.12));
+            const bracketLineWidth = Math.max(3.5, Math.round(scale * 4.5));
+
+            ctx.save();
+            ctx.strokeStyle = '#ef4444'; // Bright OOH Inspection Red
+            ctx.lineWidth = bracketLineWidth;
+            ctx.lineCap = 'square';
+            ctx.lineJoin = 'miter';
+            ctx.shadowColor = 'rgba(0, 0, 0, 0.75)';
+            ctx.shadowBlur = 6 * scale;
+
+            // Top-Left L-bracket: ┌
+            ctx.beginPath();
+            ctx.moveTo(frameX, frameY + armLength);
+            ctx.lineTo(frameX, frameY);
+            ctx.lineTo(frameX + armLength, frameY);
+            ctx.stroke();
+
+            // Bottom-Right L-bracket: ┘
+            ctx.beginPath();
+            ctx.moveTo(frameX + frameW, frameY + frameH - armLength);
+            ctx.lineTo(frameX + frameW, frameY + frameH);
+            ctx.lineTo(frameX + frameW - armLength, frameY + frameH);
+            ctx.stroke();
+            ctx.restore();
+
             // 3. Draw rounded translucent card background
             ctx.save();
             ctx.shadowColor = 'rgba(0, 0, 0, 0.65)';

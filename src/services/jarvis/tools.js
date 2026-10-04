@@ -9,6 +9,7 @@
  */
 
 import { resolveRelativeDates } from '../voiceActionEngine.js';
+import { matchesAllKeywordsFuzzy, matchesKeywordFuzzy } from '../../core/fuzzySearch.js';
 
 // ─────────────────────────────────────────────────────────────────
 // 1.  TOOL DECLARATIONS  (sent in the Live API setup message)
@@ -20,7 +21,7 @@ export const JARVIS_VOICE_NAME = 'Puck';
 export const TOOL_DECLARATIONS = [
   {
     name: 'search_inventory',
-    description: 'Search or filter the hoarding inventory. city/locality/mediaType/status come from clean separate args — never put them in query.',
+    description: 'Search or filter the hoarding inventory. Supports location query, city, locality, mediaType, status, facing, clientName, priceRange, and starredOnly.',
     parameters: {
       type: 'object',
       properties: {
@@ -29,6 +30,10 @@ export const TOOL_DECLARATIONS = [
         locality:      { type: 'string',  description: 'Locality / area name' },
         status:        { type: 'string',  enum: ['All', 'Available', 'Booked', 'Active Booked', 'Upcoming (Future Booked)'] },
         mediaType:     { type: 'string',  description: 'Unipole, Gantry, Billboard, etc.' },
+        facing:        { type: 'string',  description: 'Facing direction e.g. Delhi, Market, Modipuram' },
+        clientName:    { type: 'string',  description: 'Client name currently booked or searched' },
+        priceRange:    { type: 'string',  enum: ['0-25k', '25k-50k', '50k-100k', '100k+'], description: 'Budget filter' },
+        starredOnly:   { type: 'boolean', description: 'Show only starred / shortlisted sites' },
         widthFt:       { type: 'number',  description: 'Width in feet' },
         heightFt:      { type: 'number',  description: 'Height in feet' },
         availableFrom: { type: 'string',  description: 'YYYY-MM-DD' },
@@ -323,16 +328,18 @@ export const findMatchingSites = (hoardings = [], args = {}) => {
       if (hSl !== sNo) return false;
     }
 
-    // If facing is specified, it MUST match
+    // If facing is specified, it MUST match (with fuzzy tolerance)
     if (f) {
-      if (!hFacing.includes(f)) return false;
+      const facingMatch = hFacing.includes(f) || matchesKeywordFuzzy(hFacing, f);
+      if (!facingMatch) return false;
     }
 
-    // If text query is specified, it must match location, area, city, SL, or ID
+    // If text query is specified, it must match location, area, city, SL, ID, or phonetic/fuzzy tokens
     if (q) {
       const idMatch = hId && (hId === q || (hId.length > 6 && (hId.includes(q) || q.includes(hId))));
       const slMatch = hSl === q || q === `site ${hSl}` || q === `site no ${hSl}` || q === `site number ${hSl}`;
-      const textMatch = hLoc.includes(q) || hArea.includes(q) || (hCity.includes(q) && q.length > 3);
+      const textMatch = hLoc.includes(q) || hArea.includes(q) || (hCity.includes(q) && q.length > 3) ||
+                        matchesAllKeywordsFuzzy(`${hLoc} ${hArea} ${hCity}`, q);
       if (!idMatch && !slMatch && !textMatch) return false;
     }
 
@@ -389,6 +396,10 @@ export const executeTool = async (toolName, args, ctx) => {
           locality:               localityArr,
           media:                  mediaArr,
           dimensions:             sizeArr,
+          facing:                 args.facing || null,
+          clientName:             args.clientName || null,
+          priceRange:             args.priceRange || null,
+          starredOnly:            Boolean(args.starredOnly),
           inventoryCityFilter:    cityArr,
           inventoryLocalityFilter: localityArr,
           inventoryMediaFilter:   mediaArr,
@@ -415,10 +426,23 @@ export const executeTool = async (toolName, args, ctx) => {
           const media   = String(h['Media Format (Front Lit / Back Lit / Non Lit)'] || h.Media || '').toLowerCase();
 
           let ok = true;
-          if (cleanQuery)     ok = ok && (loc.includes(cleanQuery.toLowerCase()) || locality.includes(cleanQuery.toLowerCase()));
-          if (args.city)      ok = ok && city.includes(args.city.toLowerCase());
-          if (args.locality)  ok = ok && locality.includes(args.locality.toLowerCase());
-          if (args.mediaType) ok = ok && media.includes(args.mediaType.toLowerCase());
+          if (cleanQuery)     ok = ok && (loc.includes(cleanQuery.toLowerCase()) || locality.includes(cleanQuery.toLowerCase()) || matchesAllKeywordsFuzzy(`${loc} ${locality} ${city}`, cleanQuery));
+          if (args.city)      ok = ok && (city.includes(args.city.toLowerCase()) || matchesKeywordFuzzy(city, args.city));
+          if (args.locality)  ok = ok && (locality.includes(args.locality.toLowerCase()) || matchesKeywordFuzzy(locality, args.locality));
+          if (args.mediaType) ok = ok && (media.includes(args.mediaType.toLowerCase()) || matchesKeywordFuzzy(media, args.mediaType));
+          if (args.facing)    ok = ok && (matchesKeywordFuzzy(h.Facing || h['Traffic View'] || h['Traffic From'] || '', args.facing) || matchesKeywordFuzzy(loc, args.facing));
+          if (args.clientName) ok = ok && matchesKeywordFuzzy(h.BookedBy || h.ClientName || h['Client Name'] || '', args.clientName);
+          if (args.starredOnly) {
+            const isStarred = Boolean(h.isStarred || h.starred);
+            ok = ok && isStarred;
+          }
+          if (args.priceRange) {
+            const price = parseFloat(String(h['Rental Per Month'] || h['Avg Monthly Cost (INR)'] || 0).replace(/[^0-9.]/g, '')) || 0;
+            if (args.priceRange === '0-25k') ok = ok && price <= 25000;
+            else if (args.priceRange === '25k-50k') ok = ok && price > 25000 && price <= 50000;
+            else if (args.priceRange === '50k-100k') ok = ok && price > 50000 && price <= 100000;
+            else if (args.priceRange === '100k+') ok = ok && price > 100000;
+          }
           if (statusNorm && statusNorm !== 'all') {
             const live = dataService.resolveSiteLiveStatus ? dataService.resolveSiteLiveStatus(h) : null;
             const effectiveStatus = String(live?.status || hStatus).toLowerCase();

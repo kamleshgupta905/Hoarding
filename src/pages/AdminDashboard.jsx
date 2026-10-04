@@ -44,6 +44,7 @@ import './AdminDashboard.css';
 import GeoRadiusSelector from '../components/dashboard/GeoRadiusSelector';
 import { useInventoryStore } from '../stores/inventoryStore';
 import { calculateDistance } from '../services/geoService';
+import { matchesAllKeywordsFuzzy } from '../core/fuzzySearch';
 import { APP_VERSION, APP_BUILD_DATE } from '../version';
 import { checkForAppUpdates } from '../services/appUpdater';
 
@@ -3546,6 +3547,12 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                 if (endParam && typeof setFilterEndDate === 'function') {
                     setFilterEndDate(endParam);
                 }
+                if (actionPayload.priceRange && typeof setInventoryPriceFilter === 'function') {
+                    setInventoryPriceFilter(actionPayload.priceRange);
+                }
+                if (actionPayload.starredOnly && typeof setShowOnlyStarred === 'function') {
+                    setShowOnlyStarred(true);
+                }
 
                 const matched = hoardings.find(h => {
                     const loc = String(h['Location '] || h.Location || h['Locality Site Location'] || '').toLowerCase();
@@ -4961,15 +4968,8 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                         targetText = inventorySearchCategories.map(cat => getCategoryFieldText(cat)).join(' ');
                     }
 
-                    const lowerTarget = targetText.toLowerCase();
-                    const lowerTargetCompact = lowerTarget.replace(/[\s\-_,.]+/g, '');
-
-                    // Match either normal substring or space/punctuation-stripped substring
-                    matchSearch = searchKeywords.every(keyword => {
-                        const kw = keyword.toLowerCase();
-                        const kwCompact = kw.replace(/[\s\-_,.]+/g, '');
-                        return lowerTarget.includes(kw) || (kwCompact && lowerTargetCompact.includes(kwCompact));
-                    });
+                    // 🔍 Fuzzy & Phonetic keyword matching (Begam ⇄ Begum, Dehli ⇄ Delhi, typos)
+                    matchSearch = matchesAllKeywordsFuzzy(targetText, searchKeywords);
                 }
             }
             if (!matchSearch) return false;
@@ -9479,20 +9479,90 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                                         onChange={(event) => setReviewSelections(prev => ({ ...prev, [upload.UploadId]: event.target.value }))}
                                                     />
                                                 </label>
-                                                <div className="nearby-sites">
-                                                    {(upload.NearbySites || []).slice(0, 4).map(site => {
-                                                        const hoarding = hoardings.find(item => item["Location "] === site.siteName);
-                                                        return (
-                                                            <button type="button" key={site.siteName} onClick={() => setReviewSelections(prev => ({ ...prev, [upload.UploadId]: site.siteName }))}>
-                                                                <img src={getImageUrl(hoarding)} alt={site.siteName} />
-                                                                <span>{site.distanceM}m</span>
-                                                            </button>
-                                                        );
-                                                    })}
-                                                </div>
-                                                <div className="staff-review-actions">
-                                                    <button className="approve" onClick={() => handleStaffReview(upload, 'approve')}>Approve & Update</button>
-                                                    <button className="history" onClick={() => handleStaffReview(upload, 'historyOnly')}>History Only</button>
+                                                {(() => {
+                                                    const uploadLat = parseFloat(upload.Latitude);
+                                                    const uploadLng = parseFloat(upload.Longitude);
+                                                    const uploadFacing = String(upload.Facing || upload.facing || '').trim().toLowerCase();
+
+                                                    let smartCandidates = [];
+                                                    if (!isNaN(uploadLat) && !isNaN(uploadLng) && Array.isArray(hoardings) && hoardings.length > 0) {
+                                                        smartCandidates = hoardings.map(h => {
+                                                            const hLat = parseFloat(h.Latitude || h.Lat || h['Lat.'] || (h['Lat-Long'] ? h['Lat-Long'].split(',')[0] : ''));
+                                                            const hLng = parseFloat(h.Longitude || h.Long || h['Long.'] || (h['Lat-Long'] ? h['Lat-Long'].split(',')[1] : ''));
+                                                            if (isNaN(hLat) || isNaN(hLng)) return null;
+                                                            const d = calculateDistance(`${uploadLat},${uploadLng}`, `${hLat},${hLng}`);
+                                                            const distM = d !== null ? Math.round(d * 1000) : 9999;
+                                                            const hFacing = String(h.Facing || h['Traffic View'] || '').trim().toLowerCase();
+                                                            const sameFacing = !uploadFacing || !hFacing || uploadFacing.includes(hFacing) || hFacing.includes(uploadFacing) || matchesKeywordFuzzy(hFacing, uploadFacing);
+                                                            return {
+                                                                site: h,
+                                                                siteName: h["Location "] || h.Location || h["Locality Site Location"] || '',
+                                                                sl: h.SL || h['S. No.'] || '',
+                                                                distM,
+                                                                facing: h.Facing || h['Traffic View'] || '',
+                                                                sameFacing
+                                                            };
+                                                        }).filter(c => c && c.distM <= 300 && c.sameFacing)
+                                                          .sort((a, b) => a.distM - b.distM)
+                                                          .slice(0, 6);
+                                                    }
+
+                                                    if (smartCandidates.length === 0 && Array.isArray(upload.NearbySites)) {
+                                                        smartCandidates = upload.NearbySites.slice(0, 4).map(s => {
+                                                            const hoarding = hoardings.find(item => item["Location "] === s.siteName || item.Location === s.siteName);
+                                                            return {
+                                                                site: hoarding,
+                                                                siteName: s.siteName,
+                                                                sl: hoarding?.SL || '',
+                                                                distM: s.distanceM,
+                                                                facing: hoarding?.Facing || '',
+                                                                sameFacing: true
+                                                            };
+                                                        });
+                                                    }
+
+                                                    return (
+                                                        <div className="nearby-candidates-section" style={{ marginTop: '10px' }}>
+                                                            <div style={{ fontSize: '0.78rem', fontWeight: 700, color: '#475569', marginBottom: '6px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                                                                <span>📍 Candidate Sites (≤300m • Same Facing):</span>
+                                                                <span style={{ fontSize: '0.72rem', color: '#6366f1' }}>{smartCandidates.length} found</span>
+                                                            </div>
+                                                            <div className="nearby-sites" style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                                                                {smartCandidates.map(c => {
+                                                                    const isSelected = selectedSite === c.siteName;
+                                                                    return (
+                                                                        <button 
+                                                                            type="button" 
+                                                                            key={c.siteName} 
+                                                                            onClick={() => setReviewSelections(prev => ({ ...prev, [upload.UploadId]: c.siteName }))}
+                                                                            style={{
+                                                                                display: 'inline-flex',
+                                                                                alignItems: 'center',
+                                                                                gap: '6px',
+                                                                                padding: '5px 10px',
+                                                                                borderRadius: '8px',
+                                                                                border: isSelected ? '2px solid #4f46e5' : '1px solid #cbd5e1',
+                                                                                background: isSelected ? '#eef2ff' : '#f8fafc',
+                                                                                color: isSelected ? '#3730a3' : '#334155',
+                                                                                fontWeight: isSelected ? 700 : 500,
+                                                                                fontSize: '0.76rem',
+                                                                                cursor: 'pointer',
+                                                                                transition: 'all 0.15s ease'
+                                                                            }}
+                                                                            title={`Click to match with ${c.siteName}`}
+                                                                        >
+                                                                            {c.site && <img src={getImageUrl(c.site)} alt={c.siteName} style={{ width: '22px', height: '22px', borderRadius: '4px', objectFit: 'cover' }} />}
+                                                                            <span>{c.sl ? `[#${c.sl}] ` : ''}{c.siteName.slice(0, 22)} ({c.distM}m)</span>
+                                                                        </button>
+                                                                    );
+                                                                })}
+                                                            </div>
+                                                        </div>
+                                                    );
+                                                })()}
+                                                <div className="staff-review-actions" style={{ marginTop: '12px' }}>
+                                                    <button className="approve" onClick={() => handleStaffReview(upload, 'approve')}>Confirm & Sync (Latest)</button>
+                                                    <button className="history" onClick={() => handleStaffReview(upload, 'historyOnly')}>Sync to History</button>
                                                     <button className="reject" onClick={() => handleStaffReview(upload, 'reject')}>Reject</button>
                                                 </div>
                                             </div>
@@ -10550,13 +10620,10 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                         if (clientStatusFilter === 'completed' && (!b.isCompleted || b.isDisplaced)) return false;
                         if (clientStatusFilter === 'displaced' && !b.isDisplaced) return false;
 
-                        const search = clientSearchTerm.toLowerCase().trim();
+                        const search = clientSearchTerm.trim();
                         if (!search) return true;
-                        const client = b.clientName.toLowerCase();
-                        const loc = b.location.toLowerCase();
-                        const city = b.city.toLowerCase();
-                        const facing = b.facing.toLowerCase();
-                        return client.includes(search) || loc.includes(search) || city.includes(search) || facing.includes(search);
+                        const clientTarget = `${b.clientName} ${b.location} ${b.city} ${b.facing}`;
+                        return matchesAllKeywordsFuzzy(clientTarget, search);
                     });
 
                     // Avatar backgrounds from QuickMart palette
