@@ -96,4 +96,26 @@ describe('Red Corner Target Brackets Engine', () => {
     expect(strokes.length).toBeGreaterThanOrEqual(4);
     expect(mockCtx.strokeStyle).toBe('#ef4444');
   });
+
+  it('rejects invalid brackets (e.g. number or missing coordinates) and does not draw strokes', () => {
+    const strokes = [];
+    const mockCtx = {
+      save: () => {},
+      restore: () => {},
+      beginPath: () => {},
+      moveTo: (x, y) => strokes.push({ move: [x, y] }),
+      lineTo: (x, y) => strokes.push({ line: [x, y] }),
+      stroke: () => {},
+      strokeStyle: '',
+      lineWidth: 0
+    };
+
+    // Number passed instead of object (the previous bug)
+    stampRedBracketsOnCanvas(mockCtx, 1000, 800, 0.78);
+    expect(strokes.length).toBe(0);
+
+    // Empty object with no coordinates
+    stampRedBracketsOnCanvas(mockCtx, 1000, 800, {});
+    expect(strokes.length).toBe(0);
+  });
 });

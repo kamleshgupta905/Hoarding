@@ -310,8 +310,8 @@ export class LiveSession {
   }
 
   _handleFatalError(msg) {
-    this._h.onError(msg);
-    this._h.onStateChange('error');
+    this._h.onError(msg || 'Jarvis intelligent assistant active (3.8 Flash).');
+    this._h.onStateChange('rest-fallback');
   }
 
   _send(obj) {

@@ -296,14 +296,15 @@ SITE IDENTIFICATION & SPEECH:
       },
       onRms:   (rms) => setUserRms(rms),
       onError: (err) => {
-        setErrorMsg(err.message);
-        connStateRef.current = STATE.ERROR;
-        setConnState(STATE.ERROR);
-        window.electronAPI?.logEvent?.('ERROR', 'Jarvis mic error', err.message);
+        setErrorMsg(err.message || 'Microphone unavailable. Text mode active.');
+        connStateRef.current = STATE.REST_FALLBACK;
+        setConnState(STATE.REST_FALLBACK);
+        setIsExpanded(true);
+        window.electronAPI?.logEvent?.('WARN', 'Jarvis mic fallback', err.message);
       },
     });
 
-    if (connStateRef.current === STATE.ERROR) return;  // mic failed
+    if (connStateRef.current === STATE.ERROR) return;
 
     // Connect WebSocket
     await session.connect();

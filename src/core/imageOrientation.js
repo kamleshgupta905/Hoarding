@@ -107,15 +107,22 @@ export const blobToDataUrl = (blob) => new Promise((resolve, reject) => {
  * matching master PowerPoint proposal vector shapes and Slide 2 standards.
  */
 export function stampRedBracketsOnCanvas(ctx, width, height, brackets) {
-    if (!brackets || !ctx || width <= 0 || height <= 0) return;
+    if (!brackets || typeof brackets !== 'object' || !ctx || width <= 0 || height <= 0) return;
 
-    const frameX = Math.round((brackets.relX ?? 0.25) * width);
-    const frameY = Math.round((brackets.relY ?? 0.25) * height);
-    const frameW = Math.round((brackets.relW ?? 0.5) * width);
-    const frameH = Math.round((brackets.relH ?? 0.35) * height);
+    const relX = typeof brackets.relX === 'number' ? brackets.relX : (typeof brackets.x === 'number' ? brackets.x / width : null);
+    const relY = typeof brackets.relY === 'number' ? brackets.relY : (typeof brackets.y === 'number' ? brackets.y / height : null);
+    const relW = typeof brackets.relW === 'number' ? brackets.relW : (typeof brackets.width === 'number' ? brackets.width / width : null);
+    const relH = typeof brackets.relH === 'number' ? brackets.relH : (typeof brackets.height === 'number' ? brackets.height / height : null);
 
-    const minArmW = Math.max(20, Math.round(frameW * 0.12));
-    const minArmH = Math.max(20, Math.round(frameH * 0.22));
+    if (relX === null || relY === null || relW === null || relH === null) return;
+
+    const frameX = Math.round(relX * width);
+    const frameY = Math.round(relY * height);
+    const frameW = Math.round(relW * width);
+    const frameH = Math.round(relH * height);
+
+    const minArmW = Math.max(16, Math.round(frameW * 0.12));
+    const minArmH = Math.max(16, Math.round(frameH * 0.22));
 
     const armW1 = Math.max(minArmW, Math.round((brackets.armW1 ?? 0.03) * width));
     const armH1 = Math.max(minArmH, Math.round((brackets.armH1 ?? 0.05) * height));
@@ -211,16 +218,18 @@ export const ensureUprightBlob = async (fileOrBlob, maxWidth = 1600, quality = 0
     const ctx = canvas.getContext('2d');
 
     if (needsManualExifRotate) {
+        ctx.save();
         ctx.translate(canvas.width / 2, canvas.height / 2);
         ctx.rotate((exifRotation * Math.PI) / 180);
         const drawW = Math.round(sourceWidth * scale);
         const drawH = Math.round(sourceHeight * scale);
         ctx.drawImage(bitmapOrImg, -drawW / 2, -drawH / 2, drawW, drawH);
+        ctx.restore();
     } else {
         ctx.drawImage(bitmapOrImg, 0, 0, finalWidth, finalHeight);
     }
 
-    if (brackets) {
+    if (brackets && typeof brackets === 'object') {
         stampRedBracketsOnCanvas(ctx, finalWidth, finalHeight, brackets);
     }
 

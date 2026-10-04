@@ -2375,7 +2375,7 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                     // 1. If photo has a Blob, compress and burn authentic red corner target brackets (┌ ┘)
                     if (photoCandidate.blob) {
                         try {
-                            const compressedDataUrl = await compressImage(photoCandidate.blob, 1280, 960, 0.78, brackets);
+                            const compressedDataUrl = await compressImage(photoCandidate.blob, 1440, 0.82, brackets);
                             pureBase64 = compressedDataUrl ? compressedDataUrl.replace(/^data:image\/[a-z0-9+-]+;base64,/, '') : '';
                         } catch (compErr) {
                             console.warn(`[Compression Fallback] Slide ${slide.number}:`, compErr);
@@ -2402,7 +2402,7 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                     byteNumbers[bi] = byteCharacters.charCodeAt(bi);
                                 }
                                 const blobFromB64 = new Blob([byteNumbers], { type: photoCandidate.mimeType || 'image/jpeg' });
-                                const compressedDataUrl = await compressImage(blobFromB64, 1280, 960, 0.78, brackets);
+                                const compressedDataUrl = await compressImage(blobFromB64, 1440, 0.82, brackets);
                                 pureBase64 = compressedDataUrl ? compressedDataUrl.replace(/^data:image\/[a-z0-9+-]+;base64,/, '') : cleanRawB64;
                             } catch (b64BracketErr) {
                                 console.warn(`[Base64 Bracket Stamping Notice] Slide ${slide.number}:`, b64BracketErr);

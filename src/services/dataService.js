@@ -2056,7 +2056,27 @@ export const fetchHoardings = async (forceFresh = false) => {
  * ⚡ FAST UPRIGHT IMAGE COMPRESSION
  * Ensures all images uploaded to Google Drive are 100% Upright (Seedha, 0° EXIF) and optimized.
  */
-export const compressImage = async (file, maxWidth = 1440, quality = 0.78, brackets = null) => {
+export const compressImage = async (file, maxWidth = 1440, arg3 = 0.78, arg4 = null, arg5 = null) => {
+    let quality = 0.78;
+    let brackets = null;
+
+    if (arg5 && typeof arg5 === 'object') {
+        // Called with 5 arguments: (file, maxWidth, maxHeight, quality, brackets)
+        quality = typeof arg4 === 'number' && arg4 <= 1 ? arg4 : 0.78;
+        brackets = arg5;
+    } else if (typeof arg3 === 'number' && arg3 > 1) {
+        // Called with (file, maxWidth, maxHeight, qualityOrBrackets, brackets)
+        quality = typeof arg4 === 'number' && arg4 <= 1 ? arg4 : 0.78;
+        brackets = (arg4 && typeof arg4 === 'object') ? arg4 : (arg5 || null);
+    } else if (typeof arg3 === 'object' && arg3 !== null) {
+        // Called with (file, maxWidth, brackets)
+        brackets = arg3;
+    } else {
+        // Called with (file, maxWidth, quality, brackets)
+        quality = typeof arg3 === 'number' ? Math.min(1, Math.max(0.1, arg3)) : 0.78;
+        brackets = (arg4 && typeof arg4 === 'object') ? arg4 : null;
+    }
+
     try {
         return await ensureUprightDataUrl(file, maxWidth, quality, brackets);
     } catch (err) {
@@ -2081,7 +2101,7 @@ export const compressImage = async (file, maxWidth = 1440, quality = 0.78, brack
                     canvas.height = height;
                     const ctx = canvas.getContext('2d');
                     ctx.drawImage(img, 0, 0, width, height);
-                    if (brackets) {
+                    if (brackets && typeof brackets === 'object') {
                         stampRedBracketsOnCanvas(ctx, width, height, brackets);
                     }
                     resolve(canvas.toDataURL('image/jpeg', quality));
