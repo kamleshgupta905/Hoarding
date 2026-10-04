@@ -297,6 +297,14 @@ function AutoUpdateBar() {
   );
 }
 
+const ProtectedAdminRoute = ({ children }) => {
+  const session = getAdminSession();
+  if (!session) {
+    return <Navigate to="/admin/login" replace />;
+  }
+  return children;
+};
+
 function AppContent({ hoardings, setHoardings }) {
   const location = useLocation();
   const searchParams = new URLSearchParams(location.search);
@@ -319,14 +327,6 @@ function AppContent({ hoardings, setHoardings }) {
       </div>
     );
   }
-
-  const ProtectedAdminRoute = ({ children }) => {
-    const session = getAdminSession();
-    if (!session) {
-      return <Navigate to="/admin/login" replace />;
-    }
-    return children;
-  };
 
   return (
     <div className="app-container">
@@ -672,11 +672,12 @@ function App() {
   const wrappedSetHoardings = (newData) => {
     const safeCache = (data) => {
       if (!data || typeof window === 'undefined') return;
+      let sanitized = data;
       try {
         const now = Date.now().toString();
         localStorage.setItem('last_hoardings_update', now);
         // 🛡️ Strip any heavy base64 strings so localStorage never exceeds quota
-        const sanitized = Array.isArray(data) ? data.map(h => {
+        sanitized = Array.isArray(data) ? data.map(h => {
           if (!h || typeof h !== 'object') return h;
           let changed = false;
           let newH = h;

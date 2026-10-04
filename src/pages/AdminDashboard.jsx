@@ -10513,10 +10513,6 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                                 const avatarUrl = `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(clientName)}`;
                                                 const start = b.start ? new Date(b.start).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' }) : 'Unknown';
                                                 const end = b.end ? new Date(b.end).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : 'Ongoing';
-                                                
-                                                const todayStr = new Date().toISOString().split('T')[0];
-                                                const isCurrent = b.start <= todayStr && b.end >= todayStr;
-                                                const isFuture = b.start > todayStr;
 
                                                 return (
                                                     <tr 
