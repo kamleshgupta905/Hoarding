@@ -1468,7 +1468,7 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
     const [showOnlyStarred, setShowOnlyStarred] = useState(false);
     const [isStarredBookingModalOpen, setIsStarredBookingModalOpen] = useState(false);
     const [isStarredMapModalOpen, setIsStarredMapModalOpen] = useState(false);
-    const [isFieldAuditCollapsed, setIsFieldAuditCollapsed] = useState(false);
+    const [isFieldAuditCollapsed, setIsFieldAuditCollapsed] = useState(true);
     const [isPptGenerating, setIsPptGenerating] = useState(false);
     const [pptProgressText, setPptProgressText] = useState('');
     const isDesktopApp = Boolean(typeof window !== 'undefined' && window.electronAPI?.isElectron);
@@ -7035,14 +7035,20 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                         </button>
                                     </div>
 
-                                    <div className="qm-recent-table-wrap" style={{ overflowX: 'auto' }}>
-                                        <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
+                                    <div className="qm-recent-table-wrap" style={{ overflowX: 'hidden', width: '100%' }}>
+                                        <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', tableLayout: 'fixed' }}>
+                                            <colgroup>
+                                                <col style={{ width: '20%' }} />
+                                                <col style={{ width: '42%' }} />
+                                                <col style={{ width: '20%' }} />
+                                                <col style={{ width: '18%' }} />
+                                            </colgroup>
                                             <thead>
                                                 <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
-                                                    <th style={{ padding: '10px 8px', fontSize: '0.72rem', fontWeight: 800, color: '#64748b', letterSpacing: '0.04em', textTransform: 'uppercase' }}>ORDER / SITE</th>
-                                                    <th style={{ padding: '10px 8px', fontSize: '0.72rem', fontWeight: 800, color: '#64748b', letterSpacing: '0.04em', textTransform: 'uppercase' }}>LOCATION</th>
-                                                    <th style={{ padding: '10px 8px', fontSize: '0.72rem', fontWeight: 800, color: '#64748b', letterSpacing: '0.04em', textTransform: 'uppercase' }}>TOTAL</th>
-                                                    <th style={{ padding: '10px 8px', fontSize: '0.72rem', fontWeight: 800, color: '#64748b', letterSpacing: '0.04em', textTransform: 'uppercase', textAlign: 'right' }}>STATUS</th>
+                                                    <th style={{ padding: '8px 4px', fontSize: '0.72rem', fontWeight: 800, color: '#64748b', letterSpacing: '0.04em', textTransform: 'uppercase', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>SITE</th>
+                                                    <th style={{ padding: '8px 4px', fontSize: '0.72rem', fontWeight: 800, color: '#64748b', letterSpacing: '0.04em', textTransform: 'uppercase', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>LOCATION</th>
+                                                    <th style={{ padding: '8px 4px', fontSize: '0.72rem', fontWeight: 800, color: '#64748b', letterSpacing: '0.04em', textTransform: 'uppercase', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>TOTAL</th>
+                                                    <th style={{ padding: '8px 2px', fontSize: '0.72rem', fontWeight: 800, color: '#64748b', letterSpacing: '0.04em', textTransform: 'uppercase', textAlign: 'right', whiteSpace: 'nowrap' }}>STATUS</th>
                                                 </tr>
                                             </thead>
                                             <tbody>
@@ -7050,7 +7056,7 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                                     const statusPillStyles = {
                                                         'Available': { bg: '#ecfdf5', color: '#059669', dot: '#10b981', text: 'Available' },
                                                         'Booked': { bg: '#fee2e2', color: '#dc2626', dot: '#ef4444', text: 'Booked' },
-                                                        'Prime': { bg: '#ecfdf5', color: '#047857', dot: '#059669', text: 'Prime Active' },
+                                                        'Prime': { bg: '#ecfdf5', color: '#047857', dot: '#059669', text: 'Prime' },
                                                         'Reserved': { bg: '#fef3c7', color: '#d97706', dot: '#f59e0b', text: 'Reserved' },
                                                         'Completed': { bg: '#f1f5f9', color: '#475569', dot: '#94a3b8', text: 'Completed' },
                                                         'Maintenance': { bg: '#f1f5f9', color: '#475569', dot: '#64748b', text: 'Maintenance' }
@@ -7076,28 +7082,29 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                                             }}
                                                             className="qm-table-row"
                                                         >
-                                                            <td style={{ padding: '12px 8px', fontSize: '0.82rem', fontWeight: 700, color: '#0f172a', whiteSpace: 'nowrap' }}>
+                                                            <td style={{ padding: '10px 4px', fontSize: '0.80rem', fontWeight: 700, color: '#0f172a', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={String(site.id)}>
                                                                 {site.id}
                                                             </td>
-                                                            <td style={{ padding: '12px 8px', fontSize: '0.82rem', fontWeight: 500, color: '#475569', maxWidth: '160px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                                            <td style={{ padding: '10px 4px', fontSize: '0.80rem', fontWeight: 500, color: '#475569', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={site.location}>
                                                                 {site.location}
                                                             </td>
-                                                            <td style={{ padding: '12px 8px', fontSize: '0.84rem', fontWeight: 700, color: '#0f172a', whiteSpace: 'nowrap' }}>
+                                                            <td style={{ padding: '10px 4px', fontSize: '0.80rem', fontWeight: 700, color: '#0f172a', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                                                                 ₹{site.rate.toLocaleString('en-IN')}
                                                             </td>
-                                                            <td style={{ padding: '12px 8px', textAlign: 'right', whiteSpace: 'nowrap' }}>
+                                                            <td style={{ padding: '10px 2px', textAlign: 'right', whiteSpace: 'nowrap' }}>
                                                                 <span style={{
                                                                     display: 'inline-flex',
                                                                     alignItems: 'center',
-                                                                    gap: '6px',
+                                                                    gap: '4px',
                                                                     background: style.bg,
                                                                     color: style.color,
-                                                                    padding: '4px 10px',
+                                                                    padding: '2px 7px',
                                                                     borderRadius: '999px',
-                                                                    fontSize: '0.74rem',
-                                                                    fontWeight: 700
+                                                                    fontSize: '0.70rem',
+                                                                    fontWeight: 700,
+                                                                    letterSpacing: '-0.01em'
                                                                 }}>
-                                                                    <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: style.dot }}></span>
+                                                                    <span style={{ width: '5px', height: '5px', borderRadius: '50%', background: style.dot, flexShrink: 0 }}></span>
                                                                     {style.text}
                                                                 </span>
                                                             </td>
@@ -7175,12 +7182,32 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                 viewport={{ once: false, amount: 0.12 }}
                                 transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
                                 className="qm-card" 
-                                style={{ padding: '24px 28px', background: '#ffffff', borderRadius: '20px', border: '1px solid #e2e8f0', boxShadow: '0 4px 20px -4px rgba(0, 0, 0, 0.05)' }}
+                                style={{ 
+                                    padding: isFieldAuditCollapsed ? '18px 24px' : '24px 28px', 
+                                    background: '#ffffff', 
+                                    borderRadius: '20px', 
+                                    border: '1px solid #e2e8f0', 
+                                    boxShadow: '0 4px 20px -4px rgba(0, 0, 0, 0.05)',
+                                    transition: 'all 0.2s ease'
+                                }}
                             >
                                 
                                 {/* 🌟 Header Section */}
-                                <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', flexWrap: 'wrap', gap: '16px', marginBottom: '20px', borderBottom: '1px solid #f1f5f9', paddingBottom: '18px' }}>
-                                    <div>
+                                <div style={{ 
+                                    display: 'flex', 
+                                    alignItems: 'flex-start', 
+                                    justifyContent: 'space-between', 
+                                    flexWrap: 'wrap', 
+                                    gap: '16px', 
+                                    marginBottom: isFieldAuditCollapsed ? '0px' : '20px', 
+                                    borderBottom: isFieldAuditCollapsed ? 'none' : '1px solid #f1f5f9', 
+                                    paddingBottom: isFieldAuditCollapsed ? '0px' : '18px' 
+                                }}>
+                                    <div 
+                                        style={{ cursor: 'pointer', flex: 1, minWidth: '260px' }}
+                                        onClick={() => setIsFieldAuditCollapsed(prev => !prev)}
+                                        title={isFieldAuditCollapsed ? "Click to expand Telemetry details" : "Click to collapse Telemetry"}
+                                    >
                                         <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '6px', flexWrap: 'wrap' }}>
                                             <h3 style={{ margin: 0, fontSize: '1.25rem', fontWeight: 800, color: '#0f172a', letterSpacing: '-0.02em', display: 'flex', alignItems: 'center', gap: '8px' }}>
                                                 <span>Live Field Audit & Ground Staff Telemetry</span>

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { 
   Calendar, 
   Clock, 
@@ -51,10 +51,20 @@ export const StarredBulkBookingModal = ({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitProgress, setSubmitProgress] = useState({ current: 0, total: 0, text: '' });
   const [rows, setRows] = useState([]);
+  const wasOpenRef = useRef(false);
 
-  // Initialize or re-populate table rows whenever modal opens or starredSites change
+  // Initialize table rows when modal opens (guard against self-conflict recomputes during submit)
   useEffect(() => {
-    if (!isOpen) return;
+    if (!isOpen) {
+      wasOpenRef.current = false;
+      return;
+    }
+
+    if (wasOpenRef.current || isSubmitting) {
+      return;
+    }
+
+    wasOpenRef.current = true;
 
     const initialRows = (starredSites || []).map((site, index) => {
       const sl = site.SL || site["S. No."] || site["SL NO"] || (index + 1);
@@ -95,7 +105,7 @@ export const StarredBulkBookingModal = ({
     });
 
     setRows(initialRows);
-  }, [isOpen, starredSites]);
+  }, [isOpen, starredSites, isSubmitting]);
 
   // Recalculate row's pro-rata and conflict status
   const recalculateRow = useCallback((row, updates = {}) => {
