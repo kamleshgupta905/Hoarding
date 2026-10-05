@@ -6249,6 +6249,45 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                 </div>
                             </div>
                             <div className="modal-footer">
+                                {isEditModalOpen && selectedHoarding && (
+                                    <button
+                                        type="button"
+                                        className="btn-delete-asset"
+                                        onClick={() => {
+                                            const h = selectedHoarding;
+                                            const siteTitle = h["Locality Site Location"] || h["Location "] || h.Location || h.site_name || (h.City ? `${h.City} Site` : "Hoarding Site");
+                                            setIsEditModalOpen(false);
+                                            setSelectedAssetFile(null);
+                                            setDeleteTarget({
+                                                site: h,
+                                                name: siteTitle,
+                                                city: h.City || h.city || '',
+                                                locality: h.Locality || h.Area || '',
+                                                facing: h.Facing || h["Traffic View"] || '',
+                                                sl: h.SL || h['S. No.'] || '',
+                                                id: h.UniqueID || h["Unique ID"] || h.ID || h._SiteID || ''
+                                            });
+                                        }}
+                                        style={{
+                                            marginRight: 'auto',
+                                            display: 'inline-flex',
+                                            alignItems: 'center',
+                                            gap: '8px',
+                                            padding: '10px 18px',
+                                            background: '#fee2e2',
+                                            border: '1px solid #fca5a5',
+                                            borderRadius: '10px',
+                                            color: '#dc2626',
+                                            fontWeight: '700',
+                                            fontSize: '0.86rem',
+                                            cursor: 'pointer',
+                                            transition: 'all 0.2s ease'
+                                        }}
+                                        title="Delete this site from inventory"
+                                    >
+                                        <Trash2 size={16} /> Delete Site
+                                    </button>
+                                )}
                                 <button type="button" className="btn-secondary" onClick={() => { setIsAddModalOpen(false); setIsEditModalOpen(false); setSelectedAssetFile(null); }}>Cancel</button>
                                 <button type="submit" className="btn-primary-admin">{isAddModalOpen ? 'Create Media Asset' : 'Save Changes'}</button>
                             </div>
@@ -9968,22 +10007,29 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                                             {(h.STATUS === 'Booked' || h.STATUS === 'Occupied') ? <CheckCircle size={16} /> : <Calendar size={16} />}
                                                         </button>
                                                         <button 
-                                                            className="btn-icon-small delete" 
+                                                            className="btn-icon-small map" 
                                                             onClick={() => {
-                                                                const siteTitle = h["Locality Site Location"] || h["Location "] || h.Location || h.site_name || (h.City ? `${h.City} Site` : "Hoarding Site");
-                                                                setDeleteTarget({
-                                                                    site: h,
-                                                                    name: siteTitle,
-                                                                    city: h.City || h.city || '',
-                                                                    locality: h.Locality || h.Area || '',
-                                                                    facing: h.Facing || h["Traffic View"] || '',
-                                                                    sl: h.SL || h['S. No.'] || '',
-                                                                    id: h.UniqueID || h["Unique ID"] || h.ID || h._SiteID || ''
-                                                                });
+                                                                const lat = h.Latitude ? String(h.Latitude).trim() : '';
+                                                                const lng = h.Longitude ? String(h.Longitude).trim() : '';
+                                                                const hasValidCoords = lat && lng && !isNaN(Number(lat)) && !isNaN(Number(lng)) && Number(lat) !== 0 && Number(lng) !== 0;
+
+                                                                if (hasValidCoords) {
+                                                                    window.open(`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(lat)},${encodeURIComponent(lng)}`, '_blank', 'noopener,noreferrer');
+                                                                } else {
+                                                                    const locName = h["Locality Site Location"] || h["Location "] || h.Location || '';
+                                                                    const cityName = h.City || h.city || '';
+                                                                    const queryStr = [locName, cityName].filter(Boolean).join(', ');
+                                                                    if (queryStr) {
+                                                                        window.open(`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(queryStr)}`, '_blank', 'noopener,noreferrer');
+                                                                    } else {
+                                                                        showToast("Location coordinates or address not found for this site", "warning");
+                                                                    }
+                                                                }
                                                             }}
-                                                            title="Delete Site"
+                                                            title="📍 View Real Location on Google Maps"
+                                                            style={{ color: '#0284c7' }}
                                                         >
-                                                            <X size={16} />
+                                                            <MapPin size={16} />
                                                         </button>
                                                     </div>
                                                 </td>
