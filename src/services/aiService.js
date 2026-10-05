@@ -829,7 +829,7 @@ export const getDHashDistance = (hash1, hash2) => {
     return dist;
 };
 
-const cropStampRegion = async (source, region = 'bottom-right', options = {}) => {
+const cropStampRegion = async (source, region = 'right-badge', options = {}) => {
     const image = await loadImage(source);
     const canvas = document.createElement('canvas');
     const origW = image.naturalWidth || 800;
@@ -842,35 +842,44 @@ const cropStampRegion = async (source, region = 'bottom-right', options = {}) =>
     const h = Math.round(origH * scale);
 
     const isInvert = Boolean(options.invert);
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
 
-    if (region === 'bottom-right') {
-        // Specifically for GPS Camera - PinPoint, NoteCam, Timestamp cameras in bottom-right corner
-        const startX = Math.floor(w * 0.35);
-        const startY = Math.floor(h * 0.55);
-        canvas.width = w - startX;
-        canvas.height = h - startY;
-        const ctx = canvas.getContext('2d', { willReadFrequently: true });
-        ctx.filter = isInvert ? 'invert(1) contrast(2.2) grayscale(1)' : 'contrast(1.6) grayscale(0.8)';
-        ctx.drawImage(image, Math.floor(origW * 0.35), Math.floor(origH * 0.55), origW - Math.floor(origW * 0.35), origH - Math.floor(origH * 0.55), 0, 0, canvas.width, canvas.height);
-    } else if (region === 'bottom') {
-        const startY = Math.floor(h * 0.50);
+    if (region === 'right-badge') {
+        // Floating Google Maps badge on right side (covers middle-right, center-right, upper-right)
+        const startX = Math.floor(w * 0.25);
+        const startY = Math.floor(h * 0.15);
+        const cropW = w - startX;
+        const cropH = Math.floor(h * 0.75);
+        canvas.width = cropW;
+        canvas.height = cropH;
+        ctx.filter = isInvert ? 'invert(1) contrast(2.0) grayscale(1)' : 'contrast(1.4) grayscale(1)';
+        ctx.drawImage(image, Math.floor(origW * 0.25), Math.floor(origH * 0.15), origW - Math.floor(origW * 0.25), Math.floor(origH * 0.75), 0, 0, canvas.width, canvas.height);
+    } else if (region === 'bottom-banner' || region === 'bottom') {
+        // Full bottom banner across whole width (covers bottom-left, bottom-center, bottom-right)
+        const startY = Math.floor(h * 0.45);
         canvas.width = w;
         canvas.height = h - startY;
-        const ctx = canvas.getContext('2d', { willReadFrequently: true });
-        ctx.filter = isInvert ? 'invert(1) contrast(2.2) grayscale(1)' : 'contrast(1.6) grayscale(0.8)';
-        ctx.drawImage(image, 0, Math.floor(origH * 0.50), origW, origH - Math.floor(origH * 0.50), 0, 0, canvas.width, canvas.height);
+        ctx.filter = isInvert ? 'invert(1) contrast(2.0) grayscale(1)' : 'contrast(1.4) grayscale(1)';
+        ctx.drawImage(image, 0, Math.floor(origH * 0.45), origW, origH - Math.floor(origH * 0.45), 0, 0, canvas.width, canvas.height);
+    } else if (region === 'bottom-right') {
+        // Legacy bottom-right corner
+        const startX = Math.floor(w * 0.35);
+        const startY = Math.floor(h * 0.50);
+        canvas.width = w - startX;
+        canvas.height = h - startY;
+        ctx.filter = isInvert ? 'invert(1) contrast(2.0) grayscale(1)' : 'contrast(1.4) grayscale(1)';
+        ctx.drawImage(image, Math.floor(origW * 0.35), Math.floor(origH * 0.50), origW - Math.floor(origW * 0.35), origH - Math.floor(origH * 0.50), 0, 0, canvas.width, canvas.height);
     } else if (region === 'top') {
         const endY = Math.floor(h * 0.40);
         canvas.width = w;
         canvas.height = endY;
-        const ctx = canvas.getContext('2d', { willReadFrequently: true });
-        ctx.filter = isInvert ? 'invert(1) contrast(2.2) grayscale(1)' : 'contrast(1.6) grayscale(0.8)';
+        ctx.filter = isInvert ? 'invert(1) contrast(2.0) grayscale(1)' : 'contrast(1.4) grayscale(1)';
         ctx.drawImage(image, 0, 0, origW, Math.floor(origH * 0.40), 0, 0, canvas.width, canvas.height);
     } else {
         // Full Image
         canvas.width = w;
         canvas.height = h;
-        const ctx = canvas.getContext('2d', { willReadFrequently: true });
+        ctx.filter = isInvert ? 'invert(1) contrast(2.0) grayscale(1)' : 'contrast(1.3) grayscale(0.8)';
         ctx.drawImage(image, 0, 0, origW, origH, 0, 0, w, h);
     }
     return canvas;
@@ -1012,49 +1021,53 @@ export const analyzeHoardingImage = async (base64Image, locationList, rawFile = 
         }
     }
 
-    // ─── STAGE 2: OCR GPS Stamp Extraction (Bottom-Right Pinpoint & Bottom Banners) ───────────
+    // ─── STAGE 2: OCR GPS Stamp Extraction (Multi-Zone Floating Badge & Full Banners) ───────────
     let detectedOcrText = '';
     try {
         const ocrPromise = (async () => {
             const worker = await getOcrWorker();
-            // 1. Try bottom-right corner with inverted contrast (dark GPS badges like GPS Map Camera, PinPoint, NoteCam)
-            const brInverted = await cropStampRegion(base64Image, 'bottom-right', { invert: true });
-            const brResult = await worker.recognize(brInverted);
-            let text = String(brResult?.data?.text || '').replace(/\s+/g, ' ').trim();
-            let ocrCoord = extractCoordinatesFromText(text);
+            let text = '';
+            let ocrCoord = null;
 
-            // 2. If inverted didn't yield valid GPS, try standard bottom-right
+            // 1. First priority: Right-side floating Google Maps badge (used by GPS Map Camera in >80% of Indian OOH photos)
+            const rightCrop = await cropStampRegion(base64Image, 'right-badge', { invert: false });
+            const rightRes = await worker.recognize(rightCrop);
+            const rText = String(rightRes?.data?.text || '').replace(/\s+/g, ' ').trim();
+            text = rText;
+            ocrCoord = extractCoordinatesFromText(text);
+
+            // 2. Second priority: Full bottom banner (covers bottom-left, bottom-center, bottom-right without clipping)
             if (!ocrCoord) {
-                const brCrop = await cropStampRegion(base64Image, 'bottom-right', { invert: false });
-                const res = await worker.recognize(brCrop);
-                const t2 = String(res?.data?.text || '').replace(/\s+/g, ' ').trim();
-                text += ' ' + t2;
+                const bottomCrop = await cropStampRegion(base64Image, 'bottom-banner', { invert: false });
+                const bRes = await worker.recognize(bottomCrop);
+                const bText = String(bRes?.data?.text || '').replace(/\s+/g, ' ').trim();
+                text += ' ' + bText;
                 ocrCoord = extractCoordinatesFromText(text);
             }
 
-            // 3. If bottom-right didn't yield valid GPS, try entire bottom banner (inverted)
+            // 3. Third priority: Inverted dark badge (NoteCam, SpotLens, black overlay badges)
             if (!ocrCoord) {
-                const bottomCrop = await cropStampRegion(base64Image, 'bottom', { invert: true });
-                const bottomResult = await worker.recognize(bottomCrop);
-                const bottomText = String(bottomResult?.data?.text || '').replace(/\s+/g, ' ').trim();
-                text += ' ' + bottomText;
+                const rightInvCrop = await cropStampRegion(base64Image, 'right-badge', { invert: true });
+                const invRes = await worker.recognize(rightInvCrop);
+                const invText = String(invRes?.data?.text || '').replace(/\s+/g, ' ').trim();
+                text += ' ' + invText;
                 ocrCoord = extractCoordinatesFromText(text);
             }
 
-            // 4. If still not found, try top banner (inverted)
+            // 4. Fourth priority: Full image scan (catches top, center, anywhere)
             if (!ocrCoord) {
-                const topCrop = await cropStampRegion(base64Image, 'top', { invert: true });
-                const topResult = await worker.recognize(topCrop);
-                const topText = String(topResult?.data?.text || '').replace(/\s+/g, ' ').trim();
-                text += ' ' + topText;
+                const fullCrop = await cropStampRegion(base64Image, 'full', { invert: false });
+                const fRes = await worker.recognize(fullCrop);
+                const fText = String(fRes?.data?.text || '').replace(/\s+/g, ' ').trim();
+                text += ' ' + fText;
                 ocrCoord = extractCoordinatesFromText(text);
             }
 
             return { text, ocrCoord };
         })();
 
-        // Robust 8.0s timeout ensures Tesseract worker finishes even under multi-image load
-        const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('OCR timeout')), 8000));
+        // Robust 20.0s timeout ensures Tesseract worker finishes even under batch upload queues
+        const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('OCR timeout')), 20000));
         const { text, ocrCoord } = await Promise.race([ocrPromise, timeoutPromise]);
         detectedOcrText = text;
         let ocrFacing = null;

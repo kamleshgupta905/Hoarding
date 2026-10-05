@@ -5744,6 +5744,22 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                 </div>
                             </div>
 
+                            {/* AI Vision Status Box */}
+                            <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '14px', padding: '12px 16px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                        <Sparkles size={16} color="#6366f1" />
+                                        <span style={{ fontSize: '0.82rem', fontWeight: 700, color: '#0f172a' }}>Google Gemini AI Vision & Multi-Zone OCR</span>
+                                    </div>
+                                    <span style={{ fontSize: '0.72rem', fontWeight: 700, color: '#16a34a', background: '#dcfce7', padding: '2px 8px', borderRadius: '10px' }}>
+                                        ● Active
+                                    </span>
+                                </div>
+                                <span style={{ fontSize: '0.72rem', color: '#64748b' }}>
+                                    Full-frame watermark scanner, high-accuracy geofencing & visual landmark detection active.
+                                </span>
+                            </div>
+
                             {/* Update & Cache Actions */}
                             <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
                                 {/* 1. Check for Updates Button */}

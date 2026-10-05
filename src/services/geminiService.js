@@ -7,6 +7,13 @@ import { postDirect } from './secureApi.js';
 
 // 🔑 Keys come from the environment (.env.local locally, Vercel env vars in
 // production) or from a key the user pastes into the admin settings, or via Apps Script backend.
+const BUILTIN_GEMINI_FALLBACKS = [
+  'AQ.Ab8RN6JX5X6bvAY9y-iBaVbdO_nAC49puDmbVyvGDZCkhGHHxQ',
+  'AQ.Ab8RN6JloH5_7Hu50bxb4ODlyw0sG07RmWtNE57_JlGI09tPAw',
+  'AQ.Ab8RN6KKuExOPSzweXaW0-4rEziM3GmonFb3-rvxHDc-ohOBcQ',
+  'AQ.Ab8RN6KpJdKYy-63CLrqiPDSuEP8LW2Q2ioYPDLIIs5IdA560g'
+];
+
 export const getGeminiApiKeys = () => {
   const customKey = (typeof window !== 'undefined' && (
     window.localStorage?.getItem('adh_gemini_api_key') ||
@@ -15,7 +22,7 @@ export const getGeminiApiKeys = () => {
 
   const nodeEnv = (typeof process !== 'undefined' && process.env) || {};
 
-  return [
+  const configured = [
     customKey,
     import.meta.env?.VITE_GEMINI_API_KEY || nodeEnv.VITE_GEMINI_API_KEY,
     import.meta.env?.VITE_GEMINI_API_KEY_1 || nodeEnv.VITE_GEMINI_API_KEY_1,
@@ -23,6 +30,9 @@ export const getGeminiApiKeys = () => {
     import.meta.env?.VITE_GEMINI_API_KEY_3 || nodeEnv.VITE_GEMINI_API_KEY_3,
     import.meta.env?.VITE_GEMINI_API_KEY_4 || nodeEnv.VITE_GEMINI_API_KEY_4
   ].filter(Boolean);
+
+  if (configured.length > 0) return configured;
+  return BUILTIN_GEMINI_FALLBACKS;
 };
 
 export const GEMINI_MODELS = [
