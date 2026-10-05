@@ -17,7 +17,7 @@ const publicVersionPath = path.join(rootDir, 'public', 'version.json');
 let publicVersionData = {
   features: [
     "Multi-Zone AI & OCR Watermark Scanner for right-badge, bottom-banner & full photo",
-    "Embedded Gemini Vision AI active in Desktop (.exe) builds with automated fallback keys",
+    "Smart AI Vision active in Desktop (.exe) builds with automated fallback keys",
     "Google Maps Pin directly in Inventory table action & Delete site moved to Edit Modal",
     "Clean Client Proposal Excel Export without Image Link column",
     "Direct Phone Call & Audit Verification Portal (WhatsApp Purged)"
