@@ -1,13 +1,14 @@
 {
   "features": [
-    "Visible on-screen auto-updater for Desktop and Staff Mobile apps with live download progress",
-    "Automatic red corner target brackets (┌ ┘) extraction & stamping for PPT media proposals and Google Cloud sync",
-    "Full sequential 1-to-1 site matching and clean data synchronization",
-    "Phonetic fuzzy search and smart inventory filtering"
+    "Multi-Zone AI & OCR Watermark Scanner for right-badge, bottom-banner & full photo",
+    "Embedded Gemini Vision AI active in Desktop (.exe) builds with automated fallback keys",
+    "Google Maps Pin directly in Inventory table action & Delete site moved to Edit Modal",
+    "Clean Client Proposal Excel Export without Image Link column",
+    "Direct Phone Call & Audit Verification Portal (WhatsApp Purged)"
   ],
-  "version": "1.8.36",
-  "buildTimestamp": 1791179381219,
-  "buildDate": "2026-10-05T05:49:41.219Z",
-  "releaseTag": "v1.8.36",
+  "version": "1.8.40",
+  "buildTimestamp": 1791180116485,
+  "buildDate": "2026-10-05T06:01:56.485Z",
+  "releaseTag": "v1.8.40",
   "apkUrl": "https://github.com/kamleshgupta905/Hoarding/releases/download/staff-apk-latest/heera-staff-camera.apk"
 }

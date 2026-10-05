@@ -16,10 +16,10 @@ const iso = new Date(now).toISOString();
 const publicVersionPath = path.join(rootDir, 'public', 'version.json');
 let publicVersionData = {
   features: [
-    "Custom Renewal Horizon (7d-60d) & Dynamic Expiry Countdown Badges",
-    "Starred Google Maps Navigation, Live Route Map & KML/CSV Export",
-    "Clean Client Proposal Excel Export without Image Link Column",
-    "Compact Live Telemetry Radar with Quick Accordion Toggle",
+    "Multi-Zone AI & OCR Watermark Scanner for right-badge, bottom-banner & full photo",
+    "Embedded Gemini Vision AI active in Desktop (.exe) builds with automated fallback keys",
+    "Google Maps Pin directly in Inventory table action & Delete site moved to Edit Modal",
+    "Clean Client Proposal Excel Export without Image Link column",
     "Direct Phone Call & Audit Verification Portal (WhatsApp Purged)"
   ]
 };
