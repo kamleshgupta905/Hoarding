@@ -387,6 +387,7 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
 
     const [inventorySearchCategories, setInventorySearchCategories] = useState(['all']);
     const [isSearchCategoryDropdownOpen, setIsSearchCategoryDropdownOpen] = useState(false);
+    const [isSyncingBookingsToCloud, setIsSyncingBookingsToCloud] = useState(false);
 
     const toggleSearchCategory = (catId) => {
         setInventorySearchCategories(prev => {
@@ -3756,6 +3757,71 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                 window.dispatchEvent(new CustomEvent('hoardings:sync-requested'));
             }
         }).catch(err => console.warn("Reset available background sync:", err));
+    };
+
+    const handleSyncAllBookingsToCloud = async () => {
+        if (isSyncingBookingsToCloud) return;
+        setIsSyncingBookingsToCloud(true);
+        try {
+            const bookedSites = hoardings.filter(h => {
+                const slots = getSiteBookingSlots(h);
+                const status = String(h.status || h.STATUS || h.Status || '').toLowerCase();
+                return status === 'booked' || slots.length > 0;
+            });
+
+            if (bookedSites.length === 0) {
+                showToast("No active bookings found in inventory to sync.", "info");
+                return;
+            }
+
+            showToast(`Syncing ${bookedSites.length} booking(s) to Google Cloud Sheet...`, "info");
+            let synced = 0;
+            for (const site of bookedSites) {
+                const targetLoc = site["Locality Site Location"] || site["Location "] || site.Location || '';
+                const targetSL = site.SL || site["S. No."] || site["SL NO"] || '';
+                const targetFacing = site.Facing || site["Traffic View"] || '';
+                const targetId = site.UniqueID || site["Unique ID"] || site.ID || site._SiteID || '';
+                const slots = getSiteBookingSlots(site);
+                const primarySlot = slots[0];
+
+                const cleanFields = {
+                    ...site,
+                    SL: targetSL || site.SL || '',
+                    _SiteID: targetId || site._SiteID || '',
+                    STATUS: 'Booked',
+                    status: 'Booked',
+                    Status: 'Booked',
+                    BookedBy: primarySlot?.client || site.BookedBy || 'Booked Client',
+                    BookingStart: primarySlot?.start || site.BookingStart || '',
+                    BookingEnd: primarySlot?.end || site.BookingEnd || '',
+                    BookingSchedule: JSON.stringify(slots)
+                };
+                delete cleanFields.History;
+
+                try {
+                    await syncToGoogleSheet({
+                        action: 'updateHoarding',
+                        siteName: targetLoc,
+                        siteId: targetId,
+                        sl: targetSL || '',
+                        facing: targetFacing,
+                        fields: cleanFields
+                    });
+                    synced++;
+                } catch (err) {
+                    console.warn(`Sync failed for site ${targetLoc}:`, err);
+                }
+            }
+
+            showToast(`🎉 Successfully synced ${synced} booking(s) to Google Sheet & Web!`, "success");
+            if (typeof window !== 'undefined') {
+                window.dispatchEvent(new CustomEvent('hoardings:sync-requested'));
+            }
+        } catch (err) {
+            showToast("Sync error: " + err.message, "error");
+        } finally {
+            setIsSyncingBookingsToCloud(false);
+        }
     };
 
     const handleAddAsset = async (e) => {
@@ -10295,27 +10361,53 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                         {allBookings.length} active & scheduled bookings across all media locations
                                     </p>
                                 </div>
-                                <button 
-                                    type="button" 
-                                    onClick={() => setIsBulkBookingOpen(true)}
-                                    style={{
-                                        display: 'inline-flex',
-                                        alignItems: 'center',
-                                        gap: '8px',
-                                        padding: '10px 20px',
-                                        borderRadius: '10px',
-                                        background: '#10b981',
-                                        color: '#ffffff',
-                                        fontWeight: 700,
-                                        fontSize: '0.86rem',
-                                        border: 'none',
-                                        cursor: 'pointer',
-                                        boxShadow: '0 4px 12px rgba(16, 185, 129, 0.25)'
-                                    }}
-                                    title="Open Multi-Client Bulk Campaign Onboarding Wizard"
-                                >
-                                    <Layers size={16} /> Bulk Campaign Onboarding
-                                </button>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+                                    <button 
+                                        type="button" 
+                                        onClick={handleSyncAllBookingsToCloud}
+                                        disabled={isSyncingBookingsToCloud}
+                                        style={{
+                                            display: 'inline-flex',
+                                            alignItems: 'center',
+                                            gap: '8px',
+                                            padding: '10px 18px',
+                                            borderRadius: '10px',
+                                            background: isSyncingBookingsToCloud ? '#94a3b8' : '#2563eb',
+                                            color: '#ffffff',
+                                            fontWeight: 700,
+                                            fontSize: '0.86rem',
+                                            border: 'none',
+                                            cursor: isSyncingBookingsToCloud ? 'not-allowed' : 'pointer',
+                                            boxShadow: isSyncingBookingsToCloud ? 'none' : '0 4px 12px rgba(37, 99, 235, 0.25)',
+                                            transition: 'all 0.2s ease'
+                                        }}
+                                        title="Push all active desktop bookings to Google Sheet so they appear immediately on Web"
+                                    >
+                                        <RefreshCw size={16} className={isSyncingBookingsToCloud ? 'animate-spin' : ''} /> 
+                                        {isSyncingBookingsToCloud ? 'Syncing...' : 'Sync to Web / Cloud'}
+                                    </button>
+                                    <button 
+                                        type="button" 
+                                        onClick={() => setIsBulkBookingOpen(true)}
+                                        style={{
+                                            display: 'inline-flex',
+                                            alignItems: 'center',
+                                            gap: '8px',
+                                            padding: '10px 20px',
+                                            borderRadius: '10px',
+                                            background: '#10b981',
+                                            color: '#ffffff',
+                                            fontWeight: 700,
+                                            fontSize: '0.86rem',
+                                            border: 'none',
+                                            cursor: 'pointer',
+                                            boxShadow: '0 4px 12px rgba(16, 185, 129, 0.25)'
+                                        }}
+                                        title="Open Multi-Client Bulk Campaign Onboarding Wizard"
+                                    >
+                                        <Layers size={16} /> Bulk Campaign Onboarding
+                                    </button>
+                                </div>
                             </div>
 
                             {/* 🚨 15-Days Renewal Predictor Radar */}

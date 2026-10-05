@@ -66,6 +66,12 @@ jobs:
           $pubRepo = "kamleshgupta905/hoarding-desktop-releases"
 
           Write-Host "1. Ensuring public release $tag on $pubRepo is published (not draft)..."
+          try {
+            $draftIds = gh api "repos/$pubRepo/releases" --jq '.[] | select(.draft == true) | .id'
+            foreach ($dId in $draftIds) {
+              if ($dId) { gh api -X DELETE "repos/$pubRepo/releases/$dId" 2>$null }
+            }
+          } catch {}
           try { gh release create $tag --repo $pubRepo --title "Heera Advertising Admin v$($pkg.version)" --notes "Automated release with silent auto-updater support." 2>$null } catch {}
           try { gh release edit $tag --repo $pubRepo --draft=false 2>$null } catch {}
           Get-ChildItem dist_electron -Filter *.exe | ForEach-Object { try { gh release upload $tag $_.FullName --repo $pubRepo --clobber 2>$null } catch {} }
