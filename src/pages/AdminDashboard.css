@@ -2336,6 +2336,30 @@
     display: flex;
     flex-direction: column;
     flex: 1;
+    min-height: 0;
+    overflow: hidden;
+}
+
+/* 📅 Dedicated Quick Booking Card with Clean Hidden Scrollbars */
+.quick-booking-card {
+    background: #ffffff;
+    border-radius: 20px;
+    width: 100%;
+    max-width: 490px;
+    max-height: min(90vh, 720px);
+    display: flex;
+    flex-direction: column;
+    box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.35);
+    border: 1px solid #e2e8f0;
+    overflow: hidden;
+    animation: scaleIn 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.quick-booking-card form {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-height: 0;
     overflow: hidden;
 }
 
@@ -2364,6 +2388,14 @@
     padding: 24px;
     overflow-y: auto;
     flex: 1;
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+}
+
+.modal-body::-webkit-scrollbar {
+    display: none;
+    width: 0;
+    height: 0;
 }
 
 .modal-input {

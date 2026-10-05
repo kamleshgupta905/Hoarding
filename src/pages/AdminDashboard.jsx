@@ -11313,26 +11313,28 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                 display: 'flex', 
                                 alignItems: 'center', 
                                 justifyContent: 'center', 
-                                padding: '20px' 
+                                padding: '16px' 
                             }} 
                             onClick={() => setQuickBookingTarget(null)}
                         >
                             <div 
-                                className="modal-card" 
+                                className="quick-booking-card" 
                                 style={{ 
-                                    maxWidth: '480px', 
+                                    maxWidth: '490px', 
                                     width: '100%', 
                                     borderRadius: '20px', 
-                                    padding: '24px 26px', 
                                     background: '#ffffff', 
                                     boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.35)', 
                                     border: '1px solid #e2e8f0',
-                                    maxHeight: '90vh',
-                                    overflowY: 'auto'
+                                    maxHeight: 'min(90vh, 700px)',
+                                    display: 'flex',
+                                    flexDirection: 'column',
+                                    overflow: 'hidden'
                                 }} 
                                 onClick={e => e.stopPropagation()}
                             >
-                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+                                {/* 🏷️ Fixed Header */}
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '18px 24px 14px 24px', borderBottom: '1px solid #f1f5f9', flexShrink: 0 }}>
                                     <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                                         <div style={{ background: '#fee2e2', color: '#ef4444', padding: '10px', borderRadius: '12px', display: 'flex' }}>
                                             <Calendar size={22} />
@@ -11350,210 +11352,245 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                     </button>
                                 </div>
 
-                                {/* 📅 Existing Reserved Slots on This Site */}
-                                {siteSlots.length > 0 && (
-                                    <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '12px', marginBottom: '16px' }}>
-                                        <div style={{ fontSize: '0.72rem', fontWeight: 700, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                            <Calendar size={13} color="#64748b" />
-                                            Existing Reserved Slots ({siteSlots.length}):
-                                        </div>
-                                        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                                            {siteSlots.map(s => {
-                                                const sFmt = new Date(s.start).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
-                                                const eFmt = new Date(s.end).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
-                                                return (
-                                                    <div key={s.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '6px 10px' }}>
-                                                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                                            <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#ef4444', display: 'inline-block' }}></span>
-                                                            <strong style={{ fontSize: '0.82rem', color: '#0f172a' }}>{s.client}</strong>
-                                                            <span style={{ fontSize: '0.76rem', color: '#64748b' }}>({sFmt} → {eFmt})</span>
-                                                        </div>
-                                                        <button
-                                                            type="button"
-                                                            onClick={() => handleRemoveSlot(quickBookingTarget.site, s.id)}
-                                                            style={{ background: '#fee2e2', border: 'none', borderRadius: '6px', padding: '3px 8px', color: '#b91c1c', fontSize: '0.72rem', fontWeight: 700, cursor: 'pointer' }}
-                                                            title="Release this booking slot"
-                                                        >
-                                                            Release
-                                                        </button>
-                                                    </div>
-                                                );
-                                            })}
-                                        </div>
-                                    </div>
-                                )}
-
-                                <form onSubmit={handleConfirmQuickBooking} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-                                    <div>
-                                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
-                                            <label style={{ fontSize: '0.84rem', fontWeight: 700, color: '#334155' }}>
-                                                Client / Advertiser Name <span style={{ color: '#ef4444' }}>*</span>
-                                            </label>
-                                            {quickBookingTarget.clientName.trim() && (
-                                                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.78rem', color: '#059669', fontWeight: 600 }}>
-                                                    <div style={{
-                                                        width: '24px',
-                                                        height: '24px',
-                                                        borderRadius: '50%',
-                                                        backgroundColor: '#ffd5dc',
-                                                        overflow: 'hidden',
-                                                        display: 'flex',
-                                                        alignItems: 'center',
-                                                        justifyContent: 'center',
-                                                        boxShadow: '0 1px 3px rgba(0,0,0,0.1)'
-                                                    }}>
-                                                        <img 
-                                                            src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(quickBookingTarget.clientName.trim())}`}
-                                                            alt="avatar"
-                                                            style={{ width: '100%', height: '100%', objectFit: 'contain' }}
-                                                        />
-                                                    </div>
-                                                    <span>Character Avatar</span>
+                                <form 
+                                    onSubmit={handleConfirmQuickBooking} 
+                                    style={{ 
+                                        display: 'flex', 
+                                        flexDirection: 'column', 
+                                        flex: 1, 
+                                        minHeight: 0, 
+                                        overflow: 'hidden', 
+                                        margin: 0 
+                                    }}
+                                >
+                                    {/* 📜 Smooth Scrollable Body Without Visible Scrollbar */}
+                                    <div 
+                                        className="no-scrollbar" 
+                                        style={{ 
+                                            padding: '20px 24px', 
+                                            overflowY: 'auto', 
+                                            flex: 1, 
+                                            minHeight: 0,
+                                            display: 'flex', 
+                                            flexDirection: 'column', 
+                                            gap: '14px',
+                                            scrollbarWidth: 'none',
+                                            msOverflowStyle: 'none'
+                                        }}
+                                    >
+                                        {/* 📅 Existing Reserved Slots on This Site */}
+                                        {siteSlots.length > 0 && (
+                                            <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '12px' }}>
+                                                <div style={{ fontSize: '0.72rem', fontWeight: 700, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                                    <Calendar size={13} color="#64748b" />
+                                                    Existing Reserved Slots ({siteSlots.length}):
                                                 </div>
-                                            )}
-                                        </div>
-                                        <input
-                                            type="text"
-                                            required
-                                            placeholder="e.g. Tata Motors, Samsung, Krishna"
-                                            value={quickBookingTarget.clientName}
-                                            onChange={(e) => setQuickBookingTarget({ ...quickBookingTarget, clientName: e.target.value })}
-                                            style={{ width: '100%', padding: '10px 14px', borderRadius: '10px', border: '1px solid #cbd5e1', fontSize: '0.9rem', outline: 'none' }}
-                                            autoFocus
-                                        />
-                                    </div>
+                                                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                                                    {siteSlots.map(s => {
+                                                        const sFmt = new Date(s.start).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
+                                                        const eFmt = new Date(s.end).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
+                                                        return (
+                                                            <div key={s.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '6px 10px' }}>
+                                                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                                                    <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#ef4444', display: 'inline-block' }}></span>
+                                                                    <strong style={{ fontSize: '0.82rem', color: '#0f172a' }}>{s.client}</strong>
+                                                                    <span style={{ fontSize: '0.76rem', color: '#64748b' }}>({sFmt} → {eFmt})</span>
+                                                                </div>
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => handleRemoveSlot(quickBookingTarget.site, s.id)}
+                                                                    style={{ background: '#fee2e2', border: 'none', borderRadius: '6px', padding: '3px 8px', color: '#b91c1c', fontSize: '0.72rem', fontWeight: 700, cursor: 'pointer' }}
+                                                                    title="Release this booking slot"
+                                                                >
+                                                                    Release
+                                                                </button>
+                                                            </div>
+                                                        );
+                                                    })}
+                                                </div>
+                                            </div>
+                                        )}
 
-                                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
                                         <div>
-                                            <label style={{ display: 'block', fontSize: '0.84rem', fontWeight: 700, color: '#334155', marginBottom: '6px' }}>
-                                                Booking Start <span style={{ color: '#ef4444' }}>*</span>
-                                            </label>
-                                            <input
-                                                type="date"
-                                                required
-                                                value={quickBookingTarget.startDate}
-                                                onChange={(e) => setQuickBookingTarget({ ...quickBookingTarget, startDate: e.target.value })}
-                                                style={{ width: '100%', padding: '9px 12px', borderRadius: '10px', border: '1px solid #cbd5e1', fontSize: '0.86rem', outline: 'none' }}
-                                            />
-                                        </div>
-                                        <div>
-                                            <label style={{ display: 'block', fontSize: '0.84rem', fontWeight: 700, color: '#334155', marginBottom: '6px' }}>
-                                                Booking End <span style={{ color: '#ef4444' }}>*</span>
-                                            </label>
-                                            <input
-                                                type="date"
-                                                required
-                                                value={quickBookingTarget.endDate}
-                                                onChange={(e) => setQuickBookingTarget({ ...quickBookingTarget, endDate: e.target.value })}
-                                                style={{ width: '100%', padding: '9px 12px', borderRadius: '10px', border: '1px solid #cbd5e1', fontSize: '0.86rem', outline: 'none' }}
-                                            />
-                                        </div>
-                                    </div>
-
-                                    {/* ⚠️ Collision Error Alert / ⚡ Override Controls */}
-                                    {conflict.conflict && (
-                                        <div style={{ 
-                                            background: quickBookingTarget.isOverride ? '#fffbeb' : '#fef2f2', 
-                                            border: `1px solid ${quickBookingTarget.isOverride ? '#fde68a' : '#fca5a5'}`, 
-                                            borderRadius: '10px', 
-                                            padding: '10px 12px', 
-                                            color: quickBookingTarget.isOverride ? '#92400e' : '#991b1b' 
-                                        }}>
-                                            <div style={{ display: 'flex', alignItems: 'flex-start', gap: '10px' }}>
-                                                <div style={{ fontSize: '1.1rem', lineHeight: 1 }}>{quickBookingTarget.isOverride ? '⚡' : '🚫'}</div>
-                                                <div style={{ flex: 1 }}>
-                                                    <div style={{ fontWeight: 800, fontSize: '0.82rem' }}>
-                                                        {quickBookingTarget.isOverride ? 'Override Booking Active' : 'Slot Collision Detected!'}
-                                                    </div>
-                                                    <div style={{ fontSize: '0.76rem', marginTop: '2px', color: quickBookingTarget.isOverride ? '#b45309' : '#b91c1c' }}>
-                                                        {conflict.reason}. {quickBookingTarget.isOverride ? 'Existing slots will be adjusted according to your override mode.' : 'You can enable override or select alternate dates.'}
-                                                    </div>
-
-                                                    {/* Override Controls */}
-                                                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px', alignItems: 'center', marginTop: '8px' }}>
-                                                        <label style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer', fontSize: '0.82rem', fontWeight: 700, color: '#92400e' }}>
-                                                            <input 
-                                                                type="checkbox"
-                                                                checked={Boolean(quickBookingTarget.isOverride)}
-                                                                onChange={(e) => setQuickBookingTarget({ 
-                                                                    ...quickBookingTarget, 
-                                                                    isOverride: e.target.checked, 
-                                                                    overrideMode: quickBookingTarget.overrideMode || 'trim' 
-                                                                })}
-                                                                style={{ accentColor: '#d97706', width: '15px', height: '15px' }}
+                                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                                                <label style={{ fontSize: '0.84rem', fontWeight: 700, color: '#334155' }}>
+                                                    Client / Advertiser Name <span style={{ color: '#ef4444' }}>*</span>
+                                                </label>
+                                                {quickBookingTarget.clientName.trim() && (
+                                                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.78rem', color: '#059669', fontWeight: 600 }}>
+                                                        <div style={{
+                                                            width: '24px',
+                                                            height: '24px',
+                                                            borderRadius: '50%',
+                                                            backgroundColor: '#ffd5dc',
+                                                            overflow: 'hidden',
+                                                            display: 'flex',
+                                                            alignItems: 'center',
+                                                            justifyContent: 'center',
+                                                            boxShadow: '0 1px 3px rgba(0,0,0,0.1)'
+                                                        }}>
+                                                            <img 
+                                                                src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(quickBookingTarget.clientName.trim())}`}
+                                                                alt="avatar"
+                                                                style={{ width: '100%', height: '100%', objectFit: 'contain' }}
                                                             />
-                                                            <span>⚡ Enable Override Booking</span>
-                                                        </label>
+                                                        </div>
+                                                        <span>Character Avatar</span>
+                                                    </div>
+                                                )}
+                                            </div>
+                                            <input
+                                                type="text"
+                                                required
+                                                placeholder="e.g. Tata Motors, Samsung, Krishna"
+                                                value={quickBookingTarget.clientName}
+                                                onChange={(e) => setQuickBookingTarget({ ...quickBookingTarget, clientName: e.target.value })}
+                                                style={{ width: '100%', padding: '10px 14px', borderRadius: '10px', border: '1px solid #cbd5e1', fontSize: '0.9rem', outline: 'none' }}
+                                                autoFocus
+                                            />
+                                        </div>
+
+                                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                                            <div>
+                                                <label style={{ display: 'block', fontSize: '0.84rem', fontWeight: 700, color: '#334155', marginBottom: '6px' }}>
+                                                    Booking Start <span style={{ color: '#ef4444' }}>*</span>
+                                                </label>
+                                                <input
+                                                    type="date"
+                                                    required
+                                                    value={quickBookingTarget.startDate}
+                                                    onChange={(e) => setQuickBookingTarget({ ...quickBookingTarget, startDate: e.target.value })}
+                                                    style={{ width: '100%', padding: '9px 12px', borderRadius: '10px', border: '1px solid #cbd5e1', fontSize: '0.86rem', outline: 'none' }}
+                                                />
+                                            </div>
+                                            <div>
+                                                <label style={{ display: 'block', fontSize: '0.84rem', fontWeight: 700, color: '#334155', marginBottom: '6px' }}>
+                                                    Booking End <span style={{ color: '#ef4444' }}>*</span>
+                                                </label>
+                                                <input
+                                                    type="date"
+                                                    required
+                                                    value={quickBookingTarget.endDate}
+                                                    onChange={(e) => setQuickBookingTarget({ ...quickBookingTarget, endDate: e.target.value })}
+                                                    style={{ width: '100%', padding: '9px 12px', borderRadius: '10px', border: '1px solid #cbd5e1', fontSize: '0.86rem', outline: 'none' }}
+                                                />
+                                            </div>
+                                        </div>
+
+                                        {/* ⚠️ Collision Error Alert / ⚡ Override Controls */}
+                                        {conflict.conflict && (
+                                            <div style={{ 
+                                                background: quickBookingTarget.isOverride ? '#fffbeb' : '#fef2f2', 
+                                                border: `1px solid ${quickBookingTarget.isOverride ? '#fde68a' : '#fca5a5'}`, 
+                                                borderRadius: '10px', 
+                                                padding: '10px 12px', 
+                                                color: quickBookingTarget.isOverride ? '#92400e' : '#991b1b' 
+                                            }}>
+                                                <div style={{ display: 'flex', alignItems: 'flex-start', gap: '10px' }}>
+                                                    <div style={{ fontSize: '1.1rem', lineHeight: 1 }}>{quickBookingTarget.isOverride ? '⚡' : '🚫'}</div>
+                                                    <div style={{ flex: 1 }}>
+                                                        <div style={{ fontWeight: 800, fontSize: '0.82rem' }}>
+                                                            {quickBookingTarget.isOverride ? 'Override Booking Active' : 'Slot Collision Detected!'}
+                                                        </div>
+                                                        <div style={{ fontSize: '0.76rem', marginTop: '2px', color: quickBookingTarget.isOverride ? '#b45309' : '#b91c1c' }}>
+                                                            {conflict.reason}. {quickBookingTarget.isOverride ? 'Existing slots will be adjusted according to your override mode.' : 'You can enable override or select alternate dates.'}
+                                                        </div>
+
+                                                        {/* Override Controls */}
+                                                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px', alignItems: 'center', marginTop: '8px' }}>
+                                                            <label style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer', fontSize: '0.82rem', fontWeight: 700, color: '#92400e' }}>
+                                                                <input 
+                                                                    type="checkbox" 
+                                                                    checked={Boolean(quickBookingTarget.isOverride)}
+                                                                    onChange={(e) => setQuickBookingTarget({ 
+                                                                        ...quickBookingTarget, 
+                                                                        isOverride: e.target.checked, 
+                                                                        overrideMode: quickBookingTarget.overrideMode || 'trim' 
+                                                                    })}
+                                                                    style={{ accentColor: '#d97706', width: '15px', height: '15px' }}
+                                                                />
+                                                                <span>⚡ Enable Override Booking</span>
+                                                            </label>
+
+                                                            {quickBookingTarget.isOverride && (
+                                                                <select
+                                                                    value={quickBookingTarget.overrideMode || 'trim'}
+                                                                    onChange={(e) => setQuickBookingTarget({ ...quickBookingTarget, overrideMode: e.target.value })}
+                                                                    style={{
+                                                                        padding: '3px 8px',
+                                                                        borderRadius: '6px',
+                                                                        border: '1px solid #d97706',
+                                                                        background: '#ffffff',
+                                                                        color: '#92400e',
+                                                                        fontSize: '0.8rem',
+                                                                        fontWeight: 700,
+                                                                        outline: 'none'
+                                                                    }}
+                                                                >
+                                                                    <option value="trim">✂️ Smart Trim (Adjust Dates)</option>
+                                                                    <option value="replace">🔄 Complete Replace (Cancel Existing)</option>
+                                                                    <option value="force">⚠️ Force Overlap</option>
+                                                                </select>
+                                                            )}
+                                                        </div>
 
                                                         {quickBookingTarget.isOverride && (
-                                                            <select
-                                                                value={quickBookingTarget.overrideMode || 'trim'}
-                                                                onChange={(e) => setQuickBookingTarget({ ...quickBookingTarget, overrideMode: e.target.value })}
-                                                                style={{
-                                                                    padding: '3px 8px',
-                                                                    borderRadius: '6px',
-                                                                    border: '1px solid #d97706',
-                                                                    background: '#ffffff',
-                                                                    color: '#92400e',
-                                                                    fontSize: '0.8rem',
-                                                                    fontWeight: 700,
-                                                                    outline: 'none'
-                                                                }}
-                                                            >
-                                                                <option value="trim">✂️ Smart Trim (Adjust Dates)</option>
-                                                                <option value="replace">🔄 Complete Replace (Cancel Existing)</option>
-                                                                <option value="force">⚠️ Force Overlap</option>
-                                                            </select>
+                                                            <div style={{ marginTop: '8px' }}>
+                                                                <input 
+                                                                    type="text"
+                                                                    placeholder="Reason for override (e.g. VIP client, priority booking)..."
+                                                                    value={quickBookingTarget.overrideReason || ''}
+                                                                    onChange={(e) => setQuickBookingTarget({ ...quickBookingTarget, overrideReason: e.target.value })}
+                                                                    style={{
+                                                                        width: '100%',
+                                                                        padding: '6px 10px',
+                                                                        borderRadius: '6px',
+                                                                        border: '1px solid #fcd34d',
+                                                                        fontSize: '0.8rem',
+                                                                        background: '#ffffff',
+                                                                        color: '#1e293b'
+                                                                    }}
+                                                                />
+                                                            </div>
                                                         )}
                                                     </div>
-
-                                                    {quickBookingTarget.isOverride && (
-                                                        <div style={{ marginTop: '8px' }}>
-                                                            <input 
-                                                                type="text"
-                                                                placeholder="Reason for override (e.g. VIP client, priority booking)..."
-                                                                value={quickBookingTarget.overrideReason || ''}
-                                                                onChange={(e) => setQuickBookingTarget({ ...quickBookingTarget, overrideReason: e.target.value })}
-                                                                style={{
-                                                                    width: '100%',
-                                                                    padding: '6px 10px',
-                                                                    borderRadius: '6px',
-                                                                    border: '1px solid #fcd34d',
-                                                                    fontSize: '0.8rem',
-                                                                    background: '#ffffff',
-                                                                    color: '#1e293b'
-                                                                }}
-                                                            />
-                                                        </div>
-                                                    )}
                                                 </div>
                                             </div>
-                                        </div>
-                                    )}
+                                        )}
 
-                                    {/* 💰 Pro-Rata Rental Breakdown */}
-                                    {(!conflict.conflict || quickBookingTarget.isOverride) && quickBookingTarget.startDate && quickBookingTarget.endDate && (
-                                        <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: '10px', padding: '10px 14px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                            <div>
-                                                <div style={{ fontSize: '0.82rem', fontWeight: 700, color: '#166534' }}>
-                                                    {proRata.days} Days Campaign
+                                        {/* 💰 Pro-Rata Rental Breakdown */}
+                                        {(!conflict.conflict || quickBookingTarget.isOverride) && quickBookingTarget.startDate && quickBookingTarget.endDate && (
+                                            <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: '10px', padding: '10px 14px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                                <div>
+                                                    <div style={{ fontSize: '0.82rem', fontWeight: 700, color: '#166534' }}>
+                                                        {proRata.days} Days Campaign
+                                                    </div>
+                                                    <div style={{ fontSize: '0.74rem', color: '#15803d' }}>
+                                                        ₹{proRata.dayRate.toLocaleString('en-IN')}/day • ₹{Number(monthlyRent).toLocaleString('en-IN')}/mo
+                                                    </div>
                                                 </div>
-                                                <div style={{ fontSize: '0.74rem', color: '#15803d' }}>
-                                                    ₹{proRata.dayRate.toLocaleString('en-IN')}/day • ₹{Number(monthlyRent).toLocaleString('en-IN')}/mo
+                                                <div style={{ textAlign: 'right' }}>
+                                                    <div style={{ fontSize: '1.05rem', fontWeight: 800, color: '#15803d' }}>
+                                                        ₹{proRata.total.toLocaleString('en-IN')}
+                                                    </div>
+                                                    <div style={{ fontSize: '0.7rem', color: '#16a34a', fontWeight: 600 }}>
+                                                        Pro-Rata Rental
+                                                    </div>
                                                 </div>
                                             </div>
-                                            <div style={{ textAlign: 'right' }}>
-                                                <div style={{ fontSize: '1.05rem', fontWeight: 800, color: '#15803d' }}>
-                                                    ₹{proRata.total.toLocaleString('en-IN')}
-                                                </div>
-                                                <div style={{ fontSize: '0.7rem', color: '#16a34a', fontWeight: 600 }}>
-                                                    Pro-Rata Rental
-                                                </div>
-                                            </div>
-                                        </div>
-                                    )}
+                                        )}
+                                    </div>
 
-                                    <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '4px', paddingTop: '14px', borderTop: '1px solid #f1f5f9' }}>
+                                    {/* 🔘 Pinned / Sticky Footer Actions - Always Visible! */}
+                                    <div style={{ 
+                                        display: 'flex', 
+                                        justifyContent: 'flex-end', 
+                                        gap: '10px', 
+                                        padding: '14px 24px', 
+                                        borderTop: '1px solid #f1f5f9', 
+                                        background: '#ffffff',
+                                        flexShrink: 0
+                                    }}>
                                         <button
                                             type="button"
                                             onClick={() => setQuickBookingTarget(null)}
