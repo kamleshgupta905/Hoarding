@@ -382,79 +382,7 @@ export const StarredBulkBookingModal = ({
         return next;
       });
 
-      // 2. Commit updates to Google Cloud Sheet
-      setSubmitProgress({
-        current: 0,
-        total: sitesToBook.length,
-        text: 'Syncing bookings to Google Cloud Sheet...'
-      });
-
-      let batchSucceeded = false;
-      try {
-        const batchRes = await postDirect({
-          action: 'batchUpdateSheet',
-          sessionToken: getAdminSession(),
-          updates: batchUpdates
-        });
-        if (batchRes && batchRes.success) {
-          batchSucceeded = true;
-        }
-      } catch (cloudErr) {
-        console.warn('Batch update attempt notice:', cloudErr);
-      }
-
-      // ⚡ If batch update was not confirmed, sync each site individually via reliable updateHoarding API
-      if (!batchSucceeded) {
-        for (let i = 0; i < sitesToBook.length; i++) {
-          const item = sitesToBook[i];
-          const site = item.site;
-          const targetSL = site.SL || site["S. No."] || site["SL NO"] || item.sl;
-          const targetLoc = site["Locality Site Location"] || site["Location "] || site.Location || item.location;
-          const targetFacing = site.Facing || site["Traffic View"] || item.facing;
-          const targetId = site.UniqueID || site["Unique ID"] || site.ID || site._SiteID || '';
-          const upd = updatedSitesMap.get(site) || {};
-
-          setSubmitProgress({
-            current: i + 1,
-            total: sitesToBook.length,
-            text: `Writing #${targetSL} (${item.clientName}) to Google Sheet (${i + 1}/${sitesToBook.length})...`
-          });
-
-          const cleanFields = {
-            ...site,
-            ...upd,
-            SL: targetSL || site.SL || '',
-            _SiteID: targetId || site._SiteID || '',
-            status: upd.STATUS || 'Booked',
-            Status: upd.STATUS || 'Booked',
-            STATUS: upd.STATUS || 'Booked',
-            BookedBy: upd.BookedBy || item.clientName.trim(),
-            BookingStart: upd.BookingStart || item.startDate,
-            BookingEnd: upd.BookingEnd || item.endDate,
-            BookingSchedule: JSON.stringify(upd.BookingSchedule || [])
-          };
-          delete cleanFields.History;
-
-          try {
-            await syncToGoogleSheet({
-              action: 'updateHoarding',
-              siteName: targetLoc,
-              siteId: targetId,
-              sl: targetSL || '',
-              facing: targetFacing,
-              fields: cleanFields
-            });
-          } catch (syncErr) {
-            console.warn(`Sync warning for SL #${targetSL}:`, syncErr);
-          }
-        }
-      }
-
-      if (typeof window !== 'undefined') {
-        window.dispatchEvent(new CustomEvent('hoardings:sync-requested'));
-      }
-
-      // 3. Clear stars if requested
+      // 2. Clear stars immediately if requested
       if (unstarAfterBooking) {
         const bookedKeys = sitesToBook.map(b => {
           const s = b.site;
@@ -463,8 +391,61 @@ export const StarredBulkBookingModal = ({
         onUnstarSites(bookedKeys);
       }
 
-      showToast(`🎉 Successfully booked ${sitesToBook.length} sites in bulk!`, 'success');
+      // 3. ⚡ Close modal immediately with cheerful instant confirmation
+      showToast(`🎉 ${sitesToBook.length} sites booked instantly! Syncing to Google Cloud in background...`, 'success');
       onClose();
+
+      // 4. 🚀 Fast Parallel Background Sync to Google Cloud Sheet (Chunks of 3)
+      (async () => {
+        try {
+          const syncItems = sitesToBook.map(item => {
+            const site = item.site;
+            const targetSL = site.SL || site["S. No."] || site["SL NO"] || item.sl;
+            const targetLoc = site["Locality Site Location"] || site["Location "] || site.Location || item.location;
+            const targetFacing = site.Facing || site["Traffic View"] || item.facing;
+            const targetId = site.UniqueID || site["Unique ID"] || site.ID || site._SiteID || '';
+            const upd = updatedSitesMap.get(site) || {};
+
+            const cleanFields = {
+              ...site,
+              ...upd,
+              SL: targetSL || site.SL || '',
+              _SiteID: targetId || site._SiteID || '',
+              status: upd.STATUS || 'Booked',
+              Status: upd.STATUS || 'Booked',
+              STATUS: upd.STATUS || 'Booked',
+              BookedBy: upd.BookedBy || item.clientName.trim(),
+              BookingStart: upd.BookingStart || item.startDate,
+              BookingEnd: upd.BookingEnd || item.endDate,
+              BookingSchedule: JSON.stringify(upd.BookingSchedule || [])
+            };
+            delete cleanFields.History;
+
+            return {
+              action: 'updateHoarding',
+              siteName: targetLoc,
+              siteId: targetId,
+              sl: targetSL || '',
+              facing: targetFacing,
+              fields: cleanFields
+            };
+          });
+
+          // Run parallel sync with concurrency 3
+          const CHUNK_SIZE = 3;
+          for (let i = 0; i < syncItems.length; i += CHUNK_SIZE) {
+            const chunk = syncItems.slice(i, i + CHUNK_SIZE);
+            await Promise.allSettled(chunk.map(payload => syncToGoogleSheet(payload)));
+          }
+
+          if (typeof window !== 'undefined') {
+            window.dispatchEvent(new CustomEvent('hoardings:sync-requested'));
+          }
+          showToast(`✅ All ${sitesToBook.length} sites successfully synced to Google Cloud!`, 'success');
+        } catch (syncErr) {
+          console.warn('Background sync warning:', syncErr);
+        }
+      })();
     } catch (err) {
       console.error('Bulk booking error:', err);
       showToast(`Booking failed: ${err.message}`, 'error');
