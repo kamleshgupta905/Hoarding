@@ -218,6 +218,9 @@ function checkForUpdatesSilently() {
     autoUpdater.autoDownload = true;
     autoUpdater.autoInstallOnAppQuit = true;
     autoUpdater.allowPrerelease = false;
+    // ⚡ CRITICAL: Disable differential download so updater streams the full setup .exe directly
+    // GitHub Releases CDN stalls/hangs on multi-range blockmap requests in electron-updater
+    autoUpdater.disableDifferentialDownload = true;
     try {
         autoUpdater.setFeedURL({
             provider: 'github',
@@ -243,6 +246,7 @@ function checkForUpdatesSilently() {
 
 function checkForUpdatesManually() {
     autoUpdater.autoDownload = true;
+    autoUpdater.disableDifferentialDownload = true;
     try {
         autoUpdater.setFeedURL({
             provider: 'github',

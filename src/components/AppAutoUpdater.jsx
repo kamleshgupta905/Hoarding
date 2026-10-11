@@ -195,6 +195,31 @@ export default function AppAutoUpdater() {
                 <span className="progress-status-text">{progress.status || 'Updating app...'}</span>
                 <span className="progress-percent-val">{progress.percent}%</span>
               </div>
+              {progress.percent < 100 && (
+                <div style={{ marginTop: '12px', display: 'flex', justifyContent: 'center' }}>
+                  <button 
+                    type="button" 
+                    onClick={() => {
+                      if (countdownTimerRef.current) clearInterval(countdownTimerRef.current);
+                      setUpdateInfo(null);
+                    }}
+                    style={{
+                      background: 'transparent',
+                      border: '1px solid rgba(255, 255, 255, 0.2)',
+                      color: '#94a3b8',
+                      borderRadius: '8px',
+                      padding: '6px 14px',
+                      fontSize: '0.78rem',
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                      transition: 'all 0.15s ease'
+                    }}
+                    title="Update ko background mein chalne dein aur app use karein"
+                  >
+                    Background mein chalne dein (Continue App)
+                  </button>
+                </div>
+              )}
               {updateInfo.isElectron && progress.percent === 100 && (
                 <div style={{ marginTop: '10px' }}>
                   <button 
