@@ -54,58 +54,7 @@ jobs:
           fi
 
       - name: 🛡️ Inject Android Version, Permissions & Deep Linking
-        run: |
-          node -e '
-          const fs = require("fs");
-          const pkg = JSON.parse(fs.readFileSync("package.json", "utf8"));
-          const version = pkg.version || "1.8.48";
-          const parts = version.split(".").map(Number);
-          const versionCode = (parts[0] || 1) * 10000 + (parts[1] || 0) * 100 + (parts[2] || 0);
-
-          // 1. Update android/app/build.gradle with exact versionName and versionCode
-          const gradlePath = "android/app/build.gradle";
-          if (fs.existsSync(gradlePath)) {
-            let gradle = fs.readFileSync(gradlePath, "utf8");
-            gradle = gradle.replace(/versionCode\s+\d+/, "versionCode " + versionCode);
-            gradle = gradle.replace(/versionName\s+["\'][^"\']+["\']/, "versionName \"" + version + "\"");
-            fs.writeFileSync(gradlePath, gradle, "utf8");
-            console.log("Updated Android build.gradle to versionName: " + version + " (code: " + versionCode + ")");
-          }
-
-          // 2. Update AndroidManifest.xml permissions and deep linking
-          const path = "android/app/src/main/AndroidManifest.xml";
-          if (fs.existsSync(path)) {
-            let content = fs.readFileSync(path, "utf8");
-            const permissions = `
-              <uses-permission android:name="android.permission.INTERNET" />
-              <uses-permission android:name="android.permission.CAMERA" />
-              <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
-              <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
-              <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
-              <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
-              <uses-feature android:name="android.hardware.camera" android:required="false" />
-              <uses-feature android:name="android.hardware.location.gps" android:required="false" />
-              <uses-feature android:name="android.hardware.sensor.compass" android:required="false" />
-              <uses-feature android:name="android.hardware.sensor.gyroscope" android:required="false" />
-            `;
-            if (!content.includes("android.permission.CAMERA")) {
-              content = content.replace("<application", permissions + "\n    <application");
-            }
-            const deepLinkFilter = `
-                <intent-filter android:autoVerify="true">
-                    <action android:name="android.intent.action.VIEW" />
-                    <category android:name="android.intent.category.DEFAULT" />
-                    <category android:name="android.intent.category.BROWSABLE" />
-                    <data android:scheme="https" android:host="hoarding-hd9a.vercel.app" android:pathPrefix="/staff" />
-                </intent-filter>
-            `;
-            if (!content.includes("android:pathPrefix=\"/staff\"") && content.includes("</activity>")) {
-              content = content.replace("</activity>", deepLinkFilter + "\n        </activity>");
-            }
-            fs.writeFileSync(path, content, "utf8");
-            console.log("Injected permissions and staff deep linking into AndroidManifest.xml");
-          }
-          '
+        run: node scripts/inject-android-config.js
 
       - name: 🔨 Compile Android Debug APK with Gradle
         run: |
