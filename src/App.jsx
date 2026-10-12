@@ -732,7 +732,7 @@ function App() {
     }
   };
 
-  const isStaffAppEnvironment = (typeof window !== 'undefined' && (window.isStaffApp || window.Capacitor?.isNativePlatform?.() || localStorage.getItem('is_staff_app') === 'true' || window.location.pathname.startsWith('/staff')));
+  const isStaffAppEnvironment = (typeof window !== 'undefined' && (window.isStaffApp || window.Capacitor?.isNativePlatform?.() || localStorage.getItem('is_staff_app') === 'true' || window.location.pathname.startsWith('/staff') || window.location.search.includes('mode=staff') || window.location.search.includes('app=staff')));
   if (isStaffAppEnvironment && typeof window !== 'undefined') localStorage.setItem('is_staff_app', 'true');
 
   if (!isStaffAppEnvironment && loading && !localStorage.getItem('hoardings_cache')) {

@@ -11466,7 +11466,7 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                 </div>
                             </div>
 
-                            {/* 🔑 Card 2: Staff Camera Activation (Link & QR Code) */}
+                            {/* 🌐 Card 2: Direct Web Camera Link (No APK installation required) */}
                             <div style={{ 
                                 background: '#fbfbfd', 
                                 border: '1px solid #e5e5ea', 
@@ -11489,11 +11489,11 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                             alignItems: 'center', 
                                             justifyContent: 'center' 
                                         }}>
-                                            <ShieldCheck size={18} />
+                                            <ExternalLink size={18} />
                                         </div>
                                         <div>
-                                            <h3 style={{ margin: 0, fontSize: '0.96rem', fontWeight: 700, color: '#1d1d1f' }}>Step 2: Camera Activation Link</h3>
-                                            <span style={{ fontSize: '0.72rem', color: '#86868b' }}>Ek baar activation — Camera permanent unlock hoga</span>
+                                            <h3 style={{ margin: 0, fontSize: '0.96rem', fontWeight: 700, color: '#1d1d1f' }}>Direct Browser Camera (Optional)</h3>
+                                            <span style={{ fontSize: '0.72rem', color: '#86868b' }}>Bina app download kiye kisi bhi phone ke browser me chalayein</span>
                                         </div>
                                     </div>
                                     <span style={{ 
@@ -11504,36 +11504,13 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                         padding: '3px 8px', 
                                         borderRadius: '20px' 
                                     }}>
-                                        One-Time
+                                        Instant Web
                                     </span>
                                 </div>
 
                                 <p style={{ margin: 0, fontSize: '0.78rem', color: '#515154', lineHeight: 1.45 }}>
-                                    Staff ke mobile me app open karne ke baad yeh link kholein ya QR code scan karein. Isse phone ka camera instantly unlock ho jayega:
+                                    Staff ke paas koi bhi security key ya password dalne ki zaroorat nahi hai. Seedha open karte hi camera active ho jata hai:
                                 </p>
-
-                                {/* QR Code for Staff Link */}
-                                <div style={{ 
-                                    background: '#ffffff', 
-                                    border: '1px solid #e5e5ea', 
-                                    borderRadius: '12px', 
-                                    padding: '10px 12px', 
-                                    display: 'flex', 
-                                    alignItems: 'center', 
-                                    gap: '12px'
-                                }}>
-                                    <img 
-                                        src={`https://api.qrserver.com/v1/create-qr-code/?size=100x100&data=${encodeURIComponent(staffUploadLink)}`}
-                                        alt="Scan to Activate Staff Camera" 
-                                        style={{ width: '64px', height: '64px', borderRadius: '8px', border: '1px solid #e5e5ea', flexShrink: 0 }}
-                                    />
-                                    <div style={{ fontSize: '0.74rem', color: '#6e6e73' }}>
-                                        <div style={{ fontWeight: 600, color: '#1d1d1f', marginBottom: '2px', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                                            <QrCode size={13} color="#6366f1" /> Scan to Unlock Camera
-                                        </div>
-                                        Staff mobile camera se yeh QR scan karein ya niche diye button se link copy karke bhejein.
-                                    </div>
-                                </div>
 
                                 <div style={{ display: 'flex', gap: '8px' }}>
                                     <button 
@@ -11563,7 +11540,7 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                         }}
                                     >
                                         {staffLinkCopied ? <Check size={14} /> : <Share2 size={14} />}
-                                        <span>{staffLinkCopied ? 'Staff Link Copied!' : 'Copy Staff Link'}</span>
+                                        <span>{staffLinkCopied ? 'Web Link Copied!' : 'Copy Web Camera Link'}</span>
                                     </button>
                                     <a
                                         href={staffUploadLink}
@@ -11584,7 +11561,7 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                         }}
                                     >
                                         <ExternalLink size={13} />
-                                        <span>Open</span>
+                                        <span>Open in Browser</span>
                                     </a>
                                 </div>
                             </div>
