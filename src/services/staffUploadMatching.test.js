@@ -107,4 +107,18 @@ describe('Staff Camera & Daily Updates Shared Matching Engine', () => {
 
     expect(result.matchedLocation).toBeNull();
   });
+
+  it('rejects out-of-range GPS (> 650m away) and never matches distant hoardings', async () => {
+    // 320km away in another district (like Lat 27.274310, Long 82.733148)
+    const farGps = { latitude: 27.274310, longitude: 82.733148 };
+    const fakeBase64 = 'data:image/jpeg;base64,/9j/4AAQSkZJRgABAQEASABIAAD/2wBDAP//////////////////////////////////////////////////////////////////////////////////////wgALCAABAAEBAREA/8QAFBABAAAAAAAAAAAAAAAAAAAAAP/aAAgBAQABPxA=';
+
+    const result = await analyzeHoardingImage(fakeBase64, mockHoardings, null, {
+      liveGps: farGps,
+      facing: 'Tej Garhi'
+    });
+
+    expect(result.matchedLocation).toBeNull();
+    expect(result.matchedIndex).toBe(-1);
+  });
 });

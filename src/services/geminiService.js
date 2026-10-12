@@ -448,8 +448,13 @@ CRITICAL RULES FOR ACCURATE MATCHING:
    - If only 1 hoarding is visible (solo close-up or only 1 in frame), list that single candidate index in "matchedIndices" and set "visibleCount": 1.
    - "matchedIndex" and "sl" must ALWAYS be set to the primary / closest / central hoarding in the photo.
 
+6. 🚫 NO HOARDING VISIBLE (INDOOR / IRRELEVANT PHOTO CHECK):
+   - If this photograph does NOT clearly depict an outdoor advertising hoarding, unipole, billboard, or gantry (e.g. photo taken indoors, in a room, shows a bedsheet, cloth, carpet, ceiling, wall, floor, furniture, person, or darkness):
+   - You MUST set: "isHoardingPhoto": false, "matchedIndex": -1, "sl": null, "confidence": 0, "reasoning": "No outdoor hoarding structure visible in photo (indoor/irrelevant image)."
+
 Return ONLY a single valid JSON object (no markdown, no backticks):
 {
+  "isHoardingPhoto": true,
   "matchedIndex": 0,
   "sl": 183,
   "visibleCount": 1,
@@ -502,6 +507,15 @@ Return ONLY a single valid JSON object (no markdown, no backticks):
     const rawResponse = await callGeminiVision(payload);
     const result = safeJsonParse(rawResponse);
     if (!result) return null;
+
+    if (result.isHoardingPhoto === false || result.matchedIndex === -1 || result.confidence === 0) {
+      return {
+        matchedSite: null,
+        isHoardingPhoto: false,
+        confidence: 0,
+        reasoning: result.reasoning || 'No outdoor billboard structure detected in photo.'
+      };
+    }
 
     let matchedCandidate = null;
     let idx = parseInt(result.matchedIndex, 10);

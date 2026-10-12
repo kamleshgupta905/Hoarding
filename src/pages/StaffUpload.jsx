@@ -661,19 +661,23 @@ const StaffUpload = () => {
 
         if (!closestHoarding) return null;
 
-        const siteName = closestHoarding["Location "] || closestHoarding.Location || closestHoarding.siteName || 'Hoarding Site';
-        const locality = closestHoarding.Locality || closestHoarding.Area || closestHoarding.City || '';
-        const trafficFacing = closestHoarding.Facing || closestHoarding['Traffic View'] || closestHoarding.facing || '';
-        const city = closestHoarding.City || 'Meerut';
+        const isWithinRange = minDistance <= 250;
+        const siteName = isWithinRange 
+            ? (closestHoarding["Location "] || closestHoarding.Location || closestHoarding.siteName || 'Hoarding Site')
+            : 'Out of Geofence Range';
+        const locality = isWithinRange ? (closestHoarding.Locality || closestHoarding.Area || closestHoarding.City || '') : '';
+        const trafficFacing = isWithinRange ? (closestHoarding.Facing || closestHoarding['Traffic View'] || closestHoarding.facing || '') : '';
+        const city = isWithinRange ? (closestHoarding.City || 'Meerut') : '';
 
         return {
-            site: closestHoarding,
+            site: isWithinRange ? closestHoarding : null,
             distance: Math.round(minDistance),
             siteName,
             locality,
             trafficFacing,
             city,
-            isLocked: minDistance <= 50
+            isLocked: minDistance <= 50,
+            isWithinRange
         };
     }, [lastGps, hoardingsList]);
 
@@ -991,7 +995,11 @@ const StaffUpload = () => {
                         }
                     );
 
-                    if (aiMatchResult && aiMatchResult.matchedLocation) {
+                    const matchDistRaw = aiMatchResult?.distanceM != null ? Math.round(aiMatchResult.distanceM) : (liveNearest?.distance ?? 9999);
+                    const isWithinGeofence = matchDistRaw <= 150;
+                    const isHoardingValid = aiMatchResult?.isHoardingPhoto !== false && (aiMatchResult?.confidence >= 80);
+
+                    if (aiMatchResult && aiMatchResult.matchedLocation && isWithinGeofence && isHoardingValid) {
                         matchedSiteData = aiMatchResult.site || (aiMatchResult.matchedIndex >= 0 ? allHoardings[aiMatchResult.matchedIndex] : null);
                         matchedSite = aiMatchResult.matchedLocation;
                         siteStatus = aiMatchResult.status || matchedSiteData?.STATUS || 'Available';
@@ -1009,7 +1017,7 @@ const StaffUpload = () => {
                                 sl: siteSL,
                                 site: matchedSiteData,
                                 siteName: matchedSite,
-                                distanceM: aiMatchResult.distanceM,
+                                distanceM: matchDistRaw,
                                 facing: aiMatchResult.facing || matchedSiteData?.Facing,
                                 status: siteStatus
                             }] : []);
@@ -1020,7 +1028,7 @@ const StaffUpload = () => {
                             showMatchBanner({
                                 siteName: `🎯 ${matchCount} Adjacent Sites Matched! [${slTags}]`,
                                 status: siteStatus,
-                                distance: aiMatchResult.distanceM != null ? Math.round(aiMatchResult.distanceM) : 0,
+                                distance: matchDistRaw,
                                 confidence: matchConfidence,
                                 facing: aiMatchResult.facing || matchedSiteData?.Facing
                             });
@@ -1029,21 +1037,34 @@ const StaffUpload = () => {
                             showMatchBanner({
                                 siteName: `${slTag}${matchedSite}`,
                                 status: siteStatus,
-                                distance: aiMatchResult.distanceM != null ? Math.round(aiMatchResult.distanceM) : 0,
+                                distance: matchDistRaw,
                                 confidence: matchConfidence,
                                 facing: aiMatchResult.facing || matchedSiteData?.Facing
                             });
                             speakOfflineVoice('Site photo auto-match aur history me sync ho gayi hai.');
                         }
                     } else {
+                        matchedSite = '';
+                        matchedSiteData = null;
+                        status = 'REVIEW_REQUIRED';
+                        aiDecision = !isWithinGeofence ? 'OUT_OF_GEOFENCE' : 'NO_HOARDING_DETECTED';
+
+                        const warnMsg = !isWithinGeofence
+                            ? `GPS Range ke bahar (${matchDistRaw > 1000 ? Math.round(matchDistRaw / 1000) + 'km' : matchDistRaw + 'm'}). Admin review me bhej di gayi hai.`
+                            : 'Hoarding detect nahi hua. Admin review me bhej di gayi hai.';
+
                         showMatchBanner({
                             warning: true,
-                            message: 'Visual match not confirmed. Sent to admin review.'
+                            message: warnMsg
                         });
-                        speakOfflineVoice('Photo kisi registered site se match nahi hui.');
+                        speakOfflineVoice(!isWithinGeofence ? 'Aap site se bahut door hain.' : 'Photo kisi hoarding se match nahi hui.');
                     }
                 } catch (aiErr) {
                     console.warn('AI vision matching error in Staff Camera:', aiErr);
+                    matchedSite = '';
+                    matchedSiteData = null;
+                    status = 'REVIEW_REQUIRED';
+                    aiDecision = 'GPS_REVIEW';
                     showMatchBanner({
                         warning: true,
                         message: 'Match could not be confirmed. Sent to admin review.'
@@ -1051,6 +1072,10 @@ const StaffUpload = () => {
                     speakOfflineVoice('Photo kisi registered site se match nahi hui.');
                 }
             } else {
+                matchedSite = '';
+                matchedSiteData = null;
+                status = 'REVIEW_REQUIRED';
+                aiDecision = 'NO_NEARBY_SITE';
                 showMatchBanner({
                     warning: true,
                     message: 'No registered hoarding within GPS range or GPS unavailable.'
@@ -1067,13 +1092,16 @@ const StaffUpload = () => {
             const facingSummary = [compassStr, trafficFacing ? `Facing ${trafficFacing}` : ''].filter(Boolean).join(' • ') || 'Verified Facing';
 
             // 🎯 Stamp Authentic PinPoint GPS Card onto Image
+            const hasValidNearSite = (matchedDistance <= 150) && (matchedSite || liveNearest?.isWithinRange);
             const siteInfoForStamp = {
-                city: matchedSiteData?.City || liveNearest?.city || 'Meerut',
-                location: matchedSite || matchedSiteData?.["Location "] || liveNearest?.siteName || 'Verified OOH Site',
-                locality: matchedSiteData?.Locality || matchedSiteData?.Area || liveNearest?.locality || '',
+                city: hasValidNearSite ? (matchedSiteData?.City || liveNearest?.city || 'Meerut') : 'Unverified Area',
+                location: hasValidNearSite
+                    ? (matchedSite || matchedSiteData?.["Location "] || liveNearest?.siteName || 'Verified OOH Site')
+                    : 'Out of Geofence Range',
+                locality: hasValidNearSite ? (matchedSiteData?.Locality || matchedSiteData?.Area || liveNearest?.locality || '') : '',
                 distance: matchedDistance > 0 ? `${matchedDistance}m` : (liveNearest?.distance ? `${liveNearest.distance}m` : ''),
-                facing: facingSummary,
-                trafficFacing: trafficFacing,
+                facing: hasValidNearSite ? facingSummary : 'N/A',
+                trafficFacing: hasValidNearSite ? trafficFacing : '',
                 compassHeading: compassStr
             };
             const stampedBlob = await stampGpsWatermarkOnBlob(rawBlob, currentGps, siteInfoForStamp);

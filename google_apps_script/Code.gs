@@ -1312,8 +1312,10 @@ function staffUploadPhoto(data) {
   var approvedSite = '';
   var previousImage = '';
 
-  // 🚀 Gemini Vision AI Geofenced Auto-Approval (Overrides review)
-  if (matchedSite && (data.status === 'AUTO_APPROVED' || data.aiDecision === 'GEMINI_GPS_AUTO_MATCH')) {
+  // 🚀 Gemini Vision AI Geofenced Auto-Approval (Overrides review only if physically within 150m proximity)
+  var claimedDist = toNumber(data.distance);
+  var isPhysicallyClose = claimedDist !== null ? claimedDist <= 150 : (withinAutoRadius.length > 0 || (nearby.length > 0 && nearby[0].distanceM <= 150));
+  if (matchedSite && isPhysicallyClose && (data.status === 'AUTO_APPROVED' || data.aiDecision === 'GEMINI_GPS_AUTO_MATCH')) {
     var aiUpdateResult = updateSitePhotoFromStaff(matchedSite, imageUrl, false, siteStatus);
     if (aiUpdateResult.success) {
       status = 'AUTO_APPROVED';

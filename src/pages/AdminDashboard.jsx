@@ -4944,23 +4944,26 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
 
     const reviewQueue = safeStaffUploads.filter(upload => upload && upload.Status === 'REVIEW_REQUIRED' && !pendingStaffReviewIds[upload.UploadId]);
     
-    // ✅ AI Auto-Matched Photos (50m Geofenced & Approved)
+    // ✅ AI Auto-Matched Photos (Geofenced & Approved with valid site)
     const matchedPhotoUpdates = safeStaffUploads.filter(upload => {
         if (!upload) return false;
-        return upload.Status === 'AUTO_APPROVED' || 
-               upload.Decision === 'GEMINI_GPS_AUTO_MATCH' || 
-               upload.Decision === 'GPS_AUTO_MATCH' || 
-               upload.Status === 'APPROVED';
+        const hasSite = Boolean(upload.ApprovedSite || upload.matchedSite);
+        const isMatchedStatus = upload.Status === 'AUTO_APPROVED' || 
+                               upload.Decision === 'GEMINI_GPS_AUTO_MATCH' || 
+                               upload.Decision === 'GPS_AUTO_MATCH' || 
+                               upload.Status === 'APPROVED';
+        return hasSite && isMatchedStatus;
     });
 
     // ⚠️ Unmatched / Out-of-Range Photos (Active, not older than 2 days)
     const unmatchedPhotoUpdates = safeStaffUploads.filter(upload => {
         if (!upload) return false;
-        const isMatched = upload.Status === 'AUTO_APPROVED' || 
-                          upload.Decision === 'GEMINI_GPS_AUTO_MATCH' || 
-                          upload.Decision === 'GPS_AUTO_MATCH' || 
-                          upload.Status === 'APPROVED';
-        if (isMatched) return false;
+        const hasSite = Boolean(upload.ApprovedSite || upload.matchedSite);
+        const isMatchedStatus = upload.Status === 'AUTO_APPROVED' || 
+                               upload.Decision === 'GEMINI_GPS_AUTO_MATCH' || 
+                               upload.Decision === 'GPS_AUTO_MATCH' || 
+                               upload.Status === 'APPROVED';
+        if (hasSite && isMatchedStatus) return false;
         // Purge if older than 2 days
         return !isOlderThan2Days(upload.CapturedAt || upload.ReviewedAt);
     });
@@ -7620,20 +7623,29 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                                             />
                                                             {/* Floating Badges on Image */}
                                                             <div style={{ position: 'absolute', top: '8px', left: '8px', display: 'flex', gap: '6px' }}>
-                                                                <span style={{ 
-                                                                    background: 'rgba(16, 185, 129, 0.9)', 
-                                                                    backdropFilter: 'blur(6px)', 
-                                                                    color: '#ffffff', 
-                                                                    fontSize: '0.68rem', 
-                                                                    fontWeight: 800, 
-                                                                    padding: '3px 8px', 
-                                                                    borderRadius: '8px',
-                                                                    display: 'flex',
-                                                                    alignItems: 'center',
-                                                                    gap: '4px'
-                                                                }}>
-                                                                    <Check size={11} /> 50m Auto-Matched
-                                                                </span>
+                                                                {(() => {
+                                                                    const distRaw = upload.SuggestedDistanceM || upload.DistanceM || upload.distance || upload.Distance;
+                                                                    const parsedDist = typeof distRaw === 'number' ? distRaw : parseInt(String(distRaw || '').replace(/\D/g, ''), 10);
+                                                                    const label = !isNaN(parsedDist) && parsedDist > 0
+                                                                        ? (parsedDist <= 50 ? `${parsedDist}m Auto-Matched` : (parsedDist <= 150 ? `${parsedDist}m Matched` : `${parsedDist > 1000 ? Math.round(parsedDist / 1000) + 'km' : parsedDist + 'm'} Proximity`))
+                                                                        : 'GPS Auto-Matched';
+                                                                    return (
+                                                                        <span style={{ 
+                                                                            background: 'rgba(16, 185, 129, 0.9)', 
+                                                                            backdropFilter: 'blur(6px)', 
+                                                                            color: '#ffffff', 
+                                                                            fontSize: '0.68rem', 
+                                                                            fontWeight: 800, 
+                                                                            padding: '3px 8px', 
+                                                                            borderRadius: '8px',
+                                                                            display: 'flex',
+                                                                            alignItems: 'center',
+                                                                            gap: '4px'
+                                                                        }}>
+                                                                            <Check size={11} /> {label}
+                                                                        </span>
+                                                                    );
+                                                                })()}
                                                             </div>
                                                         </div>
 

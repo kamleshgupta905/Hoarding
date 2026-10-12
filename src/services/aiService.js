@@ -409,6 +409,12 @@ export const matchHoardingByGps = async (coord, locationList, rawImageBase64 = n
     candidates.sort((a, b) => a.distanceM - b.distanceM);
     const closest = candidates[0];
 
+    // 🛡️ STRICT GEOFENCE ENFORCEMENT: A physical hoarding cannot be audited from > 650m away!
+    // If the closest candidate in the entire inventory is > 650m away, the camera is completely out of range.
+    if (closest.distanceM > 650) {
+        return null;
+    }
+
     // 🎯 IMMEDIATE EXACT PINPOINT MATCH (Camera standing right at the hoarding <= 25m with no competitor within 30m)
     // Only trigger if no conflicting watermark text contradicts this closest site
     const closestTextConflict = detectedTextOrAddress && scoreLocationByText(detectedTextOrAddress, closest.site || closest) < 25;
@@ -429,13 +435,13 @@ export const matchHoardingByGps = async (coord, locationList, rawImageBase64 = n
     }
 
     // 🎯 TIGHT CORRIDOR & TWIN-SITE CLUSTER DETECTION (Consecutive road structures / opposite facings within vicinity)
-    // Only group candidates along the immediate road junction/segment (within 80m of closest site when close, or up to 250m when further)
-    const clusterDelta = closest.distanceM <= 250 ? 80 : Math.min(250, closest.distanceM * 0.4 + 50);
-    const clusterMax = Math.max(350, closest.distanceM + 180);
+    // Only group candidates along the immediate road junction/segment
+    const clusterDelta = closest.distanceM <= 250 ? 80 : Math.min(180, closest.distanceM * 0.3 + 40);
+    const clusterMax = Math.min(650, closest.distanceM + 180);
     const corridorCluster = candidates.filter(c => Math.abs(c.distanceM - closest.distanceM) <= clusterDelta && c.distanceM <= clusterMax);
 
     // If corridorCluster didn't catch nearby candidates but we are in vicinity, get top 5 nearest candidates
-    const effectiveCluster = corridorCluster.length > 1 ? corridorCluster : candidates.slice(0, 5).filter(c => c.distanceM <= Math.max(650, closest.distanceM + 250));
+    const effectiveCluster = corridorCluster.length > 1 ? corridorCluster : candidates.slice(0, 5).filter(c => c.distanceM <= Math.min(650, closest.distanceM + 250));
 
     const twinCandidatesList = effectiveCluster.length > 1 ? effectiveCluster.map(c => ({
         index: c.index,
@@ -643,6 +649,9 @@ export const matchHoardingByGps = async (coord, locationList, rawImageBase64 = n
     if (prioritizedCluster.length > 1 && rawImageBase64) {
         try {
             const resolved = await resolveTwinSiteFacingWithGemini(rawImageBase64, prioritizedCluster);
+            if (resolved && resolved.isHoardingPhoto === false) {
+                return null;
+            }
             if (resolved && (resolved.matchedSite || resolved.sl || resolved.matchedCandidate)) {
                 let targetCandidate = null;
 
@@ -807,22 +816,6 @@ export const matchHoardingByGps = async (coord, locationList, rawImageBase64 = n
             twinCandidates: twinCandidatesList,
             confidence: 80,
             reasoning: `🗺️ Area Proximity GPS Match (${closest.distanceM}m away from ${closest.siteName})`
-        };
-    }
-
-    // 🎯 Threshold 5: <= 1200m is a Broader Vicinity Corridor Match (70% confidence)
-    if (closest.distanceM <= 1200) {
-        return {
-            index: closest.index,
-            sl: closestSL,
-            site: closest.site,
-            siteName: closest.siteName,
-            siteCoord: closest.siteCoord,
-            distanceM: closest.distanceM,
-            facing: closest.facing,
-            twinCandidates: twinCandidatesList,
-            confidence: 70,
-            reasoning: `📍 Vicinity Corridor GPS Match (${closest.distanceM}m away from ${closest.siteName})`
         };
     }
 
@@ -1035,6 +1028,16 @@ export const analyzeHoardingImage = async (base64Image, locationList, rawFile = 
                         analysis: `Live Lat: ${liveLat.toFixed(6)}, Long: ${liveLng.toFixed(6)}`,
                         gpsCoord: { lat: liveLat, lng: liveLng },
                         distanceM: gpsMatch.distanceM
+                    };
+                } else {
+                    // 🛡️ Live hardware GPS is confirmed out of range (> 650m from all hoardings)
+                    return {
+                        matchedIndex: -1,
+                        matchedLocation: null,
+                        status: 'Available',
+                        confidence: 0,
+                        reasoning: `Out of range: Live device GPS (${liveLat.toFixed(4)}, ${liveLng.toFixed(4)}) is > 650m away from all registered hoardings.`,
+                        matchFailed: true
                     };
                 }
             } catch (liveGpsErr) {
