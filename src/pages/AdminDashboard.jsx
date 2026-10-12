@@ -2885,6 +2885,8 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                     matchedSiteId: resolvedSiteId,
                     facing: resolvedFacing,
                     twinCandidates: aiResult.twinCandidates || null,
+                    clusterMatches: aiResult.clusterMatches || null,
+                    visibleCount: aiResult.visibleCount || 1,
                     status: (matchedData?.STATUS || 'Available'),
                     confidence: aiResult.confidence || 0,
                     reasoning: aiResult.reasoning || '',
@@ -3181,6 +3183,72 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                 } catch (cacheErr) {}
                 return nextList;
             });
+
+            // 🎯 SYNC COMPANION ADJACENT SITES (If 2 or 3 adjacent hoardings matched in single shot)
+            if (imageData.clusterMatches && imageData.clusterMatches.length > 1) {
+                const companionSites = imageData.clusterMatches.filter(c => {
+                    const cSL = c.sl || c.site?.SL;
+                    return String(cSL).trim() !== String(targetSL).trim();
+                });
+
+                for (const comp of companionSites) {
+                    const compSL = comp.sl || comp.site?.SL || comp.site?.['S. No.'] || '';
+                    const compSiteName = comp.siteName || comp.site?.["Locality Site Location"] || comp.site?.["Location "] || comp.site?.Location || '';
+                    const compFacing = comp.facing || comp.site?.Facing || '';
+                    const compSiteId = comp.site?._SiteID || comp.site?.UniqueID || comp.site?.['Unique ID'] || comp.siteId || '';
+
+                    // 1. Sync to Google Sheets ExecutionHistory
+                    syncToGoogleSheet({
+                        action: 'updateHoarding',
+                        sl: compSL,
+                        siteName: compSiteName,
+                        siteId: compSiteId,
+                        facing: compFacing,
+                        fields: {
+                            "SL": compSL,
+                            Facing: compFacing
+                        },
+                        fileData: base64,
+                        mimeType: 'image/jpeg',
+                        mode: 'archive',
+                        gps: gpsString,
+                        isDailyProof: true
+                    }).catch(e => console.warn(`[Companion Auto-Sync Notice] Site SL #${compSL}:`, e));
+
+                    // 2. Record in local history
+                    const compTargetForHistory = comp.site || {
+                        SL: compSL,
+                        'S. No.': compSL,
+                        _SiteID: compSiteId,
+                        'Location ': compSiteName,
+                        Location: compSiteName,
+                        Facing: compFacing
+                    };
+                    recordSiteHistory(compTargetForHistory, newHistoryItem);
+
+                    // 3. Update React state & ExecutionHistory for companion site
+                    setHoardings(prev => {
+                        const nextList = prev.map(h => {
+                            const isComp = (compSL && String(h.SL || h['S. No.'] || '').trim() === String(compSL).trim()) ||
+                                           (compSiteId && (h._SiteID === compSiteId || h.UniqueID === compSiteId));
+                            if (isComp) {
+                                const currentHist = Array.isArray(h.History) ? h.History : parseHistoryString(h.ExecutionHistory || h.History || '');
+                                const newHist = finalProofUrl ? [newHistoryItem, ...currentHist.filter(i => (typeof i === 'object' ? i.url : i) !== finalProofUrl)] : currentHist;
+                                const histEntryString = `${finalProofUrl}|${Date.now()}${gpsString ? '|' + gpsString : ''}`;
+                                const updatedExecHist = finalProofUrl ? (h.ExecutionHistory ? `${h.ExecutionHistory},${histEntryString}` : histEntryString) : (h.ExecutionHistory || '');
+                                return {
+                                    ...h,
+                                    History: newHist,
+                                    ExecutionHistory: updatedExecHist
+                                };
+                            }
+                            return h;
+                        });
+                        try { localStorage.setItem('hoardings_cache', JSON.stringify(nextList)); } catch {}
+                        return nextList;
+                    });
+                }
+            }
 
             // ⚡ Broadcast sync event so other devices & listeners refresh instantly
             if (typeof window !== 'undefined') {
@@ -8772,6 +8840,23 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                                             );
                                                         })}
                                                     </select>
+
+                                                    {/* 🎯 Multi-Site Adjacent Cluster Banner */}
+                                                    {img.clusterMatches && img.clusterMatches.length > 1 && (
+                                                        <div style={{ marginTop: '8px', marginBottom: '8px', padding: '6px 10px', background: 'rgba(16, 185, 129, 0.08)', borderRadius: '6px', border: '1px solid rgba(16, 185, 129, 0.3)' }}>
+                                                            <div style={{ fontSize: '0.74rem', fontWeight: 700, color: '#047857', display: 'flex', alignItems: 'center', gap: '5px', marginBottom: '4px' }}>
+                                                                <span>🎯</span>
+                                                                <span>{img.clusterMatches.length} Adjacent Sites Auto-Linked in Single Shot:</span>
+                                                            </div>
+                                                            <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                                                                {img.clusterMatches.map((cMatch, cmIdx) => (
+                                                                    <span key={cmIdx} style={{ fontSize: '0.72rem', fontWeight: 600, background: '#10b981', color: '#fff', padding: '2px 8px', borderRadius: '4px' }}>
+                                                                        SL #{cMatch.sl || cMatch.site?.SL} • {cMatch.siteName || cMatch.site?.["Location "] || cMatch.site?.Location}
+                                                                    </span>
+                                                                ))}
+                                                            </div>
+                                                        </div>
+                                                    )}
 
                                                     {/* 🧭 Nearby Poles & Facings: 1-Click Switch */}
                                                     {img.twinCandidates && img.twinCandidates.length > 1 && (

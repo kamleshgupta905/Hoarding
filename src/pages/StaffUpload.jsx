@@ -971,6 +971,7 @@ const StaffUpload = () => {
             // 📍 150M ADAPTIVE GEOFENCED AI MATCHING
             let matchedSite = '';
             let matchedSiteData = null;
+            let clusterMatches = [];
             let siteStatus = 'Available';
             let status = 'REVIEW_REQUIRED';
             let aiDecision = 'GPS_REVIEW';
@@ -1003,15 +1004,39 @@ const StaffUpload = () => {
                         const siteSL = aiMatchResult.sl || matchedSiteData?.SL || '';
                         const slTag = siteSL ? `[SL #${siteSL}] ` : '';
 
-                        showMatchBanner({
-                            siteName: `${slTag}${matchedSite}`,
-                            status: siteStatus,
-                            distance: aiMatchResult.distanceM != null ? Math.round(aiMatchResult.distanceM) : 0,
-                            confidence: matchConfidence,
-                            facing: aiMatchResult.facing || matchedSiteData?.Facing
-                        });
+                        clusterMatches = (aiMatchResult.clusterMatches && aiMatchResult.clusterMatches.length > 0)
+                            ? aiMatchResult.clusterMatches
+                            : (matchedSiteData ? [{
+                                index: aiMatchResult.matchedIndex,
+                                sl: siteSL,
+                                site: matchedSiteData,
+                                siteName: matchedSite,
+                                distanceM: aiMatchResult.distanceM,
+                                facing: aiMatchResult.facing || matchedSiteData?.Facing,
+                                status: siteStatus
+                            }] : []);
 
-                        speakOfflineVoice('Site photo auto-match aur history me sync ho gayi hai.');
+                        if (clusterMatches.length > 1) {
+                            const matchCount = clusterMatches.length;
+                            const slTags = clusterMatches.map(c => `#${c.sl || c.site?.SL || ''}`).filter(Boolean).join(', ');
+                            showMatchBanner({
+                                siteName: `🎯 ${matchCount} Adjacent Sites Matched! [${slTags}]`,
+                                status: siteStatus,
+                                distance: aiMatchResult.distanceM != null ? Math.round(aiMatchResult.distanceM) : 0,
+                                confidence: matchConfidence,
+                                facing: aiMatchResult.facing || matchedSiteData?.Facing
+                            });
+                            speakOfflineVoice(`${matchCount} adjacent sites ek saath auto-match ho gayi hain.`);
+                        } else {
+                            showMatchBanner({
+                                siteName: `${slTag}${matchedSite}`,
+                                status: siteStatus,
+                                distance: aiMatchResult.distanceM != null ? Math.round(aiMatchResult.distanceM) : 0,
+                                confidence: matchConfidence,
+                                facing: aiMatchResult.facing || matchedSiteData?.Facing
+                            });
+                            speakOfflineVoice('Site photo auto-match aur history me sync ho gayi hai.');
+                        }
                     } else {
                         showMatchBanner({
                             warning: true,
@@ -1066,6 +1091,8 @@ const StaffUpload = () => {
                 distance: siteInfoForStamp.distance,
                 facing: siteInfoForStamp.facing,
                 matchedSite,
+                clusterSites: clusterMatches.map(c => c.siteName || c.site?.["Location "] || c.site?.Location).filter(Boolean),
+                visibleCount: clusterMatches.length > 0 ? clusterMatches.length : 1,
                 siteStatus,
                 status,
                 aiDecision
@@ -1108,28 +1135,38 @@ const StaffUpload = () => {
                         status: matchedSiteData?.STATUS || 'Available'
                     };
 
-                    // Record to session/local history engine immediately
-                    recordSiteHistory({ "Location ": matchedSite, Location: matchedSite }, newAuditItem);
+                    const sitesToProcess = clusterMatches.length > 0 ? clusterMatches : [{
+                        siteName: matchedSite,
+                        site: matchedSiteData,
+                        sl: matchedSiteData?.SL || ''
+                    }];
 
-                    // 1. Instantly update client-side cache for live zero-latency rendering
-                    try {
-                        const cachedRaw = localStorage.getItem('adh_cached_hoardings');
-                        if (cachedRaw) {
-                            const cachedList = JSON.parse(cachedRaw);
-                            const targetIdx = cachedList.findIndex(h => (h["Location "] || h.Location) === matchedSite);
-                            if (targetIdx >= 0) {
-                                const existingHistory = Array.isArray(cachedList[targetIdx].History) ? cachedList[targetIdx].History : [];
-                                cachedList[targetIdx] = {
-                                    ...cachedList[targetIdx],
-                                    History: [newAuditItem, ...existingHistory],
-                                    STATUS: cachedList[targetIdx].STATUS || 'Available'
-                                };
-                                localStorage.setItem('adh_cached_hoardings', JSON.stringify(cachedList));
-                                window.dispatchEvent(new CustomEvent('hoardings:updated', { detail: cachedList }));
+                    // 1. Instantly update client-side cache & history for ALL matched cluster sites
+                    for (const cSite of sitesToProcess) {
+                        const cName = cSite.siteName || cSite.site?.["Location "] || cSite.site?.Location || matchedSite;
+                        const cSL = cSite.sl || cSite.site?.SL || '';
+
+                        recordSiteHistory({ "Location ": cName, Location: cName }, newAuditItem);
+
+                        try {
+                            const cachedRaw = localStorage.getItem('adh_cached_hoardings');
+                            if (cachedRaw) {
+                                const cachedList = JSON.parse(cachedRaw);
+                                const targetIdx = cachedList.findIndex(h => (h["Location "] || h.Location) === cName || (cSL && String(h.SL || h['S. No.'] || '').trim() === String(cSL).trim()));
+                                if (targetIdx >= 0) {
+                                    const existingHistory = Array.isArray(cachedList[targetIdx].History) ? cachedList[targetIdx].History : [];
+                                    cachedList[targetIdx] = {
+                                        ...cachedList[targetIdx],
+                                        History: [newAuditItem, ...existingHistory],
+                                        STATUS: cachedList[targetIdx].STATUS || 'Available'
+                                    };
+                                    localStorage.setItem('adh_cached_hoardings', JSON.stringify(cachedList));
+                                    window.dispatchEvent(new CustomEvent('hoardings:updated', { detail: cachedList }));
+                                }
                             }
+                        } catch (cacheErr) {
+                            console.warn('Local history update notice:', cacheErr);
                         }
-                    } catch (cacheErr) {
-                        console.warn('Local history update notice:', cacheErr);
                     }
 
                     let landmarkDesc = '';
@@ -1144,35 +1181,41 @@ const StaffUpload = () => {
                         }
                     }
 
-                    // 2. Sync to Google Sheets ExecutionHistory backend asynchronously
-                    syncToGoogleSheet({
-                        action: 'updateHoarding',
-                        siteName: matchedSite,
-                        fileData: base64Data,
-                        mimeType: 'image/jpeg',
-                        gps: gpsString,
-                        distance: item.distance,
-                        facing: item.facing,
-                        mode: 'archive',
-                        isDailyProof: true,
-                        fields: {
-                            ...(landmarkDesc ? { "Visual_Landmarks": landmarkDesc } : {})
-                        }
-                    }).then(res => {
-                        const driveUrl = res?.imageUrl || res?.fileUrl || res?.result?.imageUrl || '';
-                        if (driveUrl) {
-                            recordSiteHistory({ "Location ": matchedSite, Location: matchedSite }, {
-                                url: driveUrl,
-                                preview: driveUrl,
-                                timestamp: Date.now(),
-                                gps: gpsString,
-                                distance: item.distance,
-                                facing: item.facing,
-                                source: 'Staff Live Capture',
-                                status: siteStatus
-                            });
-                        }
-                    }).catch(syncErr => console.warn('Direct execution history sheet sync notice:', syncErr));
+                    // 2. Sync to Google Sheets ExecutionHistory backend asynchronously for all matched sites
+                    for (const cSite of sitesToProcess) {
+                        const cName = cSite.siteName || cSite.site?.["Location "] || cSite.site?.Location || matchedSite;
+                        const cSL = cSite.sl || cSite.site?.SL || '';
+
+                        syncToGoogleSheet({
+                            action: 'updateHoarding',
+                            siteName: cName,
+                            sl: cSL,
+                            fileData: base64Data,
+                            mimeType: 'image/jpeg',
+                            gps: gpsString,
+                            distance: item.distance,
+                            facing: item.facing,
+                            mode: 'archive',
+                            isDailyProof: true,
+                            fields: {
+                                ...(landmarkDesc ? { "Visual_Landmarks": landmarkDesc } : {})
+                            }
+                        }).then(res => {
+                            const driveUrl = res?.imageUrl || res?.fileUrl || res?.result?.imageUrl || '';
+                            if (driveUrl) {
+                                recordSiteHistory({ "Location ": cName, Location: cName }, {
+                                    url: driveUrl,
+                                    preview: driveUrl,
+                                    timestamp: Date.now(),
+                                    gps: gpsString,
+                                    distance: item.distance,
+                                    facing: item.facing,
+                                    source: 'Staff Live Capture',
+                                    status: siteStatus
+                                });
+                            }
+                        }).catch(syncErr => console.warn('Direct execution history sheet sync notice:', syncErr));
+                    }
                 } catch (historySyncErr) {
                     console.warn('Auto-sync to history error:', historySyncErr);
                 }

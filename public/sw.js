@@ -1,7 +1,7 @@
 // 🛡️ Heera Advertising Offline Resilience & Cache Service Worker
 // CACHE_VERSION is rewritten automatically by scripts/sync-version.js on every build,
 // so a new deployment always invalidates the previous cache.
-const CACHE_VERSION = '1.8.47-1791701190239';
+const CACHE_VERSION = '1.8.48-1791802407152';
 const CACHE_NAME = `heera-staff-cache-v${CACHE_VERSION}`;
 
 const PRECACHE_URLS = [

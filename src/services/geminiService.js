@@ -440,14 +440,25 @@ CRITICAL RULES FOR ACCURATE MATCHING:
 
 4. Status detection: "Occupied" (active commercial brand ad mounted) or "Available" (blank, white, torn, or To-Let).
 
+5. 🎯 MULTI-HOARDING ADJACENT CLUSTER DETECTION (1, 2, or 3 HOARDINGS):
+   - In outdoor advertising, candidate hoardings along a road corridor often stand adjacent to each other in sequence (e.g. 2 or 3 unipoles along the road).
+   - Check if this photo captures a WIDE / CORRIDOR SHOT showing MULTIPLE adjacent hoardings (2 or 3 hoardings visible together in frame), OR a SOLO shot (only 1 hoarding visible).
+   - If 3 adjacent hoardings are visible in the photo, list all 3 candidate indices in "matchedIndices" and set "visibleCount": 3.
+   - If 2 adjacent hoardings are visible in the photo, list the 2 candidate indices in "matchedIndices" and set "visibleCount": 2.
+   - If only 1 hoarding is visible (solo close-up or only 1 in frame), list that single candidate index in "matchedIndices" and set "visibleCount": 1.
+   - "matchedIndex" and "sl" must ALWAYS be set to the primary / closest / central hoarding in the photo.
+
 Return ONLY a single valid JSON object (no markdown, no backticks):
 {
   "matchedIndex": 0,
   "sl": 183,
+  "visibleCount": 1,
+  "matchedIndices": [0],
+  "matchedSLs": [183],
   "facing": "exact facing from selected candidate",
   "status": "Occupied",
   "confidence": 0.99,
-  "reasoning": "Clear explanation of matched physical structure, reference photo comparison, and road landmarks"
+  "reasoning": "Clear explanation of matched physical structure, reference photo comparison, visible adjacent count, and road landmarks"
 }`;
 
   const parts = [
@@ -523,6 +534,92 @@ Return ONLY a single valid JSON object (no markdown, no backticks):
 
       const rawSelected = matchedCandidate.site || matchedCandidate;
       const resolvedSL = rawSelected.SL || rawSelected['S. No.'] || rawSelected['SL NO'] || (matchedCandidate.index !== undefined ? matchedCandidate.index + 1 : idx + 1);
+
+      // 🎯 Build multi-hoarding cluster matches (for 1, 2, or 3 adjacent hoardings)
+      const rawIndices = Array.isArray(result.matchedIndices) && result.matchedIndices.length > 0
+        ? result.matchedIndices
+        : [idx];
+      const clusterMatches = [];
+      const seenSLs = new Set();
+
+      // Primary site always at index 0
+      clusterMatches.push({
+        index: matchedCandidate.index !== undefined ? matchedCandidate.index : idx,
+        candidateIndex: matchedCandidate.index !== undefined ? matchedCandidate.index : idx,
+        sl: resolvedSL,
+        site: rawSelected,
+        siteName: rawSelected["Location "] || rawSelected["Locality Site Location"] || rawSelected.Location || rawSelected.siteName,
+        siteCoord: matchedCandidate.siteCoord,
+        distanceM: matchedCandidate.distanceM,
+        facing: result.facing || rawSelected.Facing || rawSelected['Traffic View'] || '',
+        status: result.status === 'Occupied' ? 'Occupied' : 'Available',
+        mediaType: matchedCandidate.mediaType || rawSelected.Media || 'Unipole'
+      });
+      seenSLs.add(String(resolvedSL).trim());
+
+      // Additional adjacent companion hoardings visible in the same frame
+      for (const mIdx of rawIndices) {
+        const cand = candidates.find(c => c.index === mIdx) || candidates[mIdx];
+        if (cand && cand !== matchedCandidate) {
+          const candSite = cand.site || cand;
+          const candSL = candSite.SL || candSite['S. No.'] || candSite['SL NO'] || (cand.index !== undefined ? cand.index + 1 : mIdx + 1);
+          if (!seenSLs.has(String(candSL).trim())) {
+            seenSLs.add(String(candSL).trim());
+            clusterMatches.push({
+              index: cand.index !== undefined ? cand.index : mIdx,
+              candidateIndex: cand.index !== undefined ? cand.index : mIdx,
+              sl: candSL,
+              site: candSite,
+              siteName: candSite["Location "] || candSite["Locality Site Location"] || candSite.Location || candSite.siteName,
+              siteCoord: cand.siteCoord,
+              distanceM: cand.distanceM,
+              facing: cand.facing || candSite.Facing || candSite['Traffic View'] || '',
+              status: result.status === 'Occupied' ? 'Occupied' : 'Available',
+              mediaType: cand.mediaType || candSite.Media || 'Unipole'
+            });
+          }
+        }
+      }
+
+      // Also support matching by matchedSLs array if provided by model
+      if (Array.isArray(result.matchedSLs)) {
+        for (const sVal of result.matchedSLs) {
+          const sDigits = String(sVal).replace(/\D/g, '');
+          const bySl = candidates.find(c => {
+            const rawSite = c.site || c;
+            const sl = rawSite.SL || rawSite['S. No.'] || rawSite['SL NO'];
+            if (!sl) return false;
+            const s = String(sl).trim();
+            if (s.toLowerCase() === String(sVal).trim().toLowerCase()) return true;
+            return sDigits && s.replace(/\D/g, '') === sDigits;
+          });
+          if (bySl) {
+            const candSite = bySl.site || bySl;
+            const candSL = candSite.SL || candSite['S. No.'] || candSite['SL NO'] || (bySl.index !== undefined ? bySl.index + 1 : '');
+            if (!seenSLs.has(String(candSL).trim())) {
+              seenSLs.add(String(candSL).trim());
+              clusterMatches.push({
+                index: bySl.index,
+                candidateIndex: bySl.index,
+                sl: candSL,
+                site: candSite,
+                siteName: candSite["Location "] || candSite["Locality Site Location"] || candSite.Location || candSite.siteName,
+                siteCoord: bySl.siteCoord,
+                distanceM: bySl.distanceM,
+                facing: bySl.facing || candSite.Facing || candSite['Traffic View'] || '',
+                status: result.status === 'Occupied' ? 'Occupied' : 'Available',
+                mediaType: bySl.mediaType || candSite.Media || 'Unipole'
+              });
+            }
+          }
+        }
+      }
+
+      const visibleCount = Math.max(
+        typeof result.visibleCount === 'number' ? result.visibleCount : 1,
+        clusterMatches.length
+      );
+
       return {
         matchedIndex: idx,
         candidateIndex: matchedCandidate.index !== undefined ? matchedCandidate.index : idx,
@@ -533,7 +630,9 @@ Return ONLY a single valid JSON object (no markdown, no backticks):
         facing: result.facing || rawSelected.Facing || rawSelected['Traffic View'] || '',
         status: result.status === 'Occupied' ? 'Occupied' : 'Available',
         confidence: typeof result.confidence === 'number' ? result.confidence : 0.96,
-        reasoning: result.reasoning || `AI visual perspective matched ${rawSelected.Facing || 'site'}.`
+        reasoning: result.reasoning || `AI visual perspective matched ${rawSelected.Facing || 'site'}.`,
+        clusterMatches,
+        visibleCount
       };
     }
   } catch (err) {

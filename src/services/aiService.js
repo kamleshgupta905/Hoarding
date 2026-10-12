@@ -587,6 +587,26 @@ export const matchHoardingByGps = async (coord, locationList, rawImageBase64 = n
                         const matchCandidate = bestVisual.candidate;
                         const matchSL = matchCandidate.site?.SL || matchCandidate.site?.['S. No.'] || (matchCandidate.index + 1);
                         const matchPct = Math.round((1 - bestVisual.distance / 64) * 100);
+
+                        // 🎯 Multi-hoarding visual cluster matches (for 1, 2, or 3 adjacent hoardings sharing master photo or high visual similarity)
+                        const matchingVisuals = hashResults.filter(r => r.distance <= 8);
+                        const clusterMatches = matchingVisuals.map(m => {
+                            const c = m.candidate;
+                            const sl = c.site?.SL || c.site?.['S. No.'] || (c.index + 1);
+                            return {
+                                index: c.index,
+                                candidateIndex: c.index,
+                                sl: sl,
+                                site: c.site,
+                                siteName: c.siteName,
+                                siteCoord: c.siteCoord,
+                                distanceM: c.distanceM,
+                                facing: c.facing,
+                                status: c.site?.STATUS || 'Available'
+                            };
+                        });
+                        const visibleCount = clusterMatches.length;
+
                         return {
                             index: matchCandidate.index,
                             sl: matchSL,
@@ -598,7 +618,19 @@ export const matchHoardingByGps = async (coord, locationList, rawImageBase64 = n
                             status: matchCandidate.site?.STATUS || 'Available',
                             confidence: 99,
                             twinCandidates: twinCandidatesList,
-                            reasoning: `🎯 Direct Visual Match: ${matchPct}% visual match with inventory reference photo for SL #${matchSL} (${matchCandidate.siteName})`
+                            clusterMatches: clusterMatches.length > 0 ? clusterMatches : [{
+                                index: matchCandidate.index,
+                                candidateIndex: matchCandidate.index,
+                                sl: matchSL,
+                                site: matchCandidate.site,
+                                siteName: matchCandidate.siteName,
+                                siteCoord: matchCandidate.siteCoord,
+                                distanceM: matchCandidate.distanceM,
+                                facing: matchCandidate.facing,
+                                status: matchCandidate.site?.STATUS || 'Available'
+                            }],
+                            visibleCount: visibleCount > 0 ? visibleCount : 1,
+                            reasoning: `🎯 Direct Visual Match: ${matchPct}% visual match with inventory reference photo for SL #${matchSL} (${matchCandidate.siteName})${visibleCount > 1 ? ` — 🎯 ${visibleCount} Adjacent Sites Detected in Cluster` : ''}`
                         };
                     }
                 }
@@ -656,6 +688,21 @@ export const matchHoardingByGps = async (coord, locationList, rawImageBase64 = n
 
                 const resolvedSL = targetCandidate.site?.SL || targetCandidate.site?.['S. No.'] || targetCandidate.site?.['SL NO'] || (targetCandidate.index + 1);
 
+                const clusterMatches = (resolved.clusterMatches && resolved.clusterMatches.length > 0)
+                    ? resolved.clusterMatches
+                    : [{
+                        index: targetCandidate.index,
+                        candidateIndex: targetCandidate.index,
+                        sl: resolvedSL,
+                        site: targetCandidate.site,
+                        siteName: targetCandidate.siteName,
+                        siteCoord: targetCandidate.siteCoord,
+                        distanceM: targetCandidate.distanceM,
+                        facing: resolved.facing || targetCandidate.facing,
+                        status: targetCandidate.site?.STATUS || resolved.status || 'Available'
+                    }];
+                const visibleCount = resolved.visibleCount || clusterMatches.length;
+
                 return {
                     index: targetCandidate.index,
                     sl: resolvedSL,
@@ -667,7 +714,9 @@ export const matchHoardingByGps = async (coord, locationList, rawImageBase64 = n
                     status: targetCandidate.site?.STATUS || resolved.status || 'Available',
                     confidence: Math.round((resolved.confidence || 0.96) * 100),
                     twinCandidates: twinCandidatesList,
-                    reasoning: `🧭 AI Auto-Resolved Match: SL #${resolvedSL} [Facing: ${resolved.facing || targetCandidate.facing}] (${targetCandidate.distanceM}m away) — ${resolved.reasoning || 'Visual environment & road corridor match'}`
+                    clusterMatches: clusterMatches,
+                    visibleCount: visibleCount,
+                    reasoning: `🧭 AI Auto-Resolved Match: SL #${resolvedSL} [Facing: ${resolved.facing || targetCandidate.facing}] (${targetCandidate.distanceM}m away)${visibleCount > 1 ? ` — 🎯 ${visibleCount} Adjacent Sites Detected in Corridor` : ''} — ${resolved.reasoning || 'Visual environment & road corridor match'}`
                 };
             }
         } catch (twinErr) {
@@ -978,6 +1027,8 @@ export const analyzeHoardingImage = async (base64Image, locationList, rawFile = 
                         matchedSiteId: gpsMatch.site?._SiteID || gpsMatch.site?.UniqueID || gpsMatch.site?.['Unique ID'] || '',
                         facing: gpsMatch.facing || gpsMatch.site?.Facing || '',
                         twinCandidates: gpsMatch.twinCandidates || null,
+                        clusterMatches: gpsMatch.clusterMatches || null,
+                        visibleCount: gpsMatch.visibleCount || 1,
                         status: gpsMatch.site?.STATUS || gpsMatch.status || 'Available',
                         confidence: gpsMatch.confidence,
                         reasoning: `📍 Live Device GPS: ${gpsMatch.reasoning}`,
@@ -1007,6 +1058,8 @@ export const analyzeHoardingImage = async (base64Image, locationList, rawFile = 
                         matchedSiteId: gpsMatch.site._SiteID || gpsMatch.site.UniqueID || gpsMatch.site['Unique ID'] || '',
                         facing: gpsMatch.facing || gpsMatch.site.Facing || '',
                         twinCandidates: gpsMatch.twinCandidates || null,
+                        clusterMatches: gpsMatch.clusterMatches || null,
+                        visibleCount: gpsMatch.visibleCount || 1,
                         status: gpsMatch.site?.STATUS || gpsMatch.status || 'Available',
                         confidence: gpsMatch.confidence,
                         reasoning: `🛰️ Camera EXIF GPS: ${gpsMatch.reasoning}`,
@@ -1095,6 +1148,8 @@ export const analyzeHoardingImage = async (base64Image, locationList, rawFile = 
                     matchedSiteId: gpsMatch.site._SiteID || gpsMatch.site.UniqueID || gpsMatch.site['Unique ID'] || '',
                     facing: gpsMatch.facing || gpsMatch.site.Facing || '',
                     twinCandidates: gpsMatch.twinCandidates || null,
+                    clusterMatches: gpsMatch.clusterMatches || null,
+                    visibleCount: gpsMatch.visibleCount || 1,
                     status: status,
                     confidence: gpsMatch.confidence,
                     reasoning: `📸 On-Image GPS Stamp: ${gpsMatch.reasoning}`,
@@ -1140,6 +1195,8 @@ export const analyzeHoardingImage = async (base64Image, locationList, rawFile = 
                         matchedSiteId: gpsMatch.site._SiteID || gpsMatch.site.UniqueID || gpsMatch.site['Unique ID'] || '',
                         facing: gpsMatch.facing || gpsMatch.site.Facing || '',
                         twinCandidates: gpsMatch.twinCandidates || null,
+                        clusterMatches: gpsMatch.clusterMatches || null,
+                        visibleCount: gpsMatch.visibleCount || 1,
                         status: aiResult.status || 'Available',
                         confidence: gpsMatch.confidence,
                         reasoning: `🛰️ Vision AI GPS Stamp: ${gpsMatch.reasoning}`,

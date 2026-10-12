@@ -1321,6 +1321,16 @@ function staffUploadPhoto(data) {
       approvedSite = matchedSite;
       previousImage = aiUpdateResult.previousImageUrl;
     }
+
+    // 🎯 Multi-Site Adjacent Cluster Auto-Approval (Sync all 2 or 3 companion sites)
+    if (data.clusterSites && Array.isArray(data.clusterSites) && data.clusterSites.length > 1) {
+      for (var cIdx = 0; cIdx < data.clusterSites.length; cIdx++) {
+        var compName = String(data.clusterSites[cIdx] || '').trim();
+        if (compName && compName !== matchedSite) {
+          updateSitePhotoFromStaff(compName, imageUrl, false, siteStatus);
+        }
+      }
+    }
   } else if (status === 'AUTO_APPROVED') {
     approvedSite = withinAutoRadius[0].siteName;
     var updateResult = updateSitePhotoFromStaff(approvedSite, imageUrl, false, siteStatus);
