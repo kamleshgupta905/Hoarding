@@ -11466,6 +11466,129 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                 </div>
                             </div>
 
+                            {/* 🔑 Card 2: Staff Camera Activation (Link & QR Code) */}
+                            <div style={{ 
+                                background: '#fbfbfd', 
+                                border: '1px solid #e5e5ea', 
+                                borderRadius: '18px', 
+                                padding: '18px', 
+                                display: 'flex', 
+                                flexDirection: 'column',
+                                gap: '14px',
+                                marginBottom: '20px'
+                            }}>
+                                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                        <div style={{ 
+                                            width: '32px', 
+                                            height: '32px', 
+                                            borderRadius: '9px', 
+                                            background: '#6366f1', 
+                                            color: '#ffffff', 
+                                            display: 'flex', 
+                                            alignItems: 'center', 
+                                            justifyContent: 'center' 
+                                        }}>
+                                            <ShieldCheck size={18} />
+                                        </div>
+                                        <div>
+                                            <h3 style={{ margin: 0, fontSize: '0.96rem', fontWeight: 700, color: '#1d1d1f' }}>Step 2: Camera Activation Link</h3>
+                                            <span style={{ fontSize: '0.72rem', color: '#86868b' }}>Ek baar activation — Camera permanent unlock hoga</span>
+                                        </div>
+                                    </div>
+                                    <span style={{ 
+                                        background: '#eef2ff', 
+                                        color: '#4f46e5', 
+                                        fontSize: '0.7rem', 
+                                        fontWeight: 700, 
+                                        padding: '3px 8px', 
+                                        borderRadius: '20px' 
+                                    }}>
+                                        One-Time
+                                    </span>
+                                </div>
+
+                                <p style={{ margin: 0, fontSize: '0.78rem', color: '#515154', lineHeight: 1.45 }}>
+                                    Staff ke mobile me app open karne ke baad yeh link kholein ya QR code scan karein. Isse phone ka camera instantly unlock ho jayega:
+                                </p>
+
+                                {/* QR Code for Staff Link */}
+                                <div style={{ 
+                                    background: '#ffffff', 
+                                    border: '1px solid #e5e5ea', 
+                                    borderRadius: '12px', 
+                                    padding: '10px 12px', 
+                                    display: 'flex', 
+                                    alignItems: 'center', 
+                                    gap: '12px'
+                                }}>
+                                    <img 
+                                        src={`https://api.qrserver.com/v1/create-qr-code/?size=100x100&data=${encodeURIComponent(staffUploadLink)}`}
+                                        alt="Scan to Activate Staff Camera" 
+                                        style={{ width: '64px', height: '64px', borderRadius: '8px', border: '1px solid #e5e5ea', flexShrink: 0 }}
+                                    />
+                                    <div style={{ fontSize: '0.74rem', color: '#6e6e73' }}>
+                                        <div style={{ fontWeight: 600, color: '#1d1d1f', marginBottom: '2px', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                            <QrCode size={13} color="#6366f1" /> Scan to Unlock Camera
+                                        </div>
+                                        Staff mobile camera se yeh QR scan karein ya niche diye button se link copy karke bhejein.
+                                    </div>
+                                </div>
+
+                                <div style={{ display: 'flex', gap: '8px' }}>
+                                    <button 
+                                        type="button"
+                                        onClick={() => {
+                                            if (navigator.clipboard) {
+                                                navigator.clipboard.writeText(staffUploadLink);
+                                                setStaffLinkCopied(true);
+                                                setTimeout(() => setStaffLinkCopied(false), 2000);
+                                            }
+                                        }}
+                                        style={{
+                                            flex: 1,
+                                            background: staffLinkCopied ? '#e8f8ed' : '#6366f1',
+                                            color: staffLinkCopied ? '#248a3d' : '#ffffff',
+                                            border: staffLinkCopied ? '1px solid #34c759' : 'none',
+                                            padding: '9px 12px',
+                                            borderRadius: '10px',
+                                            fontWeight: 600,
+                                            fontSize: '0.82rem',
+                                            cursor: 'pointer',
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            justifyContent: 'center',
+                                            gap: '6px',
+                                            transition: 'all 0.15s ease'
+                                        }}
+                                    >
+                                        {staffLinkCopied ? <Check size={14} /> : <Share2 size={14} />}
+                                        <span>{staffLinkCopied ? 'Staff Link Copied!' : 'Copy Staff Link'}</span>
+                                    </button>
+                                    <a
+                                        href={staffUploadLink}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        style={{
+                                            background: '#f5f5f7',
+                                            border: '1px solid #d2d2d7',
+                                            color: '#1d1d1f',
+                                            padding: '9px 12px',
+                                            borderRadius: '10px',
+                                            fontSize: '0.78rem',
+                                            fontWeight: 600,
+                                            textDecoration: 'none',
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            gap: '4px'
+                                        }}
+                                    >
+                                        <ExternalLink size={13} />
+                                        <span>Open</span>
+                                    </a>
+                                </div>
+                            </div>
+
                             {/* Modal Footer */}
                             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderTop: '1px solid #f2f2f7', paddingTop: '14px' }}>
                                 <span style={{ fontSize: '0.76rem', color: '#86868b' }}>

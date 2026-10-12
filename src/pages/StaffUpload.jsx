@@ -1,5 +1,5 @@
 import React from 'react';
-import { Camera, CheckCircle2, MapPin, MapPinOff, RefreshCw, RotateCcw, WifiOff, XCircle, Sparkles, Check, AlertCircle, Navigation, ChevronRight, Compass, Volume2, VolumeX, ShieldCheck, Smartphone, Share2 } from 'lucide-react';
+import { Camera, CheckCircle2, MapPin, MapPinOff, RefreshCw, RotateCcw, WifiOff, XCircle, Sparkles, Check, AlertCircle, Navigation, ChevronRight, Compass, Volume2, VolumeX, ShieldCheck, Smartphone, Share2, Clipboard } from 'lucide-react';
 import { uploadStaffPhoto, fetchHoardings, saveLocalStaffUpload, syncToGoogleSheet, recordSiteHistory } from '../services/dataService';
 import { analyzeHoardingImage } from '../services/aiService';
 import { generateVisualLandmarksWithGemini } from '../services/geminiService';
@@ -556,8 +556,55 @@ const StaffUpload = () => {
     const [isDesktop, setIsDesktop] = React.useState(checkIsDesktop);
     const [overrideDesktop, setOverrideDesktop] = React.useState(false);
     // Captures ?token= into localStorage on first visit, then reuses it.
-    const [isStaffAuthorised] = React.useState(hasStaffToken);
+    const [isStaffAuthorised, setIsStaffAuthorised] = React.useState(hasStaffToken);
+    const [manualTokenInput, setManualTokenInput] = React.useState('');
+    const [tokenError, setTokenError] = React.useState('');
     const [copiedLink, setCopiedLink] = React.useState(false);
+
+    const handleActivateToken = (inputVal) => {
+        let raw = (inputVal || manualTokenInput || '').trim();
+        if (!raw) {
+            setTokenError('Kripya Admin se mila link ya token enter karein.');
+            return;
+        }
+        let token = raw;
+        if (raw.includes('token=')) {
+            try {
+                const u = new URL(raw.startsWith('http') ? raw : `https://example.com/${raw}`);
+                token = u.searchParams.get('token') || raw;
+            } catch {
+                const m = raw.match(/token=([a-zA-Z0-9_-]+)/);
+                if (m) token = m[1];
+            }
+        }
+        if (token) {
+            localStorage.setItem('adh_staff_upload_token', token);
+            setIsStaffAuthorised(true);
+            setTokenError('');
+            playChime('success');
+            speakOfflineVoice('Staff Camera unlock ho gaya hai. Ab aap photo click kar sakte hain.');
+        } else {
+            setTokenError('Valid token nahi mila. Kripya pura link paste karein.');
+        }
+    };
+
+    const handlePasteClipboardToken = async () => {
+        try {
+            if (typeof navigator !== 'undefined' && navigator.clipboard?.readText) {
+                const text = await navigator.clipboard.readText();
+                if (text) {
+                    setManualTokenInput(text);
+                    handleActivateToken(text);
+                } else {
+                    setTokenError('Clipboard khali hai.');
+                }
+            } else {
+                setTokenError('Clipboard access nahi mila. Link ko box mein manually paste karein.');
+            }
+        } catch {
+            setTokenError('Clipboard se paste karne ke liye box mein type ya paste karein.');
+        }
+    };
 
     const [pendingCount, setPendingCount] = React.useState(0);
     const [uploadedCount, setUploadedCount] = React.useState(getStoredUploadedCount);
@@ -1277,14 +1324,82 @@ const StaffUpload = () => {
                     <h2>Access Link Required</h2>
                     <p className="guard-desc">
                         Yeh camera sirf <strong>authorised field staff</strong> ke liye hai. Apne admin se
-                        bheja gaya <strong>staff upload link</strong> kholein — ek baar kholne ke baad yeh
+                        bheja gaya <strong>staff upload link</strong> kholein ya yahan paste karein — ek baar unlock hone ke baad yeh
                         device yaad rakh lega aur aapko dobara link ki zaroorat nahi padegi.
                     </p>
+
+                    <div style={{ width: '100%', display: 'flex', flexDirection: 'column', gap: '8px', margin: '14px 0' }}>
+                        <div style={{ display: 'flex', gap: '6px' }}>
+                            <input 
+                                type="text"
+                                value={manualTokenInput}
+                                onChange={(e) => { setManualTokenInput(e.target.value); setTokenError(''); }}
+                                placeholder="Admin ka Staff Link ya Token dalein..."
+                                style={{
+                                    flex: 1,
+                                    padding: '10px 12px',
+                                    borderRadius: '10px',
+                                    border: '1px solid #d1d5db',
+                                    fontSize: '0.82rem',
+                                    outline: 'none',
+                                    background: '#ffffff'
+                                }}
+                            />
+                            <button
+                                type="button"
+                                onClick={() => handleActivateToken(manualTokenInput)}
+                                style={{
+                                    background: '#34c759',
+                                    color: '#ffffff',
+                                    border: 'none',
+                                    borderRadius: '10px',
+                                    padding: '10px 16px',
+                                    fontWeight: 700,
+                                    fontSize: '0.82rem',
+                                    cursor: 'pointer'
+                                }}
+                            >
+                                Unlock
+                            </button>
+                        </div>
+                        <button
+                            type="button"
+                            onClick={handlePasteClipboardToken}
+                            style={{
+                                background: '#f8fafc',
+                                border: '1px solid #e2e8f0',
+                                borderRadius: '10px',
+                                padding: '9px 12px',
+                                fontSize: '0.78rem',
+                                fontWeight: 600,
+                                color: '#475569',
+                                cursor: 'pointer',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                gap: '6px'
+                            }}
+                        >
+                            <Clipboard size={14} />
+                            <span>Clipboard se Auto-Paste & Unlock karein</span>
+                        </button>
+                        {tokenError && (
+                            <span style={{ color: '#ef4444', fontSize: '0.75rem', fontWeight: 600, textAlign: 'center' }}>
+                                {tokenError}
+                            </span>
+                        )}
+                    </div>
 
                     <div className="guard-actions">
                         <a href="/admin" className="guard-admin-btn">
                             <span>Open Admin Dashboard</span>
                         </a>
+                    </div>
+
+                    <div className="guard-footer" style={{ marginTop: '14px' }}>
+                        <button type="button" className="guard-override-link" onClick={() => setIsStaffAuthorised(true)}>
+                            Testing / Dev Mode (Unlock Camera Now) →
+                        </button>
                     </div>
                 </div>
             </main>

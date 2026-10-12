@@ -93,7 +93,37 @@ def generate_all_icons():
     fav512 = make_icon(src_img, 512, round_shape=False, is_foreground=False)
     fav512.save(os.path.join('public', 'app-icon-512.png'), 'PNG')
 
-    print("All Android app launcher icons successfully generated!")
+    # 4. Generate all splash screen drawables (pure white background with centered Heera logo)
+    splash_configs = {
+        'drawable': (480, 800),
+        'drawable-port-mdpi': (320, 480),
+        'drawable-port-hdpi': (480, 800),
+        'drawable-port-xhdpi': (720, 1280),
+        'drawable-port-xxhdpi': (960, 1600),
+        'drawable-port-xxxhdpi': (1280, 1920),
+        'drawable-land-mdpi': (480, 320),
+        'drawable-land-hdpi': (800, 480),
+        'drawable-land-xhdpi': (1280, 720),
+        'drawable-land-xxhdpi': (1600, 960),
+        'drawable-land-xxxhdpi': (1920, 1280)
+    }
+
+    for folder, (w, h) in splash_configs.items():
+        folder_path = os.path.join(base_out, folder)
+        os.makedirs(folder_path, exist_ok=True)
+        canvas = Image.new('RGBA', (w, h), (255, 255, 255, 255))
+        max_w = int(min(w, h) * 0.65)
+        max_h = int(min(w, h) * 0.45)
+        logo = src_img.copy()
+        logo.thumbnail((max_w, max_h), Image.Resampling.LANCZOS)
+        pos_x = (w - logo.width) // 2
+        pos_y = (h - logo.height) // 2
+        canvas.paste(logo, (pos_x, pos_y), logo)
+        canvas.save(os.path.join(folder_path, 'splash.png'), 'PNG')
+        print(f"Generated splash for {folder} ({w}x{h})")
+
+    print("All Android app launcher icons & splash screens successfully generated!")
 
 if __name__ == '__main__':
     generate_all_icons()
+
