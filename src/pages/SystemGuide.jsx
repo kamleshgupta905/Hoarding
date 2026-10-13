@@ -163,8 +163,8 @@ const SystemGuide = ({ embedded = false }) => {
                             <Table2 size={24} />
                         </div>
                         <div>
-                            <h2>3. Live Master Excel Sheet Grid</h2>
-                            <span className="section-tag emerald">In-Browser Spreadsheet Editor & Real-Time Google Sheet Sync</span>
+                            <h2>3. Live Master Grid</h2>
+                            <span className="section-tag emerald">In-Browser Editor & Real-Time Google Cloud Sync</span>
                         </div>
                     </div>
 
@@ -172,17 +172,17 @@ const SystemGuide = ({ embedded = false }) => {
                         <div className="grid-box function-box">
                             <h3>🖥️ What Is Happening on Screen:</h3>
                             <ul>
-                                <li><strong>In-Browser Spreadsheet:</strong> High-performance Tabulator spreadsheet grid rendered directly within the dashboard.</li>
+                                <li><strong>In-Browser Grid:</strong> High-performance spreadsheet grid rendered directly within the dashboard.</li>
                                 <li><strong>Excel-Grade Editing:</strong> Direct cell editing, arrow key navigation, Tab/Enter traversal, and multi-step Undo/Redo history (Ctrl+Z / Ctrl+Y).</li>
-                                <li><strong>Two-Way Synchronization:</strong> 1-click "Save & Sync" updates the master Google Sheets cloud database and reflects immediately across the live discovery website.</li>
-                                <li><strong>Focus Mode:</strong> Full-screen spreadsheet editing for power users managing large datasets.</li>
+                                <li><strong>Two-Way Synchronization:</strong> 1-click "Save & Sync" updates the master Google Cloud database and reflects immediately across the live discovery website.</li>
+                                <li><strong>Focus Mode:</strong> Full-screen editing for power users managing large datasets.</li>
                             </ul>
                         </div>
                         <div className="grid-box solution-box">
                             <h3>🎯 Real-World Problems Solved:</h3>
                             <ul>
-                                <li><strong>No More External Tab Switching or Broken Formulas:</strong> Operations managers who prefer spreadsheet data entry can perform bulk edits inside the platform without risking formula corruption in Google Sheets.</li>
-                                <li><strong>Single Source of Truth:</strong> Edits sync automatically to both the master spreadsheet and the public client-facing website without manual export/import steps.</li>
+                                <li><strong>No More External Tab Switching or Broken Formulas:</strong> Operations managers who prefer spreadsheet data entry can perform bulk edits inside the platform with zero risk of formula corruption in Google Cloud.</li>
+                                <li><strong>Single Source of Truth:</strong> Edits sync automatically to both the master cloud inventory and the public client-facing website without manual export/import steps.</li>
                             </ul>
                         </div>
                     </div>

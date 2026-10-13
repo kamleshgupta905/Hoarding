@@ -888,12 +888,12 @@ export const commitBulkBookings = async ({
     });
   } catch (sheetErr) {
     sheetSyncFailed = true;
-    console.warn("[Bulk Booking Sheet Sync Warning]:", sheetErr);
-    if (onProgress) onProgress(80, `Warning: Failed to sync to Google Sheet. Details: ${sheetErr.message}`);
+    console.warn("[Bulk Booking Cloud Sync Warning]:", sheetErr);
+    if (onProgress) onProgress(80, `Warning: Failed to sync to Google Cloud. Details: ${sheetErr.message}`);
   }
 
   if (onProgress) {
-    onProgress(100, sheetSyncFailed ? "Bulk onboarding completed with sheet sync errors." : "Bulk onboarding completed successfully!");
+    onProgress(100, sheetSyncFailed ? "Bulk onboarding completed with cloud sync errors." : "Bulk onboarding completed successfully!");
   }
 
   const finalHoardingsList = Array.from(updatedHoardingsMap.values());

@@ -3842,7 +3842,7 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                 return;
             }
 
-            showToast(`Syncing ${bookedSites.length} booking(s) to Google Cloud Sheet...`, "info");
+            showToast(`Syncing ${bookedSites.length} booking(s) to Google Cloud...`, "info");
             let synced = 0;
             for (const site of bookedSites) {
                 const targetLoc = site["Locality Site Location"] || site["Location "] || site.Location || '';
@@ -3881,7 +3881,7 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                 }
             }
 
-            showToast(`🎉 Successfully synced ${synced} booking(s) to Google Sheet & Web!`, "success");
+            showToast(`🎉 Successfully synced ${synced} booking(s) to Google Cloud & Web!`, "success");
             if (typeof window !== 'undefined') {
                 window.dispatchEvent(new CustomEvent('hoardings:sync-requested'));
             }
@@ -5336,7 +5336,7 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
             setSelectedSheetCell({ row: 0, col: 0 });
             setSheetSelection({ type: 'cell', row: 0, col: 0 });
         } catch (error) {
-            showToast(`Sheet load failed: ${error.message}`, 'error');
+            showToast(`Google Cloud load failed: ${error.message}`, 'error');
         } finally {
             setSheetLoading(false);
         }
@@ -5681,9 +5681,9 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                 setHoardings(freshData);
                 localStorage.setItem('hoardings_cache', JSON.stringify(freshData));
             }
-            showToast('Sheet saved. Website data refreshed.', 'success');
+            showToast('Saved to Google Cloud. Website data refreshed.', 'success');
         } catch (error) {
-            showToast(`Sheet save failed: ${error.message}`, 'error');
+            showToast(`Google Cloud save failed: ${error.message}`, 'error');
         } finally {
             setSheetSaving(false);
         }
@@ -6555,7 +6555,7 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                         <div className="modal-body" style={{ padding: '24px' }}>
                             <p style={{ fontSize: '15px', lineHeight: '1.5', color: '#808191' }}>
                                 {bulkDeleteTarget.type === 'all' ? (
-                                    <>You are deleting <strong style={{ color: '#fff' }}>all sites</strong> from the master sheet.</>
+                                    <>You are deleting <strong style={{ color: '#fff' }}>all sites</strong> from Google Cloud.</>
                                 ) : (
                                     <>You are deleting every site in <strong style={{ color: '#fff' }}>{bulkDeleteTarget.city}</strong>.</>
                                 )}
@@ -6575,7 +6575,7 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                 color: '#f97316'
                             }}>
                                 <AlertTriangle size={18} style={{ marginTop: '2px', flexShrink: 0 }} />
-                                <span>Website inventory will update after the sheet deletion completes.</span>
+                                <span>Website inventory will update after the Google Cloud deletion completes.</span>
                             </div>
                             {bulkDeleteTarget.type === 'all' && (
                                 <div className="modal-input" style={{ marginTop: '20px' }}>
@@ -9668,7 +9668,7 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                                                 gap: '5px',
                                                                 boxShadow: '0 2px 4px rgba(79, 70, 229, 0.25)'
                                                             }}
-                                                            title="Open spreadsheet bulk booking for starred sites"
+                                                            title="Open Google Cloud bulk booking for starred sites"
                                                         >
                                                             <Calendar size={13} />
                                                             Book ({starredSites.length}) Sites
@@ -9720,7 +9720,7 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                                             gap: '4px',
                                                             boxShadow: '0 2px 4px rgba(79, 70, 229, 0.25)'
                                                         }}
-                                                        title="Open spreadsheet bulk booking for starred sites"
+                                                        title="Open Google Cloud bulk booking for starred sites"
                                                     >
                                                         <Calendar size={12} />
                                                         Book ({starredSites.length}) Sites
@@ -10503,7 +10503,7 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                             boxShadow: isSyncingBookingsToCloud ? 'none' : '0 4px 12px rgba(37, 99, 235, 0.25)',
                                             transition: 'all 0.2s ease'
                                         }}
-                                        title="Push all active desktop bookings to Google Sheet so they appear immediately on Web"
+                                        title="Push all active desktop bookings to Google Cloud so they appear immediately on Web"
                                     >
                                         <RefreshCw size={16} className={isSyncingBookingsToCloud ? 'animate-spin' : ''} /> 
                                         {isSyncingBookingsToCloud ? 'Syncing...' : 'Sync to Web / Cloud'}

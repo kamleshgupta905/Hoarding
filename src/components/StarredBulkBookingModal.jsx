@@ -514,14 +514,14 @@ export const StarredBulkBookingModal = ({
                 boxShadow: '0 4px 6px -1px rgba(79, 70, 229, 0.25)'
               }}
             >
-              <FileSpreadsheet size={22} />
+              <Calendar size={22} />
             </div>
             <div>
               <h2 style={{ margin: 0, fontSize: '1.25rem', fontWeight: 700, color: '#0f172a' }}>
                 Bulk Book Starred Sites ({rows.length})
               </h2>
               <p style={{ margin: '2px 0 0', fontSize: '0.82rem', color: '#64748b' }}>
-                Spreadsheet Editor: review, edit details, rates, or date ranges for all starred sites before booking.
+                Google Cloud Booking: review, edit details, rates, or date ranges for all starred sites before booking.
               </p>
             </div>
           </div>
