@@ -5959,35 +5959,32 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                 </span>
                             </div>
 
-                            {/* Download Official Apps Quick Link (Desktop App Only) */}
-                            {isDesktopApp && (
-                                <div style={{ paddingTop: '8px', borderTop: '1px solid #f1f5f9', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.78rem', color: '#475569', fontWeight: 600 }}>
-                                        <Smartphone size={14} color="#10b981" />
-                                        <span>Official Heera Mobile & PC Apps</span>
-                                    </div>
-                                    <button
-                                        type="button"
-                                        onClick={() => {
-                                            setIsSettingsOpen(false);
-                                            setIsAppDownloadModalOpen(true);
-                                        }}
-                                        style={{
-                                            background: 'transparent',
-                                            border: 'none',
-                                            color: '#6366f1',
-                                            fontSize: '0.78rem',
-                                            fontWeight: 700,
-                                            cursor: 'pointer',
-                                            display: 'flex',
-                                            alignItems: 'center',
-                                            gap: '4px'
-                                        }}
-                                    >
-                                        Download Apps <ArrowUpRight size={13} />
-                                    </button>
+                            {/* Download Official Staff App Quick Link */}
+                            <div style={{ paddingTop: '8px', borderTop: '1px solid #f1f5f9', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.78rem', color: '#475569', fontWeight: 600 }}>
+                                    <Smartphone size={14} color="#10b981" />
+                                    <span>Official Heera Staff Camera (Android APK)</span>
                                 </div>
-                            )}
+                                <a
+                                    href="https://github.com/kamleshgupta905/Hoarding/releases/download/staff-apk-latest/heera-staff-camera.apk"
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    style={{
+                                        background: 'transparent',
+                                        border: 'none',
+                                        color: '#10b981',
+                                        fontSize: '0.78rem',
+                                        fontWeight: 700,
+                                        textDecoration: 'none',
+                                        cursor: 'pointer',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        gap: '4px'
+                                    }}
+                                >
+                                    Download Staff App <Download size={13} />
+                                </a>
+                            </div>
                         </div>
                         <div className="modal-footer" style={{ padding: '12px 24px', borderTop: '1px solid #f1f5f9', display: 'flex', justifyContent: 'flex-end' }}>
                             <button className="btn-primary-admin" onClick={() => setIsSettingsOpen(false)}>Close</button>
@@ -6683,12 +6680,10 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                         <span>Daily Updates</span>
                     </button>
 
-                    {isDesktopApp && (
-                        <button className="nav-item" onClick={() => setIsAppDownloadModalOpen(true)} title="Download Android APK & Desktop App">
-                            <Smartphone size={18} />
-                            <span>Download Apps</span>
-                        </button>
-                    )}
+                    <button className={`nav-item ${activeTab === 'download-app' ? 'active' : ''}`} onClick={() => setActiveTab('download-app')} title="Download Official Heera Staff Camera Android APK">
+                        <Smartphone size={18} />
+                        <span>Download Staff App</span>
+                    </button>
 
                     <button className="nav-item" onClick={() => setIsSettingsOpen(true)}>
                         <Settings size={18} />
@@ -6769,18 +6764,18 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                             </div>
                         )}
 
-                        {/* 📱 Download Apps Quick Button (Desktop App Only) */}
-                        {isDesktopApp && (
-                            <button 
-                                className="topbar-icon-btn" 
-                                onClick={() => setIsAppDownloadModalOpen(true)}
-                                title="Download Heera Staff Camera (APK) & Desktop PC App"
-                                style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '0 10px', width: 'auto', borderRadius: '10px' }}
-                            >
-                                <Smartphone size={16} color="#10b981" />
-                                <span style={{ fontSize: '0.78rem', fontWeight: 700, color: '#1e293b' }}>Download App</span>
-                            </button>
-                        )}
+                        {/* 📱 Direct Download Staff App Button (No Popup) */}
+                        <a 
+                            href="https://github.com/kamleshgupta905/Hoarding/releases/download/staff-apk-latest/heera-staff-camera.apk"
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="topbar-icon-btn" 
+                            title="Direct Download Heera Staff Camera (Android APK)"
+                            style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '0 10px', width: 'auto', borderRadius: '10px', textDecoration: 'none' }}
+                        >
+                            <Download size={15} color="#10b981" />
+                            <span style={{ fontSize: '0.78rem', fontWeight: 700, color: '#1e293b' }}>Download Staff App</span>
+                        </a>
 
                         {/* 🔔 Notification Bell */}
                         <button className="topbar-icon-btn" title="Notifications">
@@ -7326,21 +7321,45 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                     {/* Action Buttons Toolbar */}
                                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
 
+                                        <a 
+                                            href="https://github.com/kamleshgupta905/Hoarding/releases/download/staff-apk-latest/heera-staff-camera.apk"
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            style={{
+                                                background: '#10b981',
+                                                color: '#ffffff',
+                                                border: '1px solid #059669',
+                                                padding: '8px 14px',
+                                                borderRadius: '10px',
+                                                fontSize: '0.8rem',
+                                                fontWeight: 700,
+                                                display: 'inline-flex',
+                                                alignItems: 'center',
+                                                gap: '6px',
+                                                textDecoration: 'none',
+                                                cursor: 'pointer',
+                                                transition: 'all 0.15s ease'
+                                            }}
+                                            title="Direct Download Heera Staff Camera Android APK"
+                                        >
+                                            <Download size={14} />
+                                            <span>Download Staff App</span>
+                                        </a>
 
                                         <button 
                                             type="button"
                                             onClick={() => {
                                                 if (navigator.clipboard) {
-                                                    navigator.clipboard.writeText(window.location.origin + '/staff/upload');
-                                                    setStaffLinkCopied(true);
-                                                    setTimeout(() => setStaffLinkCopied(false), 2000);
+                                                    navigator.clipboard.writeText('https://github.com/kamleshgupta905/Hoarding/releases/download/staff-apk-latest/heera-staff-camera.apk');
+                                                    setApkCopied(true);
+                                                    setTimeout(() => setApkCopied(false), 2000);
                                                 }
                                             }}
                                             style={{
-                                                background: staffLinkCopied ? '#ecfdf5' : '#ffffff',
-                                                color: staffLinkCopied ? '#059669' : '#334155',
-                                                border: `1px solid ${staffLinkCopied ? '#a7f3d0' : '#cbd5e1'}`,
-                                                padding: '8px 14px',
+                                                background: apkCopied ? '#ecfdf5' : '#ffffff',
+                                                color: apkCopied ? '#059669' : '#334155',
+                                                border: `1px solid ${apkCopied ? '#a7f3d0' : '#cbd5e1'}`,
+                                                padding: '8px 12px',
                                                 borderRadius: '10px',
                                                 fontSize: '0.8rem',
                                                 fontWeight: 700,
@@ -7350,31 +7369,10 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                                 cursor: 'pointer',
                                                 transition: 'all 0.15s ease'
                                             }}
-                                            title="Copy mobile camera upload link for field staff"
+                                            title="Copy Android APK download link for field staff"
                                         >
-                                            {staffLinkCopied ? <Check size={14} /> : <Share2 size={14} />}
-                                            <span>{staffLinkCopied ? 'Link Copied!' : 'Copy Staff Link'}</span>
-                                        </button>
-
-                                        <button 
-                                            type="button"
-                                            onClick={() => window.open('/staff/upload', '_blank')}
-                                            style={{
-                                                background: '#f8fafc',
-                                                color: '#475569',
-                                                border: '1px solid #e2e8f0',
-                                                padding: '8px 12px',
-                                                borderRadius: '10px',
-                                                fontSize: '0.8rem',
-                                                fontWeight: 700,
-                                                display: 'inline-flex',
-                                                alignItems: 'center',
-                                                gap: '6px',
-                                                cursor: 'pointer'
-                                            }}
-                                            title="Open mobile viewfinder upload page in new tab"
-                                        >
-                                            <ExternalLink size={13} /> Viewfinder
+                                            {apkCopied ? <Check size={14} /> : <Share2 size={14} />}
+                                            <span>{apkCopied ? 'APK Link Copied!' : 'Copy APK Link'}</span>
                                         </button>
 
                                         <button 
@@ -9192,10 +9190,10 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                         <div className="staff-review-header">
                             <div>
                                 <h3>Live Field Audit & Staff Uploads</h3>
-                                <p>Real-time GPS geofenced photos, 50m auto-matching, and audit approval queue.</p>
+                                <p>Real-time GPS geofenced photos, 150m auto-matching, and audit approval queue.</p>
                             </div>
-                            <a className="staff-permanent-link" href={staffUploadLink} target="_blank" rel="noreferrer">
-                                <ExternalLink size={16} /> Open Staff Camera Link
+                            <a className="staff-permanent-link" href="https://github.com/kamleshgupta905/Hoarding/releases/download/staff-apk-latest/heera-staff-camera.apk" target="_blank" rel="noreferrer">
+                                <Download size={16} /> Download Staff App (APK)
                             </a>
                         </div>
                         {reviewQueue.length > 0 ? (
@@ -11118,6 +11116,162 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                     </motion.div>
                 )}
 
+                {/* 📱 In-Page Download Staff App View (No Popup, Official Android APK Only) */}
+                {activeTab === 'download-app' && (
+                    <motion.div
+                        initial={{ opacity: 0, y: 12 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: -8 }}
+                        transition={{ duration: 0.28, ease: [0.16, 1, 0.3, 1] }}
+                        className="dashboard-view qm-dashboard-view"
+                        style={{ padding: '12px 0 32px 0', maxWidth: '640px', margin: '0 auto' }}
+                    >
+                        <div style={{
+                            background: '#ffffff',
+                            borderRadius: '24px',
+                            border: '1px solid #e2e8f0',
+                            boxShadow: '0 10px 30px -10px rgba(15, 23, 42, 0.08)',
+                            padding: '28px 32px'
+                        }}>
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '20px', flexWrap: 'wrap', gap: '12px' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                                    <div style={{
+                                        width: '44px',
+                                        height: '44px',
+                                        borderRadius: '12px',
+                                        background: '#10b981',
+                                        color: '#ffffff',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'center',
+                                        boxShadow: '0 4px 12px rgba(16, 185, 129, 0.25)'
+                                    }}>
+                                        <Smartphone size={22} />
+                                    </div>
+                                    <div>
+                                        <h2 style={{ margin: 0, fontSize: '1.25rem', fontWeight: 800, color: '#0f172a', letterSpacing: '-0.02em' }}>
+                                            Heera Staff Camera
+                                        </h2>
+                                        <p style={{ margin: '2px 0 0 0', color: '#64748b', fontSize: '0.82rem' }}>
+                                            Official Android APK v{APP_VERSION} for field audits & GPS photo verification
+                                        </p>
+                                    </div>
+                                </div>
+                                <span style={{
+                                    background: '#ecfdf5',
+                                    color: '#059669',
+                                    border: '1px solid #a7f3d0',
+                                    fontSize: '0.75rem',
+                                    fontWeight: 700,
+                                    padding: '4px 12px',
+                                    borderRadius: '20px'
+                                }}>
+                                    Android APK • 15 MB
+                                </span>
+                            </div>
+
+                            <div style={{
+                                background: '#f8fafc',
+                                border: '1px solid #e2e8f0',
+                                borderRadius: '16px',
+                                padding: '18px 20px',
+                                display: 'flex',
+                                flexDirection: 'column',
+                                gap: '10px',
+                                marginBottom: '20px',
+                                color: '#334155',
+                                fontSize: '0.85rem'
+                            }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                    <Check size={15} color="#10b981" /> <span><strong>0s Instant Viewfinder</strong> — Opens directly into camera without any login or security key</span>
+                                </div>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                    <Check size={15} color="#10b981" /> <span><strong>150m Geofenced GPS Matching</strong> — Auto-matches nearby hoardings & adjacent rows</span>
+                                </div>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                    <Check size={15} color="#10b981" /> <span><strong>Offline Queue & Auto-Sync</strong> — Works smoothly in low network areas</span>
+                                </div>
+                            </div>
+
+                            {/* QR Code Section */}
+                            <div style={{
+                                background: '#ffffff',
+                                border: '1px solid #e2e8f0',
+                                borderRadius: '16px',
+                                padding: '14px 18px',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '16px',
+                                marginBottom: '20px'
+                            }}>
+                                <img
+                                    src="https://api.qrserver.com/v1/create-qr-code/?size=120x120&data=https%3A%2F%2Fgithub.com%2Fkamleshgupta905%2FHoarding%2Freleases%2Fdownload%2Fstaff-apk-latest%2Fheera-staff-camera.apk"
+                                    alt="Scan to Download APK"
+                                    style={{ width: '76px', height: '76px', borderRadius: '10px', border: '1px solid #e2e8f0', flexShrink: 0 }}
+                                />
+                                <div style={{ fontSize: '0.82rem', color: '#64748b', lineHeight: 1.5 }}>
+                                    <div style={{ fontWeight: 700, color: '#0f172a', marginBottom: '4px', display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.9rem' }}>
+                                        <QrCode size={15} color="#10b981" /> Scan with Phone to Download
+                                    </div>
+                                    Phone ke camera se QR code scan karke seedha <strong>Heera Staff Camera APK</strong> download aur install karein.
+                                </div>
+                            </div>
+
+                            <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+                                <a
+                                    href="https://github.com/kamleshgupta905/Hoarding/releases/download/staff-apk-latest/heera-staff-camera.apk"
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    style={{
+                                        flex: 1,
+                                        minWidth: '200px',
+                                        background: '#10b981',
+                                        color: '#ffffff',
+                                        padding: '12px 18px',
+                                        borderRadius: '12px',
+                                        fontWeight: 700,
+                                        fontSize: '0.9rem',
+                                        textDecoration: 'none',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'center',
+                                        gap: '8px',
+                                        boxShadow: '0 4px 14px rgba(16, 185, 129, 0.25)'
+                                    }}
+                                >
+                                    <Download size={16} /> Download Staff App (APK)
+                                </a>
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        if (navigator.clipboard) {
+                                            navigator.clipboard.writeText('https://github.com/kamleshgupta905/Hoarding/releases/download/staff-apk-latest/heera-staff-camera.apk');
+                                            setApkCopied(true);
+                                            setTimeout(() => setApkCopied(false), 2000);
+                                        }
+                                    }}
+                                    style={{
+                                        background: apkCopied ? '#ecfdf5' : '#f8fafc',
+                                        border: `1px solid ${apkCopied ? '#10b981' : '#cbd5e1'}`,
+                                        color: apkCopied ? '#059669' : '#1e293b',
+                                        padding: '12px 18px',
+                                        borderRadius: '12px',
+                                        fontSize: '0.85rem',
+                                        fontWeight: 700,
+                                        cursor: 'pointer',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        gap: '6px'
+                                    }}
+                                >
+                                    {apkCopied ? <Check size={15} /> : <Share2 size={15} />}
+                                    <span>{apkCopied ? 'APK Link Copied!' : 'Copy APK Link'}</span>
+                                </button>
+                            </div>
+                        </div>
+                    </motion.div>
+                )}
+
 
                 {uploadNotice && (
                     <aside className={`upload-background-notice ${uploadNotice.status}`} role="status" aria-live="polite">
@@ -11258,353 +11412,6 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                         onClose={() => setPreviewHoarding(null)}
                         onDownload={() => downloadHoardingImage(previewHoarding.ImageURL || getImageUrl(previewHoarding), previewHoarding["Location "] || 'Hoarding')}
                     />
-                )}
-
-                {/* 📥 Native Apps Download Modal (Apple-Grade Minimalist Interface) */}
-                {isAppDownloadModalOpen && (
-                    <div 
-                        className="admin-modal-overlay" 
-                        onClick={() => setIsAppDownloadModalOpen(false)}
-                        style={{
-                            position: 'fixed',
-                            inset: 0,
-                            background: 'rgba(0, 0, 0, 0.45)',
-                            backdropFilter: 'blur(20px) saturate(180%)',
-                            WebkitBackdropFilter: 'blur(20px) saturate(180%)',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            zIndex: 10000,
-                            padding: '16px'
-                        }}
-                    >
-                        <div 
-                            className="admin-modal-content"
-                            onClick={e => e.stopPropagation()}
-                            style={{
-                                background: '#ffffff',
-                                borderRadius: '24px',
-                                maxWidth: '460px',
-                                width: '100%',
-                                overflow: 'hidden',
-                                boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25), 0 0 0 1px rgba(0, 0, 0, 0.05)',
-                                border: '1px solid rgba(226, 232, 240, 0.8)',
-                                padding: '24px 28px',
-                                animation: 'fadeInScale 0.2s cubic-bezier(0.16, 1, 0.3, 1)'
-                            }}
-                        >
-                            {/* Modal Header */}
-                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '20px' }}>
-                                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                                    <div style={{ 
-                                        width: '40px', 
-                                        height: '40px', 
-                                        borderRadius: '12px', 
-                                        background: '#10b981', 
-                                        color: '#ffffff', 
-                                        display: 'flex', 
-                                        alignItems: 'center', 
-                                        justifyContent: 'center',
-                                        boxShadow: '0 4px 12px rgba(16, 185, 129, 0.25)'
-                                    }}>
-                                        <Smartphone size={20} />
-                                    </div>
-                                    <div>
-                                        <h2 style={{ margin: 0, fontSize: '1.2rem', fontWeight: 800, color: '#1d1d1f', letterSpacing: '-0.02em' }}>
-                                            Staff Mobile Camera App
-                                        </h2>
-                                        <p style={{ margin: 0, color: '#86868b', fontSize: '0.8rem' }}>
-                                            Official Android APK for field audits & GPS photo verification
-                                        </p>
-                                    </div>
-                                </div>
-                                <button 
-                                    type="button" 
-                                    onClick={() => setIsAppDownloadModalOpen(false)}
-                                    style={{ 
-                                        background: '#f5f5f7', 
-                                        border: 'none', 
-                                        width: '32px', 
-                                        height: '32px', 
-                                        borderRadius: '50%', 
-                                        display: 'flex', 
-                                        alignItems: 'center', 
-                                        justifyContent: 'center', 
-                                        color: '#6e6e73', 
-                                        cursor: 'pointer', 
-                                        transition: 'all 0.15s ease'
-                                    }}
-                                    onMouseEnter={e => { e.currentTarget.style.background = '#e8e8ed'; e.currentTarget.style.color = '#1d1d1f'; }}
-                                    onMouseLeave={e => { e.currentTarget.style.background = '#f5f5f7'; e.currentTarget.style.color = '#6e6e73'; }}
-                                >
-                                    <X size={17} />
-                                </button>
-                            </div>
-
-                            {/* 📱 Staff Camera Android APK Card */}
-                            <div style={{ 
-                                background: '#fbfbfd', 
-                                border: '1px solid #e5e5ea', 
-                                borderRadius: '18px', 
-                                padding: '18px', 
-                                display: 'flex', 
-                                flexDirection: 'column',
-                                gap: '14px',
-                                marginBottom: '20px'
-                            }}>
-                                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                        <div style={{ 
-                                            width: '32px', 
-                                            height: '32px', 
-                                            borderRadius: '9px', 
-                                            background: '#34c759', 
-                                            color: '#ffffff', 
-                                            display: 'flex', 
-                                            alignItems: 'center', 
-                                            justifyContent: 'center' 
-                                        }}>
-                                            <Smartphone size={18} />
-                                        </div>
-                                        <div>
-                                            <h3 style={{ margin: 0, fontSize: '0.96rem', fontWeight: 700, color: '#1d1d1f' }}>Heera Staff Camera</h3>
-                                            <span style={{ fontSize: '0.72rem', color: '#86868b' }}>Android APK v{APP_VERSION}</span>
-                                        </div>
-                                    </div>
-                                    <span style={{ 
-                                        background: '#e8f8ed', 
-                                        color: '#248a3d', 
-                                        fontSize: '0.7rem', 
-                                        fontWeight: 700, 
-                                        padding: '3px 8px', 
-                                        borderRadius: '20px' 
-                                    }}>
-                                        15 MB
-                                    </span>
-                                </div>
-
-                                <div style={{ 
-                                    display: 'flex', 
-                                    flexDirection: 'column', 
-                                    gap: '5px', 
-                                    color: '#515154', 
-                                    fontSize: '0.78rem'
-                                }}>
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                        <Check size={13} color="#34c759" /> <span>0s Instant Viewfinder</span>
-                                    </div>
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                        <Check size={13} color="#34c759" /> <span>50m Geofenced GPS Matching</span>
-                                    </div>
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                        <Check size={13} color="#34c759" /> <span>Offline Queue & Auto-Sync</span>
-                                    </div>
-                                </div>
-
-                                {/* QR Code Card */}
-                                <div style={{ 
-                                    background: '#ffffff', 
-                                    border: '1px solid #e5e5ea', 
-                                    borderRadius: '12px', 
-                                    padding: '10px 12px', 
-                                    display: 'flex', 
-                                    alignItems: 'center', 
-                                    gap: '12px'
-                                }}>
-                                    <img 
-                                        src="https://api.qrserver.com/v1/create-qr-code/?size=100x100&data=https%3A%2F%2Fgithub.com%2Fkamleshgupta905%2FHoarding%2Freleases%2Fdownload%2Fstaff-apk-latest%2Fheera-staff-camera.apk" 
-                                        alt="Scan to Download APK" 
-                                        style={{ width: '64px', height: '64px', borderRadius: '8px', border: '1px solid #e5e5ea', flexShrink: 0 }}
-                                    />
-                                    <div style={{ fontSize: '0.74rem', color: '#6e6e73' }}>
-                                        <div style={{ fontWeight: 600, color: '#1d1d1f', marginBottom: '2px', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                                            <QrCode size={13} color="#34c759" /> Scan with Phone
-                                        </div>
-                                        Direct download & install APK on Android.
-                                    </div>
-                                </div>
-
-                                <div style={{ display: 'flex', gap: '8px' }}>
-                                    <a 
-                                        href="https://github.com/kamleshgupta905/Hoarding/releases/download/staff-apk-latest/heera-staff-camera.apk" 
-                                        target="_blank" 
-                                        rel="noopener noreferrer"
-                                        style={{
-                                            flex: 1,
-                                            background: '#34c759',
-                                            color: '#ffffff',
-                                            padding: '9px 12px',
-                                            borderRadius: '10px',
-                                            fontWeight: 600,
-                                            fontSize: '0.82rem',
-                                            textDecoration: 'none',
-                                            display: 'flex',
-                                            alignItems: 'center',
-                                            justifyContent: 'center',
-                                            gap: '6px',
-                                            transition: 'opacity 0.15s ease'
-                                        }}
-                                        onMouseEnter={e => e.currentTarget.style.opacity = '0.9'}
-                                        onMouseLeave={e => e.currentTarget.style.opacity = '1'}
-                                    >
-                                        <Download size={14} /> Download APK
-                                    </a>
-                                    <button 
-                                        type="button"
-                                        onClick={() => {
-                                            if (navigator.clipboard) {
-                                                navigator.clipboard.writeText('https://github.com/kamleshgupta905/Hoarding/releases/download/staff-apk-latest/heera-staff-camera.apk');
-                                                setApkCopied(true);
-                                                setTimeout(() => setApkCopied(false), 2000);
-                                            }
-                                        }}
-                                        style={{ 
-                                            background: apkCopied ? '#e8f8ed' : '#ffffff', 
-                                            border: `1px solid ${apkCopied ? '#34c759' : '#d2d2d7'}`, 
-                                            color: apkCopied ? '#248a3d' : '#1d1d1f', 
-                                            padding: '9px 12px', 
-                                            borderRadius: '10px', 
-                                            fontSize: '0.78rem', 
-                                            fontWeight: 600, 
-                                            cursor: 'pointer',
-                                            display: 'flex',
-                                            alignItems: 'center',
-                                            gap: '4px'
-                                        }}
-                                    >
-                                        {apkCopied ? <Check size={13} /> : <Share2 size={13} />}
-                                        <span>{apkCopied ? 'Copied' : 'Copy'}</span>
-                                    </button>
-                                </div>
-                            </div>
-
-                            {/* 🌐 Card 2: Direct Web Camera Link (No APK installation required) */}
-                            <div style={{ 
-                                background: '#fbfbfd', 
-                                border: '1px solid #e5e5ea', 
-                                borderRadius: '18px', 
-                                padding: '18px', 
-                                display: 'flex', 
-                                flexDirection: 'column',
-                                gap: '14px',
-                                marginBottom: '20px'
-                            }}>
-                                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                        <div style={{ 
-                                            width: '32px', 
-                                            height: '32px', 
-                                            borderRadius: '9px', 
-                                            background: '#6366f1', 
-                                            color: '#ffffff', 
-                                            display: 'flex', 
-                                            alignItems: 'center', 
-                                            justifyContent: 'center' 
-                                        }}>
-                                            <ExternalLink size={18} />
-                                        </div>
-                                        <div>
-                                            <h3 style={{ margin: 0, fontSize: '0.96rem', fontWeight: 700, color: '#1d1d1f' }}>Direct Browser Camera (Optional)</h3>
-                                            <span style={{ fontSize: '0.72rem', color: '#86868b' }}>Bina app download kiye kisi bhi phone ke browser me chalayein</span>
-                                        </div>
-                                    </div>
-                                    <span style={{ 
-                                        background: '#eef2ff', 
-                                        color: '#4f46e5', 
-                                        fontSize: '0.7rem', 
-                                        fontWeight: 700, 
-                                        padding: '3px 8px', 
-                                        borderRadius: '20px' 
-                                    }}>
-                                        Instant Web
-                                    </span>
-                                </div>
-
-                                <p style={{ margin: 0, fontSize: '0.78rem', color: '#515154', lineHeight: 1.45 }}>
-                                    Staff ke paas koi bhi security key ya password dalne ki zaroorat nahi hai. Seedha open karte hi camera active ho jata hai:
-                                </p>
-
-                                <div style={{ display: 'flex', gap: '8px' }}>
-                                    <button 
-                                        type="button"
-                                        onClick={() => {
-                                            if (navigator.clipboard) {
-                                                navigator.clipboard.writeText(staffUploadLink);
-                                                setStaffLinkCopied(true);
-                                                setTimeout(() => setStaffLinkCopied(false), 2000);
-                                            }
-                                        }}
-                                        style={{
-                                            flex: 1,
-                                            background: staffLinkCopied ? '#e8f8ed' : '#6366f1',
-                                            color: staffLinkCopied ? '#248a3d' : '#ffffff',
-                                            border: staffLinkCopied ? '1px solid #34c759' : 'none',
-                                            padding: '9px 12px',
-                                            borderRadius: '10px',
-                                            fontWeight: 600,
-                                            fontSize: '0.82rem',
-                                            cursor: 'pointer',
-                                            display: 'flex',
-                                            alignItems: 'center',
-                                            justifyContent: 'center',
-                                            gap: '6px',
-                                            transition: 'all 0.15s ease'
-                                        }}
-                                    >
-                                        {staffLinkCopied ? <Check size={14} /> : <Share2 size={14} />}
-                                        <span>{staffLinkCopied ? 'Web Link Copied!' : 'Copy Web Camera Link'}</span>
-                                    </button>
-                                    <a
-                                        href={staffUploadLink}
-                                        target="_blank"
-                                        rel="noopener noreferrer"
-                                        style={{
-                                            background: '#f5f5f7',
-                                            border: '1px solid #d2d2d7',
-                                            color: '#1d1d1f',
-                                            padding: '9px 12px',
-                                            borderRadius: '10px',
-                                            fontSize: '0.78rem',
-                                            fontWeight: 600,
-                                            textDecoration: 'none',
-                                            display: 'flex',
-                                            alignItems: 'center',
-                                            gap: '4px'
-                                        }}
-                                    >
-                                        <ExternalLink size={13} />
-                                        <span>Open in Browser</span>
-                                    </a>
-                                </div>
-                            </div>
-
-                            {/* Modal Footer */}
-                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderTop: '1px solid #f2f2f7', paddingTop: '14px' }}>
-                                <span style={{ fontSize: '0.76rem', color: '#86868b' }}>
-                                    HIRA Advertising OOH Infrastructure • Native Suite v1.2
-                                </span>
-                                <button 
-                                    type="button" 
-                                    onClick={() => setIsAppDownloadModalOpen(false)}
-                                    style={{ 
-                                        padding: '7px 18px', 
-                                        borderRadius: '18px', 
-                                        border: 'none', 
-                                        background: '#f5f5f7', 
-                                        color: '#1d1d1f', 
-                                        fontSize: '0.82rem', 
-                                        fontWeight: 600, 
-                                        cursor: 'pointer',
-                                        transition: 'background 0.15s ease'
-                                    }}
-                                    onMouseEnter={e => e.currentTarget.style.background = '#e8e8ed'}
-                                    onMouseLeave={e => e.currentTarget.style.background = '#f5f5f7'}
-                                >
-                                    Done
-                                </button>
-                            </div>
-                        </div>
-                    </div>
                 )}
 
                 {/* 📅 Quick Booking Modal (Centered Fixed Overlay) */}
