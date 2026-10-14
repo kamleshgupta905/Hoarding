@@ -177,9 +177,29 @@ const CityList = ({ hoardings }) => {
             else if (priceRange === '25k-50k') matchPrice = hPrice > 25000 && hPrice <= 50000;
             else if (priceRange === '50k+') matchPrice = hPrice > 50000;
 
-            const matchSearch = searchQuery === '' ||
-                siteLocality.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                String(h["Locality Site Location"] || h["Location "] || h["Location"] || '').toLowerCase().includes(searchQuery.toLowerCase());
+            // 🔍 Robust Multi-Token Search across all site attributes (City, Locality, Road, Facing, Media, SL, Client)
+            let matchSearch = true;
+            if (searchQuery.trim()) {
+                const searchTokens = searchQuery.toLowerCase().trim().split(/\s+/).filter(Boolean);
+                const searchableText = [
+                    h.City,
+                    h["Locality"],
+                    h["Area"],
+                    h["Locality Site Location"],
+                    h["Location "],
+                    h["Location"],
+                    h.Facing,
+                    h['Traffic View'],
+                    h.Media,
+                    h.Type,
+                    h.SL,
+                    h['S. No.'],
+                    h.BookedBy,
+                    h['Client Name']
+                ].filter(Boolean).join(' ').toLowerCase();
+
+                matchSearch = searchTokens.every(tok => searchableText.includes(tok));
+            }
 
             // 🎯 Occupancy Status Filter
             let matchOccupancy = true;
@@ -522,7 +542,6 @@ const CityList = ({ hoardings }) => {
                                                             src={getImageUrl(h)}
                                                             alt={locName}
                                                             thumbnailSize="w400"
-                                                            placeholder="https://placehold.co/220x130?text=Hoarding"
                                                         />
                                                         <span 
                                                             className="popup-status-badge"

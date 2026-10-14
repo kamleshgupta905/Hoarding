@@ -27,6 +27,8 @@ const Home = ({ hoardings }) => {
     // Optional: Sort cities alphabetically
     allCities.sort((a, b) => a.localeCompare(b));
 
+    const [selectedCity, setSelectedCity] = useState('');
+
     const handleCitySelect = (city) => {
         navigate(`/${city}`);
     };
@@ -34,20 +36,11 @@ const Home = ({ hoardings }) => {
     const handleSearch = (e) => {
         e.preventDefault();
         const term = searchTerm.trim();
+        const city = selectedCity || 'all';
         if (term) {
-            const lowerTerm = term.toLowerCase();
-            const match = hoardings.find(h =>
-                (h["Area"] || h["Locality"] || '')?.toLowerCase().includes(lowerTerm) ||
-                (h["Location "] || h.Location || h["Locality Site Location"] || '')?.toLowerCase().includes(lowerTerm) ||
-                (h.City || h.city || '')?.toLowerCase().includes(lowerTerm)
-            );
-            if (match) {
-                const targetCity = match.City || match.city || 'all';
-                navigate(`/${targetCity}?search=${encodeURIComponent(term)}`);
-            } else {
-                const fallbackCity = allCities[0] || 'all';
-                navigate(`/${fallbackCity}?search=${encodeURIComponent(term)}`);
-            }
+            navigate(`/${city}?search=${encodeURIComponent(term)}`);
+        } else {
+            navigate(`/${city}`);
         }
     };
 
@@ -72,11 +65,11 @@ const Home = ({ hoardings }) => {
                                 <div className="input-group">
                                     <MapPin className="icon" size={20} aria-hidden="true" />
                                     <select
-                                        onChange={(e) => handleCitySelect(e.target.value)}
-                                        defaultValue=""
+                                        value={selectedCity}
+                                        onChange={(e) => setSelectedCity(e.target.value)}
                                         aria-label="Select Target City"
                                     >
-                                        <option value="" disabled>Select City</option>
+                                        <option value="">All Cities</option>
                                         {allCities.map(city => (
                                             <option key={city} value={city}>{city}</option>
                                         ))}

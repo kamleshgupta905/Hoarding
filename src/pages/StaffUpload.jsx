@@ -1050,8 +1050,8 @@ const StaffUpload = () => {
                         aiDecision = !isWithinGeofence ? 'OUT_OF_GEOFENCE' : 'NO_HOARDING_DETECTED';
 
                         const warnMsg = !isWithinGeofence
-                            ? `GPS Range ke bahar (${matchDistRaw > 1000 ? Math.round(matchDistRaw / 1000) + 'km' : matchDistRaw + 'm'}). Admin review me bhej di gayi hai.`
-                            : 'Hoarding detect nahi hua. Admin review me bhej di gayi hai.';
+                            ? `GPS Range ke bahar (${matchDistRaw > 1000 ? Math.round(matchDistRaw / 1000) + 'km' : matchDistRaw + 'm'}). Kripya hoarding site ke paas (150m ke daayre mein) jaakar photo kheinchein.`
+                            : 'Photo me koi hoarding structure detect nahi hua. Kripya hoarding ki saaf photo kheinchein.';
 
                         showMatchBanner({
                             warning: true,
@@ -1067,7 +1067,7 @@ const StaffUpload = () => {
                     aiDecision = 'GPS_REVIEW';
                     showMatchBanner({
                         warning: true,
-                        message: 'Match could not be confirmed. Sent to admin review.'
+                        message: 'Match could not be confirmed. Kripya hoarding ke paas khade hokar dobara kheinchein.'
                     });
                     speakOfflineVoice('Photo kisi registered site se match nahi hui.');
                 }
@@ -1093,6 +1093,13 @@ const StaffUpload = () => {
 
             // 🎯 Stamp Authentic PinPoint GPS Card onto Image
             const hasValidNearSite = (matchedDistance <= 150) && (matchedSite || liveNearest?.isWithinRange);
+
+            // 🛡️ Strict Geofence Gate: Do not upload or store fake/irrelevant captures taken away from all hoarding sites
+            if (!hasValidNearSite && !matchedSite) {
+                console.warn('Photo rejected: device is out of geofence range or not facing a verified site.', { matchedDistance, aiDecision });
+                return;
+            }
+
             const siteInfoForStamp = {
                 city: hasValidNearSite ? (matchedSiteData?.City || liveNearest?.city || 'Meerut') : 'Unverified Area',
                 location: hasValidNearSite

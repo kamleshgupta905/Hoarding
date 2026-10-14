@@ -21,10 +21,17 @@ const Navbar = () => {
         return () => window.removeEventListener('storage', syncAuthState);
     }, [location.pathname]);
 
-    const handleSearch = (e) => {
-        if (e.key === 'Enter' && search.trim()) {
+    const executeSearch = () => {
+        if (search.trim()) {
             navigate(`/all?search=${encodeURIComponent(search.trim())}`);
             setIsMenuOpen(false);
+        }
+    };
+
+    const handleSearch = (e) => {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            executeSearch();
         }
     };
 
@@ -45,14 +52,20 @@ const Navbar = () => {
                     <Link to="/all" className="nav-link" onClick={closeMenu}>Explore</Link>
 
                     <div className="nav-right">
-                        <div className="nav-search">
-                            <Search size={16} />
+                        <div className="nav-search" role="search">
+                            <Search 
+                                size={16} 
+                                className="nav-search-icon" 
+                                onClick={executeSearch}
+                                title="Click to search"
+                            />
                             <input
                                 type="text"
-                                placeholder="Search..."
+                                placeholder="Search hoardings, city, road..."
                                 value={search}
                                 onChange={(e) => setSearch(e.target.value)}
                                 onKeyDown={handleSearch}
+                                aria-label="Search hoardings"
                             />
                         </div>
                         <Link

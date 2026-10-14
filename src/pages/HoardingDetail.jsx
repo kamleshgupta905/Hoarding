@@ -770,7 +770,6 @@ const HoardingDetail = ({ hoardings, setHoardings }) => {
                                 className="hero-media"
                                 loading="eager"
                                 thumbnailSize="w1200"
-                                placeholder="https://placehold.co/1200x800?text=Premium+Media+Asset"
                             />
                             <label className="photo-edit-overlay">
                                 <Camera size={32} />

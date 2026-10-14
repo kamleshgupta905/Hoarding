@@ -1645,7 +1645,7 @@
     gap: 20px;
 }
 
-/* 📊 Mock Bar Chart */
+/* 📊 Bar Chart Styles */
 .bar-chart-area {
     display: flex;
     align-items: flex-end;
@@ -1660,7 +1660,7 @@
     transition: height 1s ease;
 }
 
-/* 🍩 Mock Donut Chart */
+/* 🍩 Donut Chart Styles */
 .donut-area {
     width: 160px;
     height: 160px;

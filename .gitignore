@@ -55,4 +55,5 @@ check_*.png
 # nothing in src/ referenced these — they were bundled into every Vercel
 # deployment, consuming 208 MB of the 211 MB each build stored.
 public/images/
+releases_upload/
 

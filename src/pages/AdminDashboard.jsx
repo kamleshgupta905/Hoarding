@@ -6359,17 +6359,25 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                                     <UploadCloud size={32} color="#6c5dd3" />
                                                     <p>Click to Upload or Drag Image</p>
                                                     <span className="helper-text">Select a photo for this media asset</span>
-                                                    <button type="button" className="btn-select-dummy" style={{
-                                                        marginTop: '10px',
-                                                        padding: '8px 16px',
-                                                        background: 'var(--primary-accent)',
-                                                        color: 'white',
-                                                        border: 'none',
-                                                        borderRadius: '8px',
-                                                        fontSize: '12px',
-                                                        fontWeight: '700',
-                                                        cursor: 'pointer'
-                                                    }}>Choose File / Image</button>
+                                                    <button 
+                                                        type="button" 
+                                                        className="btn-select-file" 
+                                                        onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            document.getElementById('asset-file-input')?.click();
+                                                        }}
+                                                        style={{
+                                                            marginTop: '10px',
+                                                            padding: '8px 16px',
+                                                            background: 'var(--primary-accent)',
+                                                            color: 'white',
+                                                            border: 'none',
+                                                            borderRadius: '8px',
+                                                            fontSize: '12px',
+                                                            fontWeight: '700',
+                                                            cursor: 'pointer'
+                                                        }}
+                                                    >Choose File / Image</button>
                                                 </div>
                                             )}
                                             <input 
@@ -7933,17 +7941,17 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                         <div className="sheet-editor-panel" ref={sheetEditorRef}>
                             <div className="sheet-editor-header">
                                 <div>
-                                    <h3>Hoardings Master Sheet</h3>
+                                    <h3>Hoardings Cloud Database</h3>
                                     <p>{visibleSheetColumns.length} visible columns, {hiddenSheetColumnCount} hidden backend columns, {sheetRows.length} rows</p>
-                                    {sheetLastSync && <span>Last loaded: {new Date(sheetLastSync).toLocaleString('en-IN')}</span>}
+                                    {sheetLastSync && <span>Last synced: {new Date(sheetLastSync).toLocaleString('en-IN')}</span>}
                                 </div>
                                 <div className="sheet-editor-actions">
-                                    <button className="sheet-fullscreen-button" onClick={toggleSheetFullscreen} title={isSheetFullscreen ? 'Exit fullscreen' : 'Open Excel workspace in fullscreen'}>
+                                    <button className="sheet-fullscreen-button" onClick={toggleSheetFullscreen} title={isSheetFullscreen ? 'Exit fullscreen' : 'Open grid workspace in fullscreen'}>
                                         {isSheetFullscreen ? <Minimize2 size={17} /> : <Maximize2 size={17} />}
                                         {isSheetFullscreen ? 'Exit Fullscreen' : 'Fullscreen'}
                                     </button>
                                     <button className="btn-primary-admin" onClick={handleSaveSheetGrid} disabled={!sheetDirty || sheetSaving || sheetLoading}>
-                                        <Save size={17} /> {sheetSaving ? 'Saving...' : 'Save Sheet'}
+                                        <Save size={17} /> {sheetSaving ? 'Syncing...' : 'Save Changes'}
                                     </button>
                                 </div>
                             </div>
@@ -7989,14 +7997,14 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                     <input
                                         value={sheetSearch}
                                         onChange={(e) => setSheetSearch(e.target.value)}
-                                        placeholder="Find in sheet..."
+                                        placeholder="Find in database..."
                                     />
                                 </div>
                             </div>
 
                             <div className="sheet-grid-shell" onKeyDown={handleSheetKeyDown}>
                                 {sheetLoading ? (
-                                    <div className="sheet-empty-state">Loading sheet...</div>
+                                    <div className="sheet-empty-state">Loading cloud database...</div>
                                 ) : (
                                     <table className="sheet-grid-table">
                                         <thead>

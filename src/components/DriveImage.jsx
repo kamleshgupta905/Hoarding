@@ -28,7 +28,7 @@ const extractDriveFileId = (url = '') => {
   return match && match[1] ? match[1] : null;
 };
 
-const PLACEHOLDER = 'https://placehold.co/600x400?text=Photo+Unavailable';
+const PLACEHOLDER = 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="600" height="400" viewBox="0 0 600 400" fill="%230f172a"><rect width="600" height="400" fill="%231e293b"/><rect x="70" y="55" width="460" height="230" rx="8" fill="%23334155" stroke="%23475569" stroke-width="3"/><path d="M210 365 L210 285 M390 365 L390 285" stroke="%23475569" stroke-width="8" stroke-linecap="round"/><text x="300" y="155" font-family="system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif" font-size="20" font-weight="700" fill="%23f8fafc" text-anchor="middle">Heera Advertising</text><text x="300" y="195" font-family="system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif" font-size="14" font-weight="500" fill="%2394a3b8" text-anchor="middle">Live Site Photo In Processing</text></svg>';
 
 export default function DriveImage({
   src,
