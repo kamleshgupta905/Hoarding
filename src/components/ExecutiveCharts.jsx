@@ -74,26 +74,9 @@ export const QuickMartLineChart = ({ data, height = 220 }) => {
     const maxY = Math.max(1, Math.ceil(maxDataVal));
     const yGridTicks = [0, maxY * 0.25, maxY * 0.5, maxY * 0.75, maxY].map(v => Number(v.toFixed(1)));
 
-    // Return clean empty state if no real data is provided
-    if (chartData.length === 0) {
-        return (
-            <div style={{
-                height,
-                display: 'flex',
-                flexDirection: 'column',
-                alignItems: 'center',
-                justifyContent: 'center',
-                color: '#94a3b8',
-                fontSize: '0.85rem',
-                fontFamily: "'Inter', sans-serif"
-            }}>
-                <span>No revenue velocity points recorded yet</span>
-            </div>
-        );
-    }
-
     // Trigger smooth 60fps rising entrance animation
     useEffect(() => {
+        if (!data || data.length === 0) return;
         let startTimestamp = null;
         let animationFrameId;
         const duration = 1100; // ms
@@ -115,6 +98,24 @@ export const QuickMartLineChart = ({ data, height = 220 }) => {
         animationFrameId = window.requestAnimationFrame(step);
         return () => window.cancelAnimationFrame(animationFrameId);
     }, [data]);
+
+    // Return clean empty state if no real data is provided
+    if (chartData.length === 0) {
+        return (
+            <div style={{
+                height,
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                justifyContent: 'center',
+                color: '#94a3b8',
+                fontSize: '0.85rem',
+                fontFamily: "'Inter', sans-serif"
+            }}>
+                <span>No revenue velocity points recorded yet</span>
+            </div>
+        );
+    }
 
     // Compute coordinate points with animated vertical interpolation
     const points = chartData.map((d, i) => {
