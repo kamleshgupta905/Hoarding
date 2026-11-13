@@ -106,7 +106,7 @@ describe('Occupancy Heatmap & Renewal Predictor Engine', () => {
       { _SiteID: 'S5', 'Location ': 'Site E', STATUS: 'Occupied', BookingEnd: '2026-09-10' }  // Overdue (-4d)
     ];
 
-    const expiring = getExpiringSites(hoardings, 15);
+    const expiring = getExpiringSites(hoardings, 15, referenceDate);
     // Should contain S5, S4, S3
     expect(expiring.length).toBe(3);
     expect(expiring[0].site._SiteID).toBe('S5'); // Overdue (-4)
