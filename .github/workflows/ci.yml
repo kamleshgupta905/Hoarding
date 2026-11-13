@@ -2,7 +2,7 @@ name: CI — Lint & Test
 
 on:
   push:
-    branches: [ main, arena/*, develop ]
+    branches: [ main, arena/*, develop, production-readiness-hardening ]
   pull_request:
     branches: [ main ]
 
