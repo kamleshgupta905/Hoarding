@@ -29,6 +29,9 @@ jobs:
 
       - name: Run Vitest (must be all green, no network tests)
         run: npm test
-        env:
-          # REAL_NETWORK is intentionally not set here, so live-network tests are skipped
-          VITE_GEMINI_API_KEY: ${{ secrets.VITE_GEMINI_API_KEY }}
+
+      - name: Verify architecture boundaries
+        run: npm run test:arch
+
+      - name: Build production bundle
+        run: npm run build
