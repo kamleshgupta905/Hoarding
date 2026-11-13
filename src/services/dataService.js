@@ -2639,9 +2639,9 @@ export const getSiteOccupancyStatus = (site, refDate = new Date(), thresholdDays
 /**
  * ⚡ Filter and sort hoardings that are expiring within the next N days
  */
-export const getExpiringSites = (hoardings = [], thresholdDays = 15) => {
+export const getExpiringSites = (hoardings = [], thresholdDays = 15, referenceDate = new Date()) => {
   if (!Array.isArray(hoardings) || hoardings.length === 0) return [];
-  const refDate = new Date();
+  const refDate = referenceDate instanceof Date ? referenceDate : new Date(referenceDate);
 
   return hoardings
     .map(h => {

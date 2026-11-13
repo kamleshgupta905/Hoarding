@@ -279,17 +279,19 @@ export const submitAdminOperation = async ({ type, payload = {}, siteId = '', ba
   return { status: 'QUEUED', operationId, confirmed: false };
 };
 
-// 🔑 Embedded Official Staff Token for Zero-Touch Frictionless Staff Camera
-export const OFFICIAL_STAFF_TOKEN = '4a3bedab276241eea76a4310c3dfbd57bf2657a9f39241c4a62d4ba2520560c2';
-
+// Staff access is granted only by a server-issued token in the shared staff link.
+// There is deliberately no embedded/default token in the client bundle.
 export const getStaffTokenFromLocation = () => {
-  if (typeof window === 'undefined') {
-    return (typeof localStorage !== 'undefined' ? localStorage.getItem('adh_staff_upload_token') : '') || '';
-  }
+  const stored = typeof localStorage !== 'undefined'
+    ? localStorage.getItem('adh_staff_upload_token') || ''
+    : '';
+  if (typeof window === 'undefined') return stored;
   const params = new URLSearchParams(window.location?.search || '');
   const incoming = params.get('token');
-  if (incoming && typeof localStorage !== 'undefined') localStorage.setItem('adh_staff_upload_token', incoming);
-  return incoming || (typeof localStorage !== 'undefined' ? localStorage.getItem('adh_staff_upload_token') : '') || OFFICIAL_STAFF_TOKEN;
+  if (incoming && typeof localStorage !== 'undefined') {
+    localStorage.setItem('adh_staff_upload_token', incoming);
+  }
+  return incoming || stored;
 };
 
 export const hasStaffToken = () => Boolean(getStaffTokenFromLocation());

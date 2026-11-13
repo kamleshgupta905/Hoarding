@@ -1,39 +1,11 @@
-import { postDirect } from './secureApi.js';
+import { postDirect, getAdminSession, getStaffTokenFromLocation } from './secureApi.js';
 
 /**
  * 🧠 Gemini Vision AI Service for Outdoor Hoarding & PPT Extraction
  * Powered by Google Gemini 3.7 Flash with multi-key auto-failover and backend Apps Script proxy.
  */
 
-// 🔑 Keys come from the environment (.env.local locally, Vercel env vars in
-// production) or from a key the user pastes into the admin settings, or via Apps Script backend.
-const BUILTIN_GEMINI_FALLBACKS = [
-  'AQ.Ab8RN6JX5X6bvAY9y-iBaVbdO_nAC49puDmbVyvGDZCkhGHHxQ',
-  'AQ.Ab8RN6JloH5_7Hu50bxb4ODlyw0sG07RmWtNE57_JlGI09tPAw',
-  'AQ.Ab8RN6KKuExOPSzweXaW0-4rEziM3GmonFb3-rvxHDc-ohOBcQ',
-  'AQ.Ab8RN6KpJdKYy-63CLrqiPDSuEP8LW2Q2ioYPDLIIs5IdA560g'
-];
-
-export const getGeminiApiKeys = () => {
-  const customKey = (typeof window !== 'undefined' && (
-    window.localStorage?.getItem('adh_gemini_api_key') ||
-    window.localStorage?.getItem('gemini_api_key')
-  )) || null;
-
-  const nodeEnv = (typeof process !== 'undefined' && process.env) || {};
-
-  const configured = [
-    customKey,
-    import.meta.env?.VITE_GEMINI_API_KEY || nodeEnv.VITE_GEMINI_API_KEY,
-    import.meta.env?.VITE_GEMINI_API_KEY_1 || nodeEnv.VITE_GEMINI_API_KEY_1,
-    import.meta.env?.VITE_GEMINI_API_KEY_2 || nodeEnv.VITE_GEMINI_API_KEY_2,
-    import.meta.env?.VITE_GEMINI_API_KEY_3 || nodeEnv.VITE_GEMINI_API_KEY_3,
-    import.meta.env?.VITE_GEMINI_API_KEY_4 || nodeEnv.VITE_GEMINI_API_KEY_4
-  ].filter(Boolean);
-
-  if (configured.length > 0) return configured;
-  return BUILTIN_GEMINI_FALLBACKS;
-};
+// Gemini credentials remain server-side; never bundle API keys into browser or desktop builds.
 
 export const GEMINI_MODELS = [
   'gemini-flash-latest',
@@ -91,102 +63,35 @@ export const safeJsonParse = (rawText) => {
  * Execute Gemini Generative Vision API call with model and key fallback.
  */
 export const callGeminiVision = async (payload) => {
-  let lastError = null;
-  const apiKeys = getGeminiApiKeys();
-
-  // 🛡️ Base payload configuration
   const baseConfig = {
     temperature: 0.1,
     topP: 0.8,
     maxOutputTokens: 2048,
     ...(payload.generationConfig || {})
   };
-  if (baseConfig.maxOutputTokens < 1000) {
-    baseConfig.maxOutputTokens = 2048;
+  if (baseConfig.maxOutputTokens < 1000) baseConfig.maxOutputTokens = 2048;
+
+  const result = await postDirect({
+    action: 'geminiVision',
+    sessionToken: getAdminSession(),
+    staffToken: getStaffTokenFromLocation(),
+    payload: { ...payload, generationConfig: baseConfig },
+    model: GEMINI_MODELS[0]
+  }, 30000);
+
+  if (!result || !result.success || !result.text) {
+    throw new Error(result?.error || 'Gemini Vision service is unavailable.');
   }
-
-  for (const apiKey of apiKeys) {
-    if (!apiKey) continue;
-
-    for (const model of GEMINI_MODELS) {
-      try {
-        const isLite = model.includes('lite');
-        const modelConfig = { ...baseConfig };
-        // thinkingConfig budget 0 is supported on reasoning flash models, but causes 400 on lite models
-        if (!isLite && !modelConfig.thinkingConfig) {
-          modelConfig.thinkingConfig = { thinkingBudget: 0 };
-        } else if (isLite) {
-          delete modelConfig.thinkingConfig;
-        }
-
-        const safePayload = {
-          ...payload,
-          generationConfig: modelConfig
-        };
-
-        const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 8000);
-        let response;
-        try {
-          response = await fetch(endpoint, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'x-goog-api-key': apiKey
-            },
-            body: JSON.stringify(safePayload),
-            signal: controller.signal
-          });
-        } finally {
-          clearTimeout(timeoutId);
-        }
-
-        if (!response.ok) {
-          const errorText = await response.text();
-          console.warn(`Gemini [${model}] status ${response.status}:`, errorText);
-          lastError = new Error(`Gemini API Error (${model}): ${response.status}`);
-          if (response.status === 429 || response.status === 503) {
-            await new Promise(r => setTimeout(r, 600));
-          }
-          continue; // Try next available model seamlessly
-        }
-
-        const data = await response.json();
-        const parts = data?.candidates?.[0]?.content?.parts || [];
-        const text = parts.map(p => p.text || '').filter(Boolean).join('\n').trim();
-        if (text) {
-          return text;
-        }
-      } catch (err) {
-        console.warn(`Gemini [${model}] call failed:`, err);
-        lastError = err;
-      }
-    }
-  }
-
-  // 🚀 Backend Proxy Fallback: If no client keys or direct calls failed, call Apps Script proxy
+  let response;
   try {
-    const proxyRes = await postDirect({
-      action: 'geminiVision',
-      payload: {
-        ...payload,
-        generationConfig: baseConfig
-      },
-      model: GEMINI_MODELS[0]
-    }, 20000);
-
-    if (proxyRes && proxyRes.success && proxyRes.text) {
-      const parsedData = typeof proxyRes.text === 'string' ? JSON.parse(proxyRes.text) : proxyRes.text;
-      const parts = parsedData?.candidates?.[0]?.content?.parts || [];
-      const text = parts.map(p => p.text || '').filter(Boolean).join('\n').trim();
-      if (text) return text;
-    }
-  } catch (proxyErr) {
-    console.warn('[Gemini Apps Script Proxy Notice]:', proxyErr.message || proxyErr);
+    response = typeof result.text === 'string' ? JSON.parse(result.text) : result.text;
+  } catch {
+    throw new Error('Gemini Vision returned an invalid response.');
   }
-
-  throw lastError || new Error('All Gemini API keys and models exhausted.');
+  const parts = response?.candidates?.[0]?.content?.parts || [];
+  const text = parts.map((part) => part.text || '').filter(Boolean).join('\\n').trim();
+  if (!text) throw new Error('Gemini Vision returned no text.');
+  return text;
 };
 
 /**
