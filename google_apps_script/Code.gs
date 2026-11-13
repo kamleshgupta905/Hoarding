@@ -103,10 +103,6 @@ function doPost(e) {
       p = e.parameter;
     }
 
-    if ((p.action === 'pureUpload' || p.action === 'batchUpdateSheet') && !p.sessionToken) {
-      p.sessionToken = 'adm_session_master_authorized';
-    }
-
     // 🔒 Central auth gate: every admin-only POST action must carry a valid
     // session token. Individual handlers keep their own checks as defence in
     // depth, but this guarantees nothing slips through unguarded.
@@ -127,7 +123,12 @@ function doPost(e) {
     if (p.action === 'changeAdminPassword') return changeAdminPassword_(p);
     if (p.action === 'setGroqFallbackKey') return setGroqFallbackKey_(p);
     if (p.action === 'setGeminiApiKey') return setGeminiApiKey_(p);
-    if (p.action === 'geminiVision') return callGeminiVisionProxy_(p);
+    if (p.action === 'geminiVision') {
+      if (!isValidAdminSession_(p.sessionToken) && !isValidStaffToken_(p.staffToken)) {
+        return res({ success: false, error: 'Authentication required.' });
+      }
+      return callGeminiVisionProxy_(p);
+    }
     if (p.action === 'previewExcelImport') return previewExcelImport(p);
     if (p.action === 'approveExcelImport') return approveExcelImport(p);
     if (p.action === 'uploadPptAndProcess') return uploadPptAndProcess_(p);
@@ -599,6 +600,9 @@ function submitStaffPhoto_(data) {
 }
 
 function getStaffUploadStatus_(clientUploadId, staffToken) {
+  if (!isValidStaffToken_(staffToken)) {
+    return res({ success: false, status: 'UNAUTHORIZED', error: 'Invalid staff upload token.' });
+  }
   var cached = CacheService.getScriptCache().get('staff-upload:' + String(clientUploadId || ''));
   if (!cached) return res({ success: false, status: 'PENDING' });
   var result = JSON.parse(cached);
