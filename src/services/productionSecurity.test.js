@@ -7,7 +7,7 @@ describe('Production security boundaries', () => {
   it('does not ship Gemini API key fallbacks in the browser service', () => {
     const source = read('./geminiService.js');
     expect(source).not.toMatch(/AQ\\.[A-Za-z0-9_-]{20,}/);
-    expect(source).not.toMatch(/AIza[0-9A-Za-z_-]{20,}/);
+    expect(source).not.toContain('AIza');
     expect(source).toContain("action: 'geminiVision'");
   });
 
