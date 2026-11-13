@@ -49,10 +49,6 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.RELEASE_TOKEN || secrets.GITHUB_TOKEN }}
           ELECTRON_BUILD: 'true'
-          VITE_GEMINI_API_KEY_1: ${{ secrets.VITE_GEMINI_API_KEY_1 || 'AQ.Ab8RN6JX5X6bvAY9y-iBaVbdO_nAC49puDmbVyvGDZCkhGHHxQ' }}
-          VITE_GEMINI_API_KEY_2: ${{ secrets.VITE_GEMINI_API_KEY_2 || 'AQ.Ab8RN6JloH5_7Hu50bxb4ODlyw0sG07RmWtNE57_JlGI09tPAw' }}
-          VITE_GEMINI_API_KEY_3: ${{ secrets.VITE_GEMINI_API_KEY_3 || 'AQ.Ab8RN6KKuExOPSzweXaW0-4rEziM3GmonFb3-rvxHDc-ohOBcQ' }}
-          VITE_GEMINI_API_KEY_4: ${{ secrets.VITE_GEMINI_API_KEY_4 || 'AQ.Ab8RN6KpJdKYy-63CLrqiPDSuEP8LW2Q2ioYPDLIIs5IdA560g' }}
 
       - name: 🚀 Ensure GitHub Release is Published with All Assets
         if: success()
