@@ -19,8 +19,6 @@ const xmlParser = new XMLParser({
 });
 
 const GROQ_ENDPOINT = 'https://api.groq.com/openai/v1/chat/completions';
-const GK_PARTS = ['gsk_', '0WOqI42zpoYm1', 'QzGHGDFWGdyb3', 'FY7mIZHC8pHa', 'AY9WpVvyVfUpi0'];
-const DEFAULT_GROQ_KEY = GK_PARTS.join('');
 
 const collectXmlNodes = (value, key, output = []) => {
   if (!value || typeof value !== 'object') return output;
@@ -340,8 +338,8 @@ const scoreSite = (text, site, slideNumber = 0, siteIndex = -1) => {
 /**
  * ⚡ Fast Groq AI Site Matching in Node.js
  */
-async function parseAndMatchSlideWithGroq(slideText, candidates = [], apiKey = DEFAULT_GROQ_KEY) {
-  const key = apiKey || DEFAULT_GROQ_KEY;
+async function parseAndMatchSlideWithGroq(slideText, candidates = [], apiKey = '') {
+  const key = apiKey || process.env.VITE_GROQ_API_KEY || process.env.GROQ_API_KEY || '';
   if (!key || !slideText || slideText.trim().length === 0) return null;
 
   const candidateSummary = (candidates || []).slice(0, 10).map((c, i) => ({
@@ -802,12 +800,12 @@ async function extractPptxNative({ filePath, fileBuffer, sites = [], groqApiKey 
     });
   }
 
-  // ⚡ Claude AI Site Matching in Fast Parallel Batches
+  // Native Site Matching in Fast Parallel Batches
   const AI_BATCH_SIZE = 16;
   for (let i = 0; i < slides.length; i += AI_BATCH_SIZE) {
     if (onProgress) {
       onProgress({
-        phase: `⚡ Claude AI Auto-Matching: Slide ${i + 1} to ${Math.min(i + AI_BATCH_SIZE, slides.length)} of ${slides.length}...`,
+        phase: `Matching Slides to Inventory: ${i + 1} to ${Math.min(i + AI_BATCH_SIZE, slides.length)} of ${slides.length}...`,
         progress: 60 + Math.round((i / slides.length) * 35)
       });
     }
@@ -859,18 +857,18 @@ async function extractPptxNative({ filePath, fileBuffer, sites = [], groqApiKey 
                   '';
                 slide.confidence = groqRes.confidence || 'HIGH';
                 slide.status = 'MATCHED';
-                slide.aiReason = groqRes.reason || 'Matched by Claude AI';
+                slide.aiReason = groqRes.reason || 'Matched via slide text analysis';
               }
             }
           } catch (e) {
-            // AI fallback handled
+            // Matching fallback handled
           }
         }
       })
     );
   }
 
-  if (onProgress) onProgress({ phase: 'Claude AI extraction complete!', progress: 100 });
+  if (onProgress) onProgress({ phase: 'Slide extraction complete!', progress: 100 });
   return slides;
 }
 

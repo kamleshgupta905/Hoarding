@@ -17,56 +17,56 @@ export default function AppAutoUpdater() {
   useEffect(() => {
     if (!isElectron || !window.electronAPI) return;
 
-    window.electronAPI.onUpdateAvailable?.((info) => {
-      setUpdateInfo({
-        hasUpdate: true,
-        isElectron: true,
-        latestVersion: info?.version || 'Latest',
-        features: [
-          'Windows Desktop auto-sync enabled',
-          'Fast native PPTX & Red Bracket extraction',
-          'Latest UI improvements & bug fixes'
-        ]
-      });
-      setIsUpdating(true);
-      setProgress({ percent: 0, status: 'Downloading update from GitHub...' });
-    });
-
-    window.electronAPI.onUpdateProgress?.((p) => {
-      const pct = Math.min(100, Math.round(p?.percent || 0));
-      const transMB = ((p?.transferred || 0) / (1024 * 1024)).toFixed(1);
-      const totalMB = ((p?.total || 0) / (1024 * 1024)).toFixed(1);
-      setProgress({
-        percent: pct,
-        status: totalMB > 0 ? `Downloading update (${transMB} MB / ${totalMB} MB)...` : `Downloading update... ${pct}%`
-      });
-    });
-
-    window.electronAPI.onUpdateDownloaded?.((info) => {
-      setProgress({
-        percent: 100,
-        status: 'Update downloaded! Restarting to install...'
-      });
-      setIsUpdating(true);
-      let count = 4;
-      setAutoCountdown(count);
-      if (countdownTimerRef.current) clearInterval(countdownTimerRef.current);
-      countdownTimerRef.current = setInterval(() => {
-        count -= 1;
+    const cleanups = [
+      window.electronAPI.onUpdateAvailable?.((info) => {
+        setUpdateInfo({
+          hasUpdate: true,
+          isElectron: true,
+          latestVersion: info?.version || 'Latest',
+          features: [
+            'Windows Desktop auto-sync enabled',
+            'Fast native PPTX & Red Bracket extraction',
+            'Latest UI improvements & bug fixes'
+          ]
+        });
+        setIsUpdating(true);
+        setProgress({ percent: 0, status: 'Downloading update from GitHub...' });
+      }),
+      window.electronAPI.onUpdateProgress?.((p) => {
+        const pct = Math.min(100, Math.round(p?.percent || 0));
+        const transMB = ((p?.transferred || 0) / (1024 * 1024)).toFixed(1);
+        const totalMB = ((p?.total || 0) / (1024 * 1024)).toFixed(1);
+        setProgress({
+          percent: pct,
+          status: totalMB > 0 ? `Downloading update (${transMB} MB / ${totalMB} MB)...` : `Downloading update... ${pct}%`
+        });
+      }),
+      window.electronAPI.onUpdateDownloaded?.(() => {
+        setProgress({
+          percent: 100,
+          status: 'Update downloaded! Restarting to install...'
+        });
+        setIsUpdating(true);
+        let count = 4;
         setAutoCountdown(count);
-        if (count <= 0) {
-          clearInterval(countdownTimerRef.current);
-          window.electronAPI?.installUpdate?.();
-        }
-      }, 1000);
-    });
-
-    window.electronAPI.onUpdateError?.((err) => {
-      console.warn('[Electron AutoUpdater notice]:', err);
-    });
+        if (countdownTimerRef.current) clearInterval(countdownTimerRef.current);
+        countdownTimerRef.current = setInterval(() => {
+          count -= 1;
+          setAutoCountdown(count);
+          if (count <= 0) {
+            clearInterval(countdownTimerRef.current);
+            window.electronAPI?.installUpdate?.();
+          }
+        }, 1000);
+      }),
+      window.electronAPI.onUpdateError?.((err) => {
+        console.warn('[Electron AutoUpdater notice]:', err);
+      })
+    ].filter(fn => typeof fn === 'function');
 
     return () => {
       if (countdownTimerRef.current) clearInterval(countdownTimerRef.current);
+      cleanups.forEach(unsub => unsub());
     };
   }, [isElectron]);
 

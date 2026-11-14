@@ -5,7 +5,7 @@ import {
     TrendingUp, Layout, Clock, ChevronLeft, 
     Share2, Download, CheckCircle2 
 } from 'lucide-react';
-import { getImageUrl } from '../services/dataService';
+import { getImageUrl, parseBookingDate, resolveSiteLiveStatus, getSiteBookingSlots } from '../services/dataService';
 import DriveImage from '../components/DriveImage';
 import { HIRA_LOGO } from '../assets/hiraLogoData';
 import { appToast } from '../components/ToastContext';
@@ -22,13 +22,28 @@ const ClientReport = ({ hoardings }) => {
     
     let clientSites = [];
     if (isProposal) {
-        const siteIds = new Set(sitesParam.split(','));
-        clientSites = hoardings.filter(h => siteIds.has(h.UniqueID) || siteIds.has(h._SiteID) || siteIds.has(h.ID) || siteIds.has(h['Site Code']));
-    } else {
-        clientSites = hoardings.filter(h => 
-            h.BookedBy?.toLowerCase() === decodedName.toLowerCase() && 
-            h.STATUS === 'Occupied'
+        const siteIds = new Set(sitesParam.split(',').map(s => s.trim()).filter(Boolean));
+        clientSites = hoardings.filter(h =>
+            siteIds.has(String(h.UniqueID || '').trim()) ||
+            siteIds.has(String(h._SiteID || '').trim()) ||
+            siteIds.has(String(h.ID || '').trim()) ||
+            siteIds.has(String(h['Site Code'] || '').trim()) ||
+            siteIds.has(String(h.SL || '').trim())
         );
+    } else {
+        const targetLower = decodedName.toLowerCase();
+        clientSites = hoardings.filter(h => {
+            const liveStatus = resolveSiteLiveStatus(h);
+            const rawStatus = String(h.STATUS || '').trim().toLowerCase();
+            const isActiveStatus = rawStatus === 'occupied' || rawStatus === 'booked' || liveStatus.status === 'Booked';
+            if (!isActiveStatus) return false;
+
+            const directClient = String(h.BookedBy || h['Booked By'] || liveStatus.client || '').trim().toLowerCase();
+            if (directClient === targetLower) return true;
+
+            const slots = getSiteBookingSlots(h);
+            return slots.some(slot => String(slot.client || '').trim().toLowerCase() === targetLower);
+        });
     }
 
     if (clientSites.length === 0) {
@@ -56,8 +71,10 @@ const ClientReport = ({ hoardings }) => {
     const citiesCount = new Set(clientSites.map(s => s.City)).size;
     
     // Find next expiry
-    const expiryDates = clientSites.map(s => s.BookingEnd).filter(Boolean).map(d => new Date(d));
-    const nextExpiry = expiryDates.length > 0 ? new Date(Math.min(...expiryDates)) : null;
+    const expiryDates = clientSites
+        .map(s => parseBookingDate(s.BookingEnd || resolveSiteLiveStatus(s).endDate))
+        .filter(d => d && !isNaN(d.getTime()));
+    const nextExpiry = expiryDates.length > 0 ? new Date(Math.min(...expiryDates.map(d => d.getTime()))) : null;
 
     return (
         <div className="client-report-portal">
@@ -126,12 +143,14 @@ const ClientReport = ({ hoardings }) => {
 
                 <div className="asset-report-grid">
                     {clientSites.map((site, index) => {
-                        const startDate = site.BookingStart ? new Date(site.BookingStart) : null;
-                        const endDate = site.BookingEnd ? new Date(site.BookingEnd) : null;
+                        const liveInfo = resolveSiteLiveStatus(site);
+                        const startDate = parseBookingDate(site.BookingStart || liveInfo.startDate);
+                        const endDate = parseBookingDate(site.BookingEnd || liveInfo.endDate);
                         const progress = (() => {
-                            if (!startDate || !endDate) return 100;
-                            const total = endDate - startDate;
-                            const elapsed = new Date() - startDate;
+                            if (!startDate || !endDate || isNaN(startDate.getTime()) || isNaN(endDate.getTime())) return 100;
+                            const total = endDate.getTime() - startDate.getTime();
+                            if (total <= 0) return 100;
+                            const elapsed = Date.now() - startDate.getTime();
                             return Math.min(100, Math.max(0, Math.round((elapsed / total) * 100)));
                         })();
 

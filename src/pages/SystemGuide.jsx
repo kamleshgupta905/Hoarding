@@ -23,12 +23,23 @@ const SystemGuide = ({ embedded = false }) => {
         window.print();
     };
 
+    const isElectron = typeof window !== 'undefined' && Boolean(window.electronAPI?.isElectron);
+
     const handleCopySummary = () => {
         if (navigator.clipboard) {
+            const guideUrl = isElectron ? 'https://hoarding-hd9a.vercel.app/guide' : `${window.location.origin}/guide`;
             navigator.clipboard.writeText(
-                `HIRA Advertising OOH Management Platform: Complete Functionality & Operational Solutions Guide.\nURL: ${window.location.origin}/guide\nIncludes Executive Dashboard, 50m GPS Geofenced Field Audits, Live Excel Sync, Daily Claude Vision AI Verification, and Client Proposals.`
+                `HIRA Advertising OOH Management Platform: Complete Functionality & Operational Solutions Guide.\nURL: ${guideUrl}\nIncludes Executive Dashboard, 50m GPS Geofenced Field Audits, Live Excel Sync, Daily Site Updates & OCR Verification, and Client Proposals.`
             );
             appToast.success('Guide summary link copied to clipboard!');
+        }
+    };
+
+    const handleOpenNewTab = () => {
+        if (isElectron) {
+            window.open('https://hoarding-hd9a.vercel.app/guide', '_blank', 'noopener,noreferrer');
+        } else {
+            window.open('/guide', '_blank', 'noopener,noreferrer');
         }
     };
 
@@ -49,9 +60,11 @@ const SystemGuide = ({ embedded = false }) => {
                 </div>
 
                 <div className="guide-top-actions">
-                    <button type="button" className="btn-action-ghost" onClick={() => window.open('/guide', '_blank')}>
-                        <ExternalLink size={15} /> Open in New Tab
-                    </button>
+                    {(embedded || !isElectron) && (
+                        <button type="button" className="btn-action-ghost" onClick={handleOpenNewTab}>
+                            <ExternalLink size={15} /> Open in New Tab
+                        </button>
+                    )}
                     <button type="button" className="btn-action-ghost" onClick={handleCopySummary}>
                         <Copy size={15} /> Copy Summary
                     </button>
@@ -220,15 +233,15 @@ const SystemGuide = ({ embedded = false }) => {
                     </div>
                 </section>
 
-                {/* Section 5: Daily AI Updates */}
+                {/* Section 5: Daily Site Updates */}
                 <section className="guide-section-card">
                     <div className="section-title-wrap">
                         <div className="section-icon-box bg-pink">
                             <Clock size={24} />
                         </div>
                         <div>
-                            <h2>5. Daily AI Updates (Batch Photo Automation)</h2>
-                            <span className="section-tag pink">Claude Vision AI, Printed Watermark OCR & Auto Status Tagging</span>
+                            <h2>5. Daily Site Updates (Batch Photo Automation)</h2>
+                            <span className="section-tag pink">Automated Photo Verification, Watermark OCR & Status Tagging</span>
                         </div>
                     </div>
 
@@ -237,7 +250,7 @@ const SystemGuide = ({ embedded = false }) => {
                             <h3>🖥️ What Is Happening on Screen:</h3>
                             <ul>
                                 <li><strong>Batch Drag & Drop:</strong> Admins can drop dozens of daily execution photos taken by third-party mounting agencies.</li>
-                                <li><strong>Claude Vision OCR:</strong> AI inspects printed camera GPS watermarks, timestamps, road landmarks, and mounted brand creative flex.</li>
+                                <li><strong>Automated Watermark OCR:</strong> System inspects printed camera GPS watermarks, timestamps, road landmarks, and mounted brand creative flex.</li>
                                 <li><strong>Auto Status Tagging:</strong> Automatically detects whether a site is <em>Occupied</em> (brand creative mounted) or <em>Available</em> (torn/blank flex/to-let).</li>
                                 <li><strong>Instant Sync:</strong> 1-click "Confirm & Sync" updates the master database and refreshes photos on the live website.</li>
                             </ul>
@@ -245,7 +258,7 @@ const SystemGuide = ({ embedded = false }) => {
                         <div className="grid-box solution-box">
                             <h3>🎯 Real-World Problems Solved:</h3>
                             <ul>
-                                <li><strong>Saves 100+ Hours of Manual Work:</strong> Replaces tedious manual renaming and sorting of hundreds of WhatsApp campaign images with automated AI matching.</li>
+                                <li><strong>Saves 100+ Hours of Manual Work:</strong> Replaces tedious manual renaming and sorting of hundreds of WhatsApp campaign images with automated site matching.</li>
                                 <li><strong>Instant Client Proof Delivery:</strong> Corporate advertisers receive mounting verification within minutes of campaign execution instead of waiting days.</li>
                             </ul>
                         </div>
@@ -293,7 +306,7 @@ const SystemGuide = ({ embedded = false }) => {
                         </div>
                         <div className="summary-item">
                             <strong className="text-emerald">✦ Zero Manual Data Entry</strong>
-                            <p>Claude Vision AI and direct Excel sync eliminate manual copy-pasting across disparate spreadsheets.</p>
+                            <p>Automated photo verification and direct Excel sync eliminate manual copy-pasting across disparate spreadsheets.</p>
                         </div>
                         <div className="summary-item">
                             <strong className="text-amber">📈 Revenue Maximization</strong>

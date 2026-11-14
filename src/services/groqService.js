@@ -121,7 +121,7 @@ Return a single JSON object with EXACTLY this structure:
           },
           matchedSite,
           confidence: parsed.confidence || 'LOW',
-          reason: parsed.reason || 'Matched by Groq AI'
+          reason: parsed.reason || 'Matched via slide text analysis'
         };
       }
     } catch (err) {

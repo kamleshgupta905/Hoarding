@@ -144,23 +144,28 @@ const PublicAudit = ({ hoardings, setHoardings }) => {
             for (let i = 0; i < files.length; i++) {
                 // Aggressive compression for instant uploads
                 const compressedBase64 = await compressImage(files[i], 800, 0.6);
-                const newAudit = { url: previews[i], timestamp: Date.now() };
-                currentHistory = [newAudit, ...currentHistory];
 
-                const historyString = currentHistory.map(item => {
-                    const url = typeof item === 'object' ? item.url : item;
-                    const time = typeof item === 'object' ? item.timestamp || Date.now() : Date.now();
-                    return `${url}|${time}`;
-                }).join(',');
+                const persistedHistoryString = currentHistory
+                    .map(item => {
+                        const url = typeof item === 'object' ? (item.url || item.preview || '') : item;
+                        const time = typeof item === 'object' ? item.timestamp || Date.now() : Date.now();
+                        return url && !String(url).startsWith('blob:') && !String(url).startsWith('data:') ? `${url}|${time}` : '';
+                    })
+                    .filter(Boolean)
+                    .join(',');
 
-                await syncToGoogleSheet({
+                const syncRes = await syncToGoogleSheet({
                     action: 'updateHoarding',
                     siteName: hoarding["Location "] || hoarding.Location || hoarding["Locality Site Location"] || '',
-                    fields: { "ExecutionHistory": historyString },
+                    fields: { "ExecutionHistory": persistedHistoryString },
                     fileData: compressedBase64,
                     mimeType: 'image/jpeg',
                     mode: 'archive'
                 });
+
+                const uploadedUrl = syncRes?.imageUrl || syncRes?.fileUrl || syncRes?.result?.imageUrl || previews[i];
+                const newAudit = { url: uploadedUrl, preview: previews[i], timestamp: Date.now() };
+                currentHistory = [newAudit, ...currentHistory];
             }
 
             const targetSL = hoarding.SL || hoarding["S. No."] || hoarding["SL NO"] || '';
@@ -344,14 +349,14 @@ const PublicAudit = ({ hoardings, setHoardings }) => {
                 .shutter-btn:active { transform: scale(0.95); }
                 .shutter-inner { width: 64px; height: 64px; border-radius: 50%; background: white; }
                 
-                .done-btn { position: absolute; right: 20px; bottom: 40px; background: #4CAF50; color: white; border: none; padding: 12px 24px; border-radius: 30px; font-weight: 700; display: flex; alignItems: center; gap: 8px; z-index: 10; box-shadow: 0 4px 15px rgba(0,0,0,0.5); }
+                .done-btn { position: absolute; right: 20px; bottom: 40px; background: #4CAF50; color: white; border: none; padding: 12px 24px; border-radius: 30px; font-weight: 700; display: flex; align-items: center; gap: 8px; z-index: 10; box-shadow: 0 4px 15px rgba(0,0,0,0.5); }
 
                 .setup-view { padding: 0; display: flex; flex-direction: column; min-height: 100vh; }
                 .preview-strip { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; padding: 24px; flex: 1; align-content: flex-start; }
                 .strip-item { position: relative; aspect-ratio: 1/1; border-radius: 12px; overflow: hidden; border: 1px solid #eee; }
                 .strip-item img { width: 100%; height: 100%; object-fit: cover; filter: brightness(0.9); }
-                .strip-item button { position: absolute; top: 4px; right: 4px; background: white; border: none; width: 22px; height: 22px; border-radius: 50%; color: #ff4d4d; display: flex; alignItems: center; justifyContent: center; box-shadow: 0 2px 5px rgba(0,0,0,0.2); }
-                .open-cam-btn { aspect-ratio: 1/1; border-radius: 12px; border: 2px dashed #6c5dd340; background: #fff; color: #6c5dd3; display: flex; flex-direction: column; alignItems: center; justifyContent: center; gap: 4px; cursor: pointer; }
+                .strip-item button { position: absolute; top: 4px; right: 4px; background: white; border: none; width: 22px; height: 22px; border-radius: 50%; color: #ff4d4d; display: flex; align-items: center; justify-content: center; box-shadow: 0 2px 5px rgba(0,0,0,0.2); }
+                .open-cam-btn { aspect-ratio: 1/1; border-radius: 12px; border: 2px dashed #6c5dd340; background: #fff; color: #6c5dd3; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; cursor: pointer; }
                 .open-cam-btn.system { border-color: #4CAF5040; color: #4CAF50; }
                 .open-cam-btn span { font-size: 0.75rem; font-weight: 700; }
 
@@ -359,7 +364,7 @@ const PublicAudit = ({ hoardings, setHoardings }) => {
                 .cam-error-modern p { margin: 4px 0 0; font-size: 0.85rem; color: #636e72; line-height: 1.4; }
 
                 .action-footer { padding: 24px; background: white; border-top: 1px solid #eee; position: sticky; bottom: 0; }
-                .submit-audit-btn { width: 100%; background: #25D366; color: white; border: none; padding: 20px; border-radius: 16px; font-weight: 800; font-size: 1.1rem; display: flex; alignItems: center; justifyContent: center; gap: 12px; box-shadow: 0 8px 25px rgba(37, 211, 102, 0.4); text-transform: uppercase; letter-spacing: 0.5px; }
+                .submit-audit-btn { width: 100%; background: #25D366; color: white; border: none; padding: 20px; border-radius: 16px; font-weight: 800; font-size: 1.1rem; display: flex; align-items: center; justify-content: center; gap: 12px; box-shadow: 0 8px 25px rgba(37, 211, 102, 0.4); text-transform: uppercase; letter-spacing: 0.5px; }
                 .submit-audit-btn:disabled { background: #eee; color: #aaa; box-shadow: none; border: 2px solid #ddd; }
                 .timer-note { font-size: 0.85rem; color: #d32f2f; text-align: center; margin-top: 12px; font-weight: 600; background: #ffebee; padding: 10px; border-radius: 8px; }
             `}</style>

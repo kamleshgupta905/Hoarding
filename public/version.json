@@ -1,10 +1,10 @@
 {
   "features": [
-    "Multi-Zone AI & OCR Watermark Scanner for right-badge, bottom-banner & full photo",
-    "Smart AI Vision active in Desktop (.exe) builds with automated fallback keys",
+    "Multi-Zone OCR & GPS Watermark Scanner for right-badge, bottom-banner & full photo",
+    "Automated Visual & Landmark Matching active in Desktop (.exe) builds",
     "Google Maps Pin directly in Inventory table action & Delete site moved to Edit Modal",
     "Clean Client Proposal Excel Export without Image Link column",
-    "Direct Phone Call & Audit Verification Portal (WhatsApp Purged)"
+    "Direct Phone Call & Audit Verification Portal"
   ],
   "version": "1.8.56",
   "buildTimestamp": 1791965306730,

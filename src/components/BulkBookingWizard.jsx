@@ -293,7 +293,7 @@ export default function BulkBookingWizard({
                 </div>
                 <div className="mode-card-info">
                   <h4>Mode 2: Excel + PPT Bundle (Full Campaign)</h4>
-                  <p>Excel for dates & clients + PPT deck for photos. AI auto-matches slides to sites.</p>
+                  <p>Excel for dates &amp; clients + PPT deck for photos. System auto-matches slides to sites.</p>
                   <span className="mode-badge combo">📦 Excel + PPT Required</span>
                 </div>
               </div>

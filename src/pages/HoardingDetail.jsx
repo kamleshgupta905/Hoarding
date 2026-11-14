@@ -2,7 +2,7 @@ import React from 'react';
 import { useParams, Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { ChevronLeft, MapPin, Maximize2, Layers, Info, Calendar, Phone, Share2, Heart, ShieldCheck, Edit3, Trash2, X, Upload, Camera, Copy, Check, Download, ExternalLink, Clock, Sparkles, Send, Loader2, Lightbulb } from 'lucide-react';
 import { Helmet } from 'react-helmet-async';
-import { getImageUrl, compressImage, syncToGoogleSheet, downloadHoardingImage, recordSiteBooking, removeSiteBooking, saveSiteBookingSlots, getLocalHistory, removeSiteHistory, parseHistoryString, getDirectDriveLink, getDeletedHistoryUrls, addDeletedHistoryUrl, isHistoryUrlDeleted, addDeletedSite } from '../services/dataService';
+import { getImageUrl, compressImage, syncToGoogleSheet, downloadHoardingImage, recordSiteBooking, removeSiteBooking, saveSiteBookingSlots, getLocalHistory, removeSiteHistory, parseHistoryString, getDirectDriveLink, getDeletedHistoryUrls, addDeletedHistoryUrl, isHistoryUrlDeleted, addDeletedSite, parseBookingDate } from '../services/dataService';
 import ImageLightbox from '../components/ImageLightbox';
 import DriveImage from '../components/DriveImage';
 import { getAdminSession } from '../services/secureApi';
@@ -71,8 +71,82 @@ const HoardingDetail = ({ hoardings, setHoardings }) => {
     const [selectedAssetFile, setSelectedAssetFile] = React.useState(null);
     const [isPhotoActionModalOpen, setIsPhotoActionModalOpen] = React.useState(false);
     const [pendingFile, setPendingFile] = React.useState(null);
+    const [pendingPreviewUrl, setPendingPreviewUrl] = React.useState('');
     const [copySuccess, setCopySuccess] = React.useState(false);
     const [previewImage, setPreviewImage] = React.useState('');
+
+    const favoriteKey = React.useMemo(() => {
+        if (!hoarding) return '';
+        const hCity = hoarding.City || hoarding.city || 'all';
+        const hLoc = hoarding["Location "] || hoarding.Location || hoarding["Locality Site Location"] || decodedSiteName;
+        return `${hCity}-${hLoc}`;
+    }, [hoarding, decodedSiteName]);
+
+    const [isFavorite, setIsFavorite] = React.useState(false);
+
+    React.useEffect(() => {
+        if (!favoriteKey) {
+            setIsFavorite(false);
+            return;
+        }
+        try {
+            const favs = JSON.parse(localStorage.getItem('favorite_hoardings') || '[]');
+            setIsFavorite(Array.isArray(favs) && favs.includes(favoriteKey));
+        } catch {
+            setIsFavorite(false);
+        }
+    }, [favoriteKey]);
+
+    React.useEffect(() => {
+        if (!pendingFile) {
+            setPendingPreviewUrl('');
+            return;
+        }
+        const objectUrl = URL.createObjectURL(pendingFile);
+        setPendingPreviewUrl(objectUrl);
+        return () => URL.revokeObjectURL(objectUrl);
+    }, [pendingFile]);
+
+    const handleShareSite = async () => {
+        const siteTitle = hoarding?.["Location "] || hoarding?.Location || decodedSiteName || 'Hoarding Site';
+        const shareUrl = window.location.href;
+        try {
+            if (navigator.share) {
+                await navigator.share({
+                    title: `${siteTitle} | HIRA Advertising`,
+                    text: `Check out this advertising site in ${hoarding?.City || ''}: ${siteTitle}`,
+                    url: shareUrl
+                });
+                return;
+            }
+        } catch (err) {
+            if (err?.name === 'AbortError') return;
+        }
+        try {
+            if (navigator.clipboard) {
+                await navigator.clipboard.writeText(shareUrl);
+                appToast.success('Site link copied to clipboard!');
+            }
+        } catch {
+            appToast.info('Copy URL from address bar to share.');
+        }
+    };
+
+    const handleToggleFavorite = () => {
+        if (!favoriteKey) return;
+        try {
+            const favs = JSON.parse(localStorage.getItem('favorite_hoardings') || '[]');
+            const list = Array.isArray(favs) ? [...favs] : [];
+            const exists = list.includes(favoriteKey);
+            const next = exists ? list.filter(k => k !== favoriteKey) : [...list, favoriteKey];
+            localStorage.setItem('favorite_hoardings', JSON.stringify(next));
+            setIsFavorite(!exists);
+            window.dispatchEvent(new CustomEvent('hoardings:favorites-updated', { detail: next }));
+            appToast.success(!exists ? 'Added to favorites!' : 'Removed from favorites.');
+        } catch {
+            setIsFavorite(prev => !prev);
+        }
+    };
     
     // 📜 Active History: Merges remote Google Sheets history with local verified uploads
     const activeHistory = React.useMemo(() => {
@@ -695,9 +769,9 @@ const HoardingDetail = ({ hoardings, setHoardings }) => {
                             <button onClick={() => { setIsPhotoActionModalOpen(false); setPendingFile(null); }}><X size={20} /></button>
                         </div>
                         <div className="modal-body choice-body">
-                            {pendingFile && (
+                            {pendingFile && pendingPreviewUrl && (
                                 <div className="choice-preview">
-                                    <img src={URL.createObjectURL(pendingFile)} alt="Pending" />
+                                    <img src={pendingPreviewUrl} alt="Pending" />
                                     <p>How would you like to use this photo?</p>
                                 </div>
                             )}
@@ -756,8 +830,19 @@ const HoardingDetail = ({ hoardings, setHoardings }) => {
                         <span className="locality-tag">{hoarding["Area"]}</span>
                     </nav>
                     <div className="header-actions">
-                        <button className="action-circle" aria-label="Share site"><Share2 size={18} /></button>
-                        <button className="action-circle" aria-label="Add to favorites"><Heart size={18} /></button>
+                        <button type="button" className="action-circle" onClick={handleShareSite} aria-label="Share site" title="Share site">
+                            <Share2 size={18} />
+                        </button>
+                        <button
+                            type="button"
+                            className={`action-circle ${isFavorite ? 'active' : ''}`}
+                            onClick={handleToggleFavorite}
+                            aria-label={isFavorite ? 'Remove from favorites' : 'Add to favorites'}
+                            title={isFavorite ? 'Remove from favorites' : 'Add to favorites'}
+                            style={isFavorite ? { color: '#ef4444', borderColor: '#fecaca', background: '#fef2f2' } : undefined}
+                        >
+                            <Heart size={18} fill={isFavorite ? 'currentColor' : 'none'} />
+                        </button>
                     </div>
                 </div>
 
@@ -824,7 +909,7 @@ const HoardingDetail = ({ hoardings, setHoardings }) => {
                                                 key={sidx}
                                                 type="button"
                                                 onClick={() => {
-                                                    const params = new URLSearchParams(window.location.search);
+                                                    const params = new URLSearchParams(searchParams);
                                                     if (sfSL) params.set('sl', sfSL);
                                                     if (sf.Facing) params.set('facing', sf.Facing);
                                                     if (sf._SiteID) params.set('id', sf._SiteID);
@@ -860,18 +945,24 @@ const HoardingDetail = ({ hoardings, setHoardings }) => {
                                     <div className="dot"></div>
                                     <span>Currently {status.charAt(0).toUpperCase() + status.slice(1)}</span>
                                 </div>
-                                {status === 'occupied' && (
+                                {(status === 'occupied' || status === 'booked') && (
                                     <div className="booking-details-inline animate-in">
                                         <div className="booking-item">
                                             <ShieldCheck size={16} />
                                             <span>Reserved for <strong>{hoarding.BookedBy || 'Elite Client'}</strong></span>
                                         </div>
-                                        {hoarding.BookingEnd && (
-                                            <div className="booking-item">
-                                                <Calendar size={16} />
-                                                <span>Available after: <strong>{new Date(hoarding.BookingEnd).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}</strong></span>
-                                            </div>
-                                        )}
+                                        {hoarding.BookingEnd && (() => {
+                                            const parsedEnd = parseBookingDate(hoarding.BookingEnd);
+                                            const endLabel = parsedEnd && !isNaN(parsedEnd.getTime())
+                                                ? parsedEnd.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })
+                                                : hoarding.BookingEnd;
+                                            return (
+                                                <div className="booking-item">
+                                                    <Calendar size={16} />
+                                                    <span>Available after: <strong>{endLabel}</strong></span>
+                                                </div>
+                                            );
+                                        })()}
                                     </div>
                                 )}
                             </div>
@@ -1237,12 +1328,13 @@ const HoardingDetail = ({ hoardings, setHoardings }) => {
                                                 style={{ padding: '10px', borderRadius: '8px', border: '1px solid #ddd' }}
                                             >
                                                 <option value="Available">Available</option>
+                                                <option value="Booked">Booked</option>
                                                 <option value="Occupied">Occupied</option>
                                                 <option value="Disabled">Disabled</option>
                                             </select>
                                         </div>
                                         
-                                        {formData.STATUS === 'Occupied' && (
+                                        {(formData.STATUS === 'Occupied' || formData.STATUS === 'Booked') && (
                                             <>
                                                 <div className="form-group">
                                                     <label>Client Name</label>

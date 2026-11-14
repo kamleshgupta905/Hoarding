@@ -1,6 +1,6 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Mail, Phone, MapPin, MessageCircle, Send, ShieldCheck, Globe, Trophy } from 'lucide-react';
+import { Mail, Phone, MapPin, Send, ShieldCheck, Globe, Trophy, X } from 'lucide-react';
 import { HIRA_LOGO } from '../assets/hiraLogoData';
 import './Footer.css';
 
@@ -10,6 +10,7 @@ const CONTACT_PHONE_DISPLAY = '+91 95695 28771';
 const CONTACT_EMAIL = 'media@heeraadvertising.com';
 
 const Footer = () => {
+    const [legalModal, setLegalModal] = useState(null); // 'terms' | 'privacy' | null
     const handleNewsletterSubmit = (e) => {
         e.preventDefault();
         const email = new FormData(e.currentTarget).get('email');
@@ -115,12 +116,81 @@ const Footer = () => {
                 <div className="container legal-flex">
                     <p>&copy; 2026 Heera Advertising Agency. All rights reserved.</p>
                     <div className="legal-links">
-                        <a href="#">Terms of Service</a>
+                        <button
+                            type="button"
+                            onClick={() => setLegalModal('terms')}
+                            style={{ background: 'none', border: 'none', color: 'inherit', font: 'inherit', cursor: 'pointer', padding: 0 }}
+                        >
+                            Terms of Service
+                        </button>
                         <span className="dot"></span>
-                        <a href="#">Privacy Policy</a>
+                        <button
+                            type="button"
+                            onClick={() => setLegalModal('privacy')}
+                            style={{ background: 'none', border: 'none', color: 'inherit', font: 'inherit', cursor: 'pointer', padding: 0 }}
+                        >
+                            Privacy Policy
+                        </button>
                     </div>
                 </div>
             </div>
+
+            {legalModal && (
+                <div
+                    role="dialog"
+                    aria-modal="true"
+                    onClick={() => setLegalModal(null)}
+                    style={{
+                        position: 'fixed', inset: 0, zIndex: 100020,
+                        background: 'rgba(15, 23, 42, 0.65)', backdropFilter: 'blur(6px)',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '16px'
+                    }}
+                >
+                    <div
+                        onClick={e => e.stopPropagation()}
+                        style={{
+                            width: '100%', maxWidth: '540px', background: '#ffffff', color: '#1e293b',
+                            borderRadius: '18px', boxShadow: '0 25px 50px rgba(0,0,0,0.28)', overflow: 'hidden'
+                        }}
+                    >
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '18px 22px', borderBottom: '1px solid #e2e8f0' }}>
+                            <h3 style={{ margin: 0, fontSize: '1.1rem', fontWeight: 800, color: '#0f172a' }}>
+                                {legalModal === 'terms' ? 'Terms of Service — Heera Advertising' : 'Privacy Policy — Heera Advertising'}
+                            </h3>
+                            <button type="button" onClick={() => setLegalModal(null)} style={{ border: 'none', background: '#f1f5f9', borderRadius: '8px', padding: '6px', cursor: 'pointer', color: '#475569', display: 'flex' }} aria-label="Close">
+                                <X size={18} />
+                            </button>
+                        </div>
+                        <div style={{ padding: '20px 22px', fontSize: '0.9rem', lineHeight: 1.65, color: '#475569', maxHeight: '70vh', overflowY: 'auto' }}>
+                            {legalModal === 'terms' ? (
+                                <>
+                                    <p style={{ marginTop: 0 }}>
+                                        All outdoor hoarding sites, dimensions, traffic directions, and monthly rental rates displayed on the Heera Advertising portal are subject to live availability and written Release Order (RO) confirmation.
+                                    </p>
+                                    <p>
+                                        Mounting, flex printing, municipal taxes, and illumination schedules are governed by the finalized campaign agreement between the advertiser and Heera Advertising Agency.
+                                    </p>
+                                    <p style={{ marginBottom: 0 }}>
+                                        For campaign bookings or commercial inquiries, contact our Media Desk at <strong>{CONTACT_PHONE_DISPLAY}</strong> or <strong>{CONTACT_EMAIL}</strong>.
+                                    </p>
+                                </>
+                            ) : (
+                                <>
+                                    <p style={{ marginTop: 0 }}>
+                                        Heera Advertising collects enquiry details (name, company email, phone number, and campaign requirements) solely to respond to site booking requests and prepare tailored OOH media proposals.
+                                    </p>
+                                    <p>
+                                        Field verification photos and GPS coordinates captured via the Staff Portal are stored securely for client campaign audit proof and inventory accuracy.
+                                    </p>
+                                    <p style={{ marginBottom: 0 }}>
+                                        We never sell or share advertiser contact data with third-party brokers. Contact <strong>{CONTACT_EMAIL}</strong> for any data removal requests.
+                                    </p>
+                                </>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            )}
         </footer>
     );
 };

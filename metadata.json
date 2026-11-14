@@ -1,6 +1,6 @@
 {
   "name": "Heera Advertising",
-  "description": "The premium destination to discover, verify and book high-impact outdoor hoarding sites with AI-powered verification.",
+  "description": "The premium destination to discover, verify and book high-impact outdoor hoarding sites with GPS & photo verification.",
   "requestFramePermissions": [
     "geolocation"
   ],

@@ -1,12 +1,11 @@
 import React from 'react';
+import { Link } from 'react-router-dom';
 import { Camera, CheckCircle2, MapPin, MapPinOff, RefreshCw, RotateCcw, WifiOff, XCircle, Sparkles, Check, AlertCircle, Navigation, ChevronRight, Compass, Volume2, VolumeX, ShieldCheck, Smartphone, Share2, Clipboard } from 'lucide-react';
 import { uploadStaffPhoto, fetchHoardings, saveLocalStaffUpload, syncToGoogleSheet, recordSiteHistory } from '../services/dataService';
 import { analyzeHoardingImage } from '../services/aiService';
 import { generateVisualLandmarksWithGemini } from '../services/geminiService';
 import { ensureUprightBlob } from '../core/imageOrientation';
 import { HIRA_LOGO } from '../assets/hiraLogoData';
-import AppAutoUpdater from '../components/AppAutoUpdater';
-import { hasStaffToken } from '../services/secureApi';
 import {
     blobToDataUrl,
     countPendingStaffPhotos,
@@ -585,12 +584,24 @@ const StaffUpload = () => {
         return () => window.removeEventListener('resize', handleResize);
     }, []);
 
-    // Fetch hoardings once on mount for instant client-side GPS matching
+    // Fetch hoardings on mount (with instant localStorage cache fallback for offline/weak signal)
     React.useEffect(() => {
+        try {
+            const cachedRaw = localStorage.getItem('hoardings_cache');
+            if (cachedRaw) {
+                const cached = JSON.parse(cachedRaw);
+                if (Array.isArray(cached) && cached.length > 0) {
+                    hoardingsRef.current = cached;
+                    setHoardingsList(cached);
+                }
+            }
+        } catch {}
+
         fetchHoardings().then(data => {
-            if (Array.isArray(data)) {
+            if (Array.isArray(data) && data.length > 0) {
                 hoardingsRef.current = data;
                 setHoardingsList(data);
+                try { localStorage.setItem('hoardings_cache', JSON.stringify(data)); } catch {}
             }
         }).catch(err => console.warn('Could not pre-load hoardings for GPS matching:', err));
     }, []);
@@ -715,8 +726,13 @@ const StaffUpload = () => {
                         accuracy: item.accuracy,
                         distance: item.distance || '',
                         facing: item.facing || '',
-                        orientationNormalized: true,
+                        siteFacing: item.siteFacing || '',
+                        sl: item.sl || '',
+                        siteId: item.siteId || '',
                         matchedSite: item.matchedSite || '',
+                        clusterSites: Array.isArray(item.clusterSites) ? item.clusterSites : undefined,
+                        clusterSiteDetails: Array.isArray(item.clusterSiteDetails) ? item.clusterSiteDetails : undefined,
+                        orientationNormalized: true,
                         siteStatus: item.siteStatus || '',
                         status: item.status || (item.matchedSite ? 'AUTO_APPROVED' : 'REVIEW_REQUIRED'),
                         aiDecision: item.aiDecision || (item.matchedSite ? 'GEMINI_GPS_AUTO_MATCH' : 'GPS_REVIEW')
@@ -943,18 +959,20 @@ const StaffUpload = () => {
         // Play crisp shutter snap sound immediately
         playChime('shutter');
 
-        // 🛡️ Ensure GPS is ON before taking photo for 50m auto-matching
+        // 🛡️ Ensure high-accuracy GPS is locked before taking photo for pinpoint matching
         let currentGps = lastGps;
-        if (!currentGps?.latitude) {
+        if (!currentGps?.latitude || (currentGps.accuracy && currentGps.accuracy > 100)) {
             setIsGpsLoading(true);
             const freshGps = await requestGps();
             setIsGpsLoading(false);
             if (freshGps.latitude && freshGps.longitude) {
-                currentGps = freshGps;
-                setLastGps(freshGps);
+                if (!currentGps?.latitude || !currentGps.accuracy || !freshGps.accuracy || freshGps.accuracy <= currentGps.accuracy) {
+                    currentGps = freshGps;
+                    setLastGps(freshGps);
+                }
                 setGpsError(null);
                 setIsGpsPromptOpen(false);
-            } else {
+            } else if (!currentGps?.latitude) {
                 setIsCapturing(false);
                 setGpsError(freshGps.error || 'Photo lene se pehle phone ki Location ON karein.');
                 setIsGpsPromptOpen(true);
@@ -970,9 +988,10 @@ const StaffUpload = () => {
         try {
             const rawBlob = await captureCameraPhoto(videoRef.current, streamRef.current);
 
-            // 📍 150M ADAPTIVE GEOFENCED AI MATCHING
+            // 📍 150M ADAPTIVE GEOFENCED MATCHING
             let matchedSite = '';
             let matchedSiteData = null;
+            let matchedDistM = null;
             let clusterMatches = [];
             let siteStatus = 'Available';
             let status = 'REVIEW_REQUIRED';
@@ -996,6 +1015,7 @@ const StaffUpload = () => {
                     );
 
                     const matchDistRaw = aiMatchResult?.distanceM != null ? Math.round(aiMatchResult.distanceM) : (liveNearest?.distance ?? 9999);
+                    matchedDistM = matchDistRaw;
                     const isWithinGeofence = matchDistRaw <= 150;
                     const isHoardingValid = aiMatchResult?.isHoardingPhoto !== false && (aiMatchResult?.confidence >= 80);
 
@@ -1085,7 +1105,7 @@ const StaffUpload = () => {
 
             // 🎯 Distance and Facing Calculations for Watermark & History
             const matchedDistance = Math.round(
-                matchedSiteData?.distanceM ?? (liveNearest?.distance ?? 0)
+                matchedDistM ?? matchedSiteData?.distanceM ?? (liveNearest?.distance ?? 0)
             );
             const trafficFacing = matchedSiteData?.Facing || matchedSiteData?.['Traffic View'] || matchedSiteData?.facing || liveNearest?.trafficFacing || '';
             const compassStr = compassHeading ? `${compassHeading.direction} (${compassHeading.degrees}°)` : '';
@@ -1114,6 +1134,15 @@ const StaffUpload = () => {
             const stampedBlob = await stampGpsWatermarkOnBlob(rawBlob, currentGps, siteInfoForStamp);
             const base64Data = await blobToDataUrl(stampedBlob);
 
+            const siteSLResolved = matchedSiteData?.SL || matchedSiteData?.['S. No.'] || matchedSiteData?.['SL NO'] || (clusterMatches[0]?.sl) || '';
+            const siteIdResolved = matchedSiteData?._SiteID || matchedSiteData?.UniqueID || matchedSiteData?.['Unique ID'] || matchedSiteData?.ID || (clusterMatches[0]?.siteId) || '';
+            const clusterSiteDetails = clusterMatches.map(c => ({
+                sl: String(c.sl || c.site?.SL || c.site?.['S. No.'] || '').trim(),
+                siteId: String(c.siteId || c.site?._SiteID || c.site?.UniqueID || '').trim(),
+                siteName: String(c.siteName || c.site?.["Location "] || c.site?.Location || '').trim(),
+                facing: String(c.facing || c.site?.Facing || c.site?.['Traffic View'] || '').trim()
+            })).filter(c => c.siteName || c.sl || c.siteId);
+
             const item = {
                 id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
                 blob: stampedBlob,
@@ -1123,8 +1152,12 @@ const StaffUpload = () => {
                 accuracy: currentGps?.accuracy || null,
                 distance: siteInfoForStamp.distance,
                 facing: siteInfoForStamp.facing,
+                siteFacing: trafficFacing,
+                sl: String(siteSLResolved || '').trim(),
+                siteId: String(siteIdResolved || '').trim(),
                 matchedSite,
                 clusterSites: clusterMatches.map(c => c.siteName || c.site?.["Location "] || c.site?.Location).filter(Boolean),
+                clusterSiteDetails,
                 visibleCount: clusterMatches.length > 0 ? clusterMatches.length : 1,
                 siteStatus,
                 status,
@@ -1141,6 +1174,9 @@ const StaffUpload = () => {
                 Accuracy: item.accuracy,
                 Distance: item.distance,
                 Facing: item.facing,
+                SiteFacing: item.siteFacing,
+                SL: item.sl,
+                SiteId: item.siteId,
                 ImageURL: base64Data,
                 Status: item.status || (matchedSite ? 'AUTO_APPROVED' : 'REVIEW_REQUIRED'),
                 Decision: item.aiDecision || (matchedSite ? 'GEMINI_GPS_AUTO_MATCH' : 'GPS_REVIEW'),
@@ -1163,7 +1199,7 @@ const StaffUpload = () => {
                         date: new Date().toISOString(),
                         gps: gpsString,
                         distance: item.distance,
-                        facing: item.facing,
+                        facing: trafficFacing || item.facing,
                         source: 'Staff Live Capture',
                         status: matchedSiteData?.STATUS || 'Available'
                     };
@@ -1171,29 +1207,37 @@ const StaffUpload = () => {
                     const sitesToProcess = clusterMatches.length > 0 ? clusterMatches : [{
                         siteName: matchedSite,
                         site: matchedSiteData,
-                        sl: matchedSiteData?.SL || ''
+                        sl: item.sl,
+                        siteId: item.siteId,
+                        facing: trafficFacing
                     }];
 
-                    // 1. Instantly update client-side cache & history for ALL matched cluster sites
+                    // 1. Instantly update client-side history for ALL matched cluster sites using exact facing/ID keys
                     for (const cSite of sitesToProcess) {
                         const cName = cSite.siteName || cSite.site?.["Location "] || cSite.site?.Location || matchedSite;
                         const cSL = cSite.sl || cSite.site?.SL || '';
+                        const cSiteId = cSite.siteId || cSite.site?._SiteID || cSite.site?.UniqueID || '';
+                        const cFacing = cSite.facing || cSite.site?.Facing || cSite.site?.['Traffic View'] || trafficFacing || '';
 
-                        recordSiteHistory({ "Location ": cName, Location: cName }, newAuditItem);
+                        recordSiteHistory(cSite.site || {
+                            "Location ": cName,
+                            Location: cName,
+                            City: matchedSiteData?.City || liveNearest?.city || '',
+                            Facing: cFacing,
+                            _SiteID: cSiteId,
+                            SL: cSL
+                        }, newAuditItem);
 
                         try {
-                            const cachedRaw = localStorage.getItem('adh_cached_hoardings');
+                            const cachedRaw = localStorage.getItem('hoardings_cache');
                             if (cachedRaw) {
                                 const cachedList = JSON.parse(cachedRaw);
-                                const targetIdx = cachedList.findIndex(h => (h["Location "] || h.Location) === cName || (cSL && String(h.SL || h['S. No.'] || '').trim() === String(cSL).trim()));
+                                const targetIdx = cachedList.findIndex(h =>
+                                    (cSiteId && (h._SiteID === cSiteId || h.UniqueID === cSiteId)) ||
+                                    (cSL && String(h.SL || h['S. No.'] || '').trim() === String(cSL).trim() && (!cFacing || String(h.Facing || h['Traffic View'] || '').trim().toLowerCase() === String(cFacing).trim().toLowerCase())) ||
+                                    ((h["Location "] || h.Location) === cName && (!cFacing || String(h.Facing || h['Traffic View'] || '').trim().toLowerCase() === String(cFacing).trim().toLowerCase()))
+                                );
                                 if (targetIdx >= 0) {
-                                    const existingHistory = Array.isArray(cachedList[targetIdx].History) ? cachedList[targetIdx].History : [];
-                                    cachedList[targetIdx] = {
-                                        ...cachedList[targetIdx],
-                                        History: [newAuditItem, ...existingHistory],
-                                        STATUS: cachedList[targetIdx].STATUS || 'Available'
-                                    };
-                                    localStorage.setItem('adh_cached_hoardings', JSON.stringify(cachedList));
                                     window.dispatchEvent(new CustomEvent('hoardings:updated', { detail: cachedList }));
                                 }
                             }
@@ -1207,47 +1251,30 @@ const StaffUpload = () => {
                         try {
                             landmarkDesc = await generateVisualLandmarksWithGemini(base64Data, {
                                 siteName: matchedSite,
-                                facing: item.facing
+                                facing: trafficFacing || item.facing
                             });
                         } catch (vlErr) {
                             console.warn('Staff photo visual landmark notice:', vlErr);
                         }
                     }
 
-                    // 2. Sync to Google Sheets ExecutionHistory backend asynchronously for all matched sites
-                    for (const cSite of sitesToProcess) {
-                        const cName = cSite.siteName || cSite.site?.["Location "] || cSite.site?.Location || matchedSite;
-                        const cSL = cSite.sl || cSite.site?.SL || '';
+                    // 2. Sync only Visual_Landmarks metadata if extracted (the photo itself is uploaded once via enqueueStaffPhoto -> staffUploadPhoto)
+                    if (landmarkDesc) {
+                        for (const cSite of sitesToProcess) {
+                            const cName = cSite.siteName || cSite.site?.["Location "] || cSite.site?.Location || matchedSite;
+                            const cSL = cSite.sl || cSite.site?.SL || '';
+                            const cSiteId = cSite.siteId || cSite.site?._SiteID || cSite.site?.UniqueID || '';
+                            const cFacing = cSite.facing || cSite.site?.Facing || cSite.site?.['Traffic View'] || '';
 
-                        syncToGoogleSheet({
-                            action: 'updateHoarding',
-                            siteName: cName,
-                            sl: cSL,
-                            fileData: base64Data,
-                            mimeType: 'image/jpeg',
-                            gps: gpsString,
-                            distance: item.distance,
-                            facing: item.facing,
-                            mode: 'archive',
-                            isDailyProof: true,
-                            fields: {
-                                ...(landmarkDesc ? { "Visual_Landmarks": landmarkDesc } : {})
-                            }
-                        }).then(res => {
-                            const driveUrl = res?.imageUrl || res?.fileUrl || res?.result?.imageUrl || '';
-                            if (driveUrl) {
-                                recordSiteHistory({ "Location ": cName, Location: cName }, {
-                                    url: driveUrl,
-                                    preview: driveUrl,
-                                    timestamp: Date.now(),
-                                    gps: gpsString,
-                                    distance: item.distance,
-                                    facing: item.facing,
-                                    source: 'Staff Live Capture',
-                                    status: siteStatus
-                                });
-                            }
-                        }).catch(syncErr => console.warn('Direct execution history sheet sync notice:', syncErr));
+                            syncToGoogleSheet({
+                                action: 'updateHoarding',
+                                siteName: cName,
+                                sl: cSL,
+                                siteId: cSiteId,
+                                facing: cFacing,
+                                fields: { "Visual_Landmarks": landmarkDesc }
+                            }).catch(syncErr => console.warn('Landmark metadata sync notice:', syncErr));
+                        }
                     }
                 } catch (historySyncErr) {
                     console.warn('Auto-sync to history error:', historySyncErr);
@@ -1334,9 +1361,9 @@ const StaffUpload = () => {
                             {copiedLink ? <Check size={16} /> : <Share2 size={16} />}
                             <span>{copiedLink ? 'Link Copied!' : 'Copy Portal Link'}</span>
                         </button>
-                        <a href="/admin" className="guard-admin-btn">
+                        <Link to="/admin" className="guard-admin-btn">
                             <span>Open Admin Dashboard</span>
-                        </a>
+                        </Link>
                     </div>
 
                     <div className="guard-footer">
@@ -1351,7 +1378,6 @@ const StaffUpload = () => {
 
     return (
         <main className="staff-camera-page">
-            <AppAutoUpdater />
             <video
                 ref={videoRef}
                 className="staff-camera-video"
@@ -1392,15 +1418,15 @@ const StaffUpload = () => {
                                 stopOfflineVoice();
                             } else {
                                 playChime('active');
-                                speakOfflineVoice('Voice Assistant active hai.');
+                                speakOfflineVoice('Voice Guide active hai.');
                             }
                             return next;
                         });
                     }}
-                    title={isVoiceMuted ? 'Unmute AI Voice Guide' : 'Mute AI Voice Guide'}
+                    title={isVoiceMuted ? 'Unmute Voice Guide' : 'Mute Voice Guide'}
                 >
                     {!isVoiceMuted ? <Volume2 size={16} className="voice-pulse-icon" /> : <VolumeX size={16} />}
-                    <span>{!isVoiceMuted ? 'AI Voice ON' : 'Muted'}</span>
+                    <span>{!isVoiceMuted ? 'Voice ON' : 'Muted'}</span>
                 </button>
             </div>
 

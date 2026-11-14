@@ -2331,9 +2331,14 @@ const sanitizeFileName = (value) => String(value || 'hoarding-image')
   .trim()
   .slice(0, 120) || 'hoarding-image';
 
-export const downloadHoardingImage = async (hoarding) => {
-  const imageUrl = getImageUrl(hoarding);
-  const name = sanitizeFileName(`${hoarding?.City || 'site'}-${hoarding?.["Location "] || 'image'}.jpg`);
+export const downloadHoardingImage = async (hoarding, fallbackName = '') => {
+  const isStringTarget = typeof hoarding === 'string';
+  const imageUrl = isStringTarget ? getDirectDriveLink(hoarding) : getImageUrl(hoarding);
+  const name = sanitizeFileName(
+    isStringTarget
+      ? `${fallbackName || 'site'}-image.jpg`
+      : `${hoarding?.City || 'site'}-${hoarding?.["Location "] || hoarding?.Location || 'image'}.jpg`
+  );
 
   try {
     const response = await fetch(imageUrl, { mode: 'cors', cache: 'no-store' });
@@ -2639,13 +2644,13 @@ export const getSiteOccupancyStatus = (site, refDate = new Date(), thresholdDays
 /**
  * ⚡ Filter and sort hoardings that are expiring within the next N days
  */
-export const getExpiringSites = (hoardings = [], thresholdDays = 15) => {
+export const getExpiringSites = (hoardings = [], thresholdDays = 15, refDate = new Date()) => {
   if (!Array.isArray(hoardings) || hoardings.length === 0) return [];
-  const refDate = new Date();
+  const reference = refDate instanceof Date && !isNaN(refDate.getTime()) ? refDate : new Date();
 
   return hoardings
     .map(h => {
-      const occupancy = getSiteOccupancyStatus(h, refDate, thresholdDays);
+      const occupancy = getSiteOccupancyStatus(h, reference, thresholdDays);
       return { site: h, occupancy };
     })
     .filter(({ occupancy }) => occupancy.isExpiringSoon)

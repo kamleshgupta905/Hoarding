@@ -8,22 +8,34 @@ contextBridge.exposeInMainWorld('electronAPI', {
     installUpdate: () => ipcRenderer.send('install-update-now'),
     getAppVersion: () => ipcRenderer.invoke('get-app-version'),
     onUpdateChecking: (callback) => {
-        ipcRenderer.on('update-checking', (_event, value) => callback(value));
+        const handler = (_event, value) => callback(value);
+        ipcRenderer.on('update-checking', handler);
+        return () => ipcRenderer.removeListener('update-checking', handler);
     },
     onUpdateAvailable: (callback) => {
-        ipcRenderer.on('update-available', (_event, value) => callback(value));
+        const handler = (_event, value) => callback(value);
+        ipcRenderer.on('update-available', handler);
+        return () => ipcRenderer.removeListener('update-available', handler);
     },
     onUpdateNotAvailable: (callback) => {
-        ipcRenderer.on('update-not-available', (_event, value) => callback(value));
+        const handler = (_event, value) => callback(value);
+        ipcRenderer.on('update-not-available', handler);
+        return () => ipcRenderer.removeListener('update-not-available', handler);
     },
     onUpdateError: (callback) => {
-        ipcRenderer.on('update-error', (_event, value) => callback(value));
+        const handler = (_event, value) => callback(value);
+        ipcRenderer.on('update-error', handler);
+        return () => ipcRenderer.removeListener('update-error', handler);
     },
     onUpdateProgress: (callback) => {
-        ipcRenderer.on('update-progress', (_event, value) => callback(value));
+        const handler = (_event, value) => callback(value);
+        ipcRenderer.on('update-progress', handler);
+        return () => ipcRenderer.removeListener('update-progress', handler);
     },
     onUpdateDownloaded: (callback) => {
-        ipcRenderer.on('update-downloaded', (_event, value) => callback(value));
+        const handler = (_event, value) => callback(value);
+        ipcRenderer.on('update-downloaded', handler);
+        return () => ipcRenderer.removeListener('update-downloaded', handler);
     },
     extractPptxNative: (params) => ipcRenderer.invoke('extract-pptx-native', params),
     onPptxProgress: (callback) => {

@@ -781,7 +781,7 @@ export const parsePptx = async (arrayBuffer, sites = [], onProgress = null) => {
   const AI_BATCH_SIZE = 16;
   for (let i = 0; i < slides.length; i += AI_BATCH_SIZE) {
     if (onProgress) {
-        onProgress(60 + Math.round((i / slides.length) * 35), `⚡ Claude AI Extraction & Auto-Matching... Slide ${i + 1} to ${Math.min(i + AI_BATCH_SIZE, slides.length)} of ${slides.length}`);
+        onProgress(60 + Math.round((i / slides.length) * 35), `Matching & Extracting Slides... Slide ${i + 1} to ${Math.min(i + AI_BATCH_SIZE, slides.length)} of ${slides.length}`);
     }
     const slideBatch = slides.slice(i, i + AI_BATCH_SIZE);
     
@@ -827,11 +827,11 @@ export const parsePptx = async (arrayBuffer, sites = [], onProgress = null) => {
                 slide.suggestedSiteId = groqRes.matchedSite._SiteID || groqRes.matchedSite.UniqueID || groqRes.matchedSite.ID || '';
                 slide.confidence = groqRes.confidence || 'HIGH';
                 slide.status = 'MATCHED';
-                slide.aiReason = groqRes.reason || 'Matched by Groq AI';
+                slide.aiReason = groqRes.reason || 'Matched via slide text & inventory';
               }
             }
 
-            // 🔄 Fallback to Gemini Multimodal AI if Groq matching did not lock a site
+            // Fallback to visual/text matcher if first pass did not lock a site
             if (!slide.suggestedSiteId && topCandidates.length > 0) {
               try {
                 const { matchSlideToInventoryWithGemini } = await import('../services/geminiService');
@@ -840,15 +840,15 @@ export const parsePptx = async (arrayBuffer, sites = [], onProgress = null) => {
                   slide.suggestedSiteId = geminiRes.site._SiteID || geminiRes.site.UniqueID || geminiRes.site.ID || '';
                   slide.confidence = geminiRes.confidence || 'HIGH';
                   slide.status = 'MATCHED';
-                  slide.aiReason = geminiRes.reason || 'Matched by Gemini AI Fallback';
+                  slide.aiReason = geminiRes.reason || 'Matched via slide fallback analysis';
                 }
               } catch (geminiErr) {
-                console.warn('[Gemini Slide Fallback Notice]:', geminiErr);
+                console.warn('[Slide Fallback Notice]:', geminiErr);
               }
             }
           } catch (groqErr) {
-            console.warn('[AI Engine Notice]:', groqErr);
-            // 🔄 Fallback to Gemini on Groq network/parsing failure
+            console.warn('[Slide Matching Notice]:', groqErr);
+            // Fallback on network/parsing failure
             try {
               const { matchSlideToInventoryWithGemini } = await import('../services/geminiService');
               const geminiRes = await matchSlideToInventoryWithGemini(slide.text, topCandidates);
@@ -856,10 +856,10 @@ export const parsePptx = async (arrayBuffer, sites = [], onProgress = null) => {
                 slide.suggestedSiteId = geminiRes.site._SiteID || geminiRes.site.UniqueID || geminiRes.site.ID || '';
                 slide.confidence = geminiRes.confidence || 'HIGH';
                 slide.status = 'MATCHED';
-                slide.aiReason = geminiRes.reason || 'Matched by Gemini AI Fallback';
+                slide.aiReason = geminiRes.reason || 'Matched via slide fallback analysis';
               }
             } catch (geminiErr) {
-              console.warn('[Gemini Slide Fallback Notice]:', geminiErr);
+              console.warn('[Slide Fallback Notice]:', geminiErr);
             }
           }
         }

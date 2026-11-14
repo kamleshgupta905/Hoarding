@@ -26,6 +26,7 @@ import {
   syncToGoogleSheet
 } from '../services/dataService.js';
 import { postDirect, getAdminSession } from '../services/secureApi.js';
+import { appConfirm } from './ToastContext.jsx';
 
 export const StarredBulkBookingModal = ({
   isOpen,
@@ -246,9 +247,13 @@ export const StarredBulkBookingModal = ({
     // Check if any row has unresolved conflict that is NOT overridden
     const unhandledConflictedSites = rows.filter(r => r.hasConflict && !r.overrideEnabled && !globalOverride);
     if (unhandledConflictedSites.length > 0) {
-      const proceed = window.confirm(
-        `${unhandledConflictedSites.length} site(s) have booking conflicts and override is not active. Do you want to proceed and book the remaining eligible/overridden sites?`
-      );
+      const proceed = await appConfirm({
+        title: 'Proceed with Eligible Sites?',
+        message: `${unhandledConflictedSites.length} site(s) have booking conflicts and override is not active. Proceed and book the remaining eligible/overridden sites?`,
+        confirmText: 'Proceed & Book',
+        cancelText: 'Cancel',
+        type: 'warning'
+      });
       if (!proceed) return;
     }
 

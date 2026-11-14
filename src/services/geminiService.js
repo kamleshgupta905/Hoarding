@@ -1,52 +1,24 @@
 import { postDirect } from './secureApi.js';
 
 /**
- * 🧠 Gemini Vision AI Service for Outdoor Hoarding & PPT Extraction
- * Powered by Google Gemini 3.7 Flash with multi-key auto-failover and backend Apps Script proxy.
+ * Gemini Vision & Multimodal Analysis Client Service
+ * All Gemini requests are executed server-side via /api/gemini/generate and /api/gemini/stream.
  */
 
-// 🔑 Keys come from the environment (.env.local locally, Vercel env vars in
-// production) or from a key the user pastes into the admin settings, or via Apps Script backend.
-const BUILTIN_GEMINI_FALLBACKS = [
-  'AQ.Ab8RN6JX5X6bvAY9y-iBaVbdO_nAC49puDmbVyvGDZCkhGHHxQ',
-  'AQ.Ab8RN6JloH5_7Hu50bxb4ODlyw0sG07RmWtNE57_JlGI09tPAw',
-  'AQ.Ab8RN6KKuExOPSzweXaW0-4rEziM3GmonFb3-rvxHDc-ohOBcQ',
-  'AQ.Ab8RN6KpJdKYy-63CLrqiPDSuEP8LW2Q2ioYPDLIIs5IdA560g'
-];
-
-export const getGeminiApiKeys = () => {
-  const customKey = (typeof window !== 'undefined' && (
-    window.localStorage?.getItem('adh_gemini_api_key') ||
-    window.localStorage?.getItem('gemini_api_key')
-  )) || null;
-
-  const nodeEnv = (typeof process !== 'undefined' && process.env) || {};
-
-  const configured = [
-    customKey,
-    import.meta.env?.VITE_GEMINI_API_KEY || nodeEnv.VITE_GEMINI_API_KEY,
-    import.meta.env?.VITE_GEMINI_API_KEY_1 || nodeEnv.VITE_GEMINI_API_KEY_1,
-    import.meta.env?.VITE_GEMINI_API_KEY_2 || nodeEnv.VITE_GEMINI_API_KEY_2,
-    import.meta.env?.VITE_GEMINI_API_KEY_3 || nodeEnv.VITE_GEMINI_API_KEY_3,
-    import.meta.env?.VITE_GEMINI_API_KEY_4 || nodeEnv.VITE_GEMINI_API_KEY_4
-  ].filter(Boolean);
-
-  if (configured.length > 0) return configured;
-  return BUILTIN_GEMINI_FALLBACKS;
-};
-
 export const GEMINI_MODELS = [
-  'gemini-flash-latest',
-  'gemini-flash-lite-latest',
-  'gemini-3.8-flash',
-  'gemini-3.7-flash',
-  'gemini-3.6-flash',
-  'gemini-3.5-flash',
-  'gemini-3.5-flash-lite',
-  'gemini-3.1-flash-lite',
-  'gemini-3-flash-preview',
-  'gemini-3.1-pro-preview'
+  'gemini-4-hydrogen',
+  'gemini-3.1-flash-lite'
 ];
+
+const resolveGeminiEndpoint = (routePath) => {
+  if (typeof window === 'undefined') return routePath;
+  const protocol = window.location?.protocol || '';
+  if (protocol === 'http:' || protocol === 'https:') {
+    return routePath;
+  }
+  const configuredBase = import.meta.env?.VITE_SERVER_URL || '';
+  return configuredBase ? `${configuredBase.replace(/\/+$/, '')}${routePath}` : routePath;
+};
 
 /**
  * Strips data URL prefix to extract raw base64 and mime type.
@@ -61,7 +33,7 @@ export const parseBase64 = (dataUrl) => {
 };
 
 /**
- * Robust JSON parse handling unescaped control characters in LLM responses
+ * Robust JSON parse handling unescaped control characters in model responses
  */
 export const safeJsonParse = (rawText) => {
   if (!rawText || typeof rawText !== 'string') return null;
@@ -88,91 +60,60 @@ export const safeJsonParse = (rawText) => {
 };
 
 /**
- * Execute Gemini Generative Vision API call with model and key fallback.
+ * Execute Gemini Vision API call through the application server (/api/gemini/generate).
  */
 export const callGeminiVision = async (payload) => {
-  let lastError = null;
-  const apiKeys = getGeminiApiKeys();
+  const endpoint = resolveGeminiEndpoint('/api/gemini/generate');
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 30000);
+  let serverError = null;
 
-  // 🛡️ Base payload configuration
-  const baseConfig = {
-    temperature: 0.1,
-    topP: 0.8,
-    maxOutputTokens: 2048,
-    ...(payload.generationConfig || {})
-  };
-  if (baseConfig.maxOutputTokens < 1000) {
-    baseConfig.maxOutputTokens = 2048;
-  }
+  try {
+    const response = await fetch(endpoint, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        model: payload?.model || GEMINI_MODELS[0],
+        contents: payload?.contents,
+        config: payload?.config || payload?.generationConfig
+      }),
+      signal: controller.signal
+    });
 
-  for (const apiKey of apiKeys) {
-    if (!apiKey) continue;
+    const contentType = response.headers.get('content-type') || '';
+    if (contentType.includes('application/json')) {
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data?.error || `Server Gemini request failed (${response.status})`);
+      }
+      if (data?.text && String(data.text).trim()) {
+        return String(data.text).trim();
+      }
+      throw new Error('Empty response returned from Gemini server endpoint.');
+    }
 
-    for (const model of GEMINI_MODELS) {
-      try {
-        const isLite = model.includes('lite');
-        const modelConfig = { ...baseConfig };
-        // thinkingConfig budget 0 is supported on reasoning flash models, but causes 400 on lite models
-        if (!isLite && !modelConfig.thinkingConfig) {
-          modelConfig.thinkingConfig = { thinkingBudget: 0 };
-        } else if (isLite) {
-          delete modelConfig.thinkingConfig;
-        }
-
-        const safePayload = {
-          ...payload,
-          generationConfig: modelConfig
-        };
-
-        const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 8000);
-        let response;
-        try {
-          response = await fetch(endpoint, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'x-goog-api-key': apiKey
-            },
-            body: JSON.stringify(safePayload),
-            signal: controller.signal
-          });
-        } finally {
-          clearTimeout(timeoutId);
-        }
-
-        if (!response.ok) {
-          const errorText = await response.text();
-          console.warn(`Gemini [${model}] status ${response.status}:`, errorText);
-          lastError = new Error(`Gemini API Error (${model}): ${response.status}`);
-          if (response.status === 429 || response.status === 503) {
-            await new Promise(r => setTimeout(r, 600));
-          }
-          continue; // Try next available model seamlessly
-        }
-
-        const data = await response.json();
-        const parts = data?.candidates?.[0]?.content?.parts || [];
-        const text = parts.map(p => p.text || '').filter(Boolean).join('\n').trim();
-        if (text) {
-          return text;
-        }
-      } catch (err) {
-        console.warn(`Gemini [${model}] call failed:`, err);
-        lastError = err;
+    if (!response.ok) {
+      serverError = new Error(`Server Gemini endpoint returned ${response.status}`);
+    }
+  } catch (err) {
+    serverError = err;
+    if (err?.message && !/failed to fetch|network|404|abort/i.test(err.message)) {
+      // Server returned an explicit API/configuration error; propagate to caller unless static fallback applies
+      if (typeof window !== 'undefined' && (window.location?.protocol === 'http:' || window.location?.protocol === 'https:')) {
+        throw err;
       }
     }
+  } finally {
+    clearTimeout(timeoutId);
   }
 
-  // 🚀 Backend Proxy Fallback: If no client keys or direct calls failed, call Apps Script proxy
+  // Fallback to Apps Script backend proxy when running offline / file:// / static-only host
   try {
     const proxyRes = await postDirect({
       action: 'geminiVision',
-      payload: {
-        ...payload,
-        generationConfig: baseConfig
-      },
+      payload,
       model: GEMINI_MODELS[0]
     }, 20000);
 
@@ -183,10 +124,62 @@ export const callGeminiVision = async (payload) => {
       if (text) return text;
     }
   } catch (proxyErr) {
-    console.warn('[Gemini Apps Script Proxy Notice]:', proxyErr.message || proxyErr);
+    console.warn('[Gemini Backend Proxy Notice]:', proxyErr.message || proxyErr);
   }
 
-  throw lastError || new Error('All Gemini API keys and models exhausted.');
+  throw serverError || new Error('Gemini service failed to respond.');
+};
+
+/**
+ * Execute streaming Gemini request via server SSE endpoint (/api/gemini/stream).
+ */
+export const callGeminiStream = async (payload, onChunk) => {
+  const endpoint = resolveGeminiEndpoint('/api/gemini/stream');
+  const response = await fetch(endpoint, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      model: payload?.model || GEMINI_MODELS[0],
+      contents: payload?.contents,
+      config: payload?.config || payload?.generationConfig
+    })
+  });
+
+  if (!response.ok || !response.body) {
+    const errBody = await response.text().catch(() => '');
+    throw new Error(errBody || `Gemini stream request failed (${response.status})`);
+  }
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let fullText = '';
+  let buffer = '';
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split('\n');
+    buffer = lines.pop() || '';
+
+    for (const line of lines) {
+      if (!line.startsWith('data: ')) continue;
+      const dataStr = line.slice(6).trim();
+      if (dataStr === '[DONE]') return fullText;
+      try {
+        const parsed = JSON.parse(dataStr);
+        if (parsed.error) throw new Error(parsed.error);
+        if (parsed.text) {
+          fullText += parsed.text;
+          if (typeof onChunk === 'function') onChunk(parsed.text, fullText);
+        }
+      } catch (e) {
+        if (e?.message && !/JSON/i.test(e.message)) throw e;
+      }
+    }
+  }
+
+  return fullText;
 };
 
 /**
@@ -545,49 +538,86 @@ Return ONLY a single valid JSON object (no markdown, no backticks):
     }
 
     if (matchedCandidate) {
+      const normFacingStr = (v) => String(v || '').toLowerCase().replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim();
+      const facingTokensMatch = (a, b) => {
+        const na = normFacingStr(a);
+        const nb = normFacingStr(b);
+        if (!na || !nb) return false;
+        if (na === nb) return true;
+        const ta = na.split(' ').filter(t => t.length >= 3);
+        const tb = nb.split(' ').filter(t => t.length >= 3);
+        if (!ta.length || !tb.length) return false;
+        return ta.some(t => tb.includes(t));
+      };
 
-      const rawSelected = matchedCandidate.site || matchedCandidate;
-      const resolvedSL = rawSelected.SL || rawSelected['S. No.'] || rawSelected['SL NO'] || (matchedCandidate.index !== undefined ? matchedCandidate.index + 1 : idx + 1);
+      // 🛡️ Facing-Candidate Alignment Guard:
+      // If Gemini detected a clear facing string that disagrees with matchedCandidate's Facing,
+      // check if another twin candidate at the SAME location matches that exact facing cleanly.
+      let rawSelected = matchedCandidate.site || matchedCandidate;
+      let candidateFacing = rawSelected.Facing || rawSelected['Traffic View'] || matchedCandidate.facing || '';
+      if (result.facing && candidateFacing && !facingTokensMatch(candidateFacing, result.facing)) {
+        const selLoc = normFacingStr(rawSelected["Location "] || rawSelected["Locality Site Location"] || rawSelected.Location || matchedCandidate.siteName);
+        const exactTwin = candidates.find(c => {
+          if (c === matchedCandidate) return false;
+          const cs = c.site || c;
+          const cLoc = normFacingStr(cs["Location "] || cs["Locality Site Location"] || cs.Location || c.siteName);
+          const cFac = cs.Facing || cs['Traffic View'] || c.facing || '';
+          return cLoc === selLoc && cFac && facingTokensMatch(cFac, result.facing);
+        });
+        if (exactTwin) {
+          matchedCandidate = exactTwin;
+          idx = candidates.indexOf(exactTwin);
+          rawSelected = matchedCandidate.site || matchedCandidate;
+          candidateFacing = rawSelected.Facing || rawSelected['Traffic View'] || matchedCandidate.facing || '';
+        }
+      }
+
+      const resolvedSL = rawSelected.SL || rawSelected['S. No.'] || rawSelected['SL NO'] || '';
+      const resolvedFacing = candidateFacing || result.facing || '';
 
       // 🎯 Build multi-hoarding cluster matches (for 1, 2, or 3 adjacent hoardings)
       const rawIndices = Array.isArray(result.matchedIndices) && result.matchedIndices.length > 0
         ? result.matchedIndices
         : [idx];
       const clusterMatches = [];
-      const seenSLs = new Set();
+      const seenKeys = new Set();
 
       // Primary site always at index 0
+      const primaryKey = `${matchedCandidate.index !== undefined ? matchedCandidate.index : idx}_${String(resolvedSL).trim()}`;
       clusterMatches.push({
         index: matchedCandidate.index !== undefined ? matchedCandidate.index : idx,
         candidateIndex: matchedCandidate.index !== undefined ? matchedCandidate.index : idx,
         sl: resolvedSL,
+        siteId: rawSelected._SiteID || rawSelected.UniqueID || rawSelected['Unique ID'] || matchedCandidate.siteId || '',
         site: rawSelected,
         siteName: rawSelected["Location "] || rawSelected["Locality Site Location"] || rawSelected.Location || rawSelected.siteName,
         siteCoord: matchedCandidate.siteCoord,
         distanceM: matchedCandidate.distanceM,
-        facing: result.facing || rawSelected.Facing || rawSelected['Traffic View'] || '',
+        facing: resolvedFacing,
         status: result.status === 'Occupied' ? 'Occupied' : 'Available',
         mediaType: matchedCandidate.mediaType || rawSelected.Media || 'Unipole'
       });
-      seenSLs.add(String(resolvedSL).trim());
+      seenKeys.add(primaryKey);
 
       // Additional adjacent companion hoardings visible in the same frame
       for (const mIdx of rawIndices) {
-        const cand = candidates.find(c => c.index === mIdx) || candidates[mIdx];
+        const cand = candidates[mIdx] || candidates.find(c => c.index === mIdx);
         if (cand && cand !== matchedCandidate) {
           const candSite = cand.site || cand;
-          const candSL = candSite.SL || candSite['S. No.'] || candSite['SL NO'] || (cand.index !== undefined ? cand.index + 1 : mIdx + 1);
-          if (!seenSLs.has(String(candSL).trim())) {
-            seenSLs.add(String(candSL).trim());
+          const candSL = candSite.SL || candSite['S. No.'] || candSite['SL NO'] || '';
+          const cKey = `${cand.index !== undefined ? cand.index : mIdx}_${String(candSL).trim()}`;
+          if (!seenKeys.has(cKey)) {
+            seenKeys.add(cKey);
             clusterMatches.push({
               index: cand.index !== undefined ? cand.index : mIdx,
               candidateIndex: cand.index !== undefined ? cand.index : mIdx,
               sl: candSL,
+              siteId: candSite._SiteID || candSite.UniqueID || candSite['Unique ID'] || cand.siteId || '',
               site: candSite,
               siteName: candSite["Location "] || candSite["Locality Site Location"] || candSite.Location || candSite.siteName,
               siteCoord: cand.siteCoord,
               distanceM: cand.distanceM,
-              facing: cand.facing || candSite.Facing || candSite['Traffic View'] || '',
+              facing: candSite.Facing || candSite['Traffic View'] || cand.facing || '',
               status: result.status === 'Occupied' ? 'Occupied' : 'Available',
               mediaType: cand.mediaType || candSite.Media || 'Unipole'
             });
@@ -607,20 +637,23 @@ Return ONLY a single valid JSON object (no markdown, no backticks):
             if (s.toLowerCase() === String(sVal).trim().toLowerCase()) return true;
             return sDigits && s.replace(/\D/g, '') === sDigits;
           });
-          if (bySl) {
+          if (bySl && bySl !== matchedCandidate) {
             const candSite = bySl.site || bySl;
-            const candSL = candSite.SL || candSite['S. No.'] || candSite['SL NO'] || (bySl.index !== undefined ? bySl.index + 1 : '');
-            if (!seenSLs.has(String(candSL).trim())) {
-              seenSLs.add(String(candSL).trim());
+            const candSL = candSite.SL || candSite['S. No.'] || candSite['SL NO'] || '';
+            const bySlIdx = bySl.index !== undefined ? bySl.index : candidates.indexOf(bySl);
+            const cKey = `${bySlIdx}_${String(candSL).trim()}`;
+            if (!seenKeys.has(cKey)) {
+              seenKeys.add(cKey);
               clusterMatches.push({
-                index: bySl.index,
-                candidateIndex: bySl.index,
+                index: bySlIdx,
+                candidateIndex: bySlIdx,
                 sl: candSL,
+                siteId: candSite._SiteID || candSite.UniqueID || candSite['Unique ID'] || bySl.siteId || '',
                 site: candSite,
                 siteName: candSite["Location "] || candSite["Locality Site Location"] || candSite.Location || candSite.siteName,
                 siteCoord: bySl.siteCoord,
                 distanceM: bySl.distanceM,
-                facing: bySl.facing || candSite.Facing || candSite['Traffic View'] || '',
+                facing: candSite.Facing || candSite['Traffic View'] || bySl.facing || '',
                 status: result.status === 'Occupied' ? 'Occupied' : 'Available',
                 mediaType: bySl.mediaType || candSite.Media || 'Unipole'
               });
@@ -641,10 +674,10 @@ Return ONLY a single valid JSON object (no markdown, no backticks):
         matchedCandidate,
         matchedSite: rawSelected,
         siteName: rawSelected["Location "] || rawSelected["Locality Site Location"] || rawSelected.Location || rawSelected.siteName,
-        facing: result.facing || rawSelected.Facing || rawSelected['Traffic View'] || '',
+        facing: resolvedFacing,
         status: result.status === 'Occupied' ? 'Occupied' : 'Available',
         confidence: typeof result.confidence === 'number' ? result.confidence : 0.96,
-        reasoning: result.reasoning || `AI visual perspective matched ${rawSelected.Facing || 'site'}.`,
+        reasoning: result.reasoning || `AI visual perspective matched ${resolvedFacing || 'site'}.`,
         clusterMatches,
         visibleCount
       };
@@ -845,7 +878,7 @@ If no GPS coordinates are stamped on the image, set "latitude": null, "longitude
   try {
     const rawResponse = await callGeminiVision(payload);
     const result = safeJsonParse(rawResponse);
-    if (!result) throw new Error('Invalid JSON response from Vision AI.');
+    if (!result) throw new Error('Invalid JSON response from image analysis.');
     
     const rawLat = result.latitude != null ? result.latitude : (result.gps_watermark?.latitude != null ? result.gps_watermark.latitude : (result.gps?.lat != null ? result.gps.lat : null));
     const rawLng = result.longitude != null ? result.longitude : (result.gps_watermark?.longitude != null ? result.gps_watermark.longitude : (result.gps?.lng != null ? result.gps.lng : null));
@@ -943,7 +976,7 @@ Return ONLY the raw JSON array (no markdown code blocks, no backticks, no commen
 };
 
 /**
- * 🎯 Match a PPT slide to candidate inventory hoardings using Gemini 2.0 / 1.5 Flash
+ * 🎯 Match a PPT slide to candidate inventory hoardings using Gemini
  */
 export const matchSlideToInventoryWithGemini = async (slideText, candidates, imageBase64 = null) => {
   if (!candidates || candidates.length === 0) return null;
@@ -1015,7 +1048,7 @@ TASK:
       return {
         site: candidates[idx],
         confidence: result.confidence || 'HIGH',
-        reason: result.reason || 'Matched using Gemini AI'
+        reason: result.reason || 'Matched via slide & inventory analysis'
       };
     }
     return null;
@@ -1026,7 +1059,7 @@ TASK:
 };
 
 /**
- * 🌟 GEMINI 3.7 FLASH MULTIMODAL PPT SLIDE ANALYZER & IMAGE EXTRACTOR
+ * 🌟 MULTIMODAL PPT SLIDE ANALYZER & IMAGE EXTRACTOR
  * Analyzes a PPT slide's extracted image and text, identifies the billboard/hoarding,
  * reads visual landmarks, road signs, GPS watermarks, and matches with master inventory.
  */
@@ -1046,7 +1079,7 @@ export const analyzePptSlideWithGeminiVision = async (imageBase64, slideText = '
     return `[Index ${i} - ID: ${id}]: "${loc}" | City: "${city}" | Area: "${area}" | Facing: "${facing || traffic}" | Size: "${size}" | GPS: ${lat},${lng}`;
   }).join('\n');
 
-  const prompt = `You are an expert AI Outdoor Advertising (OOH/Billboard) Vision Analyst using the latest Gemini 3.7 Flash model.
+  const prompt = `You are an expert Outdoor Advertising (OOH/Billboard) Vision Analyst.
 Analyze this billboard / hoarding presentation slide image and text.
 
 SLIDE TEXT (if any):
@@ -1135,7 +1168,7 @@ RETURN ONLY VALID JSON (no markdown formatting, no backticks):
       mediaType: result.mediaType || matchedSite?.Media || 'Billboard',
       status: result.status === 'Occupied' ? 'Occupied' : 'Available',
       gpsStamp: result.gpsStamp || null,
-      reason: result.reason || 'Analyzed with Gemini 3.7 Flash Vision AI'
+      reason: result.reason || 'Matched via slide visual & text analysis'
     };
   } catch (err) {
     console.warn('[Gemini 3.7 Flash PPT Analyzer Notice]:', err);

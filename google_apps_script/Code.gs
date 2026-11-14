@@ -1238,7 +1238,125 @@ function findNearbyHoardings(latitude, longitude) {
   return nearby;
 }
 
-function updateSitePhotoFromStaff(siteName, imageUrl, historyOnly, siteStatus, visualLandmarks) {
+function findHoardingRow_(headers, rows, opts) {
+  opts = opts || {};
+  var idxSite = findSiteColumn(headers);
+  var idxSiteId = headers.indexOf('_SiteID');
+  var idxSL = headers.findIndex(function(h) {
+    var c = cleanFull(h);
+    return c === 'sl' || c === 'sno' || c === 'slno' || c === 'srno' || c === 'serial' || c === 'serialno';
+  });
+  var idxFacing = headers.findIndex(function(h) { return cleanFull(h) === 'facing' || cleanFull(h) === 'trafficview'; });
+  var idxLatLong = headers.findIndex(function(h) { return cleanFull(h).indexOf('lat') !== -1 && cleanFull(h).indexOf('long') !== -1; });
+
+  var targetSiteId = String(opts.siteId || '').trim().toLowerCase();
+  var targetSL = String(opts.sl || '').trim();
+  var targetFacing = cleanFull(opts.facing || '');
+  var targetLatLong = cleanFull(opts.latLong || '');
+  var searchName = cleanFull(opts.siteName || '');
+
+  function facingMatchesCell_(row) {
+    if (!targetFacing || idxFacing === -1) return true;
+    var rf = cleanFull(row[idxFacing]);
+    if (!rf) return false;
+    return rf === targetFacing || rf.indexOf(targetFacing) !== -1 || targetFacing.indexOf(rf) !== -1;
+  }
+
+  // 1a. _SiteID + Facing (disambiguates twin rows with copied IDs)
+  if (targetSiteId && idxSiteId !== -1 && targetFacing && idxFacing !== -1) {
+    for (var i = 1; i < rows.length; i++) {
+      if (String(rows[i][idxSiteId]).trim().toLowerCase() === targetSiteId && facingMatchesCell_(rows[i])) {
+        return i + 1;
+      }
+    }
+  }
+
+  // 1b. Unique _SiteID
+  if (targetSiteId && idxSiteId !== -1) {
+    for (var i = 1; i < rows.length; i++) {
+      if (String(rows[i][idxSiteId]).trim().toLowerCase() === targetSiteId) {
+        return i + 1;
+      }
+    }
+  }
+
+  // 2a. SL + Facing (exact twin disambiguation when two rows share duplicate SL!)
+  if (targetSL && idxSL !== -1 && targetFacing && idxFacing !== -1) {
+    for (var i = 1; i < rows.length; i++) {
+      var cellVal = String(rows[i][idxSL]).trim();
+      var slMatched = cellVal === targetSL || (parseInt(cellVal, 10) === parseInt(targetSL, 10) && !isNaN(parseInt(targetSL, 10)));
+      if (slMatched && facingMatchesCell_(rows[i])) {
+        return i + 1;
+      }
+    }
+  }
+
+  // 2b. Unique SL (only safe if Location isn't contradicting or single SL match)
+  if (targetSL && idxSL !== -1) {
+    for (var i = 1; i < rows.length; i++) {
+      var cellVal = String(rows[i][idxSL]).trim();
+      if (cellVal === targetSL || (parseInt(cellVal, 10) === parseInt(targetSL, 10) && !isNaN(parseInt(targetSL, 10)))) {
+        return i + 1;
+      }
+    }
+  }
+
+  // 3. Location + Facing (exact facing first, then substring facing)
+  if (searchName && idxSite !== -1 && targetFacing && idxFacing !== -1) {
+    for (var i = 1; i < rows.length; i++) {
+      if (cleanFull(rows[i][idxSite]) === searchName && cleanFull(rows[i][idxFacing]) === targetFacing) {
+        return i + 1;
+      }
+    }
+    for (var i = 1; i < rows.length; i++) {
+      if (cleanFull(rows[i][idxSite]) === searchName && facingMatchesCell_(rows[i])) {
+        return i + 1;
+      }
+    }
+  }
+
+  // 4a. Lat-Long + Facing
+  if (targetLatLong && idxLatLong !== -1 && targetFacing && idxFacing !== -1) {
+    for (var i = 1; i < rows.length; i++) {
+      if (cleanFull(rows[i][idxLatLong]) === targetLatLong && facingMatchesCell_(rows[i])) {
+        return i + 1;
+      }
+    }
+  }
+
+  // 4b. Lat-Long without facing conflict
+  if (targetLatLong && idxLatLong !== -1 && !targetFacing) {
+    for (var i = 1; i < rows.length; i++) {
+      if (cleanFull(rows[i][idxLatLong]) === targetLatLong) {
+        return i + 1;
+      }
+    }
+  }
+
+  // 5. Exact siteName
+  if (searchName && idxSite !== -1) {
+    for (var i = 1; i < rows.length; i++) {
+      if (cleanFull(rows[i][idxSite]) === searchName) {
+        return i + 1;
+      }
+    }
+  }
+
+  // 6. Fuzzy siteName
+  if (searchName && idxSite !== -1) {
+    for (var i = 1; i < rows.length; i++) {
+      var rowSiteName = cleanFull(rows[i][idxSite]);
+      if (rowSiteName && (rowSiteName.indexOf(searchName) !== -1 || searchName.indexOf(rowSiteName) !== -1)) {
+        return i + 1;
+      }
+    }
+  }
+
+  return -1;
+}
+
+function updateSitePhotoFromStaff(siteName, imageUrl, historyOnly, siteStatus, visualLandmarks, opts) {
+  opts = opts || {};
   var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(CONFIG.SHEET_NAME);
   var headers = getAllHeaders(sheet);
   var idxSite = findSiteColumn(headers);
@@ -1248,45 +1366,47 @@ function updateSitePhotoFromStaff(siteName, imageUrl, historyOnly, siteStatus, v
   if (idxSite === -1 || idxImg === -1) return { success: false, error: 'Site or image column missing' };
 
   var rows = sheet.getDataRange().getValues();
-  var target = cleanFull(siteName);
-  for (var i = 1; i < rows.length; i++) {
-    if (cleanFull(rows[i][idxSite]) !== target) continue;
-    var rowIndex = i + 1;
-    var previousImage = sheet.getRange(rowIndex, idxImg + 1).getValue();
-    if (idxHistory !== -1) {
-      var historyCell = sheet.getRange(rowIndex, idxHistory + 1);
-      var currentHistory = historyCell.getValue();
-      var historyItem = (historyOnly ? imageUrl : previousImage) + '|' + new Date().getTime();
-      if ((historyOnly && imageUrl) || (!historyOnly && previousImage)) {
-        var healedPrior = normalizeHistoryString_(currentHistory);
-        historyCell.setValue(healedPrior ? healedPrior + ',' + historyItem : historyItem);
-      }
+  var rowIndex = findHoardingRow_(headers, rows, {
+    siteName: siteName,
+    sl: opts.sl || '',
+    siteId: opts.siteId || '',
+    facing: opts.facing || ''
+  });
+  if (rowIndex === -1) return { success: false, error: 'Site not found' };
+
+  var previousImage = sheet.getRange(rowIndex, idxImg + 1).getValue();
+  if (idxHistory !== -1) {
+    var historyCell = sheet.getRange(rowIndex, idxHistory + 1);
+    var currentHistory = historyCell.getValue();
+    var historyItem = (historyOnly ? imageUrl : previousImage) + '|' + new Date().getTime();
+    if ((historyOnly && imageUrl) || (!historyOnly && previousImage)) {
+      var healedPrior = normalizeHistoryString_(currentHistory);
+      historyCell.setValue(healedPrior ? healedPrior + ',' + historyItem : historyItem);
     }
-    if (!historyOnly) sheet.getRange(rowIndex, idxImg + 1).setValue(imageUrl);
-    if (siteStatus && idxStatus !== -1) sheet.getRange(rowIndex, idxStatus + 1).setValue(siteStatus);
-    if (visualLandmarks) {
-      var idxLandmark = headers.findIndex(function(h) { 
-        var c = cleanFull(h);
-        return c === 'visuallandmarks' || c === 'visual_landmarks' || c === 'structurenotes';
-      });
-      if (idxLandmark === -1) {
-        var colName = 'Visual_Landmarks';
-        var newCol = sheet.getLastColumn() + 1;
-        sheet.getRange(1, newCol).setValue(colName);
-        headers.push(colName);
-        idxLandmark = headers.length - 1;
-      }
-      if (idxLandmark !== -1) {
-        var existingLm = sheet.getRange(rowIndex, idxLandmark + 1).getValue();
-        if (!existingLm) {
-          sheet.getRange(rowIndex, idxLandmark + 1).setValue(visualLandmarks);
-        }
-      }
-    }
-    SpreadsheetApp.flush();
-    return { success: true, previousImageUrl: previousImage || '' };
   }
-  return { success: false, error: 'Site not found' };
+  if (!historyOnly) sheet.getRange(rowIndex, idxImg + 1).setValue(imageUrl);
+  if (siteStatus && idxStatus !== -1) sheet.getRange(rowIndex, idxStatus + 1).setValue(siteStatus);
+  if (visualLandmarks) {
+    var idxLandmark = headers.findIndex(function(h) { 
+      var c = cleanFull(h);
+      return c === 'visuallandmarks' || c === 'visual_landmarks' || c === 'structurenotes';
+    });
+    if (idxLandmark === -1) {
+      var colName = 'Visual_Landmarks';
+      var newCol = sheet.getLastColumn() + 1;
+      sheet.getRange(1, newCol).setValue(colName);
+      headers.push(colName);
+      idxLandmark = headers.length - 1;
+    }
+    if (idxLandmark !== -1) {
+      var existingLm = sheet.getRange(rowIndex, idxLandmark + 1).getValue();
+      if (!existingLm) {
+        sheet.getRange(rowIndex, idxLandmark + 1).setValue(visualLandmarks);
+      }
+    }
+  }
+  SpreadsheetApp.flush();
+  return { success: true, previousImageUrl: previousImage || '', rowIndex: rowIndex };
 }
 
 function staffUploadPhoto(data) {
@@ -1295,6 +1415,11 @@ function staffUploadPhoto(data) {
   var accuracy = toNumber(data.accuracy);
   var matchedSite = String(data.matchedSite || '').trim();
   var siteStatus = String(data.siteStatus || '').trim();
+  var matchOpts = {
+    sl: String(data.sl || '').trim(),
+    siteId: String(data.siteId || '').trim(),
+    facing: String(data.siteFacing || data.facing || '').trim()
+  };
   var imageUrl = uploadImageToDrive({
     fileData: data.fileData,
     mimeType: data.mimeType || 'image/jpeg',
@@ -1316,7 +1441,7 @@ function staffUploadPhoto(data) {
   var claimedDist = toNumber(data.distance);
   var isPhysicallyClose = claimedDist !== null ? claimedDist <= 150 : (withinAutoRadius.length > 0 || (nearby.length > 0 && nearby[0].distanceM <= 150));
   if (matchedSite && isPhysicallyClose && (data.status === 'AUTO_APPROVED' || data.aiDecision === 'GEMINI_GPS_AUTO_MATCH')) {
-    var aiUpdateResult = updateSitePhotoFromStaff(matchedSite, imageUrl, false, siteStatus);
+    var aiUpdateResult = updateSitePhotoFromStaff(matchedSite, imageUrl, false, siteStatus, '', matchOpts);
     if (aiUpdateResult.success) {
       status = 'AUTO_APPROVED';
       decision = data.aiDecision || 'GEMINI_GPS_AUTO_MATCH';
@@ -1324,8 +1449,26 @@ function staffUploadPhoto(data) {
       previousImage = aiUpdateResult.previousImageUrl;
     }
 
-    // 🎯 Multi-Site Adjacent Cluster Auto-Approval (Sync all 2 or 3 companion sites)
-    if (data.clusterSites && Array.isArray(data.clusterSites) && data.clusterSites.length > 1) {
+    // 🎯 Multi-Site Adjacent Cluster Auto-Approval (prefer structured clusterSiteDetails with exact SL/SiteID/Facing)
+    if (data.clusterSiteDetails && Array.isArray(data.clusterSiteDetails) && data.clusterSiteDetails.length > 1) {
+      for (var cIdx = 0; cIdx < data.clusterSiteDetails.length; cIdx++) {
+        var compDetail = data.clusterSiteDetails[cIdx] || {};
+        var compName = String(compDetail.siteName || '').trim();
+        var compSL = String(compDetail.sl || '').trim();
+        var compSiteId = String(compDetail.siteId || '').trim();
+        var compFacing = String(compDetail.facing || '').trim();
+        var isPrimary = (matchOpts.siteId && compSiteId && compSiteId === matchOpts.siteId) ||
+                        (matchOpts.sl && compSL && compSL === matchOpts.sl && (!matchOpts.facing || !compFacing || compFacing === matchOpts.facing)) ||
+                        (!matchOpts.sl && !matchOpts.siteId && compName === matchedSite);
+        if (!isPrimary && (compName || compSL || compSiteId)) {
+          updateSitePhotoFromStaff(compName || matchedSite, imageUrl, false, siteStatus, '', {
+            sl: compSL,
+            siteId: compSiteId,
+            facing: compFacing
+          });
+        }
+      }
+    } else if (data.clusterSites && Array.isArray(data.clusterSites) && data.clusterSites.length > 1) {
       for (var cIdx = 0; cIdx < data.clusterSites.length; cIdx++) {
         var compName = String(data.clusterSites[cIdx] || '').trim();
         if (compName && compName !== matchedSite) {
@@ -1335,7 +1478,9 @@ function staffUploadPhoto(data) {
     }
   } else if (status === 'AUTO_APPROVED') {
     approvedSite = withinAutoRadius[0].siteName;
-    var updateResult = updateSitePhotoFromStaff(approvedSite, imageUrl, false, siteStatus);
+    var updateResult = updateSitePhotoFromStaff(approvedSite, imageUrl, false, siteStatus, '', {
+      facing: withinAutoRadius[0].facing || ''
+    });
     if (!updateResult.success) {
       status = 'REVIEW_REQUIRED';
       decision = 'AUTO_UPDATE_FAILED';
@@ -1410,7 +1555,11 @@ function reviewStaffUpload(data) {
 
   if (action === 'approve' || action === 'historyOnly') {
     if (!siteName) return res({ success: false, error: 'Select a site first' });
-    var result = updateSitePhotoFromStaff(siteName, imageUrl, action === 'historyOnly', data.siteStatus, data.visualLandmarks);
+    var result = updateSitePhotoFromStaff(siteName, imageUrl, action === 'historyOnly', data.siteStatus, data.visualLandmarks, {
+      sl: data.sl || '',
+      siteId: data.siteId || '',
+      facing: data.facing || ''
+    });
     if (!result.success) return res(result);
     previousImage = result.previousImageUrl || '';
   }
@@ -1878,98 +2027,20 @@ function updateHoardingDetails(data) {
     var idxSite = findSiteColumn(headers);
     if (idxSite === -1) return res({ success: false, error: 'Site Name column not found' });
 
-    // Find the target row
+    // Find the target row using facing-aware multi-factor resolution (_SiteID+Facing -> SL+Facing -> Location+Facing -> LatLong)
     var rows = sheet.getDataRange().getValues();
-    var rowIndex = -1;
-    var idxSiteId = headers.indexOf('_SiteID');
-    
-    // 1. Match by _SiteID if present
     var targetSiteId = String(data.siteId || (data.fields && (data.fields.UniqueID || data.fields['Unique ID'] || data.fields._SiteID)) || '').trim().toLowerCase();
-    if (targetSiteId && idxSiteId !== -1) {
-      for (var i = 1; i < rows.length; i++) {
-        if (String(rows[i][idxSiteId]).trim().toLowerCase() === targetSiteId) {
-          rowIndex = i + 1;
-          break;
-        }
-      }
-    }
-
-    // 1b. Match by SL if present
     var targetSL = String((data.fields && (data.fields.SL || data.fields['S. No.'] || data.fields['SL NO'] || data.fields['S.No.'] || data.fields['Sr. No.'])) || data.sl || '').trim();
-    var idxSL = headers.findIndex(function(h) { 
-      var c = cleanFull(h);
-      return c === 'sl' || c === 'sno' || c === 'slno' || c === 'srno' || c === 'serial' || c === 'serialno'; 
-    });
-    if (rowIndex === -1 && targetSL && idxSL !== -1) {
-      for (var i = 1; i < rows.length; i++) {
-        var cellVal = String(rows[i][idxSL]).trim();
-        if (cellVal === targetSL || (parseInt(cellVal, 10) === parseInt(targetSL, 10) && !isNaN(parseInt(targetSL, 10)))) {
-          rowIndex = i + 1;
-          logDebug("UPDATE | Matched by SL #" + targetSL + " at row " + rowIndex);
-          break;
-        }
-      }
-    }
-
-    // 2. Match by Location + Facing (High priority for twin sites / double-sided unipoles)
     var targetFacing = cleanFull(data.facing || (data.fields && data.fields.Facing) || '');
-    var idxFacing = headers.findIndex(function(h) { return cleanFull(h) === 'facing' || cleanFull(h) === 'trafficview'; });
-    if (rowIndex === -1 && targetFacing && idxFacing !== -1) {
-      var searchName = cleanFull(siteSearchTerm);
-      for (var i = 1; i < rows.length; i++) {
-        var rowFacing = cleanFull(rows[i][idxFacing]);
-        if (cleanFull(rows[i][idxSite]) === searchName && (rowFacing === targetFacing || rowFacing.indexOf(targetFacing) !== -1 || targetFacing.indexOf(rowFacing) !== -1)) {
-          rowIndex = i + 1;
-          break;
-        }
-      }
-    }
-
-    // 2b. Match by Lat-Long + Facing (High precision for GPS twin sites)
     var targetLatLong = cleanFull(data.latLong || (data.fields && (data.fields['Lat-Long'] || data.fields.LatLong)) || '');
-    var idxLatLong = headers.findIndex(function(h) { return cleanFull(h).indexOf('lat') !== -1 && cleanFull(h).indexOf('long') !== -1; });
-    if (rowIndex === -1 && targetLatLong && idxLatLong !== -1 && targetFacing && idxFacing !== -1) {
-      for (var i = 1; i < rows.length; i++) {
-        var rowFacing = cleanFull(rows[i][idxFacing]);
-        if (cleanFull(rows[i][idxLatLong]) === targetLatLong && (rowFacing === targetFacing || rowFacing.indexOf(targetFacing) !== -1 || targetFacing.indexOf(rowFacing) !== -1)) {
-          rowIndex = i + 1;
-          break;
-        }
-      }
-    }
 
-    // 2c. Match by Lat-Long if present and no facing conflict
-    if (rowIndex === -1 && targetLatLong && idxLatLong !== -1 && !targetFacing) {
-      for (var i = 1; i < rows.length; i++) {
-        if (cleanFull(rows[i][idxLatLong]) === targetLatLong) {
-          rowIndex = i + 1;
-          break;
-        }
-      }
-    }
-
-    // 4. Match by exact siteName
-    if (rowIndex === -1) {
-      var searchName = cleanFull(siteSearchTerm);
-      for (var i = 1; i < rows.length; i++) {
-        if (cleanFull(rows[i][idxSite]) === searchName) {
-          rowIndex = i + 1;
-          break;
-        }
-      }
-    }
-
-    // 5. Match by fuzzy siteName
-    if (rowIndex === -1) {
-      var searchName = cleanFull(siteSearchTerm);
-      for (var i = 1; i < rows.length; i++) {
-        var rowSiteName = cleanFull(rows[i][idxSite]);
-        if (rowSiteName && (rowSiteName.indexOf(searchName) !== -1 || searchName.indexOf(rowSiteName) !== -1)) {
-          rowIndex = i + 1;
-          break;
-        }
-      }
-    }
+    var rowIndex = findHoardingRow_(headers, rows, {
+      siteName: siteSearchTerm,
+      sl: targetSL,
+      siteId: targetSiteId,
+      facing: targetFacing,
+      latLong: targetLatLong
+    });
 
     if (rowIndex === -1) {
       if (data.fileData) {
