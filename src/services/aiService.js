@@ -1,5 +1,6 @@
 import ExifReader from 'exifreader';
 import { matchGeofencedHoardingWithGemini, matchDailyExecutionProofWithAI, extractSitesFromRawDataWithGemini, resolveTwinSiteFacingWithGemini, generateVisualLandmarksWithGemini } from './geminiService.js';
+import { calculateSiteBearing, getCompassBearingDiff } from './geoService.js';
 
 export { matchGeofencedHoardingWithGemini, matchDailyExecutionProofWithAI, extractSitesFromRawDataWithGemini, resolveTwinSiteFacingWithGemini, generateVisualLandmarksWithGemini };
 
@@ -409,6 +410,8 @@ export const matchHoardingByGps = async (coord, locationList, rawImageBase64 = n
             const siteId = site._SiteID || site.UniqueID || site['Unique ID'] || site.ID || `site_${i}`;
             const mediaType = site['Type of Site (Unipole/Billboard)'] || site['Type of Site (Unipole/ Billboard)'] || site['Type of Site'] || site['Media'] || site.Type || 'Unipole';
             const visualLandmarks = site.Visual_Landmarks || site['Visual Landmarks'] || site.Structure_Notes || site['Structure Notes'] || '';
+            const cameraBearing = calculateSiteBearing({ lat: coord.lat, lng: coord.lng }, siteCoord);
+            const compassDiffDeg = cameraBearing ? getCompassBearingDiff(initialFacing, cameraBearing.degrees) : null;
             candidates.push({
                 index: i,
                 site,
@@ -418,6 +421,8 @@ export const matchHoardingByGps = async (coord, locationList, rawImageBase64 = n
                 siteId,
                 mediaType,
                 visualLandmarks,
+                cameraBearing,
+                compassDiffDeg,
                 distanceM: Math.round(dist)
             });
         }
@@ -434,36 +439,17 @@ export const matchHoardingByGps = async (coord, locationList, rawImageBase64 = n
         return null;
     }
 
-    // 🎯 IMMEDIATE EXACT PINPOINT MATCH (Camera standing right at the hoarding <= 25m with no competitor within 30m)
-    // Only trigger if meaningful watermark text contradicts this closest site
-    const hasSubstantialText = Boolean(detectedTextOrAddress && detectedTextOrAddress.trim().length >= 12);
-    const closestTextConflict = hasSubstantialText && scoreLocationByText(detectedTextOrAddress, closest.site || closest) < 25;
-    if (closest.distanceM <= 25 && (!candidates[1] || candidates[1].distanceM > 30) && !closestTextConflict) {
-        const closestSL = closest.site?.SL || closest.site?.['S. No.'] || closest.site?.['SL NO'] || '';
-        return {
-            index: closest.index,
-            sl: closestSL,
-            site: closest.site,
-            siteName: closest.siteName,
-            siteCoord: closest.siteCoord,
-            distanceM: closest.distanceM,
-            facing: closest.facing,
-            twinCandidates: null,
-            confidence: 99,
-            reasoning: `📍 Exact GPS Pinpoint (${closest.distanceM}m from site coordinates ${closest.siteCoord.lat.toFixed(5)}, ${closest.siteCoord.lng.toFixed(5)})`
-        };
-    }
+    // 🎯 280M CORRIDOR & TWIN-SITE CLUSTER DETECTION
+    // Photographers frequently stand up to ~280m down the road or across a crossing (or shoot zoomed rooftop billboards).
+    // Always surface all nearby candidates within max(280m, closest + 120m) so facing selectors & AI visual comparison
+    // can disambiguate any site in the 280m neighborhood.
+    const vicinityRadiusM = Math.min(650, Math.max(280, closest.distanceM + 120));
+    const vicinityCandidates = candidates.filter(c => c.distanceM <= vicinityRadiusM);
+    const effectiveCluster = vicinityCandidates.length > 1
+        ? vicinityCandidates
+        : candidates.slice(0, 8).filter(c => c.distanceM <= Math.min(650, closest.distanceM + 280));
 
-    // 🎯 TIGHT CORRIDOR & TWIN-SITE CLUSTER DETECTION (Consecutive road structures / opposite facings within vicinity)
-    // Only group candidates along the immediate road junction/segment
-    const clusterDelta = closest.distanceM <= 250 ? 80 : Math.min(180, closest.distanceM * 0.3 + 40);
-    const clusterMax = Math.min(650, closest.distanceM + 180);
-    const corridorCluster = candidates.filter(c => Math.abs(c.distanceM - closest.distanceM) <= clusterDelta && c.distanceM <= clusterMax);
-
-    // If corridorCluster didn't catch nearby candidates but we are in vicinity, get top 5 nearest candidates
-    const effectiveCluster = corridorCluster.length > 1 ? corridorCluster : candidates.slice(0, 5).filter(c => c.distanceM <= Math.min(650, closest.distanceM + 250));
-
-    const twinCandidatesList = effectiveCluster.length > 1 ? effectiveCluster.map(c => ({
+    const twinCandidatesList = effectiveCluster.length > 1 ? effectiveCluster.slice(0, 12).map(c => ({
         index: c.index,
         sl: c.site?.SL || c.site?.['S. No.'] || c.site?.['SL NO'] || '',
         siteId: c.siteId,
@@ -477,9 +463,50 @@ export const matchHoardingByGps = async (coord, locationList, rawImageBase64 = n
         visualLandmarks: c.visualLandmarks || ''
     })) : null;
 
+    // 🎯 IMMEDIATE EXACT PINPOINT MATCH ONLY when there are NO other inventory sites within 280m
+    const hasSubstantialText = Boolean(detectedTextOrAddress && detectedTextOrAddress.trim().length >= 12);
+    const closestTextConflict = hasSubstantialText && scoreLocationByText(detectedTextOrAddress, closest.site || closest) < 25;
+    if (closest.distanceM <= 25 && vicinityCandidates.length <= 1 && !closestTextConflict) {
+        const closestSL = closest.site?.SL || closest.site?.['S. No.'] || closest.site?.['SL NO'] || '';
+        return {
+            index: closest.index,
+            sl: closestSL,
+            site: closest.site,
+            siteName: closest.siteName,
+            siteCoord: closest.siteCoord,
+            distanceM: closest.distanceM,
+            facing: closest.facing,
+            twinCandidates: twinCandidatesList,
+            confidence: 99,
+            reasoning: `📍 Exact GPS Pinpoint (${closest.distanceM}m from site coordinates ${closest.siteCoord.lat.toFixed(5)}, ${closest.siteCoord.lng.toFixed(5)})`
+        };
+    }
+
+    // Build comparison corridor (top 10 diverse candidates within 280m, ensuring different structure types/facings/row poles are represented)
+    const corridorCluster = [];
+    const seenCorridorIdx = new Set();
+    const seenCorridorTypeFac = new Set();
+    for (const c of effectiveCluster) {
+        if (corridorCluster.length >= 10) break;
+        const typeKey = `${String(c.mediaType || '').toLowerCase()}|${String(c.facing || '').toLowerCase()}`;
+        if (!seenCorridorTypeFac.has(typeKey) || c.distanceM <= closest.distanceM + 80) {
+            corridorCluster.push(c);
+            seenCorridorIdx.add(c.index);
+            seenCorridorTypeFac.add(typeKey);
+        }
+    }
+    for (const c of effectiveCluster) {
+        if (corridorCluster.length >= 10) break;
+        if (!seenCorridorIdx.has(c.index)) {
+            corridorCluster.push(c);
+            seenCorridorIdx.add(c.index);
+        }
+    }
+
     const normType = String(initialStructureType || '').toLowerCase();
     const isPhotoUnipole = normType.includes('unipole') || normType.includes('pole') || normType.includes('single');
     const isPhotoGantry = normType.includes('gantry') || normType.includes('bridge') || normType.includes('overhead');
+    const isPhotoBillboard = normType.includes('billboard') || normType.includes('rooftop') || normType.includes('wall');
     const normLandmarks = String(initialVisualLandmarks || '').toLowerCase();
     const isPhotoMetro = normLandmarks.includes('metro') || normLandmarks.includes('viaduct') || normLandmarks.includes('rail');
 
@@ -490,8 +517,11 @@ export const matchHoardingByGps = async (coord, locationList, rawImageBase64 = n
             const bType = String(b.mediaType || b.site?.Media || '').toLowerCase();
             const aIsG = aType.includes('gantry') || aType.includes('bridge') || aType.includes('overhead');
             const bIsG = bType.includes('gantry') || bType.includes('bridge') || bType.includes('overhead');
+            const aIsB = aType.includes('billboard') || aType.includes('rooftop');
+            const bIsB = bType.includes('billboard') || bType.includes('rooftop');
             if (isPhotoUnipole && aIsG !== bIsG) return aIsG ? 1 : -1;
             if (isPhotoGantry && aIsG !== bIsG) return aIsG ? -1 : 1;
+            if (isPhotoBillboard && aIsB !== bIsB) return aIsB ? -1 : 1;
 
             const aLandmarks = String(a.visualLandmarks || a.site?.Visual_Landmarks || '').toLowerCase();
             const bLandmarks = String(b.visualLandmarks || b.site?.Visual_Landmarks || '').toLowerCase();
@@ -505,16 +535,18 @@ export const matchHoardingByGps = async (coord, locationList, rawImageBase64 = n
 
     let prioritizedCluster = corridorCluster;
 
-    // 🏗️ Structural Filtering: If the photo is a Unipole, filter out Overhead Gantries from the cluster!
-    if (corridorCluster.length > 1 && (isPhotoUnipole || isPhotoGantry || isPhotoMetro)) {
+    // 🏗️ Structural Filtering: Exclude clearly incompatible structures (e.g. Gantry when photo is Unipole, or Unipole when photo is Rooftop Billboard)
+    if (corridorCluster.length > 1 && (isPhotoUnipole || isPhotoGantry || isPhotoBillboard || isPhotoMetro)) {
         const structuralCompatible = corridorCluster.filter(c => {
             const cType = String(c.mediaType || c.site?.Media || '').toLowerCase();
             const cLandmarks = String(c.visualLandmarks || '').toLowerCase();
             const cIsGantry = cType.includes('gantry') || cType.includes('bridge') || cType.includes('overhead') || cLandmarks.includes('gantry');
+            const cIsBillboard = cType.includes('billboard') || cLandmarks.includes('rooftop');
             const cIsUnipole = cType.includes('unipole') || cType.includes('pole');
 
             if (isPhotoUnipole && cIsGantry) return false;
             if (isPhotoGantry && cIsUnipole && !cIsGantry) return false;
+            if (isPhotoBillboard && cIsBillboard) return true;
             return true;
         });
 
@@ -683,7 +715,10 @@ export const matchHoardingByGps = async (coord, locationList, rawImageBase64 = n
 
     if (prioritizedCluster.length > 1 && rawImageBase64) {
         try {
-            const resolved = await resolveTwinSiteFacingWithGemini(rawImageBase64, prioritizedCluster);
+            const resolved = await resolveTwinSiteFacingWithGemini(rawImageBase64, prioritizedCluster, {
+                rowVerification: prioritizedCluster.length >= 3,
+                cameraCompassHeading: initialFacing
+            });
             if (resolved && resolved.isHoardingPhoto === false) {
                 return null;
             }
@@ -1278,6 +1313,37 @@ export const analyzeHoardingImage = async (base64Image, locationList, rawFile = 
                 }
             }
 
+            // Helper: always collect neighboring sites within 280m around a matched site so Facing bar always appears
+            const getVicinityForMatchedSite = (siteObj, fallbackCoord = null) => {
+                const origin = (fallbackCoord && isValidLatLng(fallbackCoord.lat, fallbackCoord.lng))
+                    ? fallbackCoord
+                    : extractSiteCoordinates(siteObj);
+                if (!origin) return null;
+                const nearby = locationList
+                    .map((loc, idx) => {
+                        const c = extractSiteCoordinates(loc);
+                        if (!c) return null;
+                        const d = Math.round(calculateDistanceMeters(origin.lat, origin.lng, c.lat, c.lng));
+                        if (d > 280) return null;
+                        return {
+                            index: idx,
+                            sl: loc?.SL || loc?.['S. No.'] || loc?.['SL NO'] || '',
+                            siteId: loc?._SiteID || loc?.UniqueID || loc?.['Unique ID'] || loc?.ID || `site_${idx}`,
+                            siteName: loc?.["Locality Site Location"] || loc?.["Location "] || loc?.Location || loc?.["Site Name"] || `Site #${idx + 1}`,
+                            facing: loc?.Facing || loc?.['Traffic View'] || loc?.facing || 'N/A',
+                            mediaType: loc?.['Type of Site (Unipole/Billboard)'] || loc?.['Type of Site (Unipole/ Billboard)'] || loc?.['Type of Site'] || loc?.Media || 'Unipole',
+                            distanceM: d,
+                            trafficFrom: loc?.['Traffic From'] || '',
+                            trafficTo: loc?.['Traffic To'] || '',
+                            imageUrl: loc?.ImageURL || ''
+                        };
+                    })
+                    .filter(Boolean)
+                    .sort((a, b) => a.distanceM - b.distanceM)
+                    .slice(0, 12);
+                return nearby.length > 1 ? nearby : null;
+            };
+
             // 🎯 PRIORITY 2: If Vision AI matched index directly
             if (aiResult.matchedIndex >= 0 && aiResult.matchedSiteName) {
                 const matchedH = locationList[aiResult.matchedIndex];
@@ -1288,7 +1354,7 @@ export const analyzeHoardingImage = async (base64Image, locationList, rawFile = 
                     matchedLocation: aiResult.matchedSiteName,
                     matchedSiteId: matchedH?._SiteID || matchedH?.UniqueID || matchedH?.['Unique ID'] || '',
                     facing: aiResult.facing || matchedH?.Facing || matchedH?.['Traffic View'] || '',
-                    twinCandidates: null,
+                    twinCandidates: getVicinityForMatchedSite(matchedH, extractedGps),
                     status: aiResult.status || 'Available',
                     confidence: Math.round((aiResult.confidence || 0.95) * 100),
                     reasoning: aiResult.reasoning || 'Matched via landmarks & inventory.',
@@ -1312,7 +1378,7 @@ export const analyzeHoardingImage = async (base64Image, locationList, rawFile = 
 
                 const best = candidates[0];
                 if (best && best.score >= 30) {
-                    const bestSL = best.location?.SL || best.location?.['S. No.'] || best.location?.['SL NO'] || (best.index + 1);
+                    const bestSL = best.location?.SL || best.location?.['S. No.'] || best.location?.['SL NO'] || '';
                     return {
                         matchedIndex: best.index,
                         sl: bestSL,
@@ -1320,7 +1386,7 @@ export const analyzeHoardingImage = async (base64Image, locationList, rawFile = 
                         matchedLocation: best.siteName,
                         matchedSiteId: best.location._SiteID || best.location.UniqueID || best.location['Unique ID'] || '',
                         facing: best.location.Facing || best.location['Traffic View'] || '',
-                        twinCandidates: null,
+                        twinCandidates: getVicinityForMatchedSite(best.location, extractedGps),
                         status: aiResult.status || 'Available',
                         confidence: best.score,
                         reasoning: `🔤 Watermark Address Match: SL #${bestSL} · ${best.siteName} (${best.score}% confidence)`,
@@ -1350,24 +1416,53 @@ export const analyzeHoardingImage = async (base64Image, locationList, rawFile = 
         if (best && best.score >= 30) {
             const normalized = normalizeText(detectedOcrText);
             const status = normalized.includes('occupied') || normalized.includes('booked') ? 'Occupied' : 'Available';
-            const bestSL = best.location?.SL || best.location?.['S. No.'] || best.location?.['SL NO'] || (best.index + 1);
+            const bestSL = best.location?.SL || best.location?.['S. No.'] || best.location?.['SL NO'] || '';
 
-            // Cluster top candidate sites with matching road/locality for 1-click twin switching
-            const clusterCandidates = candidates
-                .slice(0, 6)
-                .filter(c => c.score >= Math.max(45, best.score - 20))
-                .map(c => ({
-                    index: c.index,
-                    sl: c.location?.SL || c.location?.['S. No.'] || c.location?.['SL NO'] || (c.index + 1),
-                    siteId: c.location?._SiteID || c.location?.UniqueID || c.location?.['Unique ID'] || c.location?.ID || `site_${c.index}`,
-                    siteName: c.siteName,
-                    facing: c.location?.Facing || c.location?.['Traffic View'] || c.location?.facing || 'N/A',
-                    distanceM: 'Locality Match',
-                    trafficFrom: c.location?.['Traffic From'] || '',
-                    trafficTo: c.location?.['Traffic To'] || '',
-                    imageUrl: c.location?.ImageURL || '',
-                    site: c.location
-                }));
+            // Prefer physical 280m GPS neighborhood around the matched site so Facing selector always shows nearby poles with meter distance
+            const originCoord = extractSiteCoordinates(best.location);
+            const geoNearbyCandidates = originCoord
+                ? locationList
+                    .map((loc, idx) => {
+                        const c = extractSiteCoordinates(loc);
+                        if (!c) return null;
+                        const d = Math.round(calculateDistanceMeters(originCoord.lat, originCoord.lng, c.lat, c.lng));
+                        if (d > 280) return null;
+                        return {
+                            index: idx,
+                            sl: loc?.SL || loc?.['S. No.'] || loc?.['SL NO'] || '',
+                            siteId: loc?._SiteID || loc?.UniqueID || loc?.['Unique ID'] || loc?.ID || `site_${idx}`,
+                            siteName: loc?.["Locality Site Location"] || loc?.["Location "] || loc?.Location || '',
+                            facing: loc?.Facing || loc?.['Traffic View'] || loc?.facing || 'N/A',
+                            distanceM: d,
+                            trafficFrom: loc?.['Traffic From'] || '',
+                            trafficTo: loc?.['Traffic To'] || '',
+                            imageUrl: loc?.ImageURL || '',
+                            site: loc
+                        };
+                    })
+                    .filter(Boolean)
+                    .sort((a, b) => a.distanceM - b.distanceM)
+                    .slice(0, 12)
+                : [];
+
+            // Fallback cluster of matching road/locality candidates for 1-click twin switching
+            const clusterCandidates = geoNearbyCandidates.length > 1
+                ? geoNearbyCandidates
+                : candidates
+                    .slice(0, 8)
+                    .filter(c => c.score >= Math.max(45, best.score - 20))
+                    .map(c => ({
+                        index: c.index,
+                        sl: c.location?.SL || c.location?.['S. No.'] || c.location?.['SL NO'] || '',
+                        siteId: c.location?._SiteID || c.location?.UniqueID || c.location?.['Unique ID'] || c.location?.ID || `site_${c.index}`,
+                        siteName: c.siteName,
+                        facing: c.location?.Facing || c.location?.['Traffic View'] || c.location?.facing || 'N/A',
+                        distanceM: 'Locality Match',
+                        trafficFrom: c.location?.['Traffic From'] || '',
+                        trafficTo: c.location?.['Traffic To'] || '',
+                        imageUrl: c.location?.ImageURL || '',
+                        site: c.location
+                    }));
 
             return {
                 matchedIndex: best.index,

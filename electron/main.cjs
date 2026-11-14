@@ -443,7 +443,9 @@ app.whenReady().then(() => {
         const responseHeaders = Object.assign({}, details.responseHeaders);
         const csp = [
             "default-src 'self' 'unsafe-inline' 'unsafe-eval' data: blob: file: http://localhost:*",
-            "connect-src 'self' https://*.google.com https://*.googleusercontent.com https://*.googleapis.com https://script.google.com https://script.googleusercontent.com https://docs.google.com https://drive.google.com https://api.groq.com https://sheets.googleapis.com https://*.supabase.co https://*.vercel.app https://api.github.com https://github.com ws://localhost:* http://localhost:* data: blob:",
+            "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net data: blob: file: http://localhost:*",
+            "worker-src 'self' blob: data:",
+            "connect-src 'self' https://cdn.jsdelivr.net https://tessdata.projectnaptha.com https://*.google.com https://*.googleusercontent.com https://*.googleapis.com https://script.google.com https://script.googleusercontent.com https://docs.google.com https://drive.google.com https://api.groq.com https://sheets.googleapis.com https://*.supabase.co https://*.vercel.app https://api.github.com https://github.com ws://localhost:* http://localhost:* data: blob:",
             "media-src 'self' blob: data: mediastream:",
             "img-src 'self' data: blob: https: http:",
             "font-src 'self' data: https:",

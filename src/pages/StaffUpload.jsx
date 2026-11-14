@@ -1,9 +1,8 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
 import { Camera, CheckCircle2, MapPin, MapPinOff, RefreshCw, RotateCcw, WifiOff, XCircle, Sparkles, Check, AlertCircle, Navigation, ChevronRight, Compass, Volume2, VolumeX, ShieldCheck, Smartphone, Share2, Clipboard } from 'lucide-react';
-import { uploadStaffPhoto, fetchHoardings, saveLocalStaffUpload, syncToGoogleSheet, recordSiteHistory } from '../services/dataService';
+import { uploadStaffPhoto, fetchHoardings, saveLocalStaffUpload } from '../services/dataService';
 import { analyzeHoardingImage } from '../services/aiService';
-import { generateVisualLandmarksWithGemini } from '../services/geminiService';
 import { ensureUprightBlob } from '../core/imageOrientation';
 import { HIRA_LOGO } from '../assets/hiraLogoData';
 import {
@@ -672,7 +671,7 @@ const StaffUpload = () => {
 
         if (!closestHoarding) return null;
 
-        const isWithinRange = minDistance <= 250;
+        const isWithinRange = minDistance <= 280;
         const siteName = isWithinRange 
             ? (closestHoarding["Location "] || closestHoarding.Location || closestHoarding.siteName || 'Hoarding Site')
             : 'Out of Geofence Range';
@@ -727,15 +726,19 @@ const StaffUpload = () => {
                         distance: item.distance || '',
                         facing: item.facing || '',
                         siteFacing: item.siteFacing || '',
+                        compassHeading: item.compassHeading || '',
                         sl: item.sl || '',
                         siteId: item.siteId || '',
                         matchedSite: item.matchedSite || '',
+                        matchConfidence: item.matchConfidence || 0,
+                        aiReasoning: item.aiReasoning || '',
+                        nearbyCandidates: Array.isArray(item.nearbyCandidates) ? item.nearbyCandidates : undefined,
                         clusterSites: Array.isArray(item.clusterSites) ? item.clusterSites : undefined,
                         clusterSiteDetails: Array.isArray(item.clusterSiteDetails) ? item.clusterSiteDetails : undefined,
                         orientationNormalized: true,
                         siteStatus: item.siteStatus || '',
-                        status: item.status || (item.matchedSite ? 'AUTO_APPROVED' : 'REVIEW_REQUIRED'),
-                        aiDecision: item.aiDecision || (item.matchedSite ? 'GEMINI_GPS_AUTO_MATCH' : 'GPS_REVIEW')
+                        status: 'REVIEW_REQUIRED',
+                        aiDecision: item.aiDecision || (item.matchedSite ? 'STAFF_REVIEW_SUGGESTED' : 'STAFF_GPS_REVIEW')
                     });
                     await removePendingStaffPhoto(item.id);
                     if (lastCaptureIdRef.current === item.id) setLatestStillPending(false);
@@ -988,7 +991,7 @@ const StaffUpload = () => {
         try {
             const rawBlob = await captureCameraPhoto(videoRef.current, streamRef.current);
 
-            // 📍 150M ADAPTIVE GEOFENCED MATCHING
+            // 📍 280M ADAPTIVE GEOFENCED MATCHING
             let matchedSite = '';
             let matchedSiteData = null;
             let matchedDistM = null;
@@ -1016,15 +1019,16 @@ const StaffUpload = () => {
 
                     const matchDistRaw = aiMatchResult?.distanceM != null ? Math.round(aiMatchResult.distanceM) : (liveNearest?.distance ?? 9999);
                     matchedDistM = matchDistRaw;
-                    const isWithinGeofence = matchDistRaw <= 150;
+                    const isWithinGeofence = matchDistRaw <= 280;
                     const isHoardingValid = aiMatchResult?.isHoardingPhoto !== false && (aiMatchResult?.confidence >= 80);
 
                     if (aiMatchResult && aiMatchResult.matchedLocation && isWithinGeofence && isHoardingValid) {
                         matchedSiteData = aiMatchResult.site || (aiMatchResult.matchedIndex >= 0 ? allHoardings[aiMatchResult.matchedIndex] : null);
                         matchedSite = aiMatchResult.matchedLocation;
                         siteStatus = aiMatchResult.status || matchedSiteData?.STATUS || 'Available';
-                        status = 'AUTO_APPROVED';
-                        aiDecision = 'GEMINI_GPS_AUTO_MATCH';
+                        // Always route to Dashboard Review Page with full details & location so Admin verifies exact facing before Sheet sync
+                        status = 'REVIEW_REQUIRED';
+                        aiDecision = 'STAFF_REVIEW_SUGGESTED';
                         matchConfidence = Math.round(aiMatchResult.confidence || 95);
 
                         const siteSL = aiMatchResult.sl || matchedSiteData?.SL || '';
@@ -1046,22 +1050,22 @@ const StaffUpload = () => {
                             const matchCount = clusterMatches.length;
                             const slTags = clusterMatches.map(c => `#${c.sl || c.site?.SL || ''}`).filter(Boolean).join(', ');
                             showMatchBanner({
-                                siteName: `🎯 ${matchCount} Adjacent Sites Matched! [${slTags}]`,
+                                siteName: `📥 Review Sent (${matchCount} Adjacent): [${slTags}]`,
                                 status: siteStatus,
                                 distance: matchDistRaw,
                                 confidence: matchConfidence,
                                 facing: aiMatchResult.facing || matchedSiteData?.Facing
                             });
-                            speakOfflineVoice(`${matchCount} adjacent sites ek saath auto-match ho gayi hain.`);
+                            speakOfflineVoice('Photo capture ho gayi aur details ke saath Admin Review queue me bhej di gayi hai.');
                         } else {
                             showMatchBanner({
-                                siteName: `${slTag}${matchedSite}`,
+                                siteName: `📥 Review Sent: ${slTag}${matchedSite}`,
                                 status: siteStatus,
                                 distance: matchDistRaw,
                                 confidence: matchConfidence,
                                 facing: aiMatchResult.facing || matchedSiteData?.Facing
                             });
-                            speakOfflineVoice('Site photo auto-match aur history me sync ho gayi hai.');
+                            speakOfflineVoice('Photo capture ho gayi aur Admin Review page me bhej di gayi hai.');
                         }
                     } else {
                         matchedSite = '';
@@ -1070,7 +1074,7 @@ const StaffUpload = () => {
                         aiDecision = !isWithinGeofence ? 'OUT_OF_GEOFENCE' : 'NO_HOARDING_DETECTED';
 
                         const warnMsg = !isWithinGeofence
-                            ? `GPS Range ke bahar (${matchDistRaw > 1000 ? Math.round(matchDistRaw / 1000) + 'km' : matchDistRaw + 'm'}). Kripya hoarding site ke paas (150m ke daayre mein) jaakar photo kheinchein.`
+                            ? `GPS Range ke bahar (${matchDistRaw > 1000 ? Math.round(matchDistRaw / 1000) + 'km' : matchDistRaw + 'm'}). Kripya hoarding site ke paas (280m ke daayre mein) jaakar photo kheinchein.`
                             : 'Photo me koi hoarding structure detect nahi hua. Kripya hoarding ki saaf photo kheinchein.';
 
                         showMatchBanner({
@@ -1112,10 +1116,10 @@ const StaffUpload = () => {
             const facingSummary = [compassStr, trafficFacing ? `Facing ${trafficFacing}` : ''].filter(Boolean).join(' • ') || 'Verified Facing';
 
             // 🎯 Stamp Authentic PinPoint GPS Card onto Image
-            const hasValidNearSite = (matchedDistance <= 150) && (matchedSite || liveNearest?.isWithinRange);
+            const hasValidNearSite = (matchedDistance <= 280) && (matchedSite || (liveNearest?.isWithinRange && aiDecision !== 'NO_HOARDING_DETECTED'));
 
-            // 🛡️ Strict Geofence Gate: Do not upload or store fake/irrelevant captures taken away from all hoarding sites
-            if (!hasValidNearSite && !matchedSite) {
+            // 🛡️ Strict Geofence Gate: Do not upload or store fake/irrelevant captures taken away from all hoarding sites or non-hoarding objects
+            if (!hasValidNearSite || (!matchedSite && aiDecision === 'NO_HOARDING_DETECTED')) {
                 console.warn('Photo rejected: device is out of geofence range or not facing a verified site.', { matchedDistance, aiDecision });
                 return;
             }
@@ -1153,18 +1157,20 @@ const StaffUpload = () => {
                 distance: siteInfoForStamp.distance,
                 facing: siteInfoForStamp.facing,
                 siteFacing: trafficFacing,
+                compassHeading: compassStr,
                 sl: String(siteSLResolved || '').trim(),
                 siteId: String(siteIdResolved || '').trim(),
                 matchedSite,
+                matchConfidence,
                 clusterSites: clusterMatches.map(c => c.siteName || c.site?.["Location "] || c.site?.Location).filter(Boolean),
                 clusterSiteDetails,
                 visibleCount: clusterMatches.length > 0 ? clusterMatches.length : 1,
                 siteStatus,
-                status,
+                status: 'REVIEW_REQUIRED',
                 aiDecision
             };
 
-            // 💾 Instant Local Persistence & Real-Time Sync to Admin Dashboard
+            // 💾 Instant Local Persistence & Real-Time Sync to Admin Dashboard Review Queue
             const localRecord = {
                 UploadId: item.id,
                 CapturedAt: item.capturedAt,
@@ -1175,111 +1181,19 @@ const StaffUpload = () => {
                 Distance: item.distance,
                 Facing: item.facing,
                 SiteFacing: item.siteFacing,
+                CompassHeading: compassStr,
                 SL: item.sl,
                 SiteId: item.siteId,
+                MatchConfidence: matchConfidence,
                 ImageURL: base64Data,
-                Status: item.status || (matchedSite ? 'AUTO_APPROVED' : 'REVIEW_REQUIRED'),
-                Decision: item.aiDecision || (matchedSite ? 'GEMINI_GPS_AUTO_MATCH' : 'GPS_REVIEW'),
+                Status: 'REVIEW_REQUIRED',
+                Decision: item.aiDecision || (matchedSite ? 'STAFF_REVIEW_SUGGESTED' : 'STAFF_GPS_REVIEW'),
                 SuggestedSite: matchedSite || '',
-                ApprovedSite: matchedSite || '',
+                ApprovedSite: '',
                 OrientationNormalized: true
             };
             saveLocalStaffUpload(localRecord);
             window.dispatchEvent(new CustomEvent('staff:photo-uploaded', { detail: localRecord }));
-
-            // ⚡ ZERO MANUAL REVIEW: INSTANTLY AUTO-SYNC TO SITE'S EXECUTION HISTORY
-            if (matchedSite && (status === 'AUTO_APPROVED' || aiDecision.includes('AUTO_MATCH') || aiDecision.includes('PROXIMITY'))) {
-                try {
-                    const gpsString = currentGps ? `${currentGps.latitude.toFixed(6)}, ${currentGps.longitude.toFixed(6)}` : '';
-                    
-                    const newAuditItem = {
-                        url: base64Data,
-                        preview: base64Data,
-                        timestamp: Date.now(),
-                        date: new Date().toISOString(),
-                        gps: gpsString,
-                        distance: item.distance,
-                        facing: trafficFacing || item.facing,
-                        source: 'Staff Live Capture',
-                        status: matchedSiteData?.STATUS || 'Available'
-                    };
-
-                    const sitesToProcess = clusterMatches.length > 0 ? clusterMatches : [{
-                        siteName: matchedSite,
-                        site: matchedSiteData,
-                        sl: item.sl,
-                        siteId: item.siteId,
-                        facing: trafficFacing
-                    }];
-
-                    // 1. Instantly update client-side history for ALL matched cluster sites using exact facing/ID keys
-                    for (const cSite of sitesToProcess) {
-                        const cName = cSite.siteName || cSite.site?.["Location "] || cSite.site?.Location || matchedSite;
-                        const cSL = cSite.sl || cSite.site?.SL || '';
-                        const cSiteId = cSite.siteId || cSite.site?._SiteID || cSite.site?.UniqueID || '';
-                        const cFacing = cSite.facing || cSite.site?.Facing || cSite.site?.['Traffic View'] || trafficFacing || '';
-
-                        recordSiteHistory(cSite.site || {
-                            "Location ": cName,
-                            Location: cName,
-                            City: matchedSiteData?.City || liveNearest?.city || '',
-                            Facing: cFacing,
-                            _SiteID: cSiteId,
-                            SL: cSL
-                        }, newAuditItem);
-
-                        try {
-                            const cachedRaw = localStorage.getItem('hoardings_cache');
-                            if (cachedRaw) {
-                                const cachedList = JSON.parse(cachedRaw);
-                                const targetIdx = cachedList.findIndex(h =>
-                                    (cSiteId && (h._SiteID === cSiteId || h.UniqueID === cSiteId)) ||
-                                    (cSL && String(h.SL || h['S. No.'] || '').trim() === String(cSL).trim() && (!cFacing || String(h.Facing || h['Traffic View'] || '').trim().toLowerCase() === String(cFacing).trim().toLowerCase())) ||
-                                    ((h["Location "] || h.Location) === cName && (!cFacing || String(h.Facing || h['Traffic View'] || '').trim().toLowerCase() === String(cFacing).trim().toLowerCase()))
-                                );
-                                if (targetIdx >= 0) {
-                                    window.dispatchEvent(new CustomEvent('hoardings:updated', { detail: cachedList }));
-                                }
-                            }
-                        } catch (cacheErr) {
-                            console.warn('Local history update notice:', cacheErr);
-                        }
-                    }
-
-                    let landmarkDesc = '';
-                    if (base64Data) {
-                        try {
-                            landmarkDesc = await generateVisualLandmarksWithGemini(base64Data, {
-                                siteName: matchedSite,
-                                facing: trafficFacing || item.facing
-                            });
-                        } catch (vlErr) {
-                            console.warn('Staff photo visual landmark notice:', vlErr);
-                        }
-                    }
-
-                    // 2. Sync only Visual_Landmarks metadata if extracted (the photo itself is uploaded once via enqueueStaffPhoto -> staffUploadPhoto)
-                    if (landmarkDesc) {
-                        for (const cSite of sitesToProcess) {
-                            const cName = cSite.siteName || cSite.site?.["Location "] || cSite.site?.Location || matchedSite;
-                            const cSL = cSite.sl || cSite.site?.SL || '';
-                            const cSiteId = cSite.siteId || cSite.site?._SiteID || cSite.site?.UniqueID || '';
-                            const cFacing = cSite.facing || cSite.site?.Facing || cSite.site?.['Traffic View'] || '';
-
-                            syncToGoogleSheet({
-                                action: 'updateHoarding',
-                                siteName: cName,
-                                sl: cSL,
-                                siteId: cSiteId,
-                                facing: cFacing,
-                                fields: { "Visual_Landmarks": landmarkDesc }
-                            }).catch(syncErr => console.warn('Landmark metadata sync notice:', syncErr));
-                        }
-                    }
-                } catch (historySyncErr) {
-                    console.warn('Auto-sync to history error:', historySyncErr);
-                }
-            }
 
             await enqueueStaffPhoto(item);
             await refreshPendingCount();

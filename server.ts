@@ -9,7 +9,7 @@ const __dirname = path.dirname(__filename);
 
 const PORT = Number(process.env.PORT) || 3000;
 
-const SERVER_GEMINI_MODELS = ['gemini-4-hydrogen', 'gemini-3.1-flash-lite'] as const;
+const SERVER_GEMINI_MODELS = ['gemini-3.1-flash-lite', 'gemini-4-hydrogen'] as const;
 
 const DEPRECATED_OR_ALIASES: Record<string, string> = {
   'gemini-flash-latest': 'gemini-4-hydrogen',

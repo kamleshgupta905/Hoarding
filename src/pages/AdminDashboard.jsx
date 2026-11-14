@@ -13,7 +13,7 @@ import {
     Star, FileSpreadsheet, Presentation, Loader2, AlertTriangle, Info, ArrowUpCircle,
     Edit3, ArrowRightLeft, RotateCcw
 } from 'lucide-react';
-import { analyzeHoardingImage, extractSiteCoordinates, generateVisualLandmarksWithGemini } from '../services/aiService';
+import { analyzeHoardingImage, extractSiteCoordinates, generateVisualLandmarksWithGemini, resolveTwinSiteFacingWithGemini } from '../services/aiService';
 import { fetchHoardings, compressImage, syncToGoogleSheet, exportProposalExcel, PROPOSAL_COLUMNS, getImageUrl, downloadHoardingImage, fetchStaffUploads, reviewStaffPhoto, detectStaffPhotoOrientation, fetchSheetGrid, saveSheetGrid, addDeletedSite, addDeletedSites, parseHistoryString, saveLocalBooking, clearLocalBooking, recordSiteBooking, removeSiteBooking, getSiteBookingSlots, checkBookingConflict, calculateProRataRental, resolveSiteLiveStatus, saveSiteBookingSlots, recordSiteHistory, getLocalHistory, getDirectDriveLink, parseCellImageUrls, addDeletedHistoryUrl, isHistoryUrlDeleted, removeSiteHistory, getExpiringSites, parseBookingDate, clearAllLocalBookingsAndCaches, clearLocalBookingsForCity, clearLocalBookingsForSite, normalizeCityName, overrideSiteBookingSlot, getDisplacedBookingSlots, saveDisplacedBookingSlots, removeDisplacedSlot, updateSiteBookingSlot, shiftBookingSlotToSite, restoreOverriddenSlot } from '../services/dataService';
 import { generateMasterMediaPlanPptx } from '../services/presentationService';
 import ImageLightbox from '../components/ImageLightbox';
@@ -42,7 +42,7 @@ import krishnaAvatar from '../assets/krishna_avatar.jpg';
 import './AdminDashboard.css';
 import GeoRadiusSelector from '../components/dashboard/GeoRadiusSelector';
 import { useInventoryStore } from '../stores/inventoryStore';
-import { calculateDistance } from '../services/geoService';
+import { calculateDistance, calculateSiteBearing } from '../services/geoService';
 import { matchesAllKeywordsFuzzy, matchesKeywordFuzzy } from '../core/fuzzySearch';
 import { APP_VERSION, APP_BUILD_DATE } from '../version';
 import { checkForAppUpdates } from '../services/appUpdater';
@@ -1499,6 +1499,9 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
     const [staffUploadLink, setStaffUploadLink] = useState('/staff/upload');
     const [reviewSelections, setReviewSelections] = useState({});
     const [reviewSelectionDetails, setReviewSelectionDetails] = useState({});
+    const [reviewAiState, setReviewAiState] = useState({});
+    const [isReviewBatchMatching, setIsReviewBatchMatching] = useState(false);
+    const [isBatchRematchingDaily, setIsBatchRematchingDaily] = useState(false);
     const [pendingStaffReviewIds, setPendingStaffReviewIds] = useState({});
     const [staffImagePreviews, setStaffImagePreviews] = useState({});
     const orientationCacheRef = useRef(new Map());
@@ -3536,6 +3539,279 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
         }
     };
 
+    const reMatchMultiFacingCard = async (itemIdOrIndex, explicitImg = null, autoSyncAfter = true) => {
+        const img = explicitImg || (typeof itemIdOrIndex === 'string'
+            ? dailyImages.find(i => i.id === itemIdOrIndex)
+            : dailyImages[itemIdOrIndex]);
+        if (!img) return;
+        const cardKey = img.id || itemIdOrIndex;
+
+        setDailyImages(prev => prev.map(item => (item.id === cardKey) ? { ...item, aiLoading: true } : item));
+        try {
+            const base64Data = await new Promise((resolve, reject) => {
+                if (img.file) {
+                    const reader = new FileReader();
+                    reader.onload = () => resolve(reader.result);
+                    reader.onerror = reject;
+                    reader.readAsDataURL(img.file);
+                    return;
+                }
+                const fallbackUrl = img.persistentPreview || img.uploadedUrl || img.preview;
+                if (fallbackUrl) return resolve(fallbackUrl);
+                reject(new Error('No image data available to re-match.'));
+            });
+
+            // Collect 280m row / adjacent candidates for full reference photo visual comparison
+            const normStr = (v) => String(v || '').trim().toLowerCase();
+            const getLoc = (h) => String(h?.["Locality Site Location"] || h?.["Location "] || h?.Location || '').trim();
+            const getFac = (h) => String(h?.Facing || h?.['Traffic View'] || h?.facing || '').trim();
+            const getSL = (h) => String(h?.SL || h?.['S. No.'] || h?.['SL NO'] || '').trim();
+
+            let rowCandidates = [];
+            if (Array.isArray(img.twinCandidates) && img.twinCandidates.length > 1) {
+                rowCandidates = img.twinCandidates.slice(0, 10).map(t => {
+                    const siteObj = hoardings[t.index] || hoardings.find(h => getSL(h) === String(t.sl || '').trim());
+                    if (!siteObj) return null;
+                    const siteCoord = extractSiteCoordinates(siteObj);
+                    return {
+                        index: hoardings.indexOf(siteObj),
+                        site: siteObj,
+                        siteName: getLoc(siteObj),
+                        facing: getFac(siteObj) || t.facing,
+                        mediaType: siteObj['Type of Site (Unipole/Billboard)'] || siteObj.Media || t.mediaType || 'Unipole',
+                        distanceM: t.distanceM ?? img.distanceM ?? 0,
+                        cameraBearing: (img.gpsCoord && siteCoord) ? calculateSiteBearing(img.gpsCoord, siteCoord) : null
+                    };
+                }).filter(Boolean);
+            }
+
+            if (rowCandidates.length < 2) {
+                const curSite = (img.matchedIndex != null && hoardings[img.matchedIndex]) ||
+                    (img.sl && hoardings.find(h => getSL(h) === String(img.sl).trim()));
+                const origin = img.gpsCoord || extractSiteCoordinates(curSite);
+                if (origin) {
+                    rowCandidates = hoardings.map((h, i) => {
+                        const c = extractSiteCoordinates(h);
+                        if (!c) return null;
+                        const d = calculateDistance({ lat: origin.lat, lng: origin.lng }, { lat: c.lat, lng: c.lng }, 'meters');
+                        if (d == null || d > 280) return null;
+                        return {
+                            index: i,
+                            site: h,
+                            siteName: getLoc(h),
+                            facing: getFac(h),
+                            mediaType: h['Type of Site (Unipole/Billboard)'] || h.Media || 'Unipole',
+                            distanceM: Math.round(d),
+                            cameraBearing: calculateSiteBearing(origin, c)
+                        };
+                    }).filter(Boolean).sort((a, b) => a.distanceM - b.distanceM).slice(0, 10);
+                }
+            }
+
+            let updatedSite = null;
+            let resolvedReasoning = '';
+            let resolvedConfidence = img.confidence || 96;
+            let resolvedFacing = img.facing || '';
+            let resolvedDist = img.distanceM;
+
+            if (rowCandidates.length >= 2) {
+                const resolved = await resolveTwinSiteFacingWithGemini(base64Data, rowCandidates, { rowVerification: true });
+                if (resolved && resolved.isHoardingPhoto === false) {
+                    setDailyImages(prev => prev.map(item => (item.id === cardKey) ? {
+                        ...item,
+                        aiLoading: false,
+                        matchFailed: true,
+                        matchedLocation: null,
+                        reasoning: resolved.reasoning || 'No outdoor hoarding visible.'
+                    } : item));
+                    return;
+                }
+                if (resolved) {
+                    const matchedCand =
+                        resolved.matchedCandidate ||
+                        (resolved.candidateIndex != null && rowCandidates.find(c => c.index === resolved.candidateIndex)) ||
+                        (resolved.matchedIndex != null && rowCandidates[resolved.matchedIndex]) ||
+                        (resolved.sl && rowCandidates.find(c => getSL(c.site) === String(resolved.sl).trim())) ||
+                        null;
+                    if (matchedCand?.site) {
+                        updatedSite = matchedCand.site;
+                        resolvedFacing = getFac(updatedSite) || resolved.facing || matchedCand.facing;
+                        resolvedDist = matchedCand.distanceM ?? img.distanceM;
+                        resolvedConfidence = Math.round((resolved.confidence || 0.96) * 100);
+                        resolvedReasoning = `🎯 Multi-Facing Re-Matched against Ref Photos: SL #${getSL(updatedSite)} · ${resolvedFacing} (${resolved.reasoning || 'Visual structure & surroundings verified'})`;
+                    }
+                }
+            }
+
+            // Full pipeline fallback if no row candidate was resolved above
+            if (!updatedSite) {
+                const fullRes = await analyzeHoardingImage(base64Data, hoardings, img.file || null, img.gpsCoord ? { liveGps: { latitude: img.gpsCoord.lat, longitude: img.gpsCoord.lng }, facing: img.facing } : {});
+                if (fullRes?.site) {
+                    updatedSite = fullRes.site;
+                    resolvedFacing = fullRes.facing || getFac(updatedSite);
+                    resolvedDist = fullRes.distanceM ?? img.distanceM;
+                    resolvedConfidence = fullRes.confidence || 92;
+                    resolvedReasoning = fullRes.reasoning || 'Re-matched via 280m GPS & Ref Photo verification.';
+                }
+            }
+
+            if (!updatedSite) {
+                setDailyImages(prev => prev.map(item => (item.id === cardKey) ? { ...item, aiLoading: false } : item));
+                showToast('Re-match check completed — existing selection kept.', 'info');
+                return;
+            }
+
+            const newIdx = hoardings.indexOf(updatedSite);
+            const newSL = getSL(updatedSite);
+            const newLoc = getLoc(updatedSite);
+            const newSiteId = updatedSite._SiteID || updatedSite.UniqueID || updatedSite['Unique ID'] || '';
+            const wasChanged =
+                (img.matchedIndex != null && newIdx !== img.matchedIndex) ||
+                (img.sl && newSL && String(img.sl).trim() !== String(newSL).trim()) ||
+                (img.facing && resolvedFacing && normStr(img.facing) !== normStr(resolvedFacing));
+
+            const updates = {
+                matchedIndex: newIdx,
+                sl: newSL,
+                matchedSiteId: newSiteId,
+                matchedLocation: newLoc,
+                facing: resolvedFacing,
+                distanceM: resolvedDist,
+                confidence: resolvedConfidence,
+                reasoning: resolvedReasoning,
+                aiLoading: false,
+                matchFailed: false
+            };
+
+            setDailyImages(prev => prev.map(item => (item.id === cardKey) ? { ...item, ...updates } : item));
+
+            if (autoSyncAfter && (wasChanged || !img.uploaded)) {
+                await handleConfirmAndSync(cardKey, { ...img, ...updates });
+            } else {
+                showToast(`Verified: #${newSL} · ${newLoc} (${resolvedFacing})`, 'success');
+            }
+        } catch (err) {
+            console.warn('Multi-facing re-match notice:', err);
+            setDailyImages(prev => prev.map(item => (item.id === cardKey) ? { ...item, aiLoading: false } : item));
+            showToast(`Re-match notice: ${err.message || 'Check connection'}`, 'warning');
+        }
+    };
+
+    const reMatchAllMultiFacingCards = async () => {
+        const targets = dailyImages.filter(img => {
+            if (!img || img.aiLoading || img.uploading) return false;
+            if (Array.isArray(img.twinCandidates) && img.twinCandidates.length > 1) return true;
+            const curSite = (img.matchedIndex != null && hoardings[img.matchedIndex]) || null;
+            const origin = img.gpsCoord || extractSiteCoordinates(curSite);
+            if (!origin) return false;
+            let count = 0;
+            for (const h of hoardings) {
+                const c = extractSiteCoordinates(h);
+                if (!c) continue;
+                const d = calculateDistance({ lat: origin.lat, lng: origin.lng }, { lat: c.lat, lng: c.lng }, 'meters');
+                if (d != null && d <= 280) {
+                    count++;
+                    if (count > 1) return true;
+                }
+            }
+            return false;
+        });
+
+        if (targets.length === 0) {
+            showToast('No multi-facing or adjacent row cards found to re-match.', 'info');
+            return;
+        }
+
+        setIsBatchRematchingDaily(true);
+        try {
+            for (const card of targets) {
+                await reMatchMultiFacingCard(card.id, card, true);
+            }
+            showToast(`Completed reference-photo verification across ${targets.length} multi-facing card(s)!`, 'success');
+        } finally {
+            setIsBatchRematchingDaily(false);
+        }
+    };
+
+    const runReviewItemAiMatch = async (upload, silent = false) => {
+        if (!upload || !upload.UploadId) return null;
+        const uploadId = upload.UploadId;
+        const uploadLat = parseFloat(upload.Latitude);
+        const uploadLng = parseFloat(upload.Longitude);
+        const hasGps = !isNaN(uploadLat) && !isNaN(uploadLng);
+        const imgSrc = staffImagePreviews[uploadId]?.previewUrl || upload.ImageURL;
+        if (!imgSrc && !hasGps) return null;
+
+        setReviewAiState(prev => ({
+            ...prev,
+            [uploadId]: { ...(prev[uploadId] || {}), loading: true }
+        }));
+
+        try {
+            const matchRes = await analyzeHoardingImage(
+                imgSrc,
+                hoardings,
+                null,
+                {
+                    liveGps: hasGps ? { latitude: uploadLat, longitude: uploadLng } : null,
+                    facing: upload.CompassHeading || upload.SiteFacing || upload.Facing || ''
+                }
+            );
+
+            const resolvedSite = matchRes?.site ||
+                (matchRes?.matchedIndex >= 0 ? hoardings[matchRes.matchedIndex] : null) ||
+                null;
+            const resolvedName = matchRes?.matchedLocation ||
+                (resolvedSite ? (resolvedSite["Locality Site Location"] || resolvedSite["Location "] || resolvedSite.Location) : '') ||
+                upload.SuggestedSite || '';
+            const resolvedSL = String(matchRes?.sl || resolvedSite?.SL || resolvedSite?.['S. No.'] || upload.SL || '').trim();
+            const resolvedSiteId = String(matchRes?.matchedSiteId || resolvedSite?._SiteID || resolvedSite?.UniqueID || upload.SiteId || '').trim();
+            const resolvedFacing = String(matchRes?.facing || resolvedSite?.Facing || resolvedSite?.['Traffic View'] || upload.SiteFacing || '').trim();
+
+            if (resolvedName) {
+                setReviewSelections(prev => ({ ...prev, [uploadId]: resolvedName }));
+                setReviewSelectionDetails(prev => ({
+                    ...prev,
+                    [uploadId]: {
+                        siteName: resolvedName,
+                        sl: resolvedSL,
+                        siteId: resolvedSiteId,
+                        facing: resolvedFacing
+                    }
+                }));
+            }
+
+            setReviewAiState(prev => ({
+                ...prev,
+                [uploadId]: {
+                    loading: false,
+                    matched: Boolean(matchRes?.matchedLocation),
+                    confidence: matchRes?.confidence || upload.MatchConfidence || 0,
+                    reasoning: matchRes?.reasoning || '280m GPS & Visual Reference Matching complete',
+                    distanceM: matchRes?.distanceM ?? null,
+                    twinCandidates: matchRes?.twinCandidates || null,
+                    matchedSiteObj: resolvedSite
+                }
+            }));
+
+            if (!silent && resolvedName) {
+                showToast(`Matched Review Photo -> #${resolvedSL || '?'} ${resolvedName} (${resolvedFacing || 'Standard'})`, 'success');
+            }
+            return matchRes;
+        } catch (err) {
+            setReviewAiState(prev => ({
+                ...prev,
+                [uploadId]: {
+                    ...(prev[uploadId] || {}),
+                    loading: false,
+                    reasoning: err.message || 'Auto-match notice'
+                }
+            }));
+            if (!silent) showToast(`Review AI Match notice: ${err.message}`, 'warning');
+            return null;
+        }
+    };
+
     // ------------------------------------------------------------------
     // 🖥️ UI COMPONENTS & QUICK BOOKING
     // ------------------------------------------------------------------
@@ -5049,6 +5325,36 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
     };
 
     const reviewQueue = safeStaffUploads.filter(upload => upload && upload.Status === 'REVIEW_REQUIRED' && !pendingStaffReviewIds[upload.UploadId]);
+
+    const runAllReviewAiMatches = async () => {
+        if (reviewQueue.length === 0) {
+            showToast('Review queue is empty.', 'info');
+            return;
+        }
+        setIsReviewBatchMatching(true);
+        try {
+            for (const upload of reviewQueue) {
+                await runReviewItemAiMatch(upload, true);
+            }
+            showToast(`AI + 280m Reference Matching complete for ${reviewQueue.length} staff photo(s)!`, 'success');
+        } finally {
+            setIsReviewBatchMatching(false);
+        }
+    };
+
+    useEffect(() => {
+        if (activeTab !== 'staff-review' || !Array.isArray(hoardings) || hoardings.length === 0 || reviewQueue.length === 0) return;
+        const pendingUnanalyzed = reviewQueue.filter(u => u && u.UploadId && !reviewAiState[u.UploadId]);
+        if (pendingUnanalyzed.length === 0) return;
+        let cancelled = false;
+        (async () => {
+            for (const u of pendingUnanalyzed.slice(0, 5)) {
+                if (cancelled) break;
+                await runReviewItemAiMatch(u, true);
+            }
+        })();
+        return () => { cancelled = true; };
+    }, [activeTab, reviewQueue.length, hoardings.length]);
     
     // ✅ AI Auto-Matched Photos (Geofenced & Approved with valid site)
     const matchedPhotoUpdates = safeStaffUploads.filter(upload => {
@@ -8474,6 +8780,19 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                         <Sparkles size={15} /> Auto-Detect Sites
                                     </button>
                                 )}
+                                {displayDailyImages.some(img => Array.isArray(img.twinCandidates) && img.twinCandidates.length > 1) && (
+                                    <button
+                                        type="button"
+                                        className="ai-process-btn"
+                                        disabled={isBatchRematchingDaily}
+                                        onClick={reMatchAllMultiFacingCards}
+                                        style={{ background: '#eef2ff', color: '#3730a3', border: '1px solid #a5b4fc', boxShadow: 'none' }}
+                                        title="Re-verify all cards with multiple adjacent/row facings against Sheet Reference Photos & auto-sync"
+                                    >
+                                        <RefreshCw size={14} className={isBatchRematchingDaily ? 'animate-spin' : ''} />
+                                        {isBatchRematchingDaily ? 'Re-Matching Row...' : 'Re-Match Adjacent Facings'}
+                                    </button>
+                                )}
                                 {displayDailyImages.length > 0 && (
                                     <button
                                         type="button"
@@ -8713,7 +9032,7 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                             {(() => {
                                                 let candidateSites = [];
                                                 if (Array.isArray(img.twinCandidates) && img.twinCandidates.length > 1) {
-                                                    candidateSites = img.twinCandidates.slice(0, 6).map(t => {
+                                                    candidateSites = img.twinCandidates.slice(0, 12).map(t => {
                                                         const h = hoardings[t.index] || hoardings.find(site => String(site.SL || site['S. No.'] || '').trim() === String(t.sl).trim());
                                                         const numDist = (t.distanceM != null && !isNaN(Number(t.distanceM))) ? Math.round(Number(t.distanceM)) : (img.distanceM != null && !isNaN(Number(img.distanceM)) ? Math.round(Number(img.distanceM)) : null);
                                                         return {
@@ -8729,7 +9048,41 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                                     const curSite = (img.sl && hoardings.find(h => String(h.SL || h['S. No.'] || '').trim() === String(img.sl).trim())) ||
                                                                     (img.matchedIndex != null && hoardings[img.matchedIndex]) ||
                                                                     (img.matchedLocation && hoardings.find(h => (h["Locality Site Location"] || h["Location "] || h.Location) === img.matchedLocation));
-                                                    if (curSite) {
+                                                    const curIdx = curSite ? hoardings.indexOf(curSite) : -1;
+                                                    const refLat = img.gpsCoord?.lat ?? extractSiteCoordinates(curSite)?.lat;
+                                                    const refLng = img.gpsCoord?.lng ?? extractSiteCoordinates(curSite)?.lng;
+
+                                                    if (refLat != null && refLng != null && !isNaN(refLat) && !isNaN(refLng)) {
+                                                        const nearbySites = hoardings
+                                                            .map((h, i) => {
+                                                                const coords = extractSiteCoordinates(h);
+                                                                if (!coords) return null;
+                                                                const rawD = calculateDistance({ lat: refLat, lng: refLng }, { lat: coords.lat, lng: coords.lng }, 'meters');
+                                                                if (rawD == null || !Number.isFinite(rawD)) return null;
+                                                                const d = Math.round(rawD);
+                                                                if (d > 280) return null;
+                                                                return { h, i, dist: d };
+                                                            })
+                                                            .filter(Boolean)
+                                                            .sort((a, b) => a.dist - b.dist);
+
+                                                        if (curSite && curIdx >= 0 && !nearbySites.some(n => n.i === curIdx)) {
+                                                            nearbySites.unshift({ h: curSite, i: curIdx, dist: img.distanceM ?? 0 });
+                                                        }
+
+                                                        if (nearbySites.length > 1) {
+                                                            candidateSites = nearbySites.slice(0, 12).map(({ h, i, dist }) => ({
+                                                                sl: h.SL || h['S. No.'] || h['SL NO'] || '',
+                                                                index: i,
+                                                                facing: h.Facing || h['Traffic View'] || 'Standard',
+                                                                distanceM: dist,
+                                                                siteName: h["Locality Site Location"] || h["Location "] || h.Location,
+                                                                siteId: h._SiteID || h.UniqueID || ''
+                                                            }));
+                                                        }
+                                                    }
+
+                                                    if (candidateSites.length <= 1 && curSite) {
                                                         const curLoc = String(curSite["Locality Site Location"] || curSite["Location "] || curSite.Location || '').trim().toLowerCase();
                                                         if (curLoc) {
                                                             const siblings = hoardings
@@ -8741,7 +9094,7 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                                                     return l1 === curLoc || l2 === curLoc || l3 === curLoc;
                                                                 });
                                                             if (siblings.length > 1) {
-                                                                candidateSites = siblings.map(({ h, i }) => ({
+                                                                candidateSites = siblings.slice(0, 12).map(({ h, i }) => ({
                                                                     sl: h.SL || h['S. No.'] || h['SL NO'] || '',
                                                                     index: i,
                                                                     facing: h.Facing || h['Traffic View'] || 'Standard',
@@ -8777,6 +9130,32 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                                                 <span>🧭</span>
                                                                 <span>Facing:</span>
                                                             </span>
+                                                            <button
+                                                                type="button"
+                                                                disabled={Boolean(img.aiLoading || img.uploading)}
+                                                                onClick={(e) => {
+                                                                    e.stopPropagation();
+                                                                    reMatchMultiFacingCard(cardId, img, true);
+                                                                }}
+                                                                style={{
+                                                                    padding: '3px 8px',
+                                                                    borderRadius: '6px',
+                                                                    fontSize: '0.70rem',
+                                                                    fontWeight: 700,
+                                                                    cursor: (img.aiLoading || img.uploading) ? 'not-allowed' : 'pointer',
+                                                                    border: '1px solid #818cf8',
+                                                                    background: '#eef2ff',
+                                                                    color: '#3730a3',
+                                                                    display: 'inline-flex',
+                                                                    alignItems: 'center',
+                                                                    gap: '4px',
+                                                                    marginRight: '2px'
+                                                                }}
+                                                                title="Re-match this photo against all adjacent/row reference photos with AI and sync"
+                                                            >
+                                                                <RefreshCw size={11} className={img.aiLoading ? 'animate-spin' : ''} />
+                                                                <span>{img.aiLoading ? 'Matching...' : 'Re-Match Ref'}</span>
+                                                            </button>
                                                             {candidateSites.map((cand, cIdx) => {
                                                                 const hasMatchedIndex = img.matchedIndex != null && img.matchedIndex >= 0 && cand.index != null && cand.index >= 0;
                                                                 const isCandSelected = hasMatchedIndex
@@ -9346,11 +9725,25 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                         <div className="staff-review-header">
                             <div>
                                 <h3>Live Field Audit & Staff Uploads</h3>
-                                <p>Real-time GPS geofenced photos, 150m auto-matching, and audit approval queue.</p>
+                                <p>Staff App captures with full GPS location, compass heading, 280m AI & Reference Photo matching.</p>
                             </div>
-                            <a className="staff-permanent-link" href="https://github.com/kamleshgupta905/Hoarding/releases/download/staff-apk-latest/heera-staff-camera.apk" target="_blank" rel="noreferrer">
-                                <Download size={16} /> Download Staff App (APK)
-                            </a>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+                                {reviewQueue.length > 0 && (
+                                    <button
+                                        type="button"
+                                        className="ai-process-btn"
+                                        disabled={isReviewBatchMatching}
+                                        onClick={runAllReviewAiMatches}
+                                        style={{ cursor: isReviewBatchMatching ? 'not-allowed' : 'pointer' }}
+                                    >
+                                        <Sparkles size={15} />
+                                        {isReviewBatchMatching ? 'Matching All Pending...' : `Auto-Match All (${reviewQueue.length})`}
+                                    </button>
+                                )}
+                                <a className="staff-permanent-link" href="https://github.com/kamleshgupta905/Hoarding/releases/download/staff-apk-latest/heera-staff-camera.apk" target="_blank" rel="noreferrer">
+                                    <Download size={16} /> Download Staff App (APK)
+                                </a>
+                            </div>
                         </div>
                         {reviewQueue.length > 0 ? (
                             <>
@@ -9363,23 +9756,99 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                 {reviewQueue.map(upload => {
                                     const selectedSite = reviewSelections[upload.UploadId] || upload.SuggestedSite || '';
                                     const selectedMeta = reviewSelectionDetails[upload.UploadId] || {};
+                                    const aiInfo = reviewAiState[upload.UploadId] || {};
                                     const preview = staffImagePreviews[upload.UploadId];
                                     const reviewImageUrl = preview?.previewUrl || upload.ImageURL;
+                                    const uploadLat = parseFloat(upload.Latitude);
+                                    const uploadLng = parseFloat(upload.Longitude);
+                                    const hasCoords = !isNaN(uploadLat) && !isNaN(uploadLng);
+
+                                    const activeMatchedSite =
+                                        aiInfo.matchedSiteObj ||
+                                        (selectedMeta.siteId && hoardings.find(h => String(h._SiteID || h.UniqueID || '').trim() === String(selectedMeta.siteId).trim())) ||
+                                        (selectedMeta.sl && hoardings.find(h => String(h.SL || h['S. No.'] || '').trim() === String(selectedMeta.sl).trim())) ||
+                                        (selectedSite && hoardings.find(h => (h["Location "] || h.Location || h["Locality Site Location"]) === selectedSite)) ||
+                                        null;
+                                    const refPhotoUrl = activeMatchedSite ? getImageUrl(activeMatchedSite) : '';
+
                                     return (
                                         <article className="staff-review-card" key={upload.UploadId}>
-                                            <button className="staff-review-image" onClick={() => setPreviewHoarding({ ImageURL: reviewImageUrl, City: 'Staff', "Location ": selectedSite || 'Review photo' })}>
-                                                <DriveImage src={reviewImageUrl} alt="Staff capture" />
-                                            </button>
+                                            <div style={{ display: 'grid', gridTemplateColumns: refPhotoUrl ? '1fr 1fr' : '1fr', gap: '4px', background: '#0f172a' }}>
+                                                <button className="staff-review-image" style={{ position: 'relative' }} onClick={() => setPreviewHoarding({ ImageURL: reviewImageUrl, City: 'Staff', "Location ": selectedSite || 'Staff Capture' })}>
+                                                    <DriveImage src={reviewImageUrl} alt="Staff capture" />
+                                                    <span style={{ position: 'absolute', bottom: '6px', left: '6px', background: 'rgba(15,23,42,0.85)', color: '#fff', fontSize: '0.68rem', fontWeight: 700, padding: '2px 7px', borderRadius: '4px' }}>STAFF LIVE</span>
+                                                </button>
+                                                {refPhotoUrl && (
+                                                    <button className="staff-review-image" style={{ position: 'relative' }} onClick={() => setPreviewHoarding({ ImageURL: refPhotoUrl, City: activeMatchedSite?.City || 'Reference', "Location ": selectedSite || 'Master Reference' })}>
+                                                        <img src={refPhotoUrl} alt="Master Reference" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                                                        <span style={{ position: 'absolute', bottom: '6px', left: '6px', background: 'rgba(67,56,202,0.9)', color: '#fff', fontSize: '0.68rem', fontWeight: 700, padding: '2px 7px', borderRadius: '4px' }}>SHEET REF {selectedMeta.sl || upload.SL ? `#${selectedMeta.sl || upload.SL}` : ''}</span>
+                                                    </button>
+                                                )}
+                                            </div>
                                             <div className="staff-review-body">
                                                 <div className="staff-review-meta">
-                                                    <span>{upload.Decision?.replaceAll('_', ' ')}</span>
+                                                    <span>{(upload.Decision || 'STAFF_REVIEW').replaceAll('_', ' ')}{aiInfo.confidence ? ` • ${Math.round(aiInfo.confidence)}%` : ''}</span>
                                                     <small>{upload.CapturedAt ? new Date(upload.CapturedAt).toLocaleString('en-IN') : ''}</small>
                                                 </div>
-                                                <a className="staff-map-link" href={`https://www.google.com/maps?q=${upload.Latitude},${upload.Longitude}`} target="_blank" rel="noreferrer">
-                                                    <MapPin size={15} /> GPS Map
-                                                </a>
+
+                                                {/* 📍 Full Staff Location, GPS, Compass, Accuracy & Free Google Maps / Street View Links */}
+                                                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', margin: '6px 0 10px', fontSize: '0.73rem', color: '#334155', alignItems: 'center' }}>
+                                                    {hasCoords && (
+                                                        <span style={{ background: '#f1f5f9', padding: '3px 8px', borderRadius: '6px', fontWeight: 600 }}>
+                                                            📍 {uploadLat.toFixed(5)}, {uploadLng.toFixed(5)}
+                                                        </span>
+                                                    )}
+                                                    {upload.Accuracy && (
+                                                        <span style={{ background: '#ecfdf5', color: '#065f46', padding: '3px 8px', borderRadius: '6px', fontWeight: 600 }}>
+                                                            ±{Math.round(Number(upload.Accuracy))}m GPS
+                                                        </span>
+                                                    )}
+                                                    {(upload.CompassHeading || upload.Facing) && (
+                                                        <span style={{ background: '#eff6ff', color: '#1d4ed8', padding: '3px 8px', borderRadius: '6px', fontWeight: 600 }}>
+                                                            🧭 {upload.CompassHeading || upload.Facing}
+                                                        </span>
+                                                    )}
+                                                    {hasCoords && (
+                                                        <a className="staff-map-link" href={`https://www.google.com/maps?q=${uploadLat},${uploadLng}`} target="_blank" rel="noreferrer">
+                                                            <MapPin size={14} /> Google Maps
+                                                        </a>
+                                                    )}
+                                                    {hasCoords && (
+                                                        <a className="staff-map-link" href={`https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=${uploadLat},${uploadLng}`} target="_blank" rel="noreferrer">
+                                                            <Navigation size={14} /> Street View
+                                                        </a>
+                                                    )}
+                                                    <button
+                                                        type="button"
+                                                        disabled={Boolean(aiInfo.loading)}
+                                                        onClick={() => runReviewItemAiMatch(upload, false)}
+                                                        style={{
+                                                            display: 'inline-flex',
+                                                            alignItems: 'center',
+                                                            gap: '4px',
+                                                            padding: '4px 9px',
+                                                            borderRadius: '6px',
+                                                            border: '1px solid #818cf8',
+                                                            background: '#eef2ff',
+                                                            color: '#3730a3',
+                                                            fontSize: '0.72rem',
+                                                            fontWeight: 700,
+                                                            cursor: aiInfo.loading ? 'not-allowed' : 'pointer'
+                                                        }}
+                                                    >
+                                                        <RefreshCw size={12} className={aiInfo.loading ? 'animate-spin' : ''} />
+                                                        {aiInfo.loading ? 'AI Matching...' : 'Match / Re-Match AI'}
+                                                    </button>
+                                                </div>
+
+                                                {aiInfo.reasoning && (
+                                                    <div style={{ fontSize: '0.73rem', color: '#475569', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '6px', padding: '5px 8px', marginBottom: '8px' }}>
+                                                        {aiInfo.reasoning}
+                                                    </div>
+                                                )}
+
                                                 <label>
-                                                    Match Site{selectedMeta.facing ? ` • Facing: ${selectedMeta.facing}` : ''}
+                                                    Match Site{(selectedMeta.sl || upload.SL) ? ` [#${selectedMeta.sl || upload.SL}]` : ''}{(selectedMeta.facing || upload.SiteFacing) ? ` • Facing: ${selectedMeta.facing || upload.SiteFacing}` : ''}
                                                     <input
                                                         list="staff-site-options"
                                                         value={selectedSite}
@@ -9395,20 +9864,28 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                                     />
                                                 </label>
                                                 {(() => {
-                                                    const uploadLat = parseFloat(upload.Latitude);
-                                                    const uploadLng = parseFloat(upload.Longitude);
-                                                    const uploadFacing = String(upload.Facing || upload.facing || '').trim().toLowerCase();
-
                                                     let smartCandidates = [];
-                                                    if (!isNaN(uploadLat) && !isNaN(uploadLng) && Array.isArray(hoardings) && hoardings.length > 0) {
+                                                    if (Array.isArray(aiInfo.twinCandidates) && aiInfo.twinCandidates.length > 0) {
+                                                        smartCandidates = aiInfo.twinCandidates.slice(0, 12).map((t, sIdx) => {
+                                                            const hoarding = hoardings[t.index] || hoardings.find(h => String(h.SL || h['S. No.'] || '').trim() === String(t.sl || '').trim());
+                                                            return {
+                                                                site: hoarding,
+                                                                siteIndex: t.index ?? sIdx,
+                                                                siteId: String(t.siteId || hoarding?._SiteID || hoarding?.UniqueID || '').trim(),
+                                                                siteName: hoarding ? (hoarding["Location "] || hoarding.Location || hoarding["Locality Site Location"]) : t.siteName,
+                                                                sl: String(t.sl || hoarding?.SL || hoarding?.['S. No.'] || '').trim(),
+                                                                distM: t.distanceM != null ? Math.round(Number(t.distanceM)) : null,
+                                                                facing: String(t.facing || hoarding?.Facing || hoarding?.['Traffic View'] || '').trim()
+                                                            };
+                                                        });
+                                                    } else if (hasCoords && Array.isArray(hoardings) && hoardings.length > 0) {
                                                         smartCandidates = hoardings.map((h, hIdx) => {
-                                                            const hLat = parseFloat(h.Latitude || h.Lat || h['Lat.'] || (h['Lat-Long'] ? h['Lat-Long'].split(',')[0] : ''));
-                                                            const hLng = parseFloat(h.Longitude || h.Long || h['Long.'] || (h['Lat-Long'] ? h['Lat-Long'].split(',')[1] : ''));
-                                                            if (isNaN(hLat) || isNaN(hLng)) return null;
-                                                            const d = calculateDistance(`${uploadLat},${uploadLng}`, `${hLat},${hLng}`);
-                                                            const distM = d !== null ? Math.round(d * 1000) : 9999;
-                                                            const hFacing = String(h.Facing || h['Traffic View'] || '').trim().toLowerCase();
-                                                            const sameFacing = !uploadFacing || !hFacing || uploadFacing.includes(hFacing) || hFacing.includes(uploadFacing) || matchesKeywordFuzzy(hFacing, uploadFacing);
+                                                            const c = extractSiteCoordinates(h);
+                                                            if (!c) return null;
+                                                            const rawD = calculateDistance({ lat: uploadLat, lng: uploadLng }, { lat: c.lat, lng: c.lng }, 'meters');
+                                                            if (rawD == null || !Number.isFinite(rawD)) return null;
+                                                            const distM = Math.round(rawD);
+                                                            if (distM > 280) return null;
                                                             return {
                                                                 site: h,
                                                                 siteIndex: hIdx,
@@ -9416,16 +9893,15 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                                                 siteName: h["Location "] || h.Location || h["Locality Site Location"] || '',
                                                                 sl: String(h.SL || h['S. No.'] || '').trim(),
                                                                 distM,
-                                                                facing: String(h.Facing || h['Traffic View'] || '').trim(),
-                                                                sameFacing
+                                                                facing: String(h.Facing || h['Traffic View'] || '').trim()
                                                             };
-                                                        }).filter(c => c && c.distM <= 300 && c.sameFacing)
+                                                        }).filter(Boolean)
                                                           .sort((a, b) => a.distM - b.distM)
-                                                          .slice(0, 6);
+                                                          .slice(0, 12);
                                                     }
 
                                                     if (smartCandidates.length === 0 && Array.isArray(upload.NearbySites)) {
-                                                        smartCandidates = upload.NearbySites.slice(0, 4).map((s, sIdx) => {
+                                                        smartCandidates = upload.NearbySites.slice(0, 8).map((s, sIdx) => {
                                                             const hoarding = hoardings.find(item =>
                                                                 (item["Location "] === s.siteName || item.Location === s.siteName) &&
                                                                 (!s.facing || !item.Facing || String(item.Facing).trim().toLowerCase() === String(s.facing).trim().toLowerCase())
@@ -9437,8 +9913,7 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                                                 siteName: s.siteName,
                                                                 sl: String(s.sl || hoarding?.SL || hoarding?.['S. No.'] || '').trim(),
                                                                 distM: s.distanceM,
-                                                                facing: String(s.facing || hoarding?.Facing || '').trim(),
-                                                                sameFacing: true
+                                                                facing: String(s.facing || hoarding?.Facing || '').trim()
                                                             };
                                                         });
                                                     }
@@ -9446,14 +9921,16 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                                     return (
                                                         <div className="nearby-candidates-section" style={{ marginTop: '10px' }}>
                                                             <div style={{ fontSize: '0.78rem', fontWeight: 700, color: '#475569', marginBottom: '6px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                                                                <span>📍 Candidate Sites (≤300m • Same Facing):</span>
+                                                                <span>📍 All Candidate Sites (≤280m):</span>
                                                                 <span style={{ fontSize: '0.72rem', color: '#6366f1' }}>{smartCandidates.length} found</span>
                                                             </div>
                                                             <div className="nearby-sites" style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
                                                                 {smartCandidates.map((c, cIdx) => {
-                                                                    const isSelected = selectedMeta.siteId
-                                                                        ? (selectedMeta.siteId === c.siteId && (!selectedMeta.facing || !c.facing || selectedMeta.facing === c.facing))
-                                                                        : (selectedSite === c.siteName && (!selectedMeta.facing || !c.facing || selectedMeta.facing === c.facing));
+                                                                    const isSelected = selectedMeta.sl && c.sl
+                                                                        ? (String(selectedMeta.sl).trim() === String(c.sl).trim() && (!selectedMeta.facing || !c.facing || selectedMeta.facing === c.facing))
+                                                                        : selectedMeta.siteId
+                                                                            ? (selectedMeta.siteId === c.siteId && (!selectedMeta.facing || !c.facing || selectedMeta.facing === c.facing))
+                                                                            : (selectedSite === c.siteName && (!selectedMeta.facing || !c.facing || selectedMeta.facing === c.facing));
                                                                     return (
                                                                         <button 
                                                                             type="button" 
@@ -9467,6 +9944,13 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                                                                         sl: c.sl || '',
                                                                                         siteId: c.siteId || '',
                                                                                         facing: c.facing || ''
+                                                                                    }
+                                                                                }));
+                                                                                setReviewAiState(prev => ({
+                                                                                    ...prev,
+                                                                                    [upload.UploadId]: {
+                                                                                        ...(prev[upload.UploadId] || {}),
+                                                                                        matchedSiteObj: c.site || prev[upload.UploadId]?.matchedSiteObj
                                                                                     }
                                                                                 }));
                                                                             }}
@@ -9487,7 +9971,7 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                                                             title={`Click to match with ${c.siteName}${c.facing ? ` (${c.facing})` : ''}`}
                                                                         >
                                                                             {c.site && <img src={getImageUrl(c.site)} alt={c.siteName} style={{ width: '22px', height: '22px', borderRadius: '4px', objectFit: 'cover' }} />}
-                                                                            <span>{c.sl ? `[#${c.sl}] ` : ''}{c.siteName.slice(0, 20)}{c.facing ? ` • ${c.facing}` : ''} ({c.distM}m)</span>
+                                                                            <span>{c.sl ? `[#${c.sl}] ` : ''}{c.siteName.slice(0, 20)}{c.facing ? ` • ${c.facing}` : ''}{c.distM != null ? ` (${c.distM}m)` : ''}</span>
                                                                         </button>
                                                                     );
                                                                 })}
@@ -9506,7 +9990,7 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
                                 })}
                             </div>
                             </>
-                        ) : <div className="staff-review-empty"><CheckCircle size={42} /><h3>Review queue clear hai</h3><p>Adjacent ya doubtful photos yahan automatically aayengi.</p></div>}
+                        ) : <div className="staff-review-empty"><CheckCircle size={42} /><h3>Review queue clear hai</h3><p>Staff App se li gayi har photo apni location, GPS aur AI match ke saath yahan review ke liye aayegi.</p></div>}
                     </motion.div>
                 )}
 

@@ -12,7 +12,13 @@ export const checkForAppUpdates = async () => {
   }
 
   try {
-    const url = `${UPDATE_CHECK_URL}?_t=${Date.now()}`;
+    const isStandardWeb =
+      typeof window !== 'undefined' &&
+      (window.location.protocol === 'http:' || window.location.protocol === 'https:') &&
+      !window.electronAPI?.isElectron &&
+      !window.Capacitor?.isNativePlatform?.();
+    const baseUpdateUrl = isStandardWeb ? '/version.json' : UPDATE_CHECK_URL;
+    const url = `${baseUpdateUrl}?_t=${Date.now()}`;
     const response = await fetch(url, {
       method: 'GET',
       cache: 'no-store',

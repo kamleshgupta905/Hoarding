@@ -1452,15 +1452,18 @@ function staffUploadPhoto(data) {
   var suggested = nearby.length ? nearby[0] : null;
   var hasStrongGps = accuracy !== null && accuracy <= CONFIG.STAFF_MAX_AUTO_ACCURACY_METERS;
   
-  var status = hasStrongGps && withinAutoRadius.length === 1 ? 'AUTO_APPROVED' : 'REVIEW_REQUIRED';
-  var decision = !hasStrongGps && suggested ? 'GPS_ACCURACY_REVIEW' : (withinAutoRadius.length > 1 ? 'ADJACENT_SITES' : (suggested ? 'GPS_REVIEW' : 'NO_NEARBY_SITE'));
+  var explicitReviewOnly = String(data.status || '').trim() === 'REVIEW_REQUIRED' || String(data.aiDecision || '').indexOf('STAFF_') === 0;
+  var status = (hasStrongGps && withinAutoRadius.length === 1 && !explicitReviewOnly) ? 'AUTO_APPROVED' : 'REVIEW_REQUIRED';
+  var decision = explicitReviewOnly
+    ? (data.aiDecision || 'STAFF_REVIEW_SUGGESTED')
+    : (!hasStrongGps && suggested ? 'GPS_ACCURACY_REVIEW' : (withinAutoRadius.length > 1 ? 'ADJACENT_SITES' : (suggested ? 'GPS_REVIEW' : 'NO_NEARBY_SITE')));
   var approvedSite = '';
   var previousImage = '';
 
-  // 🚀 Gemini Vision AI Geofenced Auto-Approval (Overrides review only if physically within 150m proximity)
+  // 🚀 Gemini Vision AI Geofenced Auto-Approval (only when explicitly requested, never overrides REVIEW_REQUIRED)
   var claimedDist = toNumber(data.distance);
-  var isPhysicallyClose = claimedDist !== null ? claimedDist <= 150 : (withinAutoRadius.length > 0 || (nearby.length > 0 && nearby[0].distanceM <= 150));
-  if (matchedSite && isPhysicallyClose && (data.status === 'AUTO_APPROVED' || data.aiDecision === 'GEMINI_GPS_AUTO_MATCH')) {
+  var isPhysicallyClose = claimedDist !== null ? claimedDist <= 280 : (withinAutoRadius.length > 0 || (nearby.length > 0 && nearby[0].distanceM <= 280));
+  if (!explicitReviewOnly && matchedSite && isPhysicallyClose && (data.status === 'AUTO_APPROVED' || data.aiDecision === 'GEMINI_GPS_AUTO_MATCH')) {
     var aiUpdateResult = updateSitePhotoFromStaff(matchedSite, imageUrl, false, siteStatus, '', matchOpts);
     if (aiUpdateResult.success) {
       status = 'AUTO_APPROVED';

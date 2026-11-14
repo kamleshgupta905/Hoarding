@@ -122,3 +122,49 @@ export function calculateBoundingBox(sites) {
     [bbox[3], bbox[2]]  // [maxLat, maxLng]
   ];
 }
+
+const CARDINAL_ANGLES = {
+  N: 0, NE: 45, E: 90, SE: 135,
+  S: 180, SW: 225, W: 270, NW: 315
+};
+
+/**
+ * Compute bearing (0..360 deg clockwise from North) from camera GPS to hoarding site using Turf.js
+ */
+export function calculateSiteBearing(cameraCoord, siteCoord) {
+  try {
+    const pt1 = parseToPoint(cameraCoord);
+    const pt2 = parseToPoint(siteCoord);
+    if (!pt1 || !pt2) return null;
+    const raw = turf.bearing(pt1, pt2); // -180 .. +180
+    const deg = Math.round(((raw % 360) + 360) % 360);
+    const dirs = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'];
+    const cardinal = dirs[Math.round(deg / 45) % 8];
+    return { degrees: deg, cardinal };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Compute smallest angular difference (0..180 deg) between device compass heading and camera->site bearing
+ */
+export function getCompassBearingDiff(compassInput, targetBearingDeg) {
+  if (targetBearingDeg == null || isNaN(targetBearingDeg)) return null;
+  let camDeg = null;
+  if (typeof compassInput === 'number' && !isNaN(compassInput)) {
+    camDeg = ((compassInput % 360) + 360) % 360;
+  } else if (typeof compassInput === 'string') {
+    const upper = compassInput.trim().toUpperCase();
+    const numMatch = upper.match(/(\d+(?:\.\d+)?)\s*°/);
+    if (numMatch) {
+      camDeg = ((parseFloat(numMatch[1]) % 360) + 360) % 360;
+    } else if (CARDINAL_ANGLES[upper] !== undefined) {
+      camDeg = CARDINAL_ANGLES[upper];
+    }
+  }
+  if (camDeg === null) return null;
+  const diff = Math.abs(camDeg - targetBearingDeg) % 360;
+  return diff > 180 ? 360 - diff : diff;
+}
+

@@ -6,8 +6,8 @@ import { postDirect } from './secureApi.js';
  */
 
 export const GEMINI_MODELS = [
-  'gemini-4-hydrogen',
-  'gemini-3.1-flash-lite'
+  'gemini-3.1-flash-lite',
+  'gemini-4-hydrogen'
 ];
 
 const resolveGeminiEndpoint = (routePath) => {
@@ -347,32 +347,146 @@ export const loadCandidateImageAsBase64 = async (url) => {
 };
 
 /**
- * 🧭 RESOLVE TWIN-SITE & CORRIDOR HOARDING WITH GEMINI VISION
- * When multiple hoardings exist along the same road corridor or junction (e.g., opposite faces on a
- * double-sided unipole, or consecutive hoardings along a stretch like Company Garden), this uses
- * Gemini Multimodal Vision to compare the audit photo against reference photos, examine physical
- * structures (mounting pole, concrete walls, fences, railings, sidewalks, trees, streetlamps),
- * road traffic direction, and determine the EXACT hoarding and facing.
+ * Compact image downscaler for multimodal Gemini Vision requests.
+ * Keeps requests well below serverless 4.5MB body limits and speeds up inference.
  */
-export const resolveTwinSiteFacingWithGemini = async (imageBase64, candidates) => {
+const downscaleDataUrlForVision = (dataUrl, maxDim = 800, quality = 0.72) => new Promise((resolve) => {
+  if (!dataUrl || typeof dataUrl !== 'string' || typeof window === 'undefined' || typeof document === 'undefined' || typeof Image === 'undefined') {
+    resolve(dataUrl);
+    return;
+  }
+  const img = new Image();
+  img.onload = () => {
+    try {
+      const w = img.naturalWidth || img.width || 0;
+      const h = img.naturalHeight || img.height || 0;
+      if (!w || !h || (w <= maxDim && h <= maxDim && dataUrl.length < 180000)) {
+        resolve(dataUrl);
+        return;
+      }
+      const scale = Math.min(1, maxDim / Math.max(w, h));
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.max(1, Math.round(w * scale));
+      canvas.height = Math.max(1, Math.round(h * scale));
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+      resolve(canvas.toDataURL('image/jpeg', quality) || dataUrl);
+    } catch {
+      resolve(dataUrl);
+    }
+  };
+  img.onerror = () => resolve(dataUrl);
+  img.src = dataUrl;
+});
+
+/**
+ * Zero-dependency spatial luminance + edge-gradient similarity (top 78% of frame to ignore GPS stamp bar).
+ * Inspired by pixel/grid structural comparison libraries for fast visual similarity hints across adjacent poles.
+ */
+const computeStructuralGridSimilarity = (urlA, urlB) => new Promise((resolve) => {
+  if (typeof window === 'undefined' || typeof document === 'undefined' || !urlA || !urlB) {
+    resolve(null);
+    return;
+  }
+  const loadGrid = (src) => new Promise((res) => {
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = () => {
+      try {
+        const S = 16;
+        const c = document.createElement('canvas');
+        c.width = S;
+        c.height = S;
+        const ctx = c.getContext('2d');
+        const cropH = Math.max(1, Math.round((img.naturalHeight || img.height) * 0.78));
+        ctx.drawImage(img, 0, 0, img.naturalWidth || img.width, cropH, 0, 0, S, S);
+        const { data } = ctx.getImageData(0, 0, S, S);
+        const vec = [];
+        for (let i = 0; i < data.length; i += 4) {
+          const lum = (0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2]) / 255;
+          vec.push(lum);
+        }
+        // Zero-mean unit-variance normalization for lighting invariance
+        const mean = vec.reduce((a, b) => a + b, 0) / vec.length;
+        let norm = 0;
+        const normVec = vec.map(v => {
+          const d = v - mean;
+          norm += d * d;
+          return d;
+        });
+        const denom = Math.sqrt(norm) || 1;
+        res(normVec.map(v => v / denom));
+      } catch {
+        res(null);
+      }
+    };
+    img.onerror = () => res(null);
+    img.src = src;
+  });
+
+  Promise.all([loadGrid(urlA), loadGrid(urlB)]).then(([vA, vB]) => {
+    if (!vA || !vB || vA.length !== vB.length) {
+      resolve(null);
+      return;
+    }
+    let dot = 0;
+    for (let i = 0; i < vA.length; i++) dot += vA[i] * vB[i];
+    const pct = Math.max(0, Math.min(100, Math.round(((dot + 1) / 2) * 100)));
+    resolve(pct);
+  }).catch(() => resolve(null));
+});
+
+/**
+ * 🧭 RESOLVE TWIN-SITE & CORRIDOR HOARDING WITH GEMINI VISION
+ * When multiple hoardings exist along the same road corridor or junction (within ~280m — e.g.,
+ * opposite faces on a double-sided unipole, rooftop billboards above buildings, or consecutive poles),
+ * compares the audit photo against reference photos, mounting structure (Billboard vs Unipole vs Gantry),
+ * directional bearing, and surrounding landmarks to determine the exact hoarding and facing.
+ */
+export const resolveTwinSiteFacingWithGemini = async (imageBase64, candidates, options = {}) => {
   if (!imageBase64 || !Array.isArray(candidates) || candidates.length < 2) {
     return null;
   }
 
-  const parsed = parseBase64(imageBase64);
+  const compactLiveB64 = await downscaleDataUrlForVision(imageBase64, 900, 0.75);
+  const parsed = parseBase64(compactLiveB64);
   if (!parsed) return null;
 
-  // Load candidate reference photos if available in parallel (up to 8 candidates in tight corridors)
-  const imageFetchPromises = candidates.slice(0, 8).map(async (c, idx) => {
+  // Pick up to 10 candidates for reference image attachment (covering all distinct structure/facing + closest row poles within 280m)
+  const attachTargets = [];
+  const seenAttachIdx = new Set();
+  const seenTypeFacing = new Set();
+  for (let i = 0; i < candidates.length && attachTargets.length < 10; i++) {
+    const raw = candidates[i].site || candidates[i];
+    const mType = String(candidates[i].mediaType || raw['Type of Site (Unipole/Billboard)'] || raw.Media || '').toLowerCase();
+    const fac = String(candidates[i].facing || raw.Facing || '').toLowerCase();
+    const key = `${mType}|${fac}`;
+    if (!seenTypeFacing.has(key)) {
+      seenTypeFacing.add(key);
+      attachTargets.push(i);
+      seenAttachIdx.add(i);
+    }
+  }
+  for (let i = 0; i < candidates.length && attachTargets.length < 10; i++) {
+    if (!seenAttachIdx.has(i)) {
+      attachTargets.push(i);
+      seenAttachIdx.add(i);
+    }
+  }
+
+  const imageFetchPromises = attachTargets.map(async (idx) => {
+    const c = candidates[idx];
     const rawSite = c.site || c;
     const imgUrl = rawSite.ImageURL || rawSite.imageUrl || rawSite.image;
     if (imgUrl && !imgUrl.includes('unsplash.com')) {
       try {
         const b64 = await loadCandidateImageAsBase64(imgUrl);
         if (b64) {
-          const parsedRef = parseBase64(b64);
+          const compactRef = await downscaleDataUrlForVision(b64, 512, 0.65);
+          const parsedRef = parseBase64(compactRef);
           if (parsedRef) {
-            return { idx, parsed: parsedRef, site: rawSite };
+            const simPct = await computeStructuralGridSimilarity(compactLiveB64, compactRef);
+            return { idx, parsed: parsedRef, site: rawSite, simPct };
           }
         }
       } catch {}
@@ -393,22 +507,31 @@ export const resolveTwinSiteFacingWithGemini = async (imageBase64, candidates) =
     const siteType = rawSite['Type of Site (Unipole/Billboard)'] || rawSite['Type of Site (Unipole/ Billboard)'] || rawSite['Type of Site'] || rawSite['Media'] || rawSite.Type || 'Unipole';
     const refUrl = rawSite.ImageURL && !rawSite.ImageURL.includes('unsplash.com') ? rawSite.ImageURL : '';
     const distText = c.distanceM !== undefined ? `~${c.distanceM}m (GPS estimate)` : '';
-    const hasRefPhoto = candidateImages.some(img => img.idx === idx) ? ' (Visual Reference Photo Attached Below)' : '';
+    const attachedRef = candidateImages.find(img => img.idx === idx);
+    const hasRefPhoto = attachedRef
+      ? ` (Reference Photo Attached Below${attachedRef.simPct != null ? ` • Structural Grid Similarity: ${attachedRef.simPct}%` : ''})`
+      : '';
+    const bearingInfo = c.cameraBearing ? ` | Bearing from Camera GPS: ${c.cameraBearing.degrees}° (${c.cameraBearing.cardinal})` : '';
+    const compassNote = c.compassDiffDeg != null ? ` | Compass Alignment Δ: ${Math.round(c.compassDiffDeg)}°` : '';
     const landmarks = rawSite.Visual_Landmarks || rawSite['Visual Landmarks'] || rawSite.Structure_Notes || rawSite['Structure Notes'] || '';
     return `[Candidate ${idx}]:
 - S.No / SL: #${sl}
 - Structure Type: ${siteType}
 - Location: "${name}"
-${landmarks ? `- Physical Structure & Visual Landmarks: "${landmarks}"\n` : ''}- Facing Direction: "${facing}" (Face points towards ${facing}, visible to traffic coming from ${from || facing} heading towards ${to || 'opposite'})
+${landmarks ? `- Physical Structure & Visual Landmarks: "${landmarks}"\n` : ''}- Facing Direction: "${facing}" (Face points towards ${facing}, visible to traffic coming from ${from || facing} heading towards ${to || 'opposite'})${bearingInfo}${compassNote}
 ${distText ? `- Distance to Camera GPS: ${distText}` : ''}
 ${traffic ? `- Traffic Flow: "${traffic}"` : ''}
 ${rawSite.City ? `- City: "${rawSite.City}"` : ''}
 ${refUrl ? `- Reference Photo: ${refUrl}${hasRefPhoto}` : ''}`;
   }).join('\n\n');
 
+  const rowFocusNote = options?.rowVerification
+    ? '\n⚠️ ROW / ADJACENT RE-VERIFICATION MODE: Multiple hoardings stand in a close row here. Examine exact left/right buildings, shop signs, gates, trees, divider railings, and pole count from the road intersection across ALL attached reference photos so the exact pole/billboard in the row is chosen!'
+    : '';
+
   const prompt = `You are an expert AI Outdoor Advertising (OOH / Billboard) Traffic & Location Analyst.
 A field audit photo was taken of an outdoor billboard / hoarding along a road corridor.
-Compare this live audit photo against the candidate hoardings in our master inventory.
+Compare this live audit photo against the candidate hoardings in our master inventory.${rowFocusNote}
 
 CANDIDATE HOARDINGS AT / NEAR THIS CORRIDOR:
 ${candidateDescriptions}
@@ -417,18 +540,19 @@ CRITICAL RULES FOR ACCURATE MATCHING:
 1. 📸 DIRECT VISUAL REFERENCE MATCH (ABSOLUTE HIGHEST PRIORITY):
    - We have attached REFERENCE PHOTOS for candidates where available below.
    - CAREFULLY COMPARE the live audit photo against each candidate's reference photo.
-   - If the live audit photo shows the SAME scene, identical road view, exact same commercial ad banner (or billboard frame), identical gate/trees/buildings/curbs, or is clearly the SAME physical structure as Candidate [X]'s reference photo:
+   - If the live audit photo shows the SAME building/rooftop/shopfronts, identical road view, identical gates/statues/flyover walls/trees, or is clearly the SAME physical structure as Candidate [X]'s reference photo:
      YOU MUST SELECT THAT CANDIDATE!
-   - ⚠️ NEVER let a small difference in GPS distance (e.g. 24m vs 47m) override an obvious visual match with a reference photo!
+   - ⚠️ NEVER let GPS distance difference (e.g., 17m vs 103m or 24m vs 250m) override an obvious visual/structural match! Photographers often shoot zoomed photos or stand up to 280m down the road / across an intersection.
 
 2. 🏗️ STRUCTURE TYPE & PHYSICAL CIVIL LANDMARKS:
    - Check the physical mounting structure in the live audit photo:
-     * UNIPOLE vs OVERHEAD GANTRY:
-       A "Unipole" is mounted on a SINGLE central vertical steel pillar/column.
-       An "Overhead Gantry" is an overhead steel bridge/truss structure spanning ACROSS multiple traffic lanes.
-       ⚠️ STRICT RULE: If the live photo shows a Unipole, you MUST select a candidate with Structure Type "Unipole", NEVER a Gantry!
+     * ROOFTOP BILLBOARD vs STREET UNIPOLE vs OVERHEAD GANTRY:
+       A "Billboard" (rooftop/wall structure) sits ON TOP OF or ON THE FACADE OF a building/complex (with I-beam frame on a roof).
+       A "Unipole" stands on a SINGLE central vertical steel pillar/column in the median divider or sidewalk.
+       A "Gantry" is an overhead steel bridge/truss structure spanning ACROSS traffic lanes.
+       ⚠️ STRICT RULE: If the photo shows a Rooftop Billboard mounted atop a building, select a "Billboard" candidate even if a "Unipole" is closer in meters! If it shows a street Unipole, NEVER select a Billboard or Gantry!
      * ELEVATED METRO VIADUCT TRACKS & PILLARS: Is the billboard directly under elevated metro viaduct track pillars? Match the candidate whose Physical Structure & Visual Landmarks mentions metro viaduct pillars!
-     * FLYOVER RAMPS, RETAINING WALLS & GATES: Match specific gates (e.g. "Meerut College Gate" vs "Alexander Club"), flyover retaining walls, railings, street furniture.
+     * FLYOVER RAMPS, RETAINING WALLS, STATUES & GATES: Match specific gates (e.g. "Meerut College Gate" vs "Alexander Club"), statues, flyover retaining walls, railings, shops (e.g. "Ganga Plaza", "GD Goenka").
 
 3. 🧭 BILLBOARD FACING & TRAFFIC LINE-OF-SIGHT:
    - "Facing [X]" means the billboard face points towards X and is directly visible to traffic traveling from X.
@@ -812,7 +936,8 @@ export const matchDailyExecutionProofWithAI = async (imageBase64, inventoryList)
     };
   }
 
-  const parsed = parseBase64(imageBase64);
+  const compactProofB64 = await downscaleDataUrlForVision(imageBase64, 1024, 0.8);
+  const parsed = parseBase64(compactProofB64);
   if (!parsed) throw new Error('Invalid image data.');
 
   const prompt = `You are an expert Billboard & Hoarding Proof of Execution Analyzer.

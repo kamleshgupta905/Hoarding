@@ -1,6 +1,6 @@
 import { GoogleGenAI, ThinkingLevel } from '@google/genai';
 
-const SERVER_GEMINI_MODELS = ['gemini-4-hydrogen', 'gemini-3.1-flash-lite'];
+const SERVER_GEMINI_MODELS = ['gemini-3.1-flash-lite', 'gemini-4-hydrogen'];
 
 const DEPRECATED_OR_ALIASES = {
   'gemini-flash-latest': 'gemini-4-hydrogen',
