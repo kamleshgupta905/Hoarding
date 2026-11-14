@@ -86,7 +86,11 @@ export const callGeminiVision = async (payload) => {
     if (contentType.includes('application/json')) {
       const data = await response.json();
       if (!response.ok) {
-        throw new Error(data?.error || `Server Gemini request failed (${response.status})`);
+        const msg = data?.error || `Server Gemini request failed (${response.status})`;
+        if (response.status >= 400 && response.status < 500 && response.status !== 404) {
+          throw Object.assign(new Error(msg), { isClientRequestError: true });
+        }
+        throw new Error(msg);
       }
       if (data?.text && String(data.text).trim()) {
         return String(data.text).trim();
@@ -96,25 +100,24 @@ export const callGeminiVision = async (payload) => {
 
     if (!response.ok) {
       serverError = new Error(`Server Gemini endpoint returned ${response.status}`);
+    } else {
+      serverError = new Error('Server Gemini endpoint returned non-JSON response (static host rewrite).');
     }
   } catch (err) {
     serverError = err;
-    if (err?.message && !/failed to fetch|network|404|abort/i.test(err.message)) {
-      // Server returned an explicit API/configuration error; propagate to caller unless static fallback applies
-      if (typeof window !== 'undefined' && (window.location?.protocol === 'http:' || window.location?.protocol === 'https:')) {
-        throw err;
-      }
+    if (err?.isClientRequestError) {
+      throw err;
     }
   } finally {
     clearTimeout(timeoutId);
   }
 
-  // Fallback to Apps Script backend proxy when running offline / file:// / static-only host
+  // Fallback to Apps Script backend proxy when running on static host (e.g. Vercel without env) / file:// / offline
   try {
     const proxyRes = await postDirect({
       action: 'geminiVision',
       payload,
-      model: GEMINI_MODELS[0]
+      model: 'gemini-2.5-flash'
     }, 20000);
 
     if (proxyRes && proxyRes.success && proxyRes.text) {

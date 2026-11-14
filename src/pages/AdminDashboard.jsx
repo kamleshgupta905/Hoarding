@@ -2739,7 +2739,7 @@ const AdminDashboard = ({ hoardings = [], setHoardings = () => {} }) => {
         // Accept image MIME or common camera extensions
         const imageFiles = rawFiles.filter(file => 
             (file.type && file.type.startsWith('image/')) || 
-            /\.(jpe?g|png|webp|heic|heif|bmp|tiff?)$/i.test(file.name)
+            /\.(jpe?g|jfif|png|webp|heic|heif|bmp|tiff?)$/i.test(file.name)
         );
 
         if (imageFiles.length === 0) return;

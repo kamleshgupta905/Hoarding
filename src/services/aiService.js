@@ -4,15 +4,25 @@ import { matchGeofencedHoardingWithGemini, matchDailyExecutionProofWithAI, extra
 export { matchGeofencedHoardingWithGemini, matchDailyExecutionProofWithAI, extractSitesFromRawDataWithGemini, resolveTwinSiteFacingWithGemini, generateVisualLandmarksWithGemini };
 
 let workerPromise = null;
+let ocrQueueTail = Promise.resolve();
 
 const getOcrWorker = async () => {
     if (!workerPromise) {
         workerPromise = import('tesseract.js').then(async ({ createWorker }) => {
             const worker = await createWorker('eng');
             return worker;
+        }).catch((err) => {
+            workerPromise = null;
+            throw err;
         });
     }
     return workerPromise;
+};
+
+const runWithOcrLock = (taskFn) => {
+    const run = ocrQueueTail.then(taskFn, taskFn);
+    ocrQueueTail = run.catch(() => {});
+    return run;
 };
 
 /**
@@ -293,9 +303,9 @@ export const extractCoordinatesFromText = (text) => {
         .replace(/(?<!\.)\b([6-9]\d)(\d{5,8})\b(?!\.)/g, '$1.$2')
         .replace(/(?<!\.)\b([1-3]\d)(\d{5,8})\b(?!\.)/g, '$1.$2');
 
-    // 1. Labeled Lat/Long (e.g., "Lat: 28.998107, Long: 77.705821" or "Lat 28.955047 Long 77.734039")
-    // Highly tolerant to OCR misreadings of "lat" (lal, lot, 1at, tat, la) and "long" (lang, lona, 1ong, lon)
-    const labeledRegex = /(?:lat|latitude|lati|lt|lal|lot|1at|tat|la)[:\s]*([+-]?\d{1,3}\.\d{3,9})\s*(?:°|[NSEWnsew])?[^\d\n\r]*(?:long|longitude|lng|longi|lg|lang|lona|1ong|lon)[:\s]*([+-]?\d{1,3}\.\d{3,9})\s*(?:°|[NSEWnsew])?/i;
+    // 1. Labeled Lat/Long (e.g., "Lat: 28.998107, Long: 77.705821" or "Lat 28.99148°i 2 Long 77.715968°i")
+    // Tolerates stray digits, degree/map-pin symbols, and newlines between Lat and Long
+    const labeledRegex = /(?:lat|latitude|lati|lt|lal|lot|1at|tat|la)[^0-9+\-\n]{0,10}([+-]?\d{1,3}\.\d{3,9})[\s\S]{0,45}?(?:long|longitude|lng|longi|lg|lang|lona|1ong|lon)[^0-9+\-\n]{0,10}([+-]?\d{1,3}\.\d{3,9})/i;
     const labeledMatch = clean.match(labeledRegex);
     if (labeledMatch) {
         const lat = parseFloat(labeledMatch[1]);
@@ -303,8 +313,17 @@ export const extractCoordinatesFromText = (text) => {
         if (isValidLatLng(lat, lng)) return { lat, lng, source: 'ocr_labeled' };
     }
 
+    // 1b. Independent Lat + Long tag pairing anywhere in stamp block
+    const soloLat = clean.match(/(?:^|[^a-z])(?:lat|latitude|lati|lal|1at)[^0-9+\-\n]{0,10}([+-]?\d{1,2}\.\d{3,9})/i);
+    const soloLng = clean.match(/(?:^|[^a-z])(?:long|longitude|lng|longi|lang|1ong|lon)[^0-9+\-\n]{0,10}([+-]?\d{2,3}\.\d{3,9})/i);
+    if (soloLat && soloLng) {
+        const lat = parseFloat(soloLat[1]);
+        const lng = parseFloat(soloLng[1]);
+        if (isValidLatLng(lat, lng)) return { lat, lng, source: 'ocr_labeled' };
+    }
+
     // 2. Reversed Labeled Long/Lat
-    const revRegex = /(?:long|longitude|lng|longi|lg|lang|lona|1ong|lon)[:\s]*([+-]?\d{1,3}\.\d{3,9})\s*(?:°|[NSEWnsew])?[^\d\n\r]*(?:lat|latitude|lati|lt|lal|lot|1at|tat|la)[:\s]*([+-]?\d{1,3}\.\d{3,9})\s*(?:°|[NSEWnsew])?/i;
+    const revRegex = /(?:long|longitude|lng|longi|lg|lang|lona|1ong|lon)[^0-9+\-\n]{0,10}([+-]?\d{1,3}\.\d{3,9})[\s\S]{0,45}?(?:lat|latitude|lati|lt|lal|lot|1at|tat|la)[^0-9+\-\n]{0,10}([+-]?\d{1,3}\.\d{3,9})/i;
     const revMatch = clean.match(revRegex);
     if (revMatch) {
         const lng = parseFloat(revMatch[1]);
@@ -917,57 +936,64 @@ export const getDHashDistance = (hash1, hash2) => {
     return dist;
 };
 
-const cropStampRegion = async (source, region = 'right-badge', options = {}) => {
+const cropStampRegion = async (source, region = 'bottom-strip', options = {}) => {
     const image = await loadImage(source);
     const canvas = document.createElement('canvas');
     const origW = image.naturalWidth || 800;
     const origH = image.naturalHeight || 600;
 
-    // Rescale to optimal OCR resolution (max width 1600px) for speed & sharpness
-    const maxDimension = 1600;
-    const scale = Math.min(1.5, Math.max(1, maxDimension / Math.max(origW, origH)));
-    const w = Math.round(origW * scale);
-    const h = Math.round(origH * scale);
+    // Rescale to crisp OCR resolution (~1400-1600px wide) without over-bloating huge camera images
+    const targetLongEdge = Math.min(1600, Math.max(1200, Math.max(origW, origH)));
+    const scale = targetLongEdge / Math.max(origW, origH);
+    const w = Math.max(1, Math.round(origW * scale));
+    const h = Math.max(1, Math.round(origH * scale));
 
     const isInvert = Boolean(options.invert);
     const ctx = canvas.getContext('2d', { willReadFrequently: true });
+    const applyFilter = () => {
+        try {
+            if ('filter' in ctx) {
+                ctx.filter = isInvert ? 'invert(1) contrast(1.8) grayscale(1)' : 'contrast(1.35) grayscale(1)';
+            }
+        } catch {}
+    };
 
-    if (region === 'right-badge') {
-        // Floating Google Maps badge on right side (covers middle-right, center-right, upper-right)
-        const startX = Math.floor(w * 0.25);
-        const startY = Math.floor(h * 0.15);
-        const cropW = w - startX;
-        const cropH = Math.floor(h * 0.75);
-        canvas.width = cropW;
-        canvas.height = cropH;
-        ctx.filter = isInvert ? 'invert(1) contrast(2.0) grayscale(1)' : 'contrast(1.4) grayscale(1)';
-        ctx.drawImage(image, Math.floor(origW * 0.25), Math.floor(origH * 0.15), origW - Math.floor(origW * 0.25), Math.floor(origH * 0.75), 0, 0, canvas.width, canvas.height);
+    if (region === 'bottom-strip') {
+        // Focused bottom 36% where GPS Map Camera / PinPoint / NoteCam / SpotLens watermarks sit
+        const srcY = Math.floor(origH * 0.64);
+        const srcH = origH - srcY;
+        canvas.width = w;
+        canvas.height = Math.max(1, Math.round(srcH * scale));
+        applyFilter();
+        ctx.drawImage(image, 0, srcY, origW, srcH, 0, 0, canvas.width, canvas.height);
+    } else if (region === 'right-badge') {
+        // Right side extending all the way to the bottom edge (never clip bottom Lat/Long line)
+        const srcX = Math.floor(origW * 0.25);
+        const srcY = Math.floor(origH * 0.20);
+        const srcW = origW - srcX;
+        const srcH = origH - srcY;
+        canvas.width = Math.max(1, Math.round(srcW * scale));
+        canvas.height = Math.max(1, Math.round(srcH * scale));
+        applyFilter();
+        ctx.drawImage(image, srcX, srcY, srcW, srcH, 0, 0, canvas.width, canvas.height);
     } else if (region === 'bottom-banner' || region === 'bottom') {
-        // Full bottom banner across whole width (covers bottom-left, bottom-center, bottom-right)
-        const startY = Math.floor(h * 0.45);
+        const srcY = Math.floor(origH * 0.45);
+        const srcH = origH - srcY;
         canvas.width = w;
-        canvas.height = h - startY;
-        ctx.filter = isInvert ? 'invert(1) contrast(2.0) grayscale(1)' : 'contrast(1.4) grayscale(1)';
-        ctx.drawImage(image, 0, Math.floor(origH * 0.45), origW, origH - Math.floor(origH * 0.45), 0, 0, canvas.width, canvas.height);
-    } else if (region === 'bottom-right') {
-        // Legacy bottom-right corner
-        const startX = Math.floor(w * 0.35);
-        const startY = Math.floor(h * 0.50);
-        canvas.width = w - startX;
-        canvas.height = h - startY;
-        ctx.filter = isInvert ? 'invert(1) contrast(2.0) grayscale(1)' : 'contrast(1.4) grayscale(1)';
-        ctx.drawImage(image, Math.floor(origW * 0.35), Math.floor(origH * 0.50), origW - Math.floor(origW * 0.35), origH - Math.floor(origH * 0.50), 0, 0, canvas.width, canvas.height);
+        canvas.height = Math.max(1, Math.round(srcH * scale));
+        applyFilter();
+        ctx.drawImage(image, 0, srcY, origW, srcH, 0, 0, canvas.width, canvas.height);
     } else if (region === 'top') {
-        const endY = Math.floor(h * 0.40);
+        const srcH = Math.floor(origH * 0.40);
         canvas.width = w;
-        canvas.height = endY;
-        ctx.filter = isInvert ? 'invert(1) contrast(2.0) grayscale(1)' : 'contrast(1.4) grayscale(1)';
-        ctx.drawImage(image, 0, 0, origW, Math.floor(origH * 0.40), 0, 0, canvas.width, canvas.height);
+        canvas.height = Math.max(1, Math.round(srcH * scale));
+        applyFilter();
+        ctx.drawImage(image, 0, 0, origW, srcH, 0, 0, canvas.width, canvas.height);
     } else {
         // Full Image
         canvas.width = w;
         canvas.height = h;
-        ctx.filter = isInvert ? 'invert(1) contrast(2.0) grayscale(1)' : 'contrast(1.3) grayscale(0.8)';
+        applyFilter();
         ctx.drawImage(image, 0, 0, origW, origH, 0, 0, w, h);
     }
     return canvas;
@@ -1123,54 +1149,50 @@ export const analyzeHoardingImage = async (base64Image, locationList, rawFile = 
         }
     }
 
-    // ─── STAGE 2: OCR GPS Stamp Extraction (Multi-Zone Floating Badge & Full Banners) ───────────
+    // ─── STAGE 2: OCR GPS Stamp Extraction (Fast Bottom Strip -> Inverted -> Right -> Full) ───
     let detectedOcrText = '';
     try {
-        const ocrPromise = (async () => {
-            const worker = await getOcrWorker();
-            let text = '';
-            let ocrCoord = null;
+        const { text, ocrCoord } = await runWithOcrLock(async () => {
+            const ocrTask = (async () => {
+                const worker = await getOcrWorker();
+                let combinedText = '';
+                let foundCoord = null;
 
-            // 1. First priority: Right-side floating Google Maps badge (used by GPS Map Camera in >80% of Indian OOH photos)
-            const rightCrop = await cropStampRegion(base64Image, 'right-badge', { invert: false });
-            const rightRes = await worker.recognize(rightCrop);
-            const rText = String(rightRes?.data?.text || '').replace(/\s+/g, ' ').trim();
-            text = rText;
-            ocrCoord = extractCoordinatesFromText(text);
+                const scanPass = async (region, invert = false) => {
+                    const crop = await cropStampRegion(base64Image, region, { invert });
+                    const res = await worker.recognize(crop);
+                    const chunk = String(res?.data?.text || '').replace(/\s+/g, ' ').trim();
+                    if (chunk) {
+                        combinedText = combinedText ? `${combinedText} ${chunk}` : chunk;
+                        foundCoord = extractCoordinatesFromText(chunk) || extractCoordinatesFromText(combinedText);
+                    }
+                };
 
-            // 2. Second priority: Full bottom banner (covers bottom-left, bottom-center, bottom-right without clipping)
-            if (!ocrCoord) {
-                const bottomCrop = await cropStampRegion(base64Image, 'bottom-banner', { invert: false });
-                const bRes = await worker.recognize(bottomCrop);
-                const bText = String(bRes?.data?.text || '').replace(/\s+/g, ' ').trim();
-                text += ' ' + bText;
-                ocrCoord = extractCoordinatesFromText(text);
-            }
+                // 1. Fastest & most accurate: Bottom 36% watermark strip (catches >95% of PinPoint/GPS Camera stamps)
+                await scanPass('bottom-strip', false);
 
-            // 3. Third priority: Inverted dark badge (NoteCam, SpotLens, black overlay badges)
-            if (!ocrCoord) {
-                const rightInvCrop = await cropStampRegion(base64Image, 'right-badge', { invert: true });
-                const invRes = await worker.recognize(rightInvCrop);
-                const invText = String(invRes?.data?.text || '').replace(/\s+/g, ' ').trim();
-                text += ' ' + invText;
-                ocrCoord = extractCoordinatesFromText(text);
-            }
+                // 2. Inverted dark badge on bottom strip (catches low-contrast white-on-black / translucent overlays)
+                if (!foundCoord) {
+                    await scanPass('bottom-strip', true);
+                }
 
-            // 4. Fourth priority: Full image scan (catches top, center, anywhere)
-            if (!ocrCoord) {
-                const fullCrop = await cropStampRegion(base64Image, 'full', { invert: false });
-                const fRes = await worker.recognize(fullCrop);
-                const fText = String(fRes?.data?.text || '').replace(/\s+/g, ' ').trim();
-                text += ' ' + fText;
-                ocrCoord = extractCoordinatesFromText(text);
-            }
+                // 3. Right-side floating badge extending to bottom edge
+                if (!foundCoord) {
+                    await scanPass('right-badge', false);
+                }
 
-            return { text, ocrCoord };
-        })();
+                // 4. Full image fallback (catches top/center overlays)
+                if (!foundCoord) {
+                    await scanPass('full', false);
+                }
 
-        // Robust 20.0s timeout ensures Tesseract worker finishes even under batch upload queues
-        const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('OCR timeout')), 20000));
-        const { text, ocrCoord } = await Promise.race([ocrPromise, timeoutPromise]);
+                return { text: combinedText, ocrCoord: foundCoord };
+            })();
+
+            // Timeout measured AFTER acquiring the OCR lock so batch queue items never starve!
+            const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('OCR timeout')), 25000));
+            return Promise.race([ocrTask, timeoutPromise]);
+        });
         detectedOcrText = text;
         let ocrFacing = null;
         if (detectedOcrText) {

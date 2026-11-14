@@ -482,26 +482,46 @@ function callGeminiVisionProxy_(data) {
   if (!apiKey) {
     return res({ success: false, error: 'GEMINI_API_KEY not configured in Apps Script properties.' });
   }
-  var model = data.model || 'gemini-flash-latest';
-  var endpoint = 'https://generativelanguage.googleapis.com/v1beta/models/' + model + ':generateContent?key=' + apiKey;
+  var requestedModel = String(data.model || '').trim();
+  var modelMap = {
+    'gemini-4-hydrogen': 'gemini-2.5-flash',
+    'gemini-3.1-flash-lite': 'gemini-2.5-flash-lite',
+    'gemini-flash-latest': 'gemini-2.5-flash'
+  };
+  var primaryModel = modelMap[requestedModel] || requestedModel || 'gemini-2.5-flash';
+  var candidateModels = [primaryModel];
+  if (candidateModels.indexOf('gemini-2.5-flash') === -1) candidateModels.push('gemini-2.5-flash');
+  if (candidateModels.indexOf('gemini-2.0-flash') === -1) candidateModels.push('gemini-2.0-flash');
 
-  try {
-    var response = UrlFetchApp.fetch(endpoint, {
-      method: 'post',
-      contentType: 'application/json',
-      payload: JSON.stringify(data.payload),
-      muteHttpExceptions: true
-    });
-    var code = response.getResponseCode();
-    var content = response.getContentText();
-    if (code >= 200 && code < 300) {
-      return res({ success: true, text: content });
-    } else {
-      return res({ success: false, status: code, error: content });
-    }
-  } catch (err) {
-    return res({ success: false, error: err.toString() });
+  var basePayload = JSON.parse(JSON.stringify(data.payload || {}));
+  if (basePayload.generationConfig && basePayload.generationConfig.thinkingConfig) {
+    delete basePayload.generationConfig.thinkingConfig;
   }
+
+  var lastStatus = 500;
+  var lastError = 'Gemini proxy failed';
+  for (var m = 0; m < candidateModels.length; m++) {
+    var model = candidateModels[m];
+    var endpoint = 'https://generativelanguage.googleapis.com/v1beta/models/' + encodeURIComponent(model) + ':generateContent?key=' + apiKey;
+    try {
+      var response = UrlFetchApp.fetch(endpoint, {
+        method: 'post',
+        contentType: 'application/json',
+        payload: JSON.stringify(basePayload),
+        muteHttpExceptions: true
+      });
+      var code = response.getResponseCode();
+      var content = response.getContentText();
+      if (code >= 200 && code < 300) {
+        return res({ success: true, text: content, model: model });
+      }
+      lastStatus = code;
+      lastError = content;
+    } catch (err) {
+      lastError = err.toString();
+    }
+  }
+  return res({ success: false, status: lastStatus, error: lastError });
 }
 
 function requestAdminLogin_(data) {
