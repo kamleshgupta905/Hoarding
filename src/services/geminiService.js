@@ -16,8 +16,8 @@ const resolveGeminiEndpoint = (routePath) => {
   if (protocol === 'http:' || protocol === 'https:') {
     return routePath;
   }
-  const configuredBase = import.meta.env?.VITE_SERVER_URL || '';
-  return configuredBase ? `${configuredBase.replace(/\/+$/, '')}${routePath}` : routePath;
+  const configuredBase = import.meta.env?.VITE_SERVER_URL || 'https://hoarding-hd9a.vercel.app';
+  return `${configuredBase.replace(/\/+$/, '')}${routePath}`;
 };
 
 /**
